@@ -13,9 +13,9 @@
 | 总任务数 | 20 |
 | P0 任务 | 7 |
 | P1 任务 | 13 |
-| 待开始 | 5 |
+| 待开始 | 4 |
 | 进行中 | 0 |
-| 已完成 | 15 |
+| 已完成 | 16 |
 | 已阻塞 | 0 |
 
 ---
@@ -27,7 +27,7 @@
 | V1-M1 可靠性加固 | P0 | 6 | ✅ 已完成 |
 | V1-M2 体验升级 | P1 | 4 | ✅ 已完成 |
 | V1-M3 能力扩展 | P1 | 4 | ✅ 已完成 |
-| V1-M4 发布工程 | P1 | 6 | 🔄 进行中（1/6） |
+| V1-M4 发布工程 | P1 | 6 | 🔄 进行中（2/6） |
 
 ---
 
@@ -137,10 +137,11 @@
   - 依赖：T1.1
   - ✅ 2026-08-07 完成：包名 @lumen/cli（未被占用），bin + CLI 入口，npm pack 预演 + 干净目录全局安装冒烟通过
 
-- [ ] **T4.2** 发布管线（Trusted Publishing）
+- [x] **T4.2** 发布管线（Trusted Publishing）
   - 涉及文件：`package.json`, `CHANGELOG.md`
   - 预估：2h
   - 依赖：T4.1
+  - ✅ 2026-08-07 完成：prepublishOnly=verify，npm version 同步 VERSION 常量，Trusted Publishing workflow，发布文档
 
 - [ ] **T4.3** CI（GitHub Actions）
   - 涉及文件：`.github/workflows/ci.yml`
@@ -189,6 +190,7 @@
 | 2026-08-07 | T3.3 完成：plan 模式 | Carbon Code |
 | 2026-08-07 | T3.4 完成：配置系统（V1-M3 全部完成） | Carbon Code |
 | 2026-08-07 | T4.1 完成：npm 包与 bin | Carbon Code |
+| 2026-08-07 | T4.2 完成：发布管线 | Carbon Code |
 
 ---
 

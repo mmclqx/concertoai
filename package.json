@@ -22,6 +22,9 @@
   "engines": {
     "node": ">=22"
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "dev": "tsx src/cli/index.ts",
     "build": "tsup",
@@ -30,7 +33,9 @@
     "lint": "biome check src tests",
     "lint:fix": "biome check --write src tests",
     "typecheck": "tsc --noEmit",
-    "verify": "npm run build && npm run lint && npm run typecheck && npm run test -- --silent"
+    "verify": "npm run build && npm run lint && npm run typecheck && npm run test -- --silent",
+    "prepublishOnly": "npm run verify",
+    "version": "node scripts/sync-version.mjs"
   },
   "dependencies": {
     "chalk": "^4.1.2",

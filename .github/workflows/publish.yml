@@ -1,0 +1,25 @@
+# 发布到 npm（Trusted Publishing / OIDC，无需 npm token）
+# 使用前：在 npmjs.com 的 @lumen/cli 包设置中启用 "Publish to npm via GitHub Actions"
+# 并关联本仓库；发布前先执行 npm version <patch|minor|major> 更新版本与 CHANGELOG。
+name: Publish
+
+on:
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - run: npm ci
+      - run: npm run verify
+      # Trusted Publishing：OIDC 直接认证，无需 NODE_AUTH_TOKEN；
+      # 前提是 npmjs.com 已关联本仓库并启用 trusted publishing
+      - run: npm publish --provenance --access public
