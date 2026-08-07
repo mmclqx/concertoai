@@ -78,7 +78,7 @@ lumen plan "重构这个模块"
   "defaultModel": "deepseek-v4-flash",
   "allowlist": ["npm test", "git status"],
   "approvalPolicy": "ask",
-  "sessionDir": "D:/lumen-sessions",
+  "sessionDir": "~/.lumen/sessions",
   "locale": "zh"
 }
 ```
@@ -135,4 +135,4 @@ lumen plan "重构这个模块"
 
 本项目（Lumen）为**全新独立项目**，非任何上游项目的复制或派生。
 
-所有代码、文档、测试的版权归项目作者所有（Copyright © 2026 Lumen 项目作者），保留一切权利。对外使用条款见 [LICENSE](LICENSE)。
+所有代码、文档、测试的版权归项目作者所有（Copyright © 2026 Lumen 项目作者 mmclqx），保留一切权利。对外使用条款见 [LICENSE](LICENSE)。
