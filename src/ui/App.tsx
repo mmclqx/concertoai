@@ -6,7 +6,7 @@ import type { LoopEvent } from '../loop/loop';
 import { runLoop } from '../loop/loop';
 import type { ChatMessage, ToolCall } from '../loop/types';
 import type { ModelClient } from '../model/client';
-import { costFor } from '../model/models';
+import { costFor, getModel } from '../model/models';
 import { estimateMessageListTokens, estimateTokens } from '../model/tokenizer';
 import type { SessionStore } from '../store/session';
 import type { ApprovalRequest, ToolContext, ToolRegistry } from '../tools/registry';
@@ -132,6 +132,7 @@ export function App({
             systemPrompt,
             onEvent,
             signal: controller.signal,
+            contextWindow: getModel(model)?.contextWindow,
           },
           history,
           text,

@@ -279,6 +279,30 @@ describe('runLoop 基础路径', () => {
     expect(errEvent).toBeDefined();
     expect((errEvent as { error: Error }).error).toBeInstanceOf(TypeError);
   });
+
+  it('contextWindow 超预算时发送消息被裁剪，返回历史保持完整', async () => {
+    const long = `长问题${'长'.repeat(196)}`;
+    const history: ChatMessage[] = [
+      systemMessage('项目规则'),
+      userMessage(long),
+      assistantMessage('旧回答'),
+      userMessage(long),
+    ];
+    const modelClient = new FakeModel([() => ({ content: '新回答' })]);
+    const result = await runLoop(
+      { model, client: modelClient, registry, ctx, contextWindow: 400 },
+      history,
+      '最新提问',
+    );
+    // 返回历史完整：旧消息全部保留
+    expect(result.length).toBe(history.length + 2);
+    expect(result[0]?.content).toBe('项目规则');
+    // 发送给模型的被裁剪：system + 预算内最近的整轮（第二问组 + 最新提问）
+    const sent = modelClient.receivedMessages[0];
+    expect(sent?.length).toBe(3);
+    expect(sent?.[0]).toMatchObject({ role: 'system', content: '项目规则' });
+    expect(sent?.[2]).toMatchObject({ role: 'user', content: '最新提问' });
+  });
 });
 
 describe('runLoop 工具链路', () => {

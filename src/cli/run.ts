@@ -9,6 +9,7 @@ import { fmt, zh } from '../i18n/zh';
 import { runLoop } from '../loop/loop';
 import type { ChatMessage } from '../loop/types';
 import { DeepSeekClient } from '../model/client';
+import { getModel } from '../model/models';
 import { loadProjectRules } from '../store/project-rules';
 import { SessionStore } from '../store/session';
 import type { ToolContext } from '../tools/registry';
@@ -52,6 +53,7 @@ export async function runTask(options: RunTaskOptions): Promise<void> {
       registry,
       ctx,
       systemPrompt: rules.text === '' ? undefined : rules.text,
+      contextWindow: getModel(model)?.contextWindow,
       onEvent: (event) => {
         if (event.type === 'chunk') {
           process.stdout.write(event.text);

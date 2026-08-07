@@ -12,6 +12,7 @@
 
 import type { ModelClient, Usage } from '../model/client';
 import type { ToolContext, ToolRegistry, ToolResult } from '../tools/registry';
+import { trimContext } from './context';
 import {
   assistantMessage,
   formatToolResult,
@@ -36,6 +37,8 @@ export interface LoopOptions {
   onEvent?: (event: LoopEvent) => void;
   /** 外部中断信号：流式中断/断流时保留已生成内容；signal 触发的中断不重试。 */
   signal?: AbortSignal;
+  /** 模型上下文窗口（token）：超过 80% 预算时自动裁剪发送给模型的旧消息。 */
+  contextWindow?: number;
 }
 
 export type LoopEvent =
@@ -96,10 +99,16 @@ async function streamAssistantReply(
   /** 最后一个带 usage 的 chunk（DeepSeek 在流末尾 chunk 返回用量统计）。 */
   let lastUsage: Usage | undefined;
 
+  // 发送前按上下文窗口预算裁剪（仅发送视角；messages 本体保持不变）
+  const toSend =
+    options.contextWindow !== undefined
+      ? trimContext(messages, options.contextWindow).messages
+      : messages;
+
   try {
     for await (const chunk of options.client.streamChat({
       model: options.model,
-      messages: toApiMessages(messages),
+      messages: toApiMessages(toSend),
       signal: options.signal,
     })) {
       if (chunk.usage != null) {
