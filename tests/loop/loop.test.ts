@@ -104,23 +104,23 @@ afterEach(() => {
 describe('runLoop 基础路径', () => {
   it('无工具调用：user + assistant 直接返回', async () => {
     const modelClient = new FakeModel([() => ({ content: '你好，我是 Lumen' })]);
-    const result = await runLoop({ model, client: modelClient, registry, ctx }, [], '你好');
+    const { messages } = await runLoop({ model, client: modelClient, registry, ctx }, [], '你好');
 
-    expect(result.map((m) => m.role)).toEqual(['user', 'assistant']);
-    expect(result[1]?.content).toBe('你好，我是 Lumen');
+    expect(messages.map((m) => m.role)).toEqual(['user', 'assistant']);
+    expect(messages[1]?.content).toBe('你好，我是 Lumen');
     expect(modelClient.receivedMessages[0]?.map((m) => m.role)).toEqual(['user']);
   });
 
   it('systemPrompt 注入且不重复（history 已有 system 时）', async () => {
     const modelClient = new FakeModel([() => ({ content: 'ok' })]);
-    const result = await runLoop(
+    const { messages } = await runLoop(
       { model, client: modelClient, registry, ctx, systemPrompt: '项目规则' },
       [],
       'hi',
     );
-    expect(result[0]).toMatchObject({ role: 'system', content: '项目规则' });
+    expect(messages[0]).toMatchObject({ role: 'system', content: '项目规则' });
 
-    const withSystem = await runLoop(
+    const { messages: withSystem } = await runLoop(
       {
         model,
         client: new FakeModel([() => ({ content: 'ok2' })]),
@@ -145,9 +145,9 @@ describe('runLoop 基础路径', () => {
   it('历史消息透传', async () => {
     const modelClient = new FakeModel([() => ({ content: '这是新回答' })]);
     const history: ChatMessage[] = [userMessage('第一问'), assistantMessage('第一答')];
-    const result = await runLoop({ model, client: modelClient, registry, ctx }, history, '第二问');
-    expect(result.slice(0, 2)).toEqual(history);
-    expect(result.map((m) => m.role)).toEqual(['user', 'assistant', 'user', 'assistant']);
+    const { messages } = await runLoop({ model, client: modelClient, registry, ctx }, history, '第二问');
+    expect(messages.slice(0, 2)).toEqual(history);
+    expect(messages.map((m) => m.role)).toEqual(['user', 'assistant', 'user', 'assistant']);
   });
 
   it('chunk 事件按流式增量触发，拼接等于完整回复', async () => {
@@ -230,7 +230,7 @@ describe('runLoop 基础路径', () => {
       },
     };
     const events: LoopEvent[] = [];
-    const result = await runLoop(
+    const { messages } = await runLoop(
       {
         model,
         client: modelClient,
@@ -243,8 +243,8 @@ describe('runLoop 基础路径', () => {
       'hi',
     );
     expect(calls).toBe(1);
-    expect(result.map((m) => m.role)).toEqual(['user', 'assistant']);
-    expect(result[1]?.content).toBe('前半');
+    expect(messages.map((m) => m.role)).toEqual(['user', 'assistant']);
+    expect(messages[1]?.content).toBe('前半');
     expect(events.find((e) => e.type === 'error')).toBeDefined();
   });
 
@@ -270,12 +270,12 @@ describe('runLoop 基础路径', () => {
       },
     };
     const events: LoopEvent[] = [];
-    const result = await runLoop(
+    const { messages } = await runLoop(
       { model, client: modelClient, registry, ctx, onEvent: (e) => events.push(e) },
       [],
       'hi',
     );
-    expect(result[1]?.content).toBe('一半');
+    expect(messages[1]?.content).toBe('一半');
     const errEvent = events.find((e) => e.type === 'error');
     expect(errEvent).toBeDefined();
     expect((errEvent as { error: Error }).error).toBeInstanceOf(TypeError);
@@ -290,14 +290,14 @@ describe('runLoop 基础路径', () => {
       userMessage(long),
     ];
     const modelClient = new FakeModel([() => ({ content: '新回答' })]);
-    const result = await runLoop(
+    const { messages } = await runLoop(
       { model, client: modelClient, registry, ctx, contextWindow: 400 },
       history,
       '最新提问',
     );
     // 返回历史完整：旧消息全部保留
-    expect(result.length).toBe(history.length + 2);
-    expect(result[0]?.content).toBe('项目规则');
+    expect(messages.length).toBe(history.length + 2);
+    expect(messages[0]?.content).toBe('项目规则');
     // 发送给模型的被裁剪：system + 预算内最近的整轮（第二问组 + 最新提问）
     const sent = modelClient.receivedMessages[0];
     expect(sent?.length).toBe(3);
@@ -320,18 +320,18 @@ describe('runLoop 工具链路', () => {
     ]);
 
     const events: LoopEvent[] = [];
-    const result = await runLoop(
+    const { messages } = await runLoop(
       { model, client: modelClient, registry, ctx, onEvent: (e) => events.push(e) },
       [],
       '读文件',
     );
 
-    expect(result.map((m) => m.role)).toEqual(['user', 'assistant', 'tool', 'assistant']);
-    const toolMsg = result[2];
+    expect(messages.map((m) => m.role)).toEqual(['user', 'assistant', 'tool', 'assistant']);
+    const toolMsg = messages[2];
     expect(toolMsg?.role).toBe('tool');
     expect(toolMsg?.toolCallId).toBe('call_1');
     expect(String(toolMsg?.content)).toContain('"content":"hello world"');
-    expect(result[3]?.content).toBe('读到了文件内容');
+    expect(messages[3]?.content).toBe('读到了文件内容');
 
     const callEvent = events.find((e) => e.type === 'tool_call');
     expect(callEvent).toBeDefined();
@@ -352,7 +352,7 @@ describe('runLoop 工具链路', () => {
       }),
       () => ({ content: 'done' }),
     ]);
-    const result = await runLoop({ model, client: modelClient, registry, ctx }, [], '双工具');
+    const { messages: result } = await runLoop({ model, client: modelClient, registry, ctx }, [], '双工具');
     const assistant = result[1];
     expect(assistant?.toolCalls).toEqual([
       { id: 'c1', name: 'read_file', arguments: '{"path":"a.txt"}' },
@@ -375,7 +375,7 @@ describe('runLoop 工具链路', () => {
         return { content: '好的，不修改' };
       },
     ]);
-    const result = await runLoop(
+    const { messages: result } = await runLoop(
       { model, client: modelClient, registry, ctx: denyCtx },
       [],
       '创建文件',
@@ -393,7 +393,7 @@ describe('runLoop 工具链路', () => {
       () => ({ toolCalls: [{ id: 'c1', name: 'read_file', arguments: '{bad json' }] }),
       () => ({ content: '参数有问题' }),
     ]);
-    const result = await runLoop({ model, client: modelClient, registry, ctx }, [], 'hi');
+    const { messages: result } = await runLoop({ model, client: modelClient, registry, ctx }, [], 'hi');
     expect(String(result[2]?.content)).toContain('执行失败');
     expect(result[3]?.content).toBe('参数有问题');
   });
@@ -403,7 +403,7 @@ describe('runLoop 工具链路', () => {
       () => ({ toolCalls: [{ id: 'c1', name: 'no_such_tool', arguments: '{}' }] }),
       () => ({ content: '我用不了这个工具' }),
     ]);
-    const result = await runLoop({ model, client: modelClient, registry, ctx }, [], 'hi');
+    const { messages: result } = await runLoop({ model, client: modelClient, registry, ctx }, [], 'hi');
     expect(String(result[2]?.content)).toContain('未知工具');
   });
 
@@ -419,14 +419,24 @@ describe('runLoop 工具链路', () => {
     });
   });
 
-  it('工具循环超过最大轮数 → 抛错终止', async () => {
+  it('工具循环超过最大轮数 → 返回 interrupted 并保留累积历史', async () => {
     const script = Array.from({ length: MAX_LOOP_TURNS }, () => () => ({
       toolCalls: [{ id: 'c', name: 'no_such_tool', arguments: '{}' }],
     }));
     const modelClient = new FakeModel(script);
-    await expect(runLoop({ model, client: modelClient, registry, ctx }, [], 'hi')).rejects.toThrow(
-      '最大轮数',
+    const { messages, interrupted } = await runLoop(
+      { model, client: modelClient, registry, ctx },
+      [],
+      'hi',
     );
+    expect(interrupted).toBe(true);
+    // user + 10 轮 assistant + 10 轮 tool = 21 条消息
+    expect(messages.length).toBe(21);
+    expect(messages[0]?.role).toBe('user');
+    const toolMsgs = messages.filter((m) => m.role === 'tool');
+    expect(toolMsgs.length).toBe(MAX_LOOP_TURNS);
+    expect(String(toolMsgs.at(-1)?.content)).toContain('未知工具');
+    expect(messages.filter((m) => m.role === 'assistant').length).toBe(MAX_LOOP_TURNS);
   });
 });
 
@@ -598,7 +608,7 @@ describe('工具调用修复管线（T3.2）', () => {
       () => ({ toolCalls: [{ id: 'c2', name: 'read_file', arguments: '{"path":"a.txt"}' }] }),
       () => ({ content: '读到了' }),
     ]);
-    const result = await runLoop({ model, client: modelClient, registry, ctx }, [], 'hi');
+    const { messages: result } = await runLoop({ model, client: modelClient, registry, ctx }, [], 'hi');
     expect(result.at(-1)?.content).toBe('读到了');
   });
 
@@ -612,8 +622,8 @@ describe('工具调用修复管线（T3.2）', () => {
       () => ({ toolCalls: [{ id: 'c4', name: 'edit_file', arguments: editArgs }] }),
       () => ({ content: '放弃了' }),
     ]);
-    const result = await runLoop({ model, client: modelClient, registry, ctx: denyCtx }, [], 'hi');
-    expect(result.at(-1)?.content).toBe('放弃了');
+    const { messages } = await runLoop({ model, client: modelClient, registry, ctx: denyCtx }, [], 'hi');
+    expect(messages.at(-1)?.content).toBe('放弃了');
   });
 
   it('路径越界（repairable: false）连续多次不触发修复终止', async () => {
@@ -623,7 +633,7 @@ describe('工具调用修复管线（T3.2）', () => {
       () => ({ toolCalls: [{ id: 'c3', name: 'read_file', arguments: '{"path":".."}' }] }),
       () => ({ content: '换个方式' }),
     ]);
-    const result = await runLoop({ model, client: modelClient, registry, ctx }, [], 'hi');
-    expect(result.at(-1)?.content).toBe('换个方式');
+    const { messages } = await runLoop({ model, client: modelClient, registry, ctx }, [], 'hi');
+    expect(messages.at(-1)?.content).toBe('换个方式');
   });
 });

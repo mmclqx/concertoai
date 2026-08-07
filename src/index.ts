@@ -6,7 +6,7 @@ export const VERSION = '0.1.0';
 
 export type { ZhDict } from './i18n/zh';
 export { fmt, zh } from './i18n/zh';
-export type { LoopEvent, LoopOptions } from './loop/loop';
+export type { LoopEvent, LoopOptions, RunLoopResult } from './loop/loop';
 export { MAX_LOOP_TURNS, runLoop } from './loop/loop';
 export {
   assistantMessage,

@@ -45,6 +45,14 @@ export interface LoopOptions {
   contextWindow?: number;
 }
 
+/** runLoop 返回结构：完整消息历史 + 是否因达到轮数上限而中断。 */
+export interface RunLoopResult {
+  /** 更新后的完整消息历史（含本轮新增的所有消息）。 */
+  messages: ChatMessage[];
+  /** true = 达到 MAX_LOOP_TURNS 上限，工具循环被截断（已有结果保留）。 */
+  interrupted: boolean;
+}
+
 export type LoopEvent =
   | { type: 'chunk'; text: string }
   | { type: 'tool_call'; toolCall: ToolCall }
@@ -60,7 +68,7 @@ export async function runLoop(
   options: LoopOptions,
   history: ChatMessage[],
   input: string,
-): Promise<ChatMessage[]> {
+): Promise<RunLoopResult> {
   const messages = [...history];
   if (options.systemPrompt !== undefined && !messages.some((m) => m.role === 'system')) {
     messages.unshift(systemMessage(options.systemPrompt));
@@ -75,7 +83,7 @@ export async function runLoop(
 
     const calls = assistant.toolCalls ?? [];
     if (calls.length === 0) {
-      return messages;
+      return { messages, interrupted: false };
     }
 
     for (const group of groupToolCalls(calls, options.registry)) {
@@ -83,7 +91,7 @@ export async function runLoop(
     }
   }
 
-  throw new Error(`工具循环超过最大轮数 ${MAX_LOOP_TURNS}，已终止`);
+  return { messages, interrupted: true };
 }
 
 /** 修复管线状态：可修复失败的累计次数（跨并行组共享）。 */

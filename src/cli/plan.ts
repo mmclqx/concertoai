@@ -86,10 +86,14 @@ export async function runPlan(options: RunPlanOptions): Promise<void> {
   // 阶段 1：计划
   const baseHistory = history;
   const planPrompt = `请为任务「${options.task}」输出分步执行计划。\n格式：markdown 列表，每一步一行，说明要执行的操作（读取文件 / 编辑文件 / 运行命令）。\n只输出计划本身，不要调用任何工具。`;
-  const planHistory = await runLoop({ ...baseLoopOptions }, baseHistory, planPrompt);
-  const plan = planHistory.at(-1)?.content ?? '';
-  history = planHistory;
-  await store.appendAll(sessionId, planHistory.slice(baseHistory.length));
+  const planResult = await runLoop({ ...baseLoopOptions }, baseHistory, planPrompt);
+  const plan = planResult.messages.at(-1)?.content ?? '';
+  if (planResult.interrupted) {
+    process.stderr.write(`\n${t().errors.loopMaxTurns}\n`);
+    return;
+  }
+  history = planResult.messages;
+  await store.appendAll(sessionId, planResult.messages.slice(baseHistory.length));
 
   // 展示计划
   process.stdout.write(`\n${plan}\n\n`);
@@ -104,8 +108,15 @@ export async function runPlan(options: RunPlanOptions): Promise<void> {
 
   // 阶段 3：执行（计划注入上下文）
   const execHistory = [...history, userMessage(`已批准的计划（请严格按计划逐步执行）：\n${plan}`)];
-  const result = await runLoop({ ...baseLoopOptions }, execHistory, options.task);
-  const added = result.slice(history.length);
+  const { messages: execMessages, interrupted: execInterrupted } = await runLoop(
+    { ...baseLoopOptions },
+    execHistory,
+    options.task,
+  );
+  if (execInterrupted) {
+    process.stderr.write(`\n${t().errors.loopMaxTurns}\n`);
+  }
+  const added = execMessages.slice(history.length);
   await store.appendAll(sessionId, added);
   process.stdout.write(`\n\n${fmt(t().session.saved, { id: sessionId })}\n`);
 }

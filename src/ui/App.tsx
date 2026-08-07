@@ -140,7 +140,7 @@ export function App({
       setMessages([...history, userMessage(`/plan ${task}`)]);
       setPhase('streaming');
       try {
-        const planHistory = await runLoop(
+        const planResult = await runLoop(
           {
             model,
             client,
@@ -154,13 +154,17 @@ export function App({
           history,
           `请为任务「${task}」输出分步执行计划：markdown 列表，每一步说明要执行的操作（读取/编辑/运行命令）。只输出计划本身，不要调用工具。`,
         );
-        const added = planHistory.slice(history.length);
-        setMessages(planHistory);
+        if (planResult.interrupted) {
+          setError(t().errors.loopMaxTurns);
+          return;
+        }
+        const added = planResult.messages.slice(history.length);
+        setMessages(planResult.messages);
         setTokens((t) => ({ ...t, output: t.output + estimateMessageListTokens(added) }));
         if (store !== undefined && sessionId !== undefined) {
           await store.appendAll(sessionId, added);
         }
-        const planText = planHistory.at(-1)?.content ?? '';
+        const planText = planResult.messages.at(-1)?.content ?? '';
         if (planText === '') {
           setError('模型未输出计划，请重试');
           return;
@@ -212,7 +216,7 @@ export function App({
           ...history,
           userMessage(`已批准的计划（请严格按计划逐步执行）：\n${planText}`),
         ];
-        const result = await runLoop(
+        const execResult = await runLoop(
           {
             model,
             client,
@@ -226,8 +230,11 @@ export function App({
           execHistory,
           task,
         );
-        const added = result.slice(history.length);
-        setMessages(result);
+        if (execResult.interrupted) {
+          setError(t().errors.loopMaxTurns);
+        }
+        const added = execResult.messages.slice(history.length);
+        setMessages(execResult.messages);
         setTokens((t) => ({ ...t, output: t.output + estimateMessageListTokens(added) }));
         if (store !== undefined && sessionId !== undefined) {
           await store.appendAll(sessionId, added);
@@ -296,8 +303,11 @@ export function App({
           history,
           text,
         );
-        const added = result.slice(history.length);
-        setMessages(result);
+        if (result.interrupted) {
+          setError(t().errors.loopMaxTurns);
+        }
+        const added = result.messages.slice(history.length);
+        setMessages(result.messages);
         setTokens((t) => ({ ...t, output: t.output + estimateMessageListTokens(added) }));
         if (store !== undefined && sessionId !== undefined) {
           await store.appendAll(sessionId, added);

@@ -53,7 +53,7 @@ export async function runTask(options: RunTaskOptions): Promise<void> {
     sessionId = await store.create([]);
   }
 
-  const messages = await runLoop(
+  const { messages, interrupted } = await runLoop(
     {
       model,
       client,
@@ -70,6 +70,10 @@ export async function runTask(options: RunTaskOptions): Promise<void> {
     history,
     options.task,
   );
+
+  if (interrupted) {
+    process.stderr.write(`\n${t().errors.loopMaxTurns}\n`);
+  }
 
   const added = messages.slice(history.length);
   await store.appendAll(sessionId, added);
