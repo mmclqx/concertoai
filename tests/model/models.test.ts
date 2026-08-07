@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import type { ModelProfile } from '../../src/model/models';
 import { costFor, getDefaultModel, getModel, listModels } from '../../src/model/models';
 
 describe('模型表', () => {
@@ -28,7 +29,32 @@ describe('模型表', () => {
       expect(model.inputPricePerM).toBeGreaterThan(0);
       expect(model.outputPricePerM).toBeGreaterThan(0);
       expect(model.contextWindow).toBeGreaterThan(0);
+      expect(model.inputCacheHitPricePerM).toBeGreaterThan(0);
+      expect(model.rateLimit).toBeGreaterThan(0);
     }
+  });
+
+  it('模型 ID、上下文窗口与定价与 DeepSeek 官方定价页一致（2026-08-07 核实）', () => {
+    const flash = getModel('deepseek-v4-flash');
+    const pro = getModel('deepseek-v4-pro');
+    expect(flash).toBeDefined();
+    expect(pro).toBeDefined();
+    const f = flash as ModelProfile;
+    const p = pro as ModelProfile;
+
+    // 上下文窗口 1M
+    expect(f.contextWindow).toBe(1_000_000);
+    expect(p.contextWindow).toBe(1_000_000);
+    // flash：输入 1.00 / 缓存命中 0.02 / 输出 2.00（元每百万 token），并发 2500
+    expect(f.inputPricePerM).toBe(1.0);
+    expect(f.outputPricePerM).toBe(2.0);
+    expect(f.inputCacheHitPricePerM).toBe(0.02);
+    expect(f.rateLimit).toBe(2500);
+    // pro：输入 3.00 / 缓存命中 0.025 / 输出 6.00（元每百万 token），并发 500
+    expect(p.inputPricePerM).toBe(3.0);
+    expect(p.outputPricePerM).toBe(6.0);
+    expect(p.inputCacheHitPricePerM).toBe(0.025);
+    expect(p.rateLimit).toBe(500);
   });
 });
 

@@ -1,0 +1,167 @@
+# Lumen 开发任务看板
+
+> 最后更新：2026-08-07
+> 当前里程碑：V1-M1（可靠性加固）
+> 基于：[v1.0 开发完善计划](./v1.0-dev-plan.md)
+
+---
+
+## 📊 总览
+
+| 指标 | 数值 |
+|------|------|
+| 总任务数 | 20 |
+| P0 任务 | 7 |
+| P1 任务 | 13 |
+| 待开始 | 19 |
+| 进行中 | 0 |
+| 已完成 | 1 |
+| 已阻塞 | 0 |
+
+---
+
+## 🎯 里程碑进度
+
+| 里程碑 | 级别 | 任务数 | 状态 |
+|--------|------|--------|------|
+| V1-M1 可靠性加固 | P0 | 6 | 🔄 进行中（1/6） |
+| V1-M2 体验升级 | P1 | 4 | ⏳ 未开始 |
+| V1-M3 能力扩展 | P1 | 4 | ⏳ 未开始 |
+| V1-M4 发布工程 | P1 | 6 | ⏳ 未开始 |
+
+---
+
+## 📋 任务清单（按里程碑分组）
+
+### V1-M1：可靠性加固（P0，约 10h）
+
+- [x] **T1.1** 核实 DeepSeek 模型 ID 与定价
+  - 涉及文件：`src/model/models.ts`
+  - 预估：1h
+  - 依赖：无
+  - ✅ 2026-08-07 完成：按官方定价页数据更新（flash 1/2 元、pro 3/6 元、缓存命中价、并发限制、上下文 1M）
+
+- [ ] **T1.2** 透传真实 API usage
+  - 涉及文件：`src/model/client.ts`, `src/loop/loop.ts`, `src/ui/StatusBar.tsx`
+  - 预估：1.5h
+  - 依赖：无
+
+- [ ] **T1.3** 流式取消与断流策略（含用户中断）
+  - 涉及文件：`src/loop/loop.ts`, `src/ui/App.tsx`, `src/model/client.ts`
+  - 预估：2h
+  - 依赖：无
+
+- [ ] **T1.4** 编辑工具 CRLF/BOM 加固
+  - 涉及文件：`src/tools/read.ts`, `src/tools/edit.ts`
+  - 预估：2h
+  - 依赖：无
+
+- [ ] **T1.5** 会话并发写保护
+  - 涉及文件：`src/store/session.ts`
+  - 预估：1.5h
+  - 依赖：无
+
+- [ ] **T1.6** 上下文窗口管理（预算 + 裁剪）
+  - 涉及文件：`src/loop/messages.ts`, `src/loop/context.ts`
+  - 预估：3h
+  - 依赖：T1.2
+
+---
+
+### V1-M2：体验升级（P1，约 9.5h）
+
+- [ ] **T2.1** markdown 渲染 + 代码高亮
+  - 涉及文件：`src/ui/StreamingView.tsx`
+  - 预估：3h
+  - 依赖：无
+
+- [ ] **T2.2** 输入框光标与历史
+  - 涉及文件：`src/ui/PromptInput.tsx`
+  - 预估：3h
+  - 依赖：无
+
+- [ ] **T2.3** resume 交互式会话列表
+  - 涉及文件：`src/cli/chat.tsx`, `src/store/session.ts`
+  - 预估：2h
+  - 依赖：无
+
+- [ ] **T2.4** 生成中断与进度指示
+  - 涉及文件：`src/ui/App.tsx`, `src/ui/StreamingView.tsx`
+  - 预估：1.5h
+  - 依赖：T1.3
+
+---
+
+### V1-M3：能力扩展（P1，约 13h）
+
+- [ ] **T3.1** 并行工具调度
+  - 涉及文件：`src/loop/loop.ts`, `src/tools/registry.ts`
+  - 预估：3h
+  - 依赖：无
+
+- [ ] **T3.2** 工具调用修复管线（限次重试）
+  - 涉及文件：`src/loop/loop.ts`, `src/tools/registry.ts`
+  - 预估：3h
+  - 依赖：无
+
+- [ ] **T3.3** plan 模式
+  - 涉及文件：`src/ui/modals.tsx`, `src/loop/loop.ts`, `src/cli/run.ts`
+  - 预估：4h
+  - 依赖：T3.1
+
+- [ ] **T3.4** 配置系统（`~/.lumen/config.json`）
+  - 涉及文件：`src/store/config.ts`, `src/cli/chat.tsx`
+  - 预估：3h
+  - 依赖：无
+
+---
+
+### V1-M4：发布工程（P1，约 12h）
+
+- [ ] **T4.1** npm 包与 bin
+  - 涉及文件：`package.json`, `tsup.config.ts`
+  - 预估：2h
+  - 依赖：T1.1
+
+- [ ] **T4.2** 发布管线（Trusted Publishing）
+  - 涉及文件：`package.json`, `CHANGELOG.md`
+  - 预估：2h
+  - 依赖：T4.1
+
+- [ ] **T4.3** CI（GitHub Actions）
+  - 涉及文件：`.github/workflows/ci.yml`
+  - 预估：2h
+  - 依赖：无
+
+- [ ] **T4.4** 依赖升级评估
+  - 涉及文件：`package.json`, `vitest.config.ts`
+  - 预估：2h
+  - 依赖：无
+
+- [ ] **T4.5** EN 文案与 locale 架构
+  - 涉及文件：`src/i18n/`, 全项目文案引用
+  - 预估：3h
+  - 依赖：T3.4
+
+- [ ] **T4.6** 文档与发布件
+  - 涉及文件：`README.md`, `docs/`
+  - 预估：3h
+  - 依赖：T4.1
+
+---
+
+## ⚠️ 阻塞任务清单（Blockers）
+
+> 暂无阻塞任务
+
+---
+
+## 📝 变更日志
+
+| 日期 | 变更内容 | 作者 |
+|------|---------|------|
+| 2026-08-07 | T1.1 完成：核实 DeepSeek 模型 ID 与定价 | Carbon Code |
+
+---
+
+*任务完成后请及时更新状态。*

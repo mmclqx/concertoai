@@ -1,8 +1,8 @@
 /**
  * 模型表与成本计算。
  *
- * 注意：模型 ID 与定价为开发期暂定值，
- * 发布前需核实官方最新模型 ID 与定价（见 docs/dev/TASKS.md 开放问题）。
+ * 数据来源：DeepSeek 官方定价页（2026-08-07 核实）
+ * https://api-docs.deepseek.com/zh-cn/quick_start/pricing
  */
 
 export interface ModelProfile {
@@ -14,32 +14,40 @@ export interface ModelProfile {
   description: string;
   /** 上下文窗口大小（token）。 */
   contextWindow: number;
-  /** 输入价格（元 / 百万 token）。TODO: 发布前核实。 */
+  /** 输入价格（元 / 百万 token，缓存未命中）。 */
   inputPricePerM: number;
-  /** 输出价格（元 / 百万 token）。TODO: 发布前核实。 */
+  /** 输出价格（元 / 百万 token）。 */
   outputPricePerM: number;
+  /** 输入价格（元 / 百万 token，缓存命中）。 */
+  inputCacheHitPricePerM: number;
+  /** API 并发限制。 */
+  rateLimit: number;
   /** 是否为默认模型（同一时刻至多一个）。 */
   default?: boolean;
 }
 
-/** v0.1 模型表。价格参考历史 DeepSeek 定价暂定，发布前核实。 */
+/** v1.0 模型表。数据来源：DeepSeek 官方定价页（2026-08-07 核实）。 */
 export const MODEL_PROFILES: readonly ModelProfile[] = [
   {
     id: 'deepseek-v4-flash',
     label: 'DeepSeek V4 Flash',
     description: '默认模型：快速、便宜，适合日常对话与简单任务',
-    contextWindow: 128_000,
+    contextWindow: 1_000_000,
     inputPricePerM: 1.0,
-    outputPricePerM: 4.0,
+    outputPricePerM: 2.0,
+    inputCacheHitPricePerM: 0.02,
+    rateLimit: 2500,
     default: true,
   },
   {
     id: 'deepseek-v4-pro',
     label: 'DeepSeek V4 Pro',
     description: '复杂任务：更强的推理与编码能力',
-    contextWindow: 128_000,
-    inputPricePerM: 8.0,
-    outputPricePerM: 32.0,
+    contextWindow: 1_000_000,
+    inputPricePerM: 3.0,
+    outputPricePerM: 6.0,
+    inputCacheHitPricePerM: 0.025,
+    rateLimit: 500,
   },
 ];
 
