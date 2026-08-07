@@ -33,13 +33,24 @@ export interface AppProps {
   approvalStrategy?: 'ask' | 'allowlist-only';
 }
 
+/**
+ * 优化 v1.1：终端显示截断上限从 1,000 提高到 8,000 字符，截断时在末尾显示完整字符数。
+ * 完整内容始终保存在会话 JSONL 中，不会丢失。
+ */
+
+/** 终端单消息最大显示字符数（超过则截断显示，但完整内容已落盘）。 */
+const MAX_DISPLAY_CHARS = 8_000;
+
 /** 单条消息的渲染：角色前缀 + 内容（超长截断显示）。 */
 function MessageLine({ message }: { message: ChatMessage }) {
   const prefix = message.role === 'user' ? '你' : message.role === 'assistant' ? '助手' : '工具';
   const color =
     message.role === 'user' ? 'cyan' : message.role === 'assistant' ? 'white' : 'yellow';
   const body = message.content ?? '';
-  const display = body.length > 1_000 ? `${body.slice(0, 1_000)}…（显示截断）` : body;
+  const display =
+    body.length > MAX_DISPLAY_CHARS
+      ? `${body.slice(0, MAX_DISPLAY_CHARS)}…（共 ${body.length} 字符，终端仅显示前 ${MAX_DISPLAY_CHARS}）`
+      : body;
   return (
     <Box flexDirection="column">
       <Text bold color={color}>

@@ -32,7 +32,7 @@ export const en = {
     noTty:
       'chat mode requires an interactive terminal. Run `lumen chat` directly (not via a pipe/script), or use `lumen run "<task>"` instead.',
     modelCallFailed: 'Model call failed: {message}',
-    loopMaxTurns: 'Tool loop exceeded the maximum number of turns; aborted',
+    loopMaxTurns: 'Tool call limit reached (10 turns). Progress saved — continue typing to let the assistant resume.',
     streamAborted: 'Generation interrupted; generated content was kept. You can continue typing.',
     streamInterrupted: 'Network interrupted: {message}. Generated content was kept; please retry.',
     planNeedsTty:

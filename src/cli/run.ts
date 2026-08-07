@@ -1,6 +1,8 @@
 /**
  * run 命令：一次性非交互执行任务。
  *
+ * 优化 v1.1：适配 runLoop 新返回结构 RunLoopResult，interrupted 时输出警告到 stderr 并继续存档。
+ *
  * 安全基线：默认 fail-closed——编辑/命令全部被拒（审批回调未配置）；
  * 显式传 --auto-approve 才会自动批准。
  */

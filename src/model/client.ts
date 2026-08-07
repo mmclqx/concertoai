@@ -62,9 +62,21 @@ export interface Usage {
   prompt_cache_miss_tokens?: number;
 }
 
+/** API 函数定义（DeepSeek function-calling 格式）。 */
+export interface DeepSeekApiTool {
+  type: 'function';
+  function: {
+    name: string;
+    description: string;
+    parameters: Record<string, unknown>;
+  };
+}
+
 export interface StreamChatParams {
   model: string;
   messages: ApiMessage[];
+  /** 可用工具定义（DeepSeek function-calling）。不传则模型按纯文本回复。 */
+  tools?: DeepSeekApiTool[];
   temperature?: number;
   maxTokens?: number;
   topP?: number;
@@ -228,6 +240,7 @@ export class DeepSeekClient implements ModelClient {
       model: params.model,
       messages: params.messages,
       stream: true,
+      ...(params.tools !== undefined && params.tools.length > 0 ? { tools: params.tools } : {}),
       temperature: params.temperature,
       max_tokens: params.maxTokens,
       top_p: params.topP,

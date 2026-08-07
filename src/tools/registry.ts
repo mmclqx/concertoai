@@ -1,4 +1,5 @@
-import type { z } from 'zod';
+import { z } from 'zod';
+import type { DeepSeekApiTool } from '../model/client';
 
 export interface ToolContext {
   /** 项目根目录（沙箱根），所有工具路径以此为基准解析。 */
@@ -101,6 +102,18 @@ export class ToolRegistry {
       return { ok: false, error: message, repairable: !message.includes('越界') };
     }
   }
+}
+
+/** 将 ToolSpec[] 转为 DeepSeek API function-calling 格式。 */
+export function toApiTools(specs: readonly ToolSpec[]): DeepSeekApiTool[] {
+  return specs.map((spec) => ({
+    type: 'function' as const,
+    function: {
+      name: spec.name,
+      description: spec.description,
+      parameters: z.toJSONSchema(spec.parameters) as Record<string, unknown>,
+    },
+  }));
 }
 
 function formatIssues(error: z.ZodError): string {

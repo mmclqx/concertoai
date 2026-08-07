@@ -1,18 +1,22 @@
 /**
  * 会话主循环（顺序版）：消息组装 → 模型调用 → 工具分发 → 结果回填。
  *
- * - 单次 runLoop = 「一轮用户输入 → 最终回复」，返回完整消息历史（含本轮新增），
+ * 优化 v1.1：达到 MAX_LOOP_TURNS 时不再抛错，改为返回 { messages, interrupted: true }，
+ * 保留已累积的工具调用结果与对话历史，调用方可让用户继续输入以延续工作。
+ *
+ * - 单次 runLoop = 「一轮用户输入 → 最终回复」，返回 RunLoopResult（含 messages + interrupted 标志）；
  *   调用方（TUI / run 模式）持有历史并继续下一轮，也便于持久化；
  * - 工具调度：parallelSafe 工具组内并行执行，审批类（edit/shell）独立串行；
  *   事件与消息回填保持原始调用顺序；
  * - 工具结果按长度截断回填（防上下文膨胀）；工具失败不中断循环，回填错误让模型自行修正；
  * - 模型调用失败（网络/鉴权等）直接上抛，由调用方展示；
  * - 流中中断/断流（Ctrl+C / 网络断开）：保留已生成内容回填会话，错误经 error 事件上报，不自动重连；
- * - 工具循环超过 MAX_LOOP_TURNS 视为失控，抛错终止。
+ * - 工具循环超过 MAX_LOOP_TURNS：返回 { messages, interrupted: true }，不抛错，已累积结果全部保留。
  */
 
 import type { ModelClient, Usage } from '../model/client';
 import type { ToolContext, ToolRegistry, ToolResult } from '../tools/registry';
+import { toApiTools } from '../tools/registry';
 import { trimContext } from './context';
 import {
   assistantMessage,
@@ -184,10 +188,13 @@ async function streamAssistantReply(
       ? trimContext(messages, options.contextWindow).messages
       : messages;
 
+  const apiTools = toApiTools(options.registry.list());
+
   try {
     for await (const chunk of options.client.streamChat({
       model: options.model,
       messages: toApiMessages(toSend),
+      tools: apiTools,
       signal: options.signal,
     })) {
       if (chunk.usage != null) {

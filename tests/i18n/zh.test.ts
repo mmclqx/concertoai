@@ -25,7 +25,7 @@ describe('fmt 占位符替换', () => {
 describe('zh 文案表', () => {
   it('关键错误文案存在且含指引', () => {
     expect(zh.errors.noApiKey).toContain('DEEPSEEK_API_KEY');
-    expect(zh.errors.loopMaxTurns).toContain('最大轮数');
+    expect(zh.errors.loopMaxTurns).toContain('10 轮上限');
   });
 
   it('审批框文案齐全', () => {

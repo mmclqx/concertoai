@@ -32,7 +32,7 @@ export const zh = {
     noTty:
       'chat 模式需要交互式终端。请直接运行 `lumen chat`（不要通过管道/脚本调用），或使用 `lumen run "<任务>"` 一次性执行。',
     modelCallFailed: '模型调用失败：{message}',
-    loopMaxTurns: '工具循环超过最大轮数，已终止',
+    loopMaxTurns: '工具调用已达 10 轮上限，进度已保留。你可以继续输入以让助手继续工作。',
     streamAborted: '生成已中断，已保留已生成内容。可重新输入继续。',
     streamInterrupted: '网络中断：{message}。已保留已生成内容，请重试。',
     planNeedsTty: 'plan 模式需要交互式终端来批准计划（或使用 --auto-approve）',
