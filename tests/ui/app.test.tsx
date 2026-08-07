@@ -64,6 +64,19 @@ class FakeModel implements ModelClient {
   }
 }
 
+/** 流式模型：首 chunk 后延迟，若期间被 abort 则抛 AbortError（模拟真实中断）。 */
+class AbortableModel implements ModelClient {
+  async *streamChat(params: StreamChatParams): AsyncGenerator<ChatCompletionChunk> {
+    yield fakeChunk({ content: '第一段' });
+    await sleep(150);
+    if (params.signal?.aborted) {
+      throw new DOMException('The operation was aborted.', 'AbortError');
+    }
+    yield fakeChunk({ content: '第二段' });
+    yield fakeChunk({}, 'stop');
+  }
+}
+
 function fakeChunk(
   delta: ChatCompletionChunk['choices'][number]['delta'],
   finishReason: string | null = null,
@@ -270,6 +283,26 @@ describe('App 集成', () => {
       expect(lastFrame()).toContain('100/50');
     });
     expect(lastFrame()).toContain('（真实）');
+    unmount();
+  });
+
+  it('Ctrl+C 中断生成：保留已生成内容并显示中断提示', async () => {
+    const model = new AbortableModel();
+    const { stdin, lastFrame, unmount } = render(
+      <App client={model} registry={registry} ctx={{ cwd: tmp }} model="deepseek-v4-flash" />,
+    );
+    stdin.write('你好');
+    await sleep(50);
+    stdin.write('\r');
+    await waitFor(() => {
+      expect(lastFrame()).toContain('第一段');
+    });
+    stdin.write('\x03'); // Ctrl+C
+    await waitFor(() => {
+      expect(lastFrame()).toContain('已中断');
+    });
+    // 已生成内容保留在会话中
+    expect(lastFrame()).toContain('第一段');
     unmount();
   });
 });

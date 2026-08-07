@@ -261,11 +261,19 @@ export class DeepSeekClient implements ModelClient {
         throw new Error('DeepSeek API 返回了空响应体');
       }
 
-      for await (const data of readSseEvents(response.body)) {
-        if (data === '[DONE]') {
-          return;
+      try {
+        for await (const data of readSseEvents(response.body)) {
+          if (data === '[DONE]') {
+            return;
+          }
+          yield JSON.parse(data) as ChatCompletionChunk;
         }
-        yield JSON.parse(data) as ChatCompletionChunk;
+      } catch (error) {
+        // 流中中断统一为 AbortError，便于上层区分「用户中断」与「网络错误」；非中断错误原样上抛。
+        if (params.signal?.aborted) {
+          throw new DOMException('The operation was aborted.', 'AbortError');
+        }
+        throw error;
       }
       return;
     }

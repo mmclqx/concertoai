@@ -69,6 +69,8 @@ export function App({
   const [realUsage, setRealUsage] = useState({ input: 0, output: 0 });
   const approvalResolver = useRef<((approved: boolean) => void) | null>(null);
   const busy = useRef(false);
+  /** 当前生成任务的取消控制器（Ctrl+C 中断流式生成）。 */
+  const abortRef = useRef<AbortController | null>(null);
 
   /** 审批回调：挂起当前流程，等待 y/n 按键决议。 */
   const requestApproval = useCallback(async (request: ApprovalRequest): Promise<boolean> => {
@@ -89,6 +91,8 @@ export function App({
       if (busy.current || text.trim() === '') {
         return;
       }
+      const controller = new AbortController();
+      abortRef.current = controller;
       busy.current = true;
       setError(null);
       setInput('');
@@ -109,6 +113,12 @@ export function App({
               input: u.input + event.usage.prompt_tokens,
               output: u.output + event.usage.completion_tokens,
             }));
+          } else if (event.type === 'error') {
+            setError(
+              controller.signal.aborted
+                ? zh.errors.streamAborted
+                : fmt(zh.errors.streamInterrupted, { message: event.error.message }),
+            );
           } else {
             setActiveTool(null);
           }
@@ -121,6 +131,7 @@ export function App({
             ctx: ctxWithApproval,
             systemPrompt,
             onEvent,
+            signal: controller.signal,
           },
           history,
           text,
@@ -132,8 +143,15 @@ export function App({
           await store.appendAll(sessionId, added);
         }
       } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
+        if (controller.signal.aborted) {
+          setError(zh.errors.streamAborted);
+        } else if (err instanceof Error) {
+          setError(err.message);
+        } else {
+          setError(String(err));
+        }
       } finally {
+        abortRef.current = null;
         setPhase('idle');
         busy.current = false;
       }
@@ -153,6 +171,14 @@ export function App({
         approvalResolver.current = null;
         setPending(null);
         setPhase('idle');
+      }
+      return;
+    }
+    if (input === 'c' && key.ctrl) {
+      if (phase === 'streaming') {
+        abortRef.current?.abort();
+      } else {
+        exit();
       }
       return;
     }

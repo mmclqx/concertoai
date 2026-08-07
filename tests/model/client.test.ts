@@ -300,6 +300,41 @@ describe('DeepSeekClient.streamChat', () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
+  it('流中中断：统一抛 AbortError，且不重试', async () => {
+    const encoder = new TextEncoder();
+    let first = true;
+    const fetchImpl = vi.fn(
+      fakeFetch(async () => {
+        const stream = new ReadableStream<Uint8Array>({
+          pull(controller) {
+            if (first) {
+              first = false;
+              controller.enqueue(encoder.encode(chunkEvent({ content: '前半' })));
+            } else {
+              controller.error(new TypeError('terminated'));
+            }
+          },
+        });
+        return new Response(stream, {
+          status: 200,
+          headers: { 'content-type': 'text/event-stream' },
+        });
+      }),
+    );
+    const client = new DeepSeekClient({ apiKey: 'k', maxRetries: 3, fetchImpl });
+    const controller = new AbortController();
+    const gen = client.streamChat({
+      model: 'm',
+      messages: baseMessages,
+      signal: controller.signal,
+    });
+    const firstChunk = await gen.next();
+    expect(firstChunk.value?.choices[0]?.delta.content).toBe('前半');
+    controller.abort();
+    await expect(gen.next()).rejects.toMatchObject({ name: 'AbortError' });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
   it('空响应体抛错', async () => {
     const fetchImpl = vi.fn(fakeFetch(async () => new Response(null, { status: 200 })));
     const client = new DeepSeekClient({ apiKey: 'k', maxRetries: 0, fetchImpl });

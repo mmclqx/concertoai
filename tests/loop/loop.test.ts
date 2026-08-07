@@ -216,6 +216,69 @@ describe('runLoop 基础路径', () => {
     );
     expect(events.filter((e) => e.type === 'usage')).toHaveLength(2);
   });
+
+  it('流中中断：保留已生成内容回填会话，上报 error 事件且不重试', async () => {
+    const controller = new AbortController();
+    let calls = 0;
+    const modelClient: ModelClient = {
+      async *streamChat() {
+        calls += 1;
+        yield fakeChunk({ content: '前半' });
+        controller.abort();
+        throw new DOMException('The operation was aborted.', 'AbortError');
+      },
+    };
+    const events: LoopEvent[] = [];
+    const result = await runLoop(
+      {
+        model,
+        client: modelClient,
+        registry,
+        ctx,
+        signal: controller.signal,
+        onEvent: (e) => events.push(e),
+      },
+      [],
+      'hi',
+    );
+    expect(calls).toBe(1);
+    expect(result.map((m) => m.role)).toEqual(['user', 'assistant']);
+    expect(result[1]?.content).toBe('前半');
+    expect(events.find((e) => e.type === 'error')).toBeDefined();
+  });
+
+  it('流中中断且尚无已生成内容：直接抛错', async () => {
+    const controller = new AbortController();
+    const modelClient: ModelClient = {
+      async *streamChat() {
+        controller.abort();
+        yield fakeChunk({});
+        throw new DOMException('The operation was aborted.', 'AbortError');
+      },
+    };
+    await expect(
+      runLoop({ model, client: modelClient, registry, ctx, signal: controller.signal }, [], 'hi'),
+    ).rejects.toMatchObject({ name: 'AbortError' });
+  });
+
+  it('流中网络错误（非中断）：保留已生成内容并上报 error 事件', async () => {
+    const modelClient: ModelClient = {
+      async *streamChat() {
+        yield fakeChunk({ content: '一半' });
+        throw new TypeError('fetch failed');
+      },
+    };
+    const events: LoopEvent[] = [];
+    const result = await runLoop(
+      { model, client: modelClient, registry, ctx, onEvent: (e) => events.push(e) },
+      [],
+      'hi',
+    );
+    expect(result[1]?.content).toBe('一半');
+    const errEvent = events.find((e) => e.type === 'error');
+    expect(errEvent).toBeDefined();
+    expect((errEvent as { error: Error }).error).toBeInstanceOf(TypeError);
+  });
 });
 
 describe('runLoop 工具链路', () => {

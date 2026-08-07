@@ -27,6 +27,8 @@ export const zh = {
       'chat 模式需要交互式终端。请直接运行 `lumen chat`（不要通过管道/脚本调用），或使用 `lumen run "<任务>"` 一次性执行。',
     modelCallFailed: '模型调用失败：{message}',
     loopMaxTurns: '工具循环超过最大轮数，已终止',
+    streamAborted: '生成已中断，已保留已生成内容。可重新输入继续。',
+    streamInterrupted: '网络中断：{message}。已保留已生成内容，请重试。',
     unknownTool: '未知工具: {name}',
     invalidSessionId: '非法的会话 id: {id}',
     sessionNotFound: '会话不存在: {id}',
