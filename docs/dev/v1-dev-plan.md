@@ -1,0 +1,254 @@
+# Lumen v1.0 开发完善计划
+
+> 状态：草案待评审（2026-08-07）
+> 基础：v0.1 全部完成（12 提交、131 测试全绿、真实 API 端到端验证通过）
+> 参考：[架构文档](../ARCHITECTURE.md)（§8 已知问题与规划为本计划的问题来源）
+
+---
+
+## 1. 定位与 1.0 定义
+
+**v1.0 定位**：从「功能可跑」到「可日常使用、可 npm 安装的正式版」。个人开发者把 Lumen 当日常编码助手用，不觉得它是玩具。
+
+**完成定义（Definition of Done）**：通过第 5 节「发布门检查清单」全部条目，即可发 1.0.0。
+
+**优先级框架**：
+
+| 级别 | 含义 | 处理策略 |
+| --- | --- | --- |
+| P0 | 发布硬门槛（正确性/安全/发布前置） | 1.0.0 前必须完成 |
+| P1 | 显著提升日常可用性 | 1.0.0 目标范围 |
+| P2 | 锦上添花 | 有剩余容量再做，否则明确推后 |
+
+## 2. 现状盘点（v0.1 → v1.0 差距）
+
+| 维度 | v0.1 现状 | v1.0 差距 |
+| --- | --- | --- |
+| 模型 | flash/pro ID 与价格为暂定值（代码 TODO） | **发布前必须核实官方 ID/定价**（P0） |
+| 成本显示 | token 估算值（CJK 加权） | 应透传 API 真实 usage（P0） |
+| 流式 | 首字节前重试；流中错误直接上抛 | 流中断恢复策略 + 用户可取消生成（P1） |
+| 编辑 | SEARCH/REPLACE + diff + 审批 | Windows CRLF/BOM 文件处理未加固（P0） |
+| 会话 | JSONL 宽松读写、毫秒 id 防碰撞 | 并发写保护、长会话上下文裁剪（P0/P1） |
+| 渲染 | 纯文本流式回复 | markdown + 代码高亮（P1） |
+| 输入 | 无光标移动、无历史 | 光标/历史/Home/End（P1） |
+| resume | 手输会话 ID | 交互式会话列表选择（P1） |
+| 工具执行 | 顺序执行 | 并行调度（parallelSafe 字段已预留）（P1） |
+| 容错 | 工具失败回填让模型自行修正 | 规范化为受控修复管线（限次重试）（P1） |
+| 配置 | 白名单硬编码 DEFAULT_ALLOWLIST | 配置文件化（P1） |
+| 发布 | 无 bin、未发布 | npm 包 + Trusted Publishing + CI（P0） |
+| 文案 | 仅中文 | EN 文案 + locale 切换（P1） |
+
+## 3. 里程碑总览
+
+| 里程碑 | 内容 | 预估 | 依赖 |
+| --- | --- | --- | --- |
+| V1-M1 可靠性加固 | 模型核实 / usage / 断流 / CRLF / 并发写 / 上下文管理 | 约 10h | — |
+| V1-M2 体验升级 | markdown / 光标历史 / resume 列表 / 中断与进度 | 约 9.5h | V1-M1 |
+| V1-M3 能力扩展 | 并行调度 / 修复管线 / plan 模式 / 配置系统 | 约 13h | V1-M1 |
+| V1-M4 发布工程 | npm 发布 / CI / 依赖升级 / EN 文案 / 文档 | 约 12h | V1-M1（模型核实） |
+| **发布门** | 第 5 节清单逐项验收 | 约 4h | 全部 |
+
+**合计约 48h**。每里程碑完成即 git tag（`v1.0.0-m1` 等），独立可回滚。
+
+## 4. 任务拆解
+
+### V1-M1 可靠性加固（P0，约 10h）
+
+**T1.1 模型 ID 与定价核实**
+- 目标：查官方文档确认 deepseek-v4-flash/pro 的准确 ID、上下文窗口与每百万 token 定价，更新 `MODEL_PROFILES`，移除代码中 TODO
+- 涉及文件：`src/model/models.ts`、`tests/model/models.test.ts`
+- 预计耗时：约 1h（含文档核对）
+- 依赖：无
+
+**T1.2 真实 usage 透传**
+- 目标：client 已解析 `chunk.usage`，loop 收集最后一个带 usage 的 chunk，经 `LoopEvent` 上报，App 状态条改用真实 token/成本（估算仅作流式中途展示）
+- 涉及文件：`src/model/client.ts`、`src/loop/loop.ts`、`src/ui/App.tsx`、`src/ui/StatusBar.tsx`
+- 预计耗时：约 1.5h
+- 依赖：无
+
+**T1.3 流式取消与断流策略**
+- 目标：`runLoop` 支持 `AbortSignal`（Ctrl+C 中断生成，保留已产内容回填会话）；流中网络中断给出明确中文错误并保留已生成部分；明确「断流后是否自动续跑」策略（v1.0 建议：不自动重连，提示用户重试）
+- 涉及文件：`src/loop/loop.ts`、`src/ui/App.tsx`、`src/model/client.ts`
+- 预计耗时：约 2h
+- 依赖：无
+
+**T1.4 编辑工具 CRLF/BOM 加固**
+- 目标：`read_file`/`edit_file` 对 Windows 文件：剥离 BOM、SEARCH 匹配容忍 `\r\n`（规范化匹配、保留原换行风格写入），防止「SEARCH 找不到」与「意外改坏换行」两个真实高频问题
+- 涉及文件：`src/tools/read.ts`、`src/tools/edit.ts`、对应测试
+- 预计耗时：约 2h
+- 依赖：无
+
+**T1.5 会话并发写保护**
+- 目标：同一会话 id 的并发 append 互斥（进程内锁 + 原子写）；跨进程双开同会话时的策略（v1.0 建议：检测到 mtime 变化提示用户）
+- 涉及文件：`src/store/session.ts`、测试
+- 预计耗时：约 1.5h
+- 依赖：无
+
+**T1.6 上下文窗口管理**
+- 目标：按模型 `contextWindow` 与真实 usage 设置 token 预算（如 80%），超限时裁剪：保留 system + 最近 N 轮，丢弃中间旧消息；裁剪前写入日志便于排查对话质量问题
+- 涉及文件：`src/loop/messages.ts`（或新 `src/loop/context.ts`）、`src/loop/loop.ts`、测试
+- 预计耗时：约 3h
+- 依赖：T1.2（需要真实 usage 感知预算）
+
+### V1-M2 体验升级（P1，约 9.5h）
+
+**T2.1 markdown 渲染 + 代码高亮**
+- 目标：StreamingView 增量渲染 markdown（标题/列表/加粗/行内码），代码块用已装未启用的 `cli-highlight` 高亮；渲染为纯 ANSI 输出（不引入 DOM）
+- 涉及文件：`src/ui/StreamingView.tsx`（或新 `src/ui/markdown.tsx`）、测试
+- 预计耗时：约 3h
+- 依赖：无（独立于 V1-M1，可与 T1.x 并行）
+
+**T2.2 输入框光标与历史**
+- 目标：PromptInput 支持 ←/→ 光标移动、Home/End、↑/↓ 历史记录（本会话输入历史，去重）、删除光标处字符
+- 涉及文件：`src/ui/PromptInput.tsx`、测试
+- 预计耗时：约 3h
+- 依赖：无
+
+**T2.3 resume 交互式会话列表**
+- 目标：`chat -r` 不带 id 时列出会话（时间/消息数/首条摘要）供选择；支持 `-l` 仅列表
+- 涉及文件：`src/cli/chat.tsx`、`src/store/session.ts`（摘要字段已具备）、`src/ui/`（选择组件）
+- 预计耗时：约 2h
+- 依赖：无
+
+**T2.4 生成中断与进度指示**
+- 目标：Ctrl+C 在流式中止生成（经 T1.3 的信号链路）；工具执行与审批等待时显示状态行（thinking 动画/工具名/等待审批）
+- 涉及文件：`src/ui/App.tsx`、`src/ui/StreamingView.tsx`、`src/loop/loop.ts`
+- 预计耗时：约 1.5h
+- 依赖：T1.3
+
+### V1-M3 能力扩展（P1/P2，约 13h）
+
+**T3.1 并行工具调度**
+- 目标：同一轮中 `parallelSafe: true` 的工具用 `Promise.all` 并行执行，其余顺序；审批类（edit/shell）天然不可并行，维持串行；事件上报保持顺序稳定
+- 涉及文件：`src/loop/loop.ts`、`src/tools/registry.ts`（消费 parallelSafe 字段位）、测试
+- 预计耗时：约 3h
+- 依赖：无
+
+**T3.2 工具调用修复管线**
+- 目标：工具返回 ok:false（参数校验失败/执行错误）时，回填错误并允许模型修正重试，**限 2 次**，超限才终止该工具；区分「可修复错误」（校验/不存在）与「不可修复错误」（越界/审批拒绝——审批拒绝绝不重试）
+- 涉及文件：`src/loop/loop.ts`、`src/tools/registry.ts`（错误分类字段）、测试
+- 预计耗时：约 3h
+- 依赖：无
+
+**T3.3 plan 模式**
+- 目标：`lumen plan "任务"` 或对话内 `/plan`：模型先输出分步计划 → PlanConfirm 审批（落地此前预留的第三个审批框）→ 批准后自动执行计划
+- 涉及文件：`src/ui/modals.tsx`（PlanConfirm）、`src/loop/loop.ts`、`src/cli/run.ts`、i18n 文案
+- 预计耗时：约 4h
+- 依赖：T3.1（计划步骤可能并行执行）
+
+**T3.4 配置系统**
+- 目标：`~/.lumen/config.json`（带 schema 版本字段）：默认模型、白名单（替换 `DEFAULT_ALLOWLIST` 硬编码）、审批策略（`ask`/`allowlist-only`）、会话目录、locale；CLI 参数 > 环境变量 > 配置文件 > 默认值 的优先级
+- 涉及文件：新 `src/store/config.ts`、`src/cli/chat.tsx`、`src/cli/run.ts`、`src/i18n/`、测试
+- 预计耗时：约 3h
+- 依赖：无
+
+### V1-M4 发布工程（P1，约 12h）
+
+**T4.1 npm 包与 bin**
+- 目标：确认包名（`@lumen/cli` 优先，查 npm 占用，备选 `lumen-cli`）；package.json 增加 `bin: { lumen: "dist/cli/index.js" }`（tsup 增加 cli 入口）、files 清单、engines；`npm pack` 预演 + 干净目录 `npm i -g` 冒烟
+- 涉及文件：`package.json`、`tsup.config.ts`、`src/cli/index.ts`（shebang 已有）
+- 预计耗时：约 2h
+- 依赖：T1.1（发布件中的模型信息必须准确）
+
+**T4.2 发布管线**
+- 目标：npm Trusted Publishing 配置；`prepublishOnly: verify`；`npm version` 流程 + CHANGELOG.md 维护约定
+- 涉及文件：`package.json`、`CHANGELOG.md`、发布文档
+- 预计耗时：约 2h
+- 依赖：T4.1
+
+**T4.3 CI**
+- 目标：GitHub Actions：push/PR 跑 `verify`（Node 22 矩阵）；真实 API 冒烟为手动触发（`workflow_dispatch`，key 走 repository secrets）
+- 涉及文件：`.github/workflows/ci.yml`
+- 预计耗时：约 2h
+- 依赖：无（可与 T4.1 并行）
+
+**T4.4 依赖升级评估**
+- 目标：评估 commander 12→15、vitest 2→4、TypeScript 5.6→5.9（评估 7.0 原生编译器可行性）；目标 audit 0 高危（当前 dev 链 5 项告警）；升级后全量 verify + UI 测试回归
+- 涉及文件：`package.json`、`vitest.config.ts` 等
+- 预计耗时：约 2h
+- 依赖：无
+
+**T4.5 EN 文案与 locale 架构**
+- 目标：zh.ts 改为文案字典 + 语言选择（`LANG`/`--lang`/配置），新增 `src/i18n/en.ts`；默认仍中文
+- 涉及文件：`src/i18n/`（zh.ts/en.ts/index.ts）、全项目文案引用点、测试
+- 预计耗时：约 3h
+- 依赖：T3.4（locale 进配置）
+
+**T4.6 文档与发布件**
+- 目标：README 发布版（安装/使用/安全模型/FAQ/迁移说明）、`docs/user-guide.md` 用户手册、CONTRIBUTING.md；ARCHITECTURE.md 同步 v1.0 变更
+- 涉及文件：`README.md`、`docs/`、`CONTRIBUTING.md`
+- 预计耗时：约 3h
+- 依赖：T4.1
+
+## 5. 发布门检查清单（Release Gate）
+
+1.0.0 发布前逐项验收（任一不通过即阻塞发布）：
+
+- [ ] 模型 ID 与定价经官方文档核实（T1.1）
+- [ ] `npm run verify` 全绿（预期测试规模 ≥ 160 用例）
+- [ ] `npm audit` 无 high/critical（含 dev，T4.4）
+- [ ] 真实 API 冒烟通过：chat 交互 / run 任务 / resume / 审批流 / 中断生成
+- [ ] Windows 冒烟通过：CRLF 文件编辑、中文输入、TTY 提示
+- [ ] `npm pack` 预演 + 干净环境 `npm i -g` 安装可用（bin 生效）
+- [ ] Trusted Publishing 配置完成，发布流程演练过 dry-run
+- [ ] 文档齐备：README / 用户手册 / 架构文档与代码同步
+- [ ] `1.0.0` tag + CHANGELOG 完整
+
+## 6. 不做清单（范围控制，1.0 明确不做）
+
+| 项目 | 理由 | 计划 |
+| --- | --- | --- |
+| MCP 接入 | 生态面广、需要客户端基建 | v1.1 |
+| 子代理 / 技能系统 | 上下文与调度复杂度高 | v1.1 |
+| EN 之外的多语言 | 覆盖成本高、需求不明 | 视反馈 |
+| 团队协作 / 远程会话 | 超出个人 CLI 定位 | 不做 |
+| 桌面端 | 与项目定位冲突（有独立桌面生态） | 不做 |
+
+## 7. 风险与开放问题
+
+**风险登记**：
+
+| 风险 | 影响 | 缓解 |
+| --- | --- | --- |
+| 模型 ID/价格变动（DeepSeek 侧） | 发布件过期 | 发布门强制核实；ID 常量集中管理，单点修改 |
+| CRLF 处理引入新编辑错误 | 破坏用户文件换行风格 | T1.4 以「规范化匹配 + 保留原风格写入」为验收标准，测试覆盖 |
+| 并行调度与审批交互复杂度 | 竞态/时序 bug | 审批类工具强制串行；事件上报保序；集成测试覆盖 |
+| 上下文裁剪影响对话质量 | 长会话记忆丢失 | 裁剪日志化；budget 可配置；默认宽松（80%） |
+| 包名被占用 | 发布受阻 | T4.1 前置确认 + 备选名预案 |
+| 依赖升级（vitest 4 / TS 7）回归 | UI 测试兼容性 | 升级先行小步验证，失败则保持旧版并记录 |
+| 历史压缩策略选型（裁剪 vs 摘要） | 效果差异大 | v1.0 采用裁剪（确定性强），摘要压缩留 v1.1 评估 |
+
+**开放问题**：
+
+1. 公开发布 vs 私有 alpha 先行（影响 Trusted Publishing 与 CI 配置时机）
+2. 最终包名：`@lumen/cli` 若被占用，`lumen-cli` 还是其他
+3. DeepSeek 上下文缓存（前缀缓存自动生效）是否值得做「缓存友好前缀排序」——v1.0 先保证稳定前缀（system + 规则在前），不做显式缓存管理
+4. markdown 渲染选型：自研行级渲染（零依赖、可控）vs 引入 marked/micromark（标准兼容、体积增加）——倾向零依赖自研行级子集，覆盖标题/列表/加粗/行内码/代码块
+
+## 8. 优先级总览
+
+| 任务 | 内容 | 级别 | 预估 |
+| --- | --- | --- | --- |
+| T1.1 | 模型 ID/定价核实 | P0 | 1h |
+| T1.2 | 真实 usage 透传 | P0 | 1.5h |
+| T1.4 | 编辑 CRLF/BOM 加固 | P0 | 2h |
+| T1.5 | 会话并发写保护 | P0 | 1.5h |
+| T1.6 | 上下文窗口管理 | P0 | 3h |
+| T4.1 | npm 包与 bin | P0 | 2h |
+| T4.2 | 发布管线 | P0 | 2h |
+| T1.3 | 流式取消与断流 | P1 | 2h |
+| T2.1 | markdown + 高亮 | P1 | 3h |
+| T2.2 | 光标与历史 | P1 | 3h |
+| T2.3 | resume 列表 | P1 | 2h |
+| T2.4 | 中断与进度 | P1 | 1.5h |
+| T3.1 | 并行调度 | P1 | 3h |
+| T3.2 | 修复管线 | P1 | 3h |
+| T3.3 | plan 模式 | P1 | 4h |
+| T3.4 | 配置系统 | P1 | 3h |
+| T4.3 | CI | P1 | 2h |
+| T4.4 | 依赖升级 | P1 | 2h |
+| T4.5 | EN 文案 | P1 | 3h |
+| T4.6 | 文档发布件 | P1 | 3h |
+| 发布门 | 全清单验收 | P0 | 4h |
+
+**合计约 51h**（含发布门）。建议执行顺序：T1.1→T1.2→T1.4→T1.5→T1.6（V1-M1）→ T2.x / T3.x（可并行消化）→ V1-M4 → 发布门。
