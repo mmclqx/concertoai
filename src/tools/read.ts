@@ -45,7 +45,7 @@ const SKIP_DIRS = new Set([
   '.venv',
   '__pycache__',
   '.cache',
-  '.carboncode',
+  '.lumen',
   '.reasonix',
 ]);
 
