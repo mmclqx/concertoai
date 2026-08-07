@@ -374,4 +374,31 @@ describe('App 集成', () => {
     });
     unmount();
   });
+
+  it('allowlist-only 策略：非白名单命令直接拒绝，不弹审批框', async () => {
+    const model = new FakeModel([
+      {
+        toolCalls: [{ id: 'c1', name: 'run_command', arguments: '{"command":"rm -rf x"}' }],
+      },
+      { content: '命令未执行' },
+    ]);
+    const { stdin, lastFrame, unmount } = render(
+      <App
+        client={model}
+        registry={registry}
+        ctx={{ cwd: tmp, allowlistedPrefixes: ['npm test'] }}
+        model="deepseek-v4-flash"
+        approvalStrategy="allowlist-only"
+      />,
+    );
+    stdin.write('删文件');
+    await sleep(50);
+    stdin.write('\r');
+    await waitFor(() => {
+      expect(lastFrame()).toContain('命令未执行');
+    });
+    // 全程未弹审批框
+    expect(lastFrame()).not.toContain('批准 (y)');
+    unmount();
+  });
 });

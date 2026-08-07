@@ -29,6 +29,8 @@ export interface AppProps {
   store?: SessionStore;
   sessionId?: string;
   initialHistory?: ChatMessage[];
+  /** 审批策略：ask = 弹框逐个审批（默认）；allowlist-only = 只放行白名单，其余一律拒绝（不弹框）。 */
+  approvalStrategy?: 'ask' | 'allowlist-only';
 }
 
 /** 单条消息的渲染：角色前缀 + 内容（超长截断显示）。 */
@@ -57,6 +59,7 @@ export function App({
   store,
   sessionId,
   initialHistory,
+  approvalStrategy = 'ask',
 }: AppProps) {
   const { exit } = useApp();
   const [messages, setMessages] = useState<ChatMessage[]>(initialHistory ?? []);
@@ -85,10 +88,12 @@ export function App({
     });
   }, []);
 
-  const ctxWithApproval = useMemo<ToolContext>(
-    () => ({ ...ctx, requestApproval }),
-    [ctx, requestApproval],
-  );
+  const ctxWithApproval = useMemo<ToolContext>(() => {
+    if (approvalStrategy === 'allowlist-only') {
+      return { ...ctx, requestApproval: async () => false };
+    }
+    return { ...ctx, requestApproval };
+  }, [ctx, requestApproval, approvalStrategy]);
 
   /** 构造统一的事件回调（流式输出/工具状态/usage/错误展示）。 */
   const makeOnEvent = useCallback(

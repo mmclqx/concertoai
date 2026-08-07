@@ -7,6 +7,7 @@ import { fmt, zh } from '../i18n/zh';
 import type { ChatMessage } from '../loop/types';
 import { DeepSeekClient } from '../model/client';
 import { getDefaultModel, getModel, listModels } from '../model/models';
+import { loadConfig, resolveConfig } from '../store/config';
 import { loadProjectRules } from '../store/project-rules';
 import { SessionStore } from '../store/session';
 import { editFileTool } from '../tools/edit';
@@ -56,7 +57,10 @@ export interface RunChatOptions {
 }
 
 export async function runChat(options: RunChatOptions): Promise<void> {
-  const store = new SessionStore();
+  // 配置：CLI > 环境变量 > 配置文件 > 默认值
+  const config = await loadConfig();
+  const resolved = resolveConfig(config, options.model);
+  const store = new SessionStore(resolved.sessionDir);
   // -l 仅列列表：无需 TTY 与模型配置
   if (options.listOnly === true) {
     await printSessionList(store);
@@ -66,11 +70,14 @@ export async function runChat(options: RunChatOptions): Promise<void> {
     console.error(zh.errors.noTty);
     process.exit(1);
   }
-  const model = resolveModel(options.model);
+  const model = resolveModel(resolved.model);
   const client = new DeepSeekClient({ apiKey: options.apiKey });
   const registry = buildRegistry();
   const rules = await loadProjectRules(options.cwd);
-  const ctx: ToolContext = { cwd: options.cwd, allowlistedPrefixes: DEFAULT_ALLOWLIST };
+  const ctx: ToolContext = {
+    cwd: options.cwd,
+    allowlistedPrefixes: resolved.allowlist ?? DEFAULT_ALLOWLIST,
+  };
 
   let sessionId: string;
   let history: ChatMessage[] = [];
@@ -98,6 +105,7 @@ export async function runChat(options: RunChatOptions): Promise<void> {
       store={store}
       sessionId={sessionId}
       initialHistory={history}
+      approvalStrategy={resolved.approvalPolicy}
     />,
   );
 }

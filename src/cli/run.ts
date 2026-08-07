@@ -10,6 +10,7 @@ import { runLoop } from '../loop/loop';
 import type { ChatMessage } from '../loop/types';
 import { DeepSeekClient } from '../model/client';
 import { getModel } from '../model/models';
+import { loadConfig, resolveConfig } from '../store/config';
 import { loadProjectRules } from '../store/project-rules';
 import { SessionStore } from '../store/session';
 import type { ToolContext } from '../tools/registry';
@@ -25,14 +26,17 @@ export interface RunTaskOptions {
 }
 
 export async function runTask(options: RunTaskOptions): Promise<void> {
-  const model = resolveModel(options.model);
+  // 配置：CLI > 环境变量 > 配置文件 > 默认值
+  const config = await loadConfig();
+  const resolved = resolveConfig(config, options.model);
+  const model = resolveModel(resolved.model);
   const client = new DeepSeekClient({ apiKey: options.apiKey });
   const registry = buildRegistry();
   const rules = await loadProjectRules(options.cwd);
-  const store = new SessionStore();
+  const store = new SessionStore(resolved.sessionDir);
   const ctx: ToolContext = {
     cwd: options.cwd,
-    allowlistedPrefixes: DEFAULT_ALLOWLIST,
+    allowlistedPrefixes: resolved.allowlist ?? DEFAULT_ALLOWLIST,
     requestApproval: options.autoApprove === true ? async () => true : undefined,
   };
 
