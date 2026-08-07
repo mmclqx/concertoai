@@ -325,7 +325,13 @@ export function App({
         setMessages(result.messages);
         setTokens((t) => ({ ...t, output: t.output + estimateMessageListTokens(added) }));
         if (store !== undefined && sessionId !== undefined) {
-          await store.appendAll(sessionId, added);
+          // abort 时只持久化用户消息，不保存部分 assistant 回复，避免 resume 后模型被残缺上下文误导
+          const toSave = controller.signal.aborted
+            ? added.filter((m) => m.role !== 'assistant')
+            : added;
+          if (toSave.length > 0) {
+            await store.appendAll(sessionId, toSave);
+          }
         }
       } catch (err) {
         // 即使 abort/失败也持久化用户消息，保证 resume 时不丢上下文
