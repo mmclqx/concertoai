@@ -23,6 +23,14 @@ const program = new Command();
 
 program.name('lumen').description(zh.cli.description).version(VERSION);
 
+// 无子命令时默认进入 chat（产品定位：cd 项目 && lumen）
+program.action(() => {
+  void runChat({
+    cwd: process.cwd(),
+    apiKey: getApiKey(),
+  });
+});
+
 program
   .command('chat')
   .description(zh.cli.chat.description)
