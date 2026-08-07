@@ -8,7 +8,19 @@
 
 ## [Unreleased]
 
-- 无
+### Added — v1.1
+
+- **MCP 协议接入**：`src/mcp/` 模块（客户端/管理器/类型），支持 stdio transport 连接外部 MCP 服务
+- **MCP 工具注册**：MCP 服务工具以 `serverName/toolName` 前缀自动注册到 ToolRegistry
+- **filesystem/memory/github MCP 预配置**：`src/mcp/builtin-servers.ts` 内置三种推荐配置
+- **MCP Memory 注入**：`src/loop/memory-injector.ts` 每轮对话前检索 MCP memory 知识图谱
+- **跨会话本地记忆**：`src/store/memory-store.ts` 项目级 JSONL 记忆存储（`.lumen-memory/`）
+- **本地记忆注入**：`src/loop/local-memory.ts` 本地记忆检索合并到系统提示
+- **记忆管理命令**：`/remember` `/forget` `/memories` 斜杠命令（`src/cli/slash/memory.ts`）
+- **计划依赖检测**：`src/planner/deps.ts` 步骤依赖解析 + 拓扑排序 + 循环检测 + 并行组
+- **计划进度跟踪**：`src/planner/progress.ts` 状态机 + PlanProgressView TUI 组件
+- **计划回滚**：`src/planner/rollback.ts` SnapshotStore 文件快照与恢复，edit 工具自动快照
+- **配置扩展**：`LumenConfig.mcpServers` 支持 MCP 服务连接配置
 
 ## [0.1.0] - 2026-08-07
 

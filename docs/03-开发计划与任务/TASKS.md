@@ -13,9 +13,9 @@
 | 总任务数 | 32（v1.0: 20 ✅ + v1.1: 12） |
 | P0 任务 | 6 |
 | P1 任务 | 6 |
-| 待开始 | 6 |
+| 待开始 | 2 |
 | 进行中 | 0 |
-| 已完成 | 26 |
+| 已完成 | 30 |
 | 已阻塞 | 0 |
 
 ---
@@ -30,8 +30,8 @@
 | ~~V1-M4 发布工程~~ | P1 | 6 | ✅ 已完成 |
 | **V1.1-M1 MCP 基础接入** | **P0** | **3** | 🟢 已完成 |
 | **V1.1-M2 任务规划增强** | **P0** | **3** | 🟢 已完成 |
-| **V1.1-M3 跨会话记忆** | **P1** | **3** | ⬜ 待开始 |
-| **V1.1-M4 集成测试与文档** | **P1** | **3** | ⬜ 待开始 |
+| **V1.1-M3 跨会话记忆** | **P1** | **3** | 🟢 已完成 |
+| **V1.1-M4 集成测试与文档** | **P1** | **3** | 🟢 90%（T4.1 ✅，T4.2/T4.3 基本完成） |
 
 ---
 
@@ -219,19 +219,31 @@
 
 ### V1.1-M3：跨会话记忆（P1，约 6h）
 
-- [ ] **T3.1** 实现项目级记忆存储
+- [x] **T3.1** 实现项目级记忆存储
+  - 涉及文件：`src/store/memory-store.ts`
+  - 预估：2h | 实际：约 45min
+  - 依赖：无
+  - ✅ 2026-08-08 完成：JSONL CRUD + 标签/关键词检索 + 项目隔离 + 11 测试
   - 涉及文件：`src/store/memory-store.ts`
   - 预估：2h
   - 依赖：无
   - 待开始
 
-- [ ] **T3.2** 实现记忆检索与注入
+- [x] **T3.2** 实现记忆检索与注入
+  - 涉及文件：`src/loop/local-memory.ts`, `src/ui/App.tsx`, `src/cli/chat.tsx`
+  - 预估：2h | 实际：约 30min
+  - 依赖：T3.1
+  - ✅ 2026-08-08 完成：双源记忆注入（本地 + MCP）合并到 system prompt
   - 涉及文件：`src/loop/memory-injector.ts`, `src/loop/loop.ts`
   - 预估：2h
   - 依赖：T3.1
   - 待开始
 
-- [ ] **T3.3** 实现记忆管理命令（`/remember`, `/forget`）
+- [x] **T3.3** 实现记忆管理命令（`/remember`, `/forget`）
+  - 涉及文件：`src/cli/slash/memory.ts`, `src/ui/App.tsx`
+  - 预估：2h | 实际：约 45min
+  - 依赖：T3.1
+  - ✅ 2026-08-08 完成：parseMemoryCommand + executeMemoryCommand + App 拦截 + 8 测试（`/remember`, `/forget`）
   - 涉及文件：`src/cli/slash/memory.ts`, `src/ui/App.tsx`
   - 预估：2h
   - 依赖：T3.1
@@ -241,7 +253,11 @@
 
 ### V1.1-M4：集成测试与文档（P1，约 4h）
 
-- [ ] **T4.1** MCP 全链路集成测试
+- [x] **T4.1** MCP 全链路集成测试
+  - 涉及文件：`tests/mcp/e2e.test.ts`
+  - 预估：1.5h | 实际：约 30min
+  - 依赖：T1.1-T1.3
+  - ✅ 2026-08-08 完成：3 个 E2E 用例（单服务全链路/多服务并发/ToolSpec 注册）
   - 涉及文件：`tests/mcp/e2e.test.ts`, `tests/mcp/mock-server.ts`
   - 预估：1.5h
   - 依赖：T1.1、T1.2、T1.3
@@ -295,6 +311,8 @@
 | 2026-08-08 | v1.1 计划启动：生成 `v1.1-dev-plan.md`、`v1.1-dev-tasks.md`，更新 TASKS 看板（+12 任务、4 里程碑） | Carbon Code |
 | 2026-08-08 | **V1.1-M1 完成**：T1.1 MCP 客户端 + T1.2 filesystem 集成 + T1.3 memory 注入（23 新测试，mcp/ 模块全链路） | Carbon Code |
 | 2026-08-08 | **V1.1-M2 完成**：T2.1 依赖检测 + T2.2 进度跟踪 + T2.3 文件回滚（25 新测试，planner/ 模块） | Carbon Code |
+| 2026-08-08 | **V1.1-M3 完成**：T3.1 记忆存储 + T3.2 检索注入 + T3.3 管理命令（19 新测试，memory + slash 模块） | Carbon Code |
+| 2026-08-08 | **V1.1-M4 基本完成**：T4.1 E2E 测试 + T4.2 README/CHANGELOG + T4.3 架构/测试报告（3 新测试，文档更新） | Carbon Code |
 
 ---
 
