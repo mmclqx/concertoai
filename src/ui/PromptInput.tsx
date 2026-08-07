@@ -136,7 +136,7 @@ export function PromptInput({ value, onChange, onSubmit, placeholder, active }: 
 
   const isEmpty = value === '';
   return (
-    <Box flexDirection="column">
+    <Box flexDirection="column" borderStyle="round" borderColor="yellow" paddingX={1}>
       <Text color={isEmpty ? 'gray' : undefined}>
         {isEmpty ? (placeholder ?? '') : withCursor(value, cursor)}
       </Text>

@@ -85,12 +85,21 @@ export async function runLoop(
     const assistant = await streamAssistantReply(options, messages);
     messages.push(assistant);
 
+    // 用户已中断（Ctrl+C）→ 保留已生成内容，不再执行后续工具
+    if (options.signal?.aborted) {
+      return { messages, interrupted: false };
+    }
+
     const calls = assistant.toolCalls ?? [];
     if (calls.length === 0) {
       return { messages, interrupted: false };
     }
 
     for (const group of groupToolCalls(calls, options.registry)) {
+      // 每组执行前再检查一次中断信号
+      if (options.signal?.aborted) {
+        return { messages, interrupted: false };
+      }
       await executeGroup(options, group, messages, repairState);
     }
   }
@@ -138,6 +147,10 @@ async function executeGroup(
   messages: ChatMessage[],
   repairState: RepairState,
 ): Promise<void> {
+  // 中断信号已触发 → 跳过工具执行
+  if (options.signal?.aborted) {
+    return;
+  }
   for (const call of group) {
     options.onEvent?.({ type: 'tool_call', toolCall: call });
   }

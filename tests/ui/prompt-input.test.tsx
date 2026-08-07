@@ -111,7 +111,9 @@ describe('PromptInput 光标', () => {
     const h = setup(false);
     h.stdin.write('xyz');
     await sleep(30);
-    expect(h.lastFrame()?.trim()).toBe('');
+    // 边框始终渲染，但输入文本不应出现
+    const frame = h.lastFrame() ?? '';
+    expect(frame).not.toContain('xyz');
     h.unmount();
   });
 });

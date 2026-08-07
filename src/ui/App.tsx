@@ -192,6 +192,8 @@ export function App({
         }
       } finally {
         abortRef.current = null;
+        setActiveTool(null);
+        setStreamed('');
         busy.current = false;
       }
     },
@@ -260,6 +262,8 @@ export function App({
         }
       } finally {
         abortRef.current = null;
+        setActiveTool(null);
+        setStreamed('');
         setPhase('idle');
         busy.current = false;
       }
@@ -324,6 +328,10 @@ export function App({
           await store.appendAll(sessionId, added);
         }
       } catch (err) {
+        // 即使 abort/失败也持久化用户消息，保证 resume 时不丢上下文
+        if (store !== undefined && sessionId !== undefined) {
+          store.append(sessionId, { role: 'user', content: text }).catch(() => {});
+        }
         if (controller.signal.aborted) {
           setError(t().errors.streamAborted);
         } else if (err instanceof Error) {
@@ -333,6 +341,8 @@ export function App({
         }
       } finally {
         abortRef.current = null;
+        setActiveTool(null);
+        setStreamed('');
         setPhase('idle');
         busy.current = false;
       }
