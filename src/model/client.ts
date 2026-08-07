@@ -38,7 +38,13 @@ export interface ChatCompletionChunk {
       role?: 'system' | 'user' | 'assistant';
       content?: string | null;
       reasoning_content?: string | null;
-      tool_calls?: ApiToolCall[];
+      /** 流式 tool_calls 增量片段：name/arguments 跨 chunk 累积拼接。 */
+      tool_calls?: Array<{
+        index: number;
+        id?: string;
+        type?: 'function';
+        function?: { name?: string; arguments?: string };
+      }>;
     };
     finish_reason: string | null;
   }>;
@@ -54,6 +60,11 @@ export interface StreamChatParams {
   stop?: string | string[];
   /** 外部中断信号；中断后上抛 signal.reason（缺省为 AbortError）且不重试。 */
   signal?: AbortSignal;
+}
+
+/** 会话循环依赖的模型客户端抽象（测试注入 Fake 实现）。 */
+export interface ModelClient {
+  streamChat(params: StreamChatParams): AsyncGenerator<ChatCompletionChunk>;
 }
 
 export interface DeepSeekClientOptions {
@@ -179,7 +190,7 @@ function isRetryable(error: unknown, signal?: AbortSignal): boolean {
   return false;
 }
 
-export class DeepSeekClient {
+export class DeepSeekClient implements ModelClient {
   private readonly apiKey: string;
   private readonly baseUrl: string;
   private readonly timeoutMs: number;
