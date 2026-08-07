@@ -42,6 +42,43 @@ export interface PlanConfirmProps {
   plan: string;
 }
 
+import type { ProgressSummary } from '../planner/progress';
+
+// …（上方代码不变）…
+
+/** 计划进度视图：实时展示步骤执行状态。 */
+export interface PlanProgressViewProps {
+  summary: ProgressSummary;
+}
+
+/** 步骤状态 → 图标。 */
+const STATUS_ICON: Record<string, string> = {
+  pending: '⬜',
+  in_progress: '⏳',
+  completed: '✅',
+  failed: '❌',
+  skipped: '⏭️',
+};
+
+export function PlanProgressView({ summary }: PlanProgressViewProps) {
+  const { total, completed, failed, skipped, steps } = summary;
+  const done = completed + failed + skipped;
+  return (
+    <Box flexDirection="column" borderStyle="single" borderColor="blue" paddingX={1} marginY={1}>
+      <Text bold color="blue">
+        执行进度 {done}/{total}
+        {failed > 0 ? `（${failed} 失败）` : ''}
+      </Text>
+      {steps.map((s) => (
+        <Text key={s.step.index} dimColor={s.status === 'pending'}>
+          {STATUS_ICON[s.status] ?? '  '} 步骤{s.step.index}. {s.step.title}
+          {s.error !== undefined ? ` — ${s.error}` : ''}
+        </Text>
+      ))}
+    </Box>
+  );
+}
+
 /** 计划审批框：magenta 框 + 计划全文（超长截断）+ 按键提示。 */
 export function PlanConfirm({ plan }: PlanConfirmProps) {
   const display =
