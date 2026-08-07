@@ -34,14 +34,16 @@ program.action(() => {
 program
   .command('chat')
   .description(zh.cli.chat.description)
-  .option('-r, --resume <id>', zh.cli.resume.argument)
+  .option('-r, --resume [id]', zh.cli.resume.argument)
+  .option('-l, --list', zh.cli.list.description)
   .option('-m, --model <id>', zh.cli.model.description)
-  .action(async (options: { resume?: string; model?: string }) => {
+  .action(async (options: { resume?: string | true; model?: string; list?: boolean }) => {
     await runChat({
       cwd: process.cwd(),
       apiKey: getApiKey(),
       resume: options.resume,
       model: options.model,
+      listOnly: options.list,
     });
   });
 

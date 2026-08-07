@@ -17,6 +17,9 @@ export const zh = {
       description: '继续上次会话',
       argument: '会话 ID（省略时列出全部会话）',
     },
+    list: {
+      description: '仅列出历史会话，不进入对话',
+    },
     model: {
       description: '指定模型（默认 deepseek-v4-flash）',
     },
@@ -58,6 +61,8 @@ export const zh = {
     listTitle: '历史会话（最新在前）',
     empty: '暂无历史会话',
     saved: '会话已保存: {id}',
+    pickerHint: '↑/↓ 选择，Enter 确认，Esc 取消',
+    noUserMessage: '（无用户消息）',
   },
   ui: {
     thinking: '思考中…',

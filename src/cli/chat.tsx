@@ -15,6 +15,7 @@ import type { ToolContext } from '../tools/registry';
 import { ToolRegistry } from '../tools/registry';
 import { shellTool } from '../tools/shell';
 import { App } from '../ui/App';
+import { formatSessionTime, SessionPicker } from '../ui/SessionPicker';
 
 /** 免审批直跑的安全命令白名单（用户可后续配置化）。 */
 export const DEFAULT_ALLOWLIST = ['git status', 'git diff', 'npm test', 'npm run test'];
@@ -48,10 +49,19 @@ export interface RunChatOptions {
   cwd: string;
   apiKey: string;
   model?: string;
-  resume?: string;
+  /** 会话 id 字符串 = 直接恢复；true（-r 不带参数）= 交互选择；undefined = 新会话。 */
+  resume?: string | true;
+  /** -l：仅列出历史会话，不进入对话。 */
+  listOnly?: boolean;
 }
 
 export async function runChat(options: RunChatOptions): Promise<void> {
+  const store = new SessionStore();
+  // -l 仅列列表：无需 TTY 与模型配置
+  if (options.listOnly === true) {
+    await printSessionList(store);
+    return;
+  }
   if (process.stdin.isTTY !== true) {
     console.error(zh.errors.noTty);
     process.exit(1);
@@ -60,16 +70,20 @@ export async function runChat(options: RunChatOptions): Promise<void> {
   const client = new DeepSeekClient({ apiKey: options.apiKey });
   const registry = buildRegistry();
   const rules = await loadProjectRules(options.cwd);
-  const store = new SessionStore();
   const ctx: ToolContext = { cwd: options.cwd, allowlistedPrefixes: DEFAULT_ALLOWLIST };
 
   let sessionId: string;
   let history: ChatMessage[] = [];
-  if (options.resume !== undefined) {
+  if (typeof options.resume === 'string') {
     const { messages } = await store.read(options.resume);
     history = messages;
     sessionId = options.resume;
     console.log(fmt(zh.session.resumed, { id: options.resume, count: messages.length }));
+  } else if (options.resume === true) {
+    sessionId = await pickSession(store);
+    const { messages } = await store.read(sessionId);
+    history = messages;
+    console.log(fmt(zh.session.resumed, { id: sessionId, count: messages.length }));
   } else {
     sessionId = await store.create([]);
   }
@@ -86,4 +100,44 @@ export async function runChat(options: RunChatOptions): Promise<void> {
       initialHistory={history}
     />,
   );
+}
+
+/** 打印历史会话列表（-l）：id、时间、消息数、首条摘要。 */
+export async function printSessionList(store: SessionStore): Promise<void> {
+  const sessions = await store.list();
+  if (sessions.length === 0) {
+    console.log(zh.session.empty);
+    return;
+  }
+  for (const s of sessions) {
+    console.log(
+      `${s.id}  ${formatSessionTime(s.createdAt)}  ${s.messageCount} 条  ${
+        s.firstUserMessage ?? zh.session.noUserMessage
+      }`,
+    );
+  }
+}
+
+/** 交互选择历史会话：渲染 SessionPicker，Enter 选定 / Esc 取消。 */
+async function pickSession(store: SessionStore): Promise<string> {
+  const sessions = await store.list();
+  if (sessions.length === 0) {
+    console.error(zh.session.empty);
+    process.exit(1);
+  }
+  return new Promise<string>((resolve, reject) => {
+    const { unmount } = render(
+      <SessionPicker
+        sessions={sessions}
+        onSelect={(id) => {
+          unmount();
+          resolve(id);
+        }}
+        onCancel={() => {
+          unmount();
+          reject(new Error('已取消会话选择'));
+        }}
+      />,
+    );
+  });
 }
