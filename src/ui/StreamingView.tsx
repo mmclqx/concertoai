@@ -2,6 +2,7 @@ import { Text } from 'ink';
 
 import { zh } from '../i18n/zh';
 import { renderMarkdownToAnsi } from './markdown';
+import { Spinner } from './Spinner';
 
 export interface StreamingViewProps {
   text: string;
@@ -13,7 +14,7 @@ export interface StreamingViewProps {
  */
 export function StreamingView({ text }: StreamingViewProps) {
   if (text === '') {
-    return <Text dimColor>{zh.ui.thinking}</Text>;
+    return <Spinner text={zh.ui.thinking} />;
   }
   return <Text>{renderMarkdownToAnsi(text)}</Text>;
 }

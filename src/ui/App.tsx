@@ -12,6 +12,7 @@ import type { SessionStore } from '../store/session';
 import type { ApprovalRequest, ToolContext, ToolRegistry } from '../tools/registry';
 import { ApprovalModal } from './modals';
 import { PromptInput } from './PromptInput';
+import { Spinner } from './Spinner';
 import { StatusBar } from './StatusBar';
 import { StreamingView } from './StreamingView';
 
@@ -199,9 +200,7 @@ export function App({
         <MessageLine key={i} message={m} />
       ))}
       {phase === 'streaming' && <StreamingView text={streamed} />}
-      {activeTool !== null && (
-        <Text dimColor>{fmt(zh.ui.toolRunning, { name: activeTool.name })}</Text>
-      )}
+      {activeTool !== null && <Spinner text={fmt(zh.ui.toolRunning, { name: activeTool.name })} />}
       {pending !== null && phase === 'approval' && (
         <ApprovalModal kind={pending.kind} summary={pending.summary} detail={pending.detail} />
       )}

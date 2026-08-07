@@ -14,6 +14,7 @@ import type {
 import { editFileTool } from '../../src/tools/edit';
 import { readFileTool } from '../../src/tools/read';
 import { ToolRegistry } from '../../src/tools/registry';
+import { shellTool } from '../../src/tools/shell';
 import { App } from '../../src/ui/App';
 import { EditConfirm, ShellConfirm } from '../../src/ui/modals';
 import { StatusBar } from '../../src/ui/StatusBar';
@@ -117,7 +118,7 @@ let registry: ToolRegistry;
 
 beforeEach(() => {
   tmp = mkdtempSync(path.join(os.tmpdir(), 'lumen-test-'));
-  registry = new ToolRegistry().register(readFileTool).register(editFileTool);
+  registry = new ToolRegistry().register(readFileTool).register(editFileTool).register(shellTool);
 });
 
 afterEach(() => {
@@ -303,6 +304,35 @@ describe('App 集成', () => {
     });
     // 已生成内容保留在会话中
     expect(lastFrame()).toContain('第一段');
+    unmount();
+  });
+
+  it('工具执行与审批等待时显示状态行（工具名 + spinner）', async () => {
+    const model = new FakeModel(
+      [
+        {
+          toolCalls: [{ id: 'c1', name: 'run_command', arguments: '{"command":"echo hi"}' }],
+        },
+        { content: '命令已执行' },
+      ],
+      80,
+    );
+    const { stdin, lastFrame, unmount } = render(
+      <App client={model} registry={registry} ctx={{ cwd: tmp }} model="deepseek-v4-flash" />,
+    );
+    stdin.write('执行命令');
+    await sleep(50);
+    stdin.write('\r');
+    // 工具执行中（审批挂起）：显示工具名状态行
+    await waitFor(() => {
+      expect(lastFrame()).toContain('执行工具: run_command');
+    });
+    // 审批框同时显示（等待审批状态）
+    expect(lastFrame()).toContain('执行命令');
+    stdin.write('n');
+    await waitFor(() => {
+      expect(lastFrame()).toContain('命令已执行');
+    });
     unmount();
   });
 });
