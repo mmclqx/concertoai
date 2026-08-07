@@ -19,6 +19,7 @@ import { McpManager } from '../mcp/manager';
 import { toMcpServerConfig } from '../mcp/builtin-servers';
 import type { MCPServerConfig } from '../mcp/types';
 import { MemoryInjector } from '../loop/memory-injector';
+import { MemoryStore } from '../store/memory-store';
 import { App } from '../ui/App';
 import { formatSessionTime, SessionPicker } from '../ui/SessionPicker';
 
@@ -149,6 +150,7 @@ export async function runChat(options: RunChatOptions): Promise<void> {
       memoryInjector={
         mcpManager !== undefined ? new MemoryInjector(mcpManager) : undefined
       }
+      memoryStore={new MemoryStore({ cwd: options.cwd })}
     />,
   );
 }

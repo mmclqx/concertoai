@@ -11,6 +11,8 @@ import { costFor, getModel } from '../model/models';
 import { estimateMessageListTokens, estimateTokens } from '../model/tokenizer';
 import type { SessionStore } from '../store/session';
 import type { MemoryInjector } from '../loop/memory-injector';
+import { retrieveLocalMemories } from '../loop/local-memory';
+import type { MemoryStore } from '../store/memory-store';
 import type { ApprovalRequest, ToolContext, ToolRegistry } from '../tools/registry';
 import { ApprovalModal, PlanConfirm } from './modals';
 import { PromptInput } from './PromptInput';
@@ -34,6 +36,8 @@ export interface AppProps {
   approvalStrategy?: 'ask' | 'allowlist-only';
   /** MCP memory 注入器（v1.1）：每轮对话前检索相关记忆注入上下文。 */
   memoryInjector?: MemoryInjector;
+  /** 本地项目记忆存储（v1.1）：与 MCP memory 互补。 */
+  memoryStore?: MemoryStore;
 }
 
 /**
@@ -75,6 +79,7 @@ export function App({
   initialHistory,
   approvalStrategy = 'ask',
   memoryInjector,
+  memoryStore,
 }: AppProps) {
   const { exit } = useApp();
   const [messages, setMessages] = useState<ChatMessage[]>(initialHistory ?? []);
@@ -307,9 +312,17 @@ export function App({
       setMessages([...history, { role: 'user', content: text }]);
       setPhase('streaming');
       try {
-        // 检索 MCP memory 相关记忆，合并到 system prompt
-        const memoryBlock =
-          memoryInjector !== undefined ? await memoryInjector.retrieve(text) : '';
+        // 检索 MCP + 本地记忆，合并到 system prompt
+        const blocks: string[] = [];
+        if (memoryInjector !== undefined) {
+          const mcpBlock = await memoryInjector.retrieve(text);
+          if (mcpBlock !== '') blocks.push(mcpBlock);
+        }
+        if (memoryStore !== undefined) {
+          const localBlock = await retrieveLocalMemories(memoryStore, text);
+          if (localBlock !== '') blocks.push(localBlock);
+        }
+        const memoryBlock = blocks.join('\n\n');
         const effectivePrompt =
           memoryBlock !== ''
             ? `${memoryBlock}\n\n${systemPrompt ?? ''}`.trim()
