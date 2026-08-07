@@ -9,7 +9,7 @@
 
 import { createInterface } from 'node:readline';
 
-import { fmt, zh } from '../i18n/zh';
+import { fmt, resolveLocale, setLocale, t } from '../i18n';
 import { runLoop } from '../loop/loop';
 import { userMessage } from '../loop/messages';
 import type { ChatMessage } from '../loop/types';
@@ -28,6 +28,8 @@ export interface RunPlanOptions {
   model?: string;
   resume?: string;
   autoApprove?: boolean;
+  /** CLI --lang（覆盖环境变量与配置）。 */
+  lang?: string;
 }
 
 /** 终端确认：批准计划 (y/n)。 */
@@ -43,13 +45,14 @@ function confirmPlan(): Promise<boolean> {
 
 export async function runPlan(options: RunPlanOptions): Promise<void> {
   if (options.autoApprove !== true && process.stdin.isTTY !== true) {
-    console.error(zh.errors.planNeedsTty);
+    console.error(t().errors.planNeedsTty);
     process.exit(1);
   }
 
   // 配置：CLI > 环境变量 > 配置文件 > 默认值
   const config = await loadConfig();
-  const resolved = resolveConfig(config, options.model);
+  const resolved = resolveConfig(config, options.model, options.lang);
+  setLocale(resolveLocale(resolved.locale));
   const model = resolveModel(resolved.model);
   const client = new DeepSeekClient({ apiKey: options.apiKey });
   const registry = buildRegistry();
@@ -94,15 +97,15 @@ export async function runPlan(options: RunPlanOptions): Promise<void> {
   // 阶段 2：批准
   const approved = options.autoApprove === true ? true : await confirmPlan();
   if (!approved) {
-    process.stdout.write(`${zh.plan.rejected}\n`);
+    process.stdout.write(`${t().plan.rejected}\n`);
     return;
   }
-  process.stdout.write(`${zh.plan.approved}\n`);
+  process.stdout.write(`${t().plan.approved}\n`);
 
   // 阶段 3：执行（计划注入上下文）
   const execHistory = [...history, userMessage(`已批准的计划（请严格按计划逐步执行）：\n${plan}`)];
   const result = await runLoop({ ...baseLoopOptions }, execHistory, options.task);
   const added = result.slice(history.length);
   await store.appendAll(sessionId, added);
-  process.stdout.write(`\n\n${fmt(zh.session.saved, { id: sessionId })}\n`);
+  process.stdout.write(`\n\n${fmt(t().session.saved, { id: sessionId })}\n`);
 }

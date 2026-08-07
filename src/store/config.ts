@@ -82,9 +82,13 @@ function env(name: string): string | undefined {
 
 /**
  * 合并优先级：CLI 参数 > 环境变量（LUMEN_*）> 配置文件 > 默认值。
- * cliModel 为 CLI -m 参数（无则 undefined）。
+ * cliModel / cliLocale 为 CLI 参数（无则 undefined）。
  */
-export function resolveConfig(file: LumenConfig, cliModel?: string): ResolvedConfig {
+export function resolveConfig(
+  file: LumenConfig,
+  cliModel?: string,
+  cliLocale?: string,
+): ResolvedConfig {
   const model = cliModel ?? env('LUMEN_MODEL') ?? file.defaultModel;
 
   const allowlistRaw = env('LUMEN_ALLOWLIST') ?? file.allowlist?.join(',') ?? undefined;
@@ -101,7 +105,10 @@ export function resolveConfig(file: LumenConfig, cliModel?: string): ResolvedCon
     approvalRaw === 'allowlist-only' ? 'allowlist-only' : 'ask';
 
   const sessionDir = env('LUMEN_SESSION_DIR') ?? file.sessionDir ?? DEFAULT_SESSION_DIR;
-  const locale = env('LUMEN_LOCALE') ?? file.locale ?? 'zh';
+  // locale 优先级：CLI --lang > LUMEN_LOCALE > LANG（zh/en 前缀）> 配置文件 > 'zh'
+  const langEnv = env('LANG');
+  const langMatch = langEnv !== undefined && /^(zh|en)/i.test(langEnv) ? langEnv : undefined;
+  const locale = cliLocale ?? env('LUMEN_LOCALE') ?? langMatch ?? file.locale ?? 'zh';
 
   return { model, allowlist, approvalPolicy, sessionDir, locale };
 }

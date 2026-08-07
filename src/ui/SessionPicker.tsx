@@ -2,7 +2,7 @@ import { Box, Text, useInput } from 'ink';
 
 import { useState } from 'react';
 
-import { zh } from '../i18n/zh';
+import { t } from '../i18n';
 import type { SessionSummary } from '../store/session';
 
 /** 会话创建时间格式化：YYYY-MM-DD HH:mm（本地时区）。 */
@@ -42,15 +42,15 @@ export function SessionPicker({ sessions, onSelect, onCancel }: SessionPickerPro
 
   return (
     <Box flexDirection="column">
-      <Text bold>{zh.session.listTitle}</Text>
+      <Text bold>{t().session.listTitle}</Text>
       {sessions.map((s, i) => (
         <Text key={s.id} color={i === index ? 'cyan' : undefined} bold={i === index}>
           {`${i === index ? '› ' : '  '}${formatSessionTime(s.createdAt)}  ${s.messageCount} 条  ${
-            s.firstUserMessage ?? zh.session.noUserMessage
+            s.firstUserMessage ?? t().session.noUserMessage
           }`}
         </Text>
       ))}
-      <Text dimColor>{zh.session.pickerHint}</Text>
+      <Text dimColor>{t().session.pickerHint}</Text>
     </Box>
   );
 }

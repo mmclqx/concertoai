@@ -18,6 +18,8 @@ let tmp: string;
 
 beforeEach(() => {
   tmp = mkdtempSync(path.join(os.tmpdir(), 'lumen-test-'));
+  // 隔离本机系统 LANG（如 zh_CN.UTF-8），避免影响「全部缺省」类断言
+  vi.stubEnv('LANG', '');
 });
 
 afterEach(() => {
@@ -129,5 +131,22 @@ describe('resolveConfig 优先级（CLI > 环境变量 > 配置文件 > 默认�
   it('非法审批策略回退 ask', () => {
     vi.stubEnv('LUMEN_APPROVAL', 'whatever');
     expect(resolveConfig(emptyConfig()).approvalPolicy).toBe('ask');
+  });
+
+  it('locale 优先级：CLI --lang > LUMEN_LOCALE > LANG > 配置文件 > zh', () => {
+    vi.stubEnv('LUMEN_LOCALE', 'en');
+    vi.stubEnv('LANG', 'zh_CN.UTF-8');
+    // CLI 最高
+    expect(resolveConfig({ schemaVersion: 1, locale: 'zh' }, undefined, 'zh').locale).toBe('zh');
+    // 环境变量高于配置
+    expect(resolveConfig({ schemaVersion: 1, locale: 'zh' }).locale).toBe('en');
+    // LANG 兜底（zh/en 前缀）
+    vi.unstubAllEnvs();
+    vi.stubEnv('LANG', 'zh_CN.UTF-8');
+    expect(resolveConfig({ schemaVersion: 1 }).locale).toBe('zh_CN.UTF-8');
+    // LANG 非 zh/en 前缀时忽略，回退配置/默认
+    vi.stubEnv('LANG', 'fr_FR.UTF-8');
+    expect(resolveConfig({ schemaVersion: 1, locale: 'en' }).locale).toBe('en');
+    expect(resolveConfig(emptyConfig()).locale).toBe('zh');
   });
 });

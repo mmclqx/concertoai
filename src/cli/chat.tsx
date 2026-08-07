@@ -3,7 +3,7 @@
  */
 
 import { render } from 'ink';
-import { fmt, zh } from '../i18n/zh';
+import { fmt, resolveLocale, setLocale, t } from '../i18n';
 import type { ChatMessage } from '../loop/types';
 import { DeepSeekClient } from '../model/client';
 import { getDefaultModel, getModel, listModels } from '../model/models';
@@ -54,12 +54,15 @@ export interface RunChatOptions {
   resume?: string | true;
   /** -l：仅列出历史会话，不进入对话。 */
   listOnly?: boolean;
+  /** CLI --lang（覆盖环境变量与配置）。 */
+  lang?: string;
 }
 
 export async function runChat(options: RunChatOptions): Promise<void> {
   // 配置：CLI > 环境变量 > 配置文件 > 默认值
   const config = await loadConfig();
-  const resolved = resolveConfig(config, options.model);
+  const resolved = resolveConfig(config, options.model, options.lang);
+  setLocale(resolveLocale(resolved.locale));
   const store = new SessionStore(resolved.sessionDir);
   // -l 仅列列表：无需 TTY 与模型配置
   if (options.listOnly === true) {
@@ -67,7 +70,7 @@ export async function runChat(options: RunChatOptions): Promise<void> {
     return;
   }
   if (process.stdin.isTTY !== true) {
-    console.error(zh.errors.noTty);
+    console.error(t().errors.noTty);
     process.exit(1);
   }
   const model = resolveModel(resolved.model);
@@ -85,12 +88,12 @@ export async function runChat(options: RunChatOptions): Promise<void> {
     const { messages } = await store.read(options.resume);
     history = messages;
     sessionId = options.resume;
-    console.log(fmt(zh.session.resumed, { id: options.resume, count: messages.length }));
+    console.log(fmt(t().session.resumed, { id: options.resume, count: messages.length }));
   } else if (options.resume === true) {
     sessionId = await pickSession(store);
     const { messages } = await store.read(sessionId);
     history = messages;
-    console.log(fmt(zh.session.resumed, { id: sessionId, count: messages.length }));
+    console.log(fmt(t().session.resumed, { id: sessionId, count: messages.length }));
   } else {
     sessionId = await store.create([]);
   }
@@ -114,13 +117,13 @@ export async function runChat(options: RunChatOptions): Promise<void> {
 export async function printSessionList(store: SessionStore): Promise<void> {
   const sessions = await store.list();
   if (sessions.length === 0) {
-    console.log(zh.session.empty);
+    console.log(t().session.empty);
     return;
   }
   for (const s of sessions) {
     console.log(
       `${s.id}  ${formatSessionTime(s.createdAt)}  ${s.messageCount} 条  ${
-        s.firstUserMessage ?? zh.session.noUserMessage
+        s.firstUserMessage ?? t().session.noUserMessage
       }`,
     );
   }
@@ -130,7 +133,7 @@ export async function printSessionList(store: SessionStore): Promise<void> {
 async function pickSession(store: SessionStore): Promise<string> {
   const sessions = await store.list();
   if (sessions.length === 0) {
-    console.error(zh.session.empty);
+    console.error(t().session.empty);
     process.exit(1);
   }
   return new Promise<string>((resolve, reject) => {

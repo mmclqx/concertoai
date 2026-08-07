@@ -1,7 +1,7 @@
 import { Box, Text, useApp, useInput } from 'ink';
 import { useCallback, useMemo, useRef, useState } from 'react';
 
-import { fmt, zh } from '../i18n/zh';
+import { fmt, t } from '../i18n';
 import type { LoopEvent } from '../loop/loop';
 import { runLoop } from '../loop/loop';
 import { userMessage } from '../loop/messages';
@@ -111,8 +111,8 @@ export function App({
         } else if (event.type === 'error') {
           setError(
             controller.signal.aborted
-              ? zh.errors.streamAborted
-              : fmt(zh.errors.streamInterrupted, { message: event.error.message }),
+              ? t().errors.streamAborted
+              : fmt(t().errors.streamInterrupted, { message: event.error.message }),
           );
         } else {
           setActiveTool(null);
@@ -169,7 +169,7 @@ export function App({
         setPhase('plan-approval');
       } catch (err) {
         if (controller.signal.aborted) {
-          setError(zh.errors.streamAborted);
+          setError(t().errors.streamAborted);
         } else if (err instanceof Error) {
           setError(err.message);
         } else {
@@ -234,7 +234,7 @@ export function App({
         }
       } catch (err) {
         if (controller.signal.aborted) {
-          setError(zh.errors.streamAborted);
+          setError(t().errors.streamAborted);
         } else if (err instanceof Error) {
           setError(err.message);
         } else {
@@ -304,7 +304,7 @@ export function App({
         }
       } catch (err) {
         if (controller.signal.aborted) {
-          setError(zh.errors.streamAborted);
+          setError(t().errors.streamAborted);
         } else if (err instanceof Error) {
           setError(err.message);
         } else {
@@ -341,7 +341,7 @@ export function App({
       } else if (input === 'n') {
         setPlan(null);
         setPhase('idle');
-        setError(zh.plan.rejected);
+        setError(t().plan.rejected);
       }
       return;
     }
@@ -383,7 +383,7 @@ export function App({
         <MessageLine key={i} message={m} />
       ))}
       {phase === 'streaming' && <StreamingView text={streamed} />}
-      {activeTool !== null && <Spinner text={fmt(zh.ui.toolRunning, { name: activeTool.name })} />}
+      {activeTool !== null && <Spinner text={fmt(t().ui.toolRunning, { name: activeTool.name })} />}
       {pending !== null && phase === 'approval' && (
         <ApprovalModal kind={pending.kind} summary={pending.summary} detail={pending.detail} />
       )}
@@ -395,7 +395,7 @@ export function App({
         onSubmit={(t) => {
           void send(t);
         }}
-        placeholder={zh.prompt.placeholder}
+        placeholder={t().prompt.placeholder}
         active={phase === 'idle'}
       />
       <StatusBar

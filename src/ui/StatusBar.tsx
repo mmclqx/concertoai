@@ -1,6 +1,6 @@
 import { Box, Text } from 'ink';
 
-import { zh } from '../i18n/zh';
+import { t } from '../i18n';
 
 export interface StatusBarProps {
   model: string;
@@ -22,9 +22,9 @@ export function StatusBar({
   return (
     <Box>
       <Text dimColor>
-        {zh.status.model}: {model} │ {zh.status.tokens}: {inputTokens}/{outputTokens}
-        {isReal ? `（${zh.status.real}）` : ''} │ {zh.status.cost}: ¥{cost.toFixed(4)}
-        {zh.status.yuan}
+        {t().status.model}: {model} │ {t().status.tokens}: {inputTokens}/{outputTokens}
+        {isReal ? `（${t().status.real}）` : ''} │ {t().status.cost}: ¥{cost.toFixed(4)}
+        {t().status.yuan}
       </Text>
     </Box>
   );

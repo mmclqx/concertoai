@@ -1,6 +1,6 @@
 import { Text } from 'ink';
 
-import { zh } from '../i18n/zh';
+import { t } from '../i18n';
 import { renderMarkdownToAnsi } from './markdown';
 import { Spinner } from './Spinner';
 
@@ -14,7 +14,7 @@ export interface StreamingViewProps {
  */
 export function StreamingView({ text }: StreamingViewProps) {
   if (text === '') {
-    return <Spinner text={zh.ui.thinking} />;
+    return <Spinner text={t().ui.thinking} />;
   }
   return <Text>{renderMarkdownToAnsi(text)}</Text>;
 }

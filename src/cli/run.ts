@@ -5,7 +5,7 @@
  * 显式传 --auto-approve 才会自动批准。
  */
 
-import { fmt, zh } from '../i18n/zh';
+import { fmt, resolveLocale, setLocale, t } from '../i18n';
 import { runLoop } from '../loop/loop';
 import type { ChatMessage } from '../loop/types';
 import { DeepSeekClient } from '../model/client';
@@ -23,12 +23,15 @@ export interface RunTaskOptions {
   model?: string;
   resume?: string;
   autoApprove?: boolean;
+  /** CLI --lang（覆盖环境变量与配置）。 */
+  lang?: string;
 }
 
 export async function runTask(options: RunTaskOptions): Promise<void> {
   // 配置：CLI > 环境变量 > 配置文件 > 默认值
   const config = await loadConfig();
-  const resolved = resolveConfig(config, options.model);
+  const resolved = resolveConfig(config, options.model, options.lang);
+  setLocale(resolveLocale(resolved.locale));
   const model = resolveModel(resolved.model);
   const client = new DeepSeekClient({ apiKey: options.apiKey });
   const registry = buildRegistry();
@@ -70,5 +73,5 @@ export async function runTask(options: RunTaskOptions): Promise<void> {
 
   const added = messages.slice(history.length);
   await store.appendAll(sessionId, added);
-  process.stdout.write(`\n\n${fmt(zh.session.saved, { id: sessionId })}\n`);
+  process.stdout.write(`\n\n${fmt(t().session.saved, { id: sessionId })}\n`);
 }

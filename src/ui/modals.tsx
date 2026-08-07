@@ -1,6 +1,6 @@
 import { Box, Text } from 'ink';
 
-import { zh } from '../i18n/zh';
+import { t } from '../i18n';
 
 export interface ApprovalModalProps {
   kind: 'edit' | 'shell';
@@ -11,7 +11,7 @@ export interface ApprovalModalProps {
 
 /** 通用审批框：黄框 + 标题 + 摘要 + 详情 + 按键提示。 */
 export function ApprovalModal({ kind, summary, detail }: ApprovalModalProps) {
-  const title = kind === 'edit' ? zh.approval.editTitle : zh.approval.shellTitle;
+  const title = kind === 'edit' ? t().approval.editTitle : t().approval.shellTitle;
   return (
     <Box flexDirection="column" borderStyle="single" borderColor="yellow" paddingX={1} marginY={1}>
       <Text bold color="yellow">
@@ -19,7 +19,7 @@ export function ApprovalModal({ kind, summary, detail }: ApprovalModalProps) {
       </Text>
       <Text>{detail}</Text>
       <Text dimColor>
-        {zh.approval.confirm} / {zh.approval.reject}
+        {t().approval.confirm} / {t().approval.reject}
       </Text>
     </Box>
   );
@@ -51,10 +51,10 @@ export function PlanConfirm({ plan }: PlanConfirmProps) {
   return (
     <Box flexDirection="column" borderStyle="single" borderColor="magenta" paddingX={1} marginY={1}>
       <Text bold color="magenta">
-        {zh.plan.title}
+        {t().plan.title}
       </Text>
       <Text>{display}</Text>
-      <Text dimColor>{zh.plan.hint}</Text>
+      <Text dimColor>{t().plan.hint}</Text>
     </Box>
   );
 }
