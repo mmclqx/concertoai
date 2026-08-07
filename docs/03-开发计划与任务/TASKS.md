@@ -181,11 +181,11 @@
   - 依赖：无
   - ✅ 2026-08-08 完成：stdio 客户端（握手/请求/响应/超时）+ 多服务管理器（并发/聚合/路由/故障隔离）+ mock 服务 + 18 测试全绿
 
-- [ ] **T1.2** 集成 filesystem MCP 服务
+- [x] **T1.2** 集成 filesystem MCP 服务
   - 涉及文件：`src/mcp/builtin-servers.ts`, `src/store/config.ts`, `src/cli/chat.tsx`
-  - 预估：2.5h
+  - 预估：2.5h | 实际：约 1.5h
   - 依赖：T1.1
-  - 待开始
+  - ✅ 2026-08-08 完成：配置系统支持 mcpServers，内置 3 种预配置，chat 启动自动连接 + 注册工具，5 集成测试
 
 - [ ] **T1.3** 集成 memory MCP 服务
   - 涉及文件：`src/mcp/builtin-servers.ts`, `src/loop/memory-injector.ts`

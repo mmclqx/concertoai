@@ -18,6 +18,7 @@ import { shellTool } from '../tools/shell';
 import { McpManager } from '../mcp/manager';
 import { toMcpServerConfig } from '../mcp/builtin-servers';
 import type { MCPServerConfig } from '../mcp/types';
+import { MemoryInjector } from '../loop/memory-injector';
 import { App } from '../ui/App';
 import { formatSessionTime, SessionPicker } from '../ui/SessionPicker';
 
@@ -145,6 +146,9 @@ export async function runChat(options: RunChatOptions): Promise<void> {
       sessionId={sessionId}
       initialHistory={history}
       approvalStrategy={resolved.approvalPolicy}
+      memoryInjector={
+        mcpManager !== undefined ? new MemoryInjector(mcpManager) : undefined
+      }
     />,
   );
 }

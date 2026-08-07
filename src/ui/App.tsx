@@ -10,6 +10,7 @@ import type { ModelClient } from '../model/client';
 import { costFor, getModel } from '../model/models';
 import { estimateMessageListTokens, estimateTokens } from '../model/tokenizer';
 import type { SessionStore } from '../store/session';
+import type { MemoryInjector } from '../loop/memory-injector';
 import type { ApprovalRequest, ToolContext, ToolRegistry } from '../tools/registry';
 import { ApprovalModal, PlanConfirm } from './modals';
 import { PromptInput } from './PromptInput';
@@ -31,6 +32,8 @@ export interface AppProps {
   initialHistory?: ChatMessage[];
   /** 审批策略：ask = 弹框逐个审批（默认）；allowlist-only = 只放行白名单，其余一律拒绝（不弹框）。 */
   approvalStrategy?: 'ask' | 'allowlist-only';
+  /** MCP memory 注入器（v1.1）：每轮对话前检索相关记忆注入上下文。 */
+  memoryInjector?: MemoryInjector;
 }
 
 /**
@@ -71,6 +74,7 @@ export function App({
   sessionId,
   initialHistory,
   approvalStrategy = 'ask',
+  memoryInjector,
 }: AppProps) {
   const { exit } = useApp();
   const [messages, setMessages] = useState<ChatMessage[]>(initialHistory ?? []);
@@ -303,6 +307,14 @@ export function App({
       setMessages([...history, { role: 'user', content: text }]);
       setPhase('streaming');
       try {
+        // 检索 MCP memory 相关记忆，合并到 system prompt
+        const memoryBlock =
+          memoryInjector !== undefined ? await memoryInjector.retrieve(text) : '';
+        const effectivePrompt =
+          memoryBlock !== ''
+            ? `${memoryBlock}\n\n${systemPrompt ?? ''}`.trim()
+            : systemPrompt;
+
         const onEvent = makeOnEvent(controller);
         const result = await runLoop(
           {
@@ -310,7 +322,7 @@ export function App({
             client,
             registry,
             ctx: ctxWithApproval,
-            systemPrompt,
+            systemPrompt: effectivePrompt || undefined,
             onEvent,
             signal: controller.signal,
             contextWindow: getModel(model)?.contextWindow,
