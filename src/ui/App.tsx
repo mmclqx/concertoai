@@ -65,6 +65,8 @@ export function App({
   const [pending, setPending] = useState<ApprovalRequest | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tokens, setTokens] = useState({ input: 0, output: 0 });
+  /** API 返回的真实 usage 累计（usage 事件累加；流式中途仍显示估算值）。 */
+  const [realUsage, setRealUsage] = useState({ input: 0, output: 0 });
   const approvalResolver = useRef<((approved: boolean) => void) | null>(null);
   const busy = useRef(false);
 
@@ -102,6 +104,11 @@ export function App({
             setStreamed((s) => s + event.text);
           } else if (event.type === 'tool_call') {
             setActiveTool(event.toolCall);
+          } else if (event.type === 'usage') {
+            setRealUsage((u) => ({
+              input: u.input + event.usage.prompt_tokens,
+              output: u.output + event.usage.completion_tokens,
+            }));
           } else {
             setActiveTool(null);
           }
@@ -154,7 +161,9 @@ export function App({
     }
   });
 
-  const cost = costFor(model, tokens.input, tokens.output);
+  const showReal = realUsage.input + realUsage.output > 0;
+  const display = phase === 'streaming' || !showReal ? tokens : realUsage;
+  const cost = costFor(model, display.input, display.output);
 
   return (
     <Box flexDirection="column" paddingX={1}>
@@ -181,9 +190,10 @@ export function App({
       />
       <StatusBar
         model={model}
-        inputTokens={tokens.input}
-        outputTokens={tokens.output}
+        inputTokens={display.input}
+        outputTokens={display.output}
         cost={cost}
+        isReal={showReal && phase !== 'streaming'}
       />
     </Box>
   );

@@ -5,7 +5,12 @@ import path from 'node:path';
 import { render } from 'ink-testing-library';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { ToolCall } from '../../src/loop/types';
-import type { ChatCompletionChunk, ModelClient, StreamChatParams } from '../../src/model/client';
+import type {
+  ChatCompletionChunk,
+  ModelClient,
+  StreamChatParams,
+  Usage,
+} from '../../src/model/client';
 import { editFileTool } from '../../src/tools/edit';
 import { readFileTool } from '../../src/tools/read';
 import { ToolRegistry } from '../../src/tools/registry';
@@ -16,13 +21,18 @@ import { StatusBar } from '../../src/ui/StatusBar';
 interface FakeReply {
   content?: string;
   toolCalls?: ToolCall[];
+  /** 附加在流末尾 chunk 上的用量统计。 */
+  usage?: Usage;
 }
 
 class FakeModel implements ModelClient {
   /** 置位后下一次调用直接抛错（模拟模型调用失败）。 */
   failNext: Error | undefined;
 
-  constructor(private readonly script: FakeReply[]) {}
+  constructor(
+    private readonly script: FakeReply[],
+    private readonly delayMs = 0,
+  ) {}
 
   async *streamChat(_params: StreamChatParams): AsyncGenerator<ChatCompletionChunk> {
     if (this.failNext !== undefined) {
@@ -35,22 +45,29 @@ class FakeModel implements ModelClient {
       throw new Error('FakeModel 脚本耗尽');
     }
     if (reply.content !== undefined) {
+      if (this.delayMs > 0) {
+        await sleep(this.delayMs);
+      }
       yield fakeChunk({ content: reply.content });
     }
     let index = 0;
     for (const tc of reply.toolCalls ?? []) {
+      if (this.delayMs > 0) {
+        await sleep(this.delayMs);
+      }
       yield fakeChunk({
         tool_calls: [{ index, id: tc.id, function: { name: tc.name, arguments: tc.arguments } }],
       });
       index += 1;
     }
-    yield fakeChunk({}, 'stop');
+    yield fakeChunk({}, 'stop', reply.usage);
   }
 }
 
 function fakeChunk(
   delta: ChatCompletionChunk['choices'][number]['delta'],
   finishReason: string | null = null,
+  usage?: Usage,
 ): ChatCompletionChunk {
   return {
     id: 'fake-1',
@@ -58,6 +75,7 @@ function fakeChunk(
     created: 0,
     model: 'fake',
     choices: [{ index: 0, delta, finish_reason: finishReason }],
+    usage: usage ?? null,
   };
 }
 
@@ -223,6 +241,35 @@ describe('App 集成', () => {
     await waitFor(() => {
       expect(lastFrame()).toContain('连接超时');
     });
+    unmount();
+  });
+
+  it('流式结束后状态条显示真实 usage，流式中显示估算', async () => {
+    const model = new FakeModel(
+      [
+        {
+          content: '你好，Lumen',
+          usage: { prompt_tokens: 100, completion_tokens: 50, total_tokens: 150 },
+        },
+      ],
+      60,
+    );
+    const { stdin, lastFrame, unmount } = render(
+      <App client={model} registry={registry} ctx={{ cwd: tmp }} model="deepseek-v4-flash" />,
+    );
+    stdin.write('你好');
+    await sleep(50);
+    stdin.write('\r');
+    // 流式过程中（首 chunk 延迟 60ms）：状态条仍显示估算值，无「真实」标记
+    await waitFor(() => {
+      expect(lastFrame()).toContain('2/0');
+    });
+    expect(lastFrame()).not.toContain('真实');
+    // 流式结束后：显示 API 返回的真实 usage
+    await waitFor(() => {
+      expect(lastFrame()).toContain('100/50');
+    });
+    expect(lastFrame()).toContain('（真实）');
     unmount();
   });
 });

@@ -48,7 +48,18 @@ export interface ChatCompletionChunk {
     };
     finish_reason: string | null;
   }>;
-  usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number } | null;
+  usage?: Usage | null;
+}
+
+/** DeepSeek 返回的 token 用量统计。流式响应中出现在最后一个 chunk（finish_reason=stop）上。 */
+export interface Usage {
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  /** 缓存命中的输入 token 数（官方返回，可能缺失）。 */
+  prompt_cache_hit_tokens?: number;
+  /** 缓存未命中的输入 token 数（官方返回，可能缺失）。 */
+  prompt_cache_miss_tokens?: number;
 }
 
 export interface StreamChatParams {

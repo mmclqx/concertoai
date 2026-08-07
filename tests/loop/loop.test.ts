@@ -12,6 +12,7 @@ import type {
   ChatCompletionChunk,
   ModelClient,
   StreamChatParams,
+  Usage,
 } from '../../src/model/client';
 import { ApiError } from '../../src/model/client';
 import { editFileTool } from '../../src/tools/edit';
@@ -22,6 +23,8 @@ import { ToolRegistry } from '../../src/tools/registry';
 interface FakeReply {
   content?: string;
   toolCalls?: ToolCall[];
+  /** 附加在流末尾 chunk 上的用量统计。 */
+  usage?: Usage;
   throwError?: Error;
 }
 
@@ -62,13 +65,14 @@ class FakeModel implements ModelClient {
       });
       index += 1;
     }
-    yield fakeChunk({}, 'stop');
+    yield fakeChunk({}, 'stop', reply.usage);
   }
 }
 
 function fakeChunk(
   delta: ChatCompletionChunk['choices'][number]['delta'],
   finishReason: string | null = null,
+  usage?: Usage,
 ): ChatCompletionChunk {
   return {
     id: 'fake-1',
@@ -76,6 +80,7 @@ function fakeChunk(
     created: 0,
     model: 'fake',
     choices: [{ index: 0, delta, finish_reason: finishReason }],
+    usage: usage ?? null,
   };
 }
 
@@ -154,6 +159,62 @@ describe('runLoop 基础路径', () => {
     );
     const chunks = events.filter((e) => e.type === 'chunk');
     expect(chunks.map((e) => (e as { text: string }).text).join('')).toBe('流式回复');
+  });
+
+  it('usage 事件：上报最后一个带 usage 的 chunk', async () => {
+    const usageA: Usage = { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 };
+    const usageB: Usage = {
+      prompt_tokens: 100,
+      completion_tokens: 50,
+      total_tokens: 150,
+      prompt_cache_hit_tokens: 40,
+    };
+    const modelClient: ModelClient = {
+      async *streamChat() {
+        yield fakeChunk({ content: '前' }, null, usageA);
+        yield fakeChunk({ content: '后' }, null, usageB);
+        yield fakeChunk({}, 'stop');
+      },
+    };
+    const events: LoopEvent[] = [];
+    await runLoop(
+      { model, client: modelClient, registry, ctx, onEvent: (e) => events.push(e) },
+      [],
+      'hi',
+    );
+    const usageEvents = events.filter((e) => e.type === 'usage');
+    expect(usageEvents).toHaveLength(1);
+    expect((usageEvents[0] as { usage: Usage }).usage).toEqual(usageB);
+  });
+
+  it('无 usage 的流不上报 usage 事件', async () => {
+    const modelClient = new FakeModel([() => ({ content: 'ok' })]);
+    const events: LoopEvent[] = [];
+    await runLoop(
+      { model, client: modelClient, registry, ctx, onEvent: (e) => events.push(e) },
+      [],
+      'hi',
+    );
+    expect(events.some((e) => e.type === 'usage')).toBe(false);
+  });
+
+  it('多轮工具循环每轮上报 usage', async () => {
+    writeFileSync(path.join(tmp, 'a.txt'), 'x');
+    const usage: Usage = { prompt_tokens: 7, completion_tokens: 3, total_tokens: 10 };
+    const modelClient = new FakeModel([
+      () => ({
+        toolCalls: [{ id: 'c1', name: 'read_file', arguments: '{"path":"a.txt"}' }],
+        usage,
+      }),
+      () => ({ content: '完成', usage }),
+    ]);
+    const events: LoopEvent[] = [];
+    await runLoop(
+      { model, client: modelClient, registry, ctx, onEvent: (e) => events.push(e) },
+      [],
+      'hi',
+    );
+    expect(events.filter((e) => e.type === 'usage')).toHaveLength(2);
   });
 });
 

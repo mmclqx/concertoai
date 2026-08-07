@@ -9,7 +9,7 @@
  * - 工具循环超过 MAX_LOOP_TURNS 视为失控，抛错终止。
  */
 
-import type { ModelClient } from '../model/client';
+import type { ModelClient, Usage } from '../model/client';
 import type { ToolContext, ToolRegistry, ToolResult } from '../tools/registry';
 import {
   assistantMessage,
@@ -38,7 +38,8 @@ export interface LoopOptions {
 export type LoopEvent =
   | { type: 'chunk'; text: string }
   | { type: 'tool_call'; toolCall: ToolCall }
-  | { type: 'tool_result'; toolCall: ToolCall; result: ToolResult };
+  | { type: 'tool_result'; toolCall: ToolCall; result: ToolResult }
+  | { type: 'usage'; usage: Usage };
 
 /**
  * 运行一轮会话。返回更新后的完整消息历史：
@@ -88,11 +89,16 @@ async function streamAssistantReply(
 ): Promise<ChatMessage> {
   let content = '';
   const toolCallAcc = new Map<number, { id: string; name: string; args: string }>();
+  /** 最后一个带 usage 的 chunk（DeepSeek 在流末尾 chunk 返回用量统计）。 */
+  let lastUsage: Usage | undefined;
 
   for await (const chunk of options.client.streamChat({
     model: options.model,
     messages: toApiMessages(messages),
   })) {
+    if (chunk.usage != null) {
+      lastUsage = chunk.usage;
+    }
     for (const choice of chunk.choices) {
       const delta = choice.delta;
       const text = delta.content ?? '';
@@ -114,6 +120,10 @@ async function streamAssistantReply(
         toolCallAcc.set(piece.index, acc);
       }
     }
+  }
+
+  if (lastUsage !== undefined) {
+    options.onEvent?.({ type: 'usage', usage: lastUsage });
   }
 
   const toolCalls: ToolCall[] = [...toolCallAcc.entries()]

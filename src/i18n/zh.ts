@@ -48,6 +48,7 @@ export const zh = {
     tokens: 'token',
     cost: '成本',
     yuan: '元',
+    real: '真实',
   },
   session: {
     resumed: '已恢复会话 {id}（{count} 条消息）',

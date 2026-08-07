@@ -7,15 +7,23 @@ export interface StatusBarProps {
   inputTokens: number;
   outputTokens: number;
   cost: number;
+  /** token 数是否为 API 真实 usage（false = 估算值，流式中途展示）。 */
+  isReal?: boolean;
 }
 
-/** 状态条：模型名 + 输入/输出 token 估算 + 成本（元）。 */
-export function StatusBar({ model, inputTokens, outputTokens, cost }: StatusBarProps) {
+/** 状态条：模型名 + 输入/输出 token + 成本（元）。真实 usage 到达后显示真实值并标记。 */
+export function StatusBar({
+  model,
+  inputTokens,
+  outputTokens,
+  cost,
+  isReal = false,
+}: StatusBarProps) {
   return (
     <Box>
       <Text dimColor>
-        {zh.status.model}: {model} │ {zh.status.tokens}: {inputTokens}/{outputTokens} │{' '}
-        {zh.status.cost}: ¥{cost.toFixed(4)}
+        {zh.status.model}: {model} │ {zh.status.tokens}: {inputTokens}/{outputTokens}
+        {isReal ? `（${zh.status.real}）` : ''} │ {zh.status.cost}: ¥{cost.toFixed(4)}
         {zh.status.yuan}
       </Text>
     </Box>
