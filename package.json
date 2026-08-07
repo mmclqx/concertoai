@@ -30,6 +30,7 @@
     "verify": "npm run build && npm run lint && npm run typecheck && npm run test -- --silent"
   },
   "dependencies": {
+    "chalk": "^4.1.2",
     "cli-highlight": "^2.1.11",
     "commander": "^12.1.0",
     "ink": "^7.1.1",

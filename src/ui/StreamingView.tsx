@@ -1,18 +1,19 @@
 import { Text } from 'ink';
 
 import { zh } from '../i18n/zh';
+import { renderMarkdownToAnsi } from './markdown';
 
 export interface StreamingViewProps {
   text: string;
 }
 
 /**
- * 流式回复渲染。
- * v0.1 为纯文本（保留换行）；markdown 解析与代码高亮（cli-highlight）留 v0.2。
+ * 流式回复渲染：markdown → ANSI 增量渲染（标题/列表/加粗/行内码/代码块高亮）。
+ * 纯 ANSI 字符串输出（ink 原样保留转义序列），无 DOM、无 React 树开销。
  */
 export function StreamingView({ text }: StreamingViewProps) {
   if (text === '') {
     return <Text dimColor>{zh.ui.thinking}</Text>;
   }
-  return <Text>{text}</Text>;
+  return <Text>{renderMarkdownToAnsi(text)}</Text>;
 }
