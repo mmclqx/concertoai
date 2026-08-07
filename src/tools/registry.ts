@@ -1,6 +1,8 @@
 import { z } from 'zod';
 import type { DeepSeekApiTool } from '../model/client';
 
+import type { SnapshotStore } from '../planner/rollback';
+
 export interface ToolContext {
   /** 项目根目录（沙箱根），所有工具路径以此为基准解析。 */
   cwd: string;
@@ -14,6 +16,8 @@ export interface ToolContext {
    * 未配置 = 无白名单，所有命令一律走审批。
    */
   allowlistedPrefixes?: readonly string[];
+  /** 文件快照管理器（v1.1 计划回滚）：编辑前自动快照。 */
+  snapshotStore?: SnapshotStore;
 }
 
 export interface ApprovalRequest {

@@ -173,6 +173,11 @@ export const editFileTool: ToolSpec = {
       return { ok: false, error: '编辑被拒绝，文件未修改', repairable: false };
     }
 
+    // 落盘前快照原文件（v1.1 计划回滚）
+    if (ctx.snapshotStore !== undefined) {
+      await ctx.snapshotStore.snapshot(args.path, ctx.cwd);
+    }
+
     await fs.writeFile(resolved, plan.newContent, 'utf8');
     return { ok: true, data: { path: args.path, diff: plan.diff } };
   },
