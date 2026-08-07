@@ -3,6 +3,30 @@ import type { z } from 'zod';
 export interface ToolContext {
   /** 项目根目录（沙箱根），所有工具路径以此为基准解析。 */
   cwd: string;
+  /**
+   * 危险操作（编辑/shell）落盘或执行前的审批回调。
+   * 未提供时工具默认拒绝（fail-closed）；TUI 注入模态框，测试注入 stub。
+   */
+  requestApproval?: (request: ApprovalRequest) => Promise<boolean> | boolean;
+}
+
+export interface ApprovalRequest {
+  kind: 'edit' | 'shell';
+  /** 给审批者的一句话摘要（中文）。 */
+  summary: string;
+  /** 详细内容（edit：统一 diff；shell：命令文本）。 */
+  detail: string;
+}
+
+/** 统一审批入口：未配置回调时默认拒绝（fail-closed），无 yolo 模式。 */
+export async function requestApproval(
+  ctx: ToolContext,
+  request: ApprovalRequest,
+): Promise<boolean> {
+  if (ctx.requestApproval === undefined) {
+    return false;
+  }
+  return ctx.requestApproval(request);
 }
 
 export interface ToolResult {

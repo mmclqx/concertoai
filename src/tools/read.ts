@@ -41,7 +41,7 @@ const SKIP_DIRS = new Set([
 ]);
 
 /** 路径沙箱：把相对 ctx.cwd 的路径解析为绝对路径，越界即抛错。 */
-function resolveSafe(cwd: string, p: string): string {
+export function resolveSafe(cwd: string, p: string): string {
   if (p === '') {
     throw new Error('路径不能为空');
   }
