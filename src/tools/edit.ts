@@ -6,6 +6,11 @@
  * - search 为空 = 创建新文件（文件已存在时拒绝）；
  * - 审批回调未配置时默认拒绝（fail-closed），无 yolo 模式；
  * - 审批通过才落盘，拒绝或失败均不产生任何写入。
+ *
+ * CRLF/BOM 加固（T1.4）：
+ * - SEARCH 匹配在规范化文本（\r\n → \n）上进行，CRLF 与 LF 等价；
+ * - 替换结果保留原文件换行风格（按多数换行符检测）；
+ * - 不剥离/添加 BOM，避免意外改变文件的编码标记。
  */
 
 import { promises as fs } from 'node:fs';
@@ -37,6 +42,44 @@ function isEnoent(error: unknown): boolean {
   return error instanceof Error && 'code' in error && error.code === 'ENOENT';
 }
 
+/** 检测文件主换行风格：CRLF 数量 ≥ LF 且 > 0 时判为 CRLF，否则 LF。 */
+function detectEol(text: string): string {
+  const crlf = (text.match(/\r\n/g) ?? []).length;
+  const lf = (text.match(/\n/g) ?? []).length;
+  return crlf > 0 && crlf >= lf ? '\r\n' : '\n';
+}
+
+/** 把文本中的 \r\n 规范化为 \n（匹配基准）。 */
+function normalizeNewlines(text: string): string {
+  return text.replace(/\r\n/g, '\n');
+}
+
+/**
+ * 规范化文本偏移 → 原文本偏移。
+ * \r\n 在原文本占 2 字符、规范化后占 1，每个被替换的 \r\n 使原偏移多 1。
+ */
+function mapOffset(original: string, normOffset: number): number {
+  let crlfCount = 0;
+  const re = /\r\n/g;
+  while (true) {
+    const m = re.exec(original);
+    if (m === null) {
+      break;
+    }
+    if (m.index - crlfCount >= normOffset) {
+      break;
+    }
+    crlfCount += 1;
+  }
+  return normOffset + crlfCount;
+}
+
+/** 把文本换行统一转为目标风格（先归一化 \r\n 再替换，避免重复转换）。 */
+function convertEol(text: string, eol: string): string {
+  const normalized = text.replace(/\r\n/g, '\n');
+  return eol === '\r\n' ? normalized.replace(/\n/g, '\r\n') : normalized;
+}
+
 /**
  * 计算 SEARCH/REPLACE 编辑方案（纯函数，不落盘）。
  * 匹配失败/不唯一时抛错。
@@ -48,16 +91,25 @@ export function planEdit(original: string, search: string, replace: string): Edi
     }
     return { newContent: replace, diff: diffForCreation(replace) };
   }
-  const first = original.indexOf(search);
+  const eol = detectEol(original);
+  // 在规范化文本（\r\n → \n）上匹配：CRLF 与 LF 等价
+  const normOriginal = normalizeNewlines(original);
+  const normSearch = normalizeNewlines(search);
+  const first = normOriginal.indexOf(normSearch);
   if (first === -1) {
     throw new Error('SEARCH 内容未在文件中找到');
   }
-  const second = original.indexOf(search, first + 1);
+  const second = normOriginal.indexOf(normSearch, first + 1);
   if (second !== -1) {
     throw new Error('SEARCH 内容在文件中出现多次，请提供更精确的匹配块');
   }
-  const newContent = original.slice(0, first) + replace + original.slice(first + search.length);
-  return { newContent, diff: buildDiff(original, search, replace, first) };
+  // 规范化偏移映射回原文本偏移，切片保留原文件的换行风格；replace 转为原风格
+  const origStart = mapOffset(original, first);
+  const origEnd = mapOffset(original, first + normSearch.length);
+  const newContent =
+    original.slice(0, origStart) + convertEol(replace, eol) + original.slice(origEnd);
+  const diff = buildDiff(normOriginal, normSearch, normalizeNewlines(replace), first);
+  return { newContent, diff };
 }
 
 /** 新建文件的 diff（全 + 行）。 */

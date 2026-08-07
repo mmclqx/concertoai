@@ -17,6 +17,15 @@ import type { ToolResult, ToolSpec } from './registry';
 
 /** read_file 单次读取的最大字符数。 */
 export const MAX_READ_CHARS = 50_000;
+
+/** UTF-8 BOM（\uFEFF）。Node 的 utf8 解码会将其保留为文本首字符。 */
+const UTF8_BOM = '\uFEFF';
+
+/** 剥离文本开头的 UTF-8 BOM。 */
+function stripBom(text: string): string {
+  return text.startsWith(UTF8_BOM) ? text.slice(UTF8_BOM.length) : text;
+}
+
 /** search_content 命中数上限。 */
 export const MAX_SEARCH_RESULTS = 100;
 /** search_content 扫描的单个文件大小上限（字节）。 */
@@ -71,7 +80,7 @@ export const readFileTool: ToolSpec = {
     if (stat.isDirectory()) {
       return { ok: false, error: `不是文件而是目录: ${p}` };
     }
-    const content = await fs.readFile(resolved, 'utf8');
+    const content = stripBom(await fs.readFile(resolved, 'utf8'));
     const truncated = content.length > MAX_READ_CHARS;
     return {
       ok: true,
@@ -178,7 +187,7 @@ export const searchContentTool: ToolSpec = {
             continue;
           }
           try {
-            const text = await fs.readFile(full, 'utf8');
+            const text = stripBom(await fs.readFile(full, 'utf8'));
             if (text.includes('\0')) {
               skippedBinary += 1;
               continue;

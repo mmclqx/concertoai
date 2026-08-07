@@ -55,6 +55,14 @@ describe('read_file', () => {
     expect(data.totalChars).toBe(11);
   });
 
+  it('读取带 UTF-8 BOM 的文件时剥离 BOM', async () => {
+    write('bom.txt', Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from('hello')]));
+    const result = await runTool(readFileTool, { path: 'bom.txt' });
+    expect(result.ok).toBe(true);
+    const data = result.data as { content: string };
+    expect(data.content).toBe('hello');
+  });
+
   it('子目录相对路径可读', async () => {
     write('sub/deep.txt', 'ok');
     const result = await runTool(readFileTool, { path: path.join('sub', 'deep.txt') });
@@ -130,6 +138,14 @@ describe('search_content', () => {
     expect(result.ok).toBe(true);
     const data = result.data as { hits: Array<{ file: string; line: number; text: string }> };
     expect(data.hits).toEqual([{ file: 'a.txt', line: 2, text: '这里有 bug 问题' }]);
+  });
+
+  it('带 BOM 文件的首行可被搜索到（BOM 已剥离）', async () => {
+    write('bom.txt', Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from('目标内容\n')]));
+    const result = await runTool(searchContentTool, { pattern: '目标内容' });
+    expect(result.ok).toBe(true);
+    const data = result.data as { hits: Array<{ file: string; line: number; text: string }> };
+    expect(data.hits).toEqual([{ file: 'bom.txt', line: 1, text: '目标内容' }]);
   });
 
   it('默认不区分大小写，caseSensitive: true 区分', async () => {

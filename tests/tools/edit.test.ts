@@ -205,3 +205,47 @@ describe('edit_file 审批门控', () => {
     expect(editFileTool.parallelSafe).toBe(false);
   });
 });
+
+describe('edit_file CRLF 兼容（T1.4）', () => {
+  it('LF search 匹配 CRLF 文件，替换后保留 CRLF 换行风格', async () => {
+    write('crlf.txt', '第一行\r\n第二行\r\n第三行\r\n');
+    const result = await edit({ path: 'crlf.txt', search: '第二行', replace: '替换行' });
+    expect(result.ok).toBe(true);
+    expect(read('crlf.txt')).toBe('第一行\r\n替换行\r\n第三行\r\n');
+  });
+
+  it('多行替换：replace 中的 LF 转为文件原 CRLF 风格', async () => {
+    write('crlf.txt', '第一行\r\n第二行\r\n第三行\r\n');
+    const result = await edit({
+      path: 'crlf.txt',
+      search: '第一行\n第二行',
+      replace: '甲\n乙',
+    });
+    expect(result.ok).toBe(true);
+    expect(read('crlf.txt')).toBe('甲\r\n乙\r\n第三行\r\n');
+  });
+
+  it('CRLF search 匹配 CRLF 文件同样成功', async () => {
+    write('crlf.txt', '一行\r\n二行\r\n');
+    const result = await edit({ path: 'crlf.txt', search: '一行\r\n二行', replace: '合并' });
+    expect(result.ok).toBe(true);
+    expect(read('crlf.txt')).toBe('合并\r\n');
+  });
+
+  it('CRLF 文件按规范化文本判定唯一性（\r\n 与 \n 等价）', async () => {
+    write('crlf.txt', '目标\r\n目标\r\n');
+    const result = await edit({ path: 'crlf.txt', search: '目标\n', replace: 'x' });
+    expect(result.ok).toBe(false);
+    expect(String(result.error)).toContain('出现多次');
+  });
+
+  it('替换后 diff 展示规范化换行（无 \r 残留）', async () => {
+    write('crlf.txt', 'old\r\nnext\r\n');
+    const result = await edit({ path: 'crlf.txt', search: 'old', replace: 'new' });
+    expect(result.ok).toBe(true);
+    const data = result.data as { diff: string };
+    expect(data.diff).not.toContain('\r');
+    expect(data.diff).toContain('-old');
+    expect(data.diff).toContain('+new');
+  });
+});
