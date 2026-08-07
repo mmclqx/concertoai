@@ -25,6 +25,9 @@
   "publishConfig": {
     "access": "public"
   },
+  "overrides": {
+    "esbuild": "^0.28.1"
+  },
   "scripts": {
     "dev": "tsx src/cli/index.ts",
     "build": "tsup",
@@ -40,7 +43,7 @@
   "dependencies": {
     "chalk": "^4.1.2",
     "cli-highlight": "^2.1.11",
-    "commander": "^12.1.0",
+    "commander": "^15.0.0",
     "ink": "^7.1.1",
     "react": "^19.2.0",
     "zod": "^4.4.3"
@@ -52,7 +55,7 @@
     "ink-testing-library": "^4.0.0",
     "tsup": "^8.5.1",
     "tsx": "^4.23.0",
-    "typescript": "^5.6.0",
-    "vitest": "^2.1.9"
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.10"
   }
 }
