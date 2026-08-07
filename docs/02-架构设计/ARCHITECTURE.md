@@ -1,8 +1,8 @@
 # Lumen 架构文档
 
-> 版本：v1.0 · 2026-08-07 · 对应提交 `ab0b6c6`（T4.5 完成后）
+> 版本：v1.0 · 2026-08-07 · 对应提交 `80c19fa`（T4.6 完成后）
 > 本文档基于当前代码实现编写，作为后续维护与扩展的技术参考。
-> 配套文档：[开发计划](dev/lumen-dev-plan.md)、[任务拆解](dev/TASKS.md)
+> 配套文档：[开发计划](../03-开发计划与任务/v1.0-dev-plan.md)、[任务看板](../03-开发计划与任务/TASKS.md)
 
 ---
 
@@ -168,9 +168,10 @@ lumen/
 ├── docs/
 │   ├── 01-产品定位与范围.md
 │   ├── 02-架构设计/ARCHITECTURE.md   ← 本文档
-│   ├── 03-开发计划与任务/            v1.0 计划 + 任务看板
+│   ├── 03-开发计划与任务/            v0.1/v1.0 计划与任务书 + 任务看板
 │   ├── 04-发布流程.md
-│   └── user-guide.md      用户手册
+│   ├── 05-用户与开发指南/user-guide.md
+│   └── 06-会议与决策记录/DECISIONS.md（ADR）
 ├── .github/workflows/     ci.yml（push/PR verify + 手动冒烟）/ publish.yml（Trusted Publishing）
 ├── src/
 │   ├── index.ts          barrel：导出 v1.0 公共 API（VERSION / client / loop / tools / store / i18n）

@@ -4,7 +4,7 @@ Lumen —— 面向个人开发者的**中文优先**终端编码助手 CLI（De
 
 在项目目录里启动：读取代码 → 提出 diff 方案 → 征求命令许可 → 跑验证 → 留下可续接的会话记录。
 
-> 状态：v1.0 发布版（`npm run verify` 全绿，211+ 用例；`npm audit` 0 漏洞）。
+> 状态：v1.0 发布版（`npm run verify` 全绿，218 个用例；`npm audit` 0 漏洞）。
 
 ## 环境要求
 
@@ -78,7 +78,7 @@ lumen plan "重构这个模块"
   "defaultModel": "deepseek-v4-flash",
   "allowlist": ["npm test", "git status"],
   "approvalPolicy": "ask",
-  "sessionDir": "C:/data/lumen-sessions",
+  "sessionDir": "D:/lumen-sessions",
   "locale": "zh"
 }
 ```
@@ -126,7 +126,7 @@ lumen plan "重构这个模块"
 
 ## 文档
 
-- [用户手册](docs/user-guide.md) —— 详细使用说明
+- [用户手册](docs/05-用户与开发指南/user-guide.md) —— 详细使用说明
 - [架构文档](docs/02-架构设计/ARCHITECTURE.md) —— 技术设计
 - [发布流程](docs/04-发布流程.md) —— 版本与发布
 - [贡献指南](CONTRIBUTING.md) —— 参与开发
