@@ -23,6 +23,8 @@ export const zh = {
   },
   errors: {
     noApiKey: '未找到 DEEPSEEK_API_KEY 环境变量，请先设置后再启动。',
+    noTty:
+      'chat 模式需要交互式终端。请直接运行 `lumen chat`（不要通过管道/脚本调用），或使用 `lumen run "<任务>"` 一次性执行。',
     modelCallFailed: '模型调用失败：{message}',
     loopMaxTurns: '工具循环超过最大轮数，已终止',
     unknownTool: '未知工具: {name}',
