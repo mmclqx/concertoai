@@ -1,0 +1,148 @@
+/**
+ * shell 命令工具（run_command）。
+ *
+ * 安全基线：
+ * - 白名单前缀（如 npm test、git status）命中即免审批直跑（用户提前授权）；
+ * - 其余命令每次执行前强制审批，审批未配置时默认拒绝（fail-closed）；
+ * - 超时自动终止子进程；stdout/stderr 按长度截断，防止上下文膨胀；
+ * - 命令以 shell 方式执行（跨平台，Windows 走 cmd.exe），因此必须经过审批把关。
+ */
+
+import { type ChildProcess, spawn } from 'node:child_process';
+import { z } from 'zod';
+import type { ToolResult, ToolSpec } from './registry';
+import { requestApproval } from './registry';
+
+/** 默认命令超时（毫秒）。 */
+export const DEFAULT_SHELL_TIMEOUT_MS = 60_000;
+/** 允许的最大超时（毫秒）。 */
+export const MAX_SHELL_TIMEOUT_MS = 300_000;
+/** stdout/stderr 各自回填的最大字符数。 */
+export const MAX_SHELL_OUTPUT_CHARS = 20_000;
+
+const runCommandSchema = z.object({
+  command: z.string().min(1),
+  timeoutMs: z.number().int().min(1).max(MAX_SHELL_TIMEOUT_MS).optional(),
+});
+
+interface ShellArgs {
+  command: string;
+  timeoutMs?: number;
+}
+
+interface ShellOutput {
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+  truncated: boolean;
+}
+
+/**
+ * 白名单匹配：命令与白名单条目完全相同，或以其后跟空格开头
+ * （'npm test' 命中 'npm test -- --silent'，但不命中 'npm testx'）。
+ */
+export function isAllowlisted(command: string, prefixes: readonly string[] | undefined): boolean {
+  if (prefixes === undefined) {
+    return false;
+  }
+  return prefixes.some((prefix) => command === prefix || command.startsWith(`${prefix} `));
+}
+
+/** 终止子进程整棵树：Windows 用 taskkill /T /F，POSIX 用进程组 SIGKILL。 */
+function killTree(child: ChildProcess): void {
+  if (child.pid === undefined) {
+    return;
+  }
+  if (process.platform === 'win32') {
+    spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true });
+    return;
+  }
+  try {
+    process.kill(-child.pid, 'SIGKILL');
+  } catch {
+    child.kill('SIGKILL');
+  }
+}
+
+function runShellCommand(command: string, cwd: string, timeoutMs: number): Promise<ToolResult> {
+  return new Promise((resolve) => {
+    const child = spawn(command, {
+      shell: true,
+      cwd,
+      windowsHide: true,
+      detached: process.platform !== 'win32',
+    });
+    let stdout = '';
+    let stderr = '';
+    let done = false;
+    let timer: NodeJS.Timeout | undefined;
+
+    const finish = (result: ToolResult): void => {
+      if (done) {
+        return;
+      }
+      done = true;
+      if (timer !== undefined) {
+        clearTimeout(timer);
+      }
+      resolve(result);
+    };
+
+    timer = setTimeout(() => {
+      killTree(child);
+      finish({
+        ok: false,
+        error: `命令执行超时（${timeoutMs}ms），已终止`,
+      });
+    }, timeoutMs);
+
+    child.stdout?.on('data', (chunk: Buffer) => {
+      stdout += chunk.toString();
+    });
+    child.stderr?.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString();
+    });
+    child.on('error', (error) => {
+      finish({ ok: false, error: `命令启动失败: ${error.message}` });
+    });
+    child.on('close', (code) => {
+      const truncated =
+        stdout.length > MAX_SHELL_OUTPUT_CHARS || stderr.length > MAX_SHELL_OUTPUT_CHARS;
+      const data: ShellOutput = {
+        exitCode: code ?? -1,
+        stdout: stdout.slice(0, MAX_SHELL_OUTPUT_CHARS),
+        stderr: stderr.slice(0, MAX_SHELL_OUTPUT_CHARS),
+        truncated,
+      };
+      if (code === 0) {
+        finish({ ok: true, data });
+      } else {
+        finish({ ok: false, error: `命令退出码 ${code ?? -1}`, data });
+      }
+    });
+  });
+}
+
+export const shellTool: ToolSpec = {
+  name: 'run_command',
+  description: `在项目目录执行 shell 命令。白名单前缀（如 npm test、git status）免审批直跑；其余命令每次执行前需要审批。默认超时 ${DEFAULT_SHELL_TIMEOUT_MS}ms。`,
+  parameters: runCommandSchema,
+  parallelSafe: false,
+  execute: async (rawArgs, ctx): Promise<ToolResult> => {
+    const args = rawArgs as ShellArgs;
+    const timeoutMs = args.timeoutMs ?? DEFAULT_SHELL_TIMEOUT_MS;
+
+    if (!isAllowlisted(args.command, ctx.allowlistedPrefixes)) {
+      const approved = await requestApproval(ctx, {
+        kind: 'shell',
+        summary: `执行命令: ${args.command}`,
+        detail: args.command,
+      });
+      if (!approved) {
+        return { ok: false, error: '命令执行被拒绝' };
+      }
+    }
+
+    return runShellCommand(args.command, ctx.cwd, timeoutMs);
+  },
+};

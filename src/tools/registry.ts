@@ -8,6 +8,11 @@ export interface ToolContext {
    * 未提供时工具默认拒绝（fail-closed）；TUI 注入模态框，测试注入 stub。
    */
   requestApproval?: (request: ApprovalRequest) => Promise<boolean> | boolean;
+  /**
+   * shell 命令白名单前缀：命中（按命令词边界匹配）可免审批直跑；
+   * 未配置 = 无白名单，所有命令一律走审批。
+   */
+  allowlistedPrefixes?: readonly string[];
 }
 
 export interface ApprovalRequest {
