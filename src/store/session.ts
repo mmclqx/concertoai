@@ -20,6 +20,10 @@ const ID_RE = /^[\w.-]+$/;
 /** 列表摘要中首条 user 消息的截断长度。 */
 const SUMMARY_MAX_CHARS = 40;
 
+function isEexist(error: unknown): boolean {
+  return error instanceof Error && 'code' in error && error.code === 'EEXIST';
+}
+
 export interface SessionSummary {
   id: string;
   createdAt: number;
@@ -48,15 +52,26 @@ export class SessionStore {
 
   /**
    * 创建新会话并写入初始消息，返回会话 id。
-   * id 为时间戳（含毫秒），同一秒内多次创建不会互相覆盖。
+   * id 为时间戳（含毫秒）；同毫秒碰撞时用排他创建（wx）检测并换新 id 重试。
    */
   async create(messages: ChatMessage[]): Promise<string> {
     await this.ensureDir();
-    const id = newSessionId();
-    const file = this.resolve(id);
     const content = messages.map((m) => JSON.stringify(m)).join('\n');
-    await writeFile(file, content === '' ? '' : `${content}\n`, 'utf8');
-    return id;
+    const body = content === '' ? '' : `${content}\n`;
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const id = newSessionId();
+      const file = this.resolve(id);
+      try {
+        await writeFile(file, body, { encoding: 'utf8', flag: 'wx' });
+        return id;
+      } catch (error) {
+        if (!isEexist(error)) {
+          throw error;
+        }
+        // 同毫秒 id 碰撞 → 换新 id 重试
+      }
+    }
+    throw new Error('创建会话失败：id 碰撞过多');
   }
 
   /** 追加一条消息（文件不存在时自动创建）。 */
