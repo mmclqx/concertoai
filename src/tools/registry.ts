@@ -40,6 +40,12 @@ export interface ToolResult {
   data?: unknown;
   /** 失败时的错误说明（中文，回填给模型）。 */
   error?: string;
+  /**
+   * 失败是否可修复（模型修正后重试，T3.2 修复管线）。
+   * 缺省视为可修复；显式 false = 不可修复（路径越界、审批拒绝、未知工具），
+   * 不进入修复计数、不会触发修复终止。
+   */
+  repairable?: boolean;
 }
 
 export interface ToolSpec {
@@ -81,16 +87,18 @@ export class ToolRegistry {
   async run(name: string, args: unknown, ctx: ToolContext): Promise<ToolResult> {
     const spec = this.tools.get(name);
     if (spec === undefined) {
-      return { ok: false, error: `未知工具: ${name}` };
+      return { ok: false, error: `未知工具: ${name}`, repairable: false };
     }
     const parsed = spec.parameters.safeParse(args);
     if (!parsed.success) {
-      return { ok: false, error: `参数校验失败: ${formatIssues(parsed.error)}` };
+      return { ok: false, error: `参数校验失败: ${formatIssues(parsed.error)}`, repairable: true };
     }
     try {
       return await spec.execute(parsed.data, ctx);
     } catch (error) {
-      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+      const message = error instanceof Error ? error.message : String(error);
+      // 路径越界属不可修复错误（模型侧幻觉路径），其余异常视为可修复
+      return { ok: false, error: message, repairable: !message.includes('越界') };
     }
   }
 }

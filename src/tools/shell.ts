@@ -139,7 +139,7 @@ export const shellTool: ToolSpec = {
         detail: args.command,
       });
       if (!approved) {
-        return { ok: false, error: '命令执行被拒绝' };
+        return { ok: false, error: '命令执行被拒绝', repairable: false };
       }
     }
 

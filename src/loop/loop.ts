@@ -27,6 +27,9 @@ import type { ChatMessage, ToolCall } from './types';
 /** 单次输入允许的最大工具循环轮数。 */
 export const MAX_LOOP_TURNS = 10;
 
+/** 可修复工具失败允许的最大累计次数（超过即终止，T3.2 修复管线）。 */
+export const MAX_REPAIRS = 2;
+
 export interface LoopOptions {
   model: string;
   client: ModelClient;
@@ -64,6 +67,8 @@ export async function runLoop(
   }
   messages.push(userMessage(input));
 
+  // 修复管线计数跨轮共享：一次 runLoop 内可修复失败累计（T3.2）
+  const repairState: RepairState = { count: 0 };
   for (let turn = 0; turn < MAX_LOOP_TURNS; turn += 1) {
     const assistant = await streamAssistantReply(options, messages);
     messages.push(assistant);
@@ -74,11 +79,16 @@ export async function runLoop(
     }
 
     for (const group of groupToolCalls(calls, options.registry)) {
-      await executeGroup(options, group, messages);
+      await executeGroup(options, group, messages, repairState);
     }
   }
 
   throw new Error(`工具循环超过最大轮数 ${MAX_LOOP_TURNS}，已终止`);
+}
+
+/** 修复管线状态：可修复失败的累计次数（跨并行组共享）。 */
+interface RepairState {
+  count: number;
 }
 
 /**
@@ -114,6 +124,7 @@ async function executeGroup(
   options: LoopOptions,
   group: ToolCall[],
   messages: ChatMessage[],
+  repairState: RepairState,
 ): Promise<void> {
   for (const call of group) {
     options.onEvent?.({ type: 'tool_call', toolCall: call });
@@ -127,6 +138,15 @@ async function executeGroup(
     }
     options.onEvent?.({ type: 'tool_result', toolCall: call, result });
     messages.push(toolResultMessage(call.id, formatToolResult(result, call.name)));
+    // 修复管线：可修复失败累计超限即终止（审批拒绝/越界等 repairable: false 不计数）
+    if (result.ok === false && result.repairable !== false) {
+      repairState.count += 1;
+      if (repairState.count > MAX_REPAIRS) {
+        throw new Error(
+          `工具调用连续失败 ${repairState.count} 次（可修复错误，上限 ${MAX_REPAIRS}），已终止`,
+        );
+      }
+    }
   }
 }
 

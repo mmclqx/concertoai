@@ -170,7 +170,7 @@ export const editFileTool: ToolSpec = {
       detail: plan.diff,
     });
     if (!approved) {
-      return { ok: false, error: '编辑被拒绝，文件未修改' };
+      return { ok: false, error: '编辑被拒绝，文件未修改', repairable: false };
     }
 
     await fs.writeFile(resolved, plan.newContent, 'utf8');

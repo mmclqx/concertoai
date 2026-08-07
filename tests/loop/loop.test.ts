@@ -559,3 +559,71 @@ describe('并行工具调度（T3.1）', () => {
     expect(resultIds).toEqual(['slow', 'fast']);
   });
 });
+
+describe('工具调用修复管线（T3.2）', () => {
+  it('可修复错误连续 3 次 → 终止（修复上限 2 次）', async () => {
+    const modelClient = new FakeModel([
+      () => ({
+        toolCalls: [{ id: 'c1', name: 'read_file', arguments: '{"path":"nope.txt"}' }],
+      }),
+      () => ({
+        toolCalls: [{ id: 'c2', name: 'read_file', arguments: '{"path":"nope.txt"}' }],
+      }),
+      () => ({
+        toolCalls: [{ id: 'c3', name: 'read_file', arguments: '{"path":"nope.txt"}' }],
+      }),
+    ]);
+    await expect(runLoop({ model, client: modelClient, registry, ctx }, [], 'hi')).rejects.toThrow(
+      '可修复错误',
+    );
+  });
+
+  it('参数校验失败同样计入修复计数（3 次终止）', async () => {
+    const modelClient = new FakeModel([
+      () => ({ toolCalls: [{ id: 'c1', name: 'read_file', arguments: '{}' }] }),
+      () => ({ toolCalls: [{ id: 'c2', name: 'read_file', arguments: '{}' }] }),
+      () => ({ toolCalls: [{ id: 'c3', name: 'read_file', arguments: '{}' }] }),
+    ]);
+    await expect(runLoop({ model, client: modelClient, registry, ctx }, [], 'hi')).rejects.toThrow(
+      '可修复错误',
+    );
+  });
+
+  it('修复 2 次内模型修正成功 → 正常完成', async () => {
+    writeFileSync(path.join(tmp, 'a.txt'), '内容');
+    const modelClient = new FakeModel([
+      () => ({
+        toolCalls: [{ id: 'c1', name: 'read_file', arguments: '{"path":"nope.txt"}' }],
+      }),
+      () => ({ toolCalls: [{ id: 'c2', name: 'read_file', arguments: '{"path":"a.txt"}' }] }),
+      () => ({ content: '读到了' }),
+    ]);
+    const result = await runLoop({ model, client: modelClient, registry, ctx }, [], 'hi');
+    expect(result.at(-1)?.content).toBe('读到了');
+  });
+
+  it('审批拒绝（repairable: false）连续多次不触发修复终止', async () => {
+    const denyCtx: ToolContext = { cwd: tmp, requestApproval: vi.fn(async () => false) };
+    const editArgs = '{"path":"b.txt","search":"","replace":"x"}';
+    const modelClient = new FakeModel([
+      () => ({ toolCalls: [{ id: 'c1', name: 'edit_file', arguments: editArgs }] }),
+      () => ({ toolCalls: [{ id: 'c2', name: 'edit_file', arguments: editArgs }] }),
+      () => ({ toolCalls: [{ id: 'c3', name: 'edit_file', arguments: editArgs }] }),
+      () => ({ toolCalls: [{ id: 'c4', name: 'edit_file', arguments: editArgs }] }),
+      () => ({ content: '放弃了' }),
+    ]);
+    const result = await runLoop({ model, client: modelClient, registry, ctx: denyCtx }, [], 'hi');
+    expect(result.at(-1)?.content).toBe('放弃了');
+  });
+
+  it('路径越界（repairable: false）连续多次不触发修复终止', async () => {
+    const modelClient = new FakeModel([
+      () => ({ toolCalls: [{ id: 'c1', name: 'read_file', arguments: '{"path":".."}' }] }),
+      () => ({ toolCalls: [{ id: 'c2', name: 'read_file', arguments: '{"path":".."}' }] }),
+      () => ({ toolCalls: [{ id: 'c3', name: 'read_file', arguments: '{"path":".."}' }] }),
+      () => ({ content: '换个方式' }),
+    ]);
+    const result = await runLoop({ model, client: modelClient, registry, ctx }, [], 'hi');
+    expect(result.at(-1)?.content).toBe('换个方式');
+  });
+});
