@@ -1,0 +1,74 @@
+import type { z } from 'zod';
+
+export interface ToolContext {
+  /** 项目根目录（沙箱根），所有工具路径以此为基准解析。 */
+  cwd: string;
+}
+
+export interface ToolResult {
+  ok: boolean;
+  /** 成功时的结构化数据（由 loop 层负责格式化回填）。 */
+  data?: unknown;
+  /** 失败时的错误说明（中文，回填给模型）。 */
+  error?: string;
+}
+
+export interface ToolSpec {
+  name: string;
+  description: string;
+  parameters: z.ZodTypeAny;
+  /**
+   * 预留字段位：是否可与其他工具并行执行。
+   * v0.1 顺序执行，但 read 等只读工具已声明并行安全，
+   * 为 v0.2 的并行调度保留契约位。
+   */
+  parallelSafe: boolean;
+  /** 执行工具。入参已被 parameters 校验通过（实现内按需断言类型）。 */
+  execute(args: unknown, ctx: ToolContext): Promise<ToolResult> | ToolResult;
+}
+
+export class ToolRegistry {
+  private readonly tools = new Map<string, ToolSpec>();
+
+  register(spec: ToolSpec): this {
+    if (this.tools.has(spec.name)) {
+      throw new Error(`工具重复注册: ${spec.name}`);
+    }
+    this.tools.set(spec.name, spec);
+    return this;
+  }
+
+  get(name: string): ToolSpec | undefined {
+    return this.tools.get(name);
+  }
+
+  list(): ToolSpec[] {
+    return [...this.tools.values()];
+  }
+
+  /**
+   * 按名分发：zod 校验参数 → 执行 → 结果。
+   * 未知工具、参数校验失败、执行异常均转为 ok:false 的结构化结果，不向上抛。
+   */
+  async run(name: string, args: unknown, ctx: ToolContext): Promise<ToolResult> {
+    const spec = this.tools.get(name);
+    if (spec === undefined) {
+      return { ok: false, error: `未知工具: ${name}` };
+    }
+    const parsed = spec.parameters.safeParse(args);
+    if (!parsed.success) {
+      return { ok: false, error: `参数校验失败: ${formatIssues(parsed.error)}` };
+    }
+    try {
+      return await spec.execute(parsed.data, ctx);
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+}
+
+function formatIssues(error: z.ZodError): string {
+  return error.issues
+    .map((issue) => `${issue.path.join('.') || '(根)'}: ${issue.message}`)
+    .join('; ');
+}
