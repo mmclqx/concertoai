@@ -1,0 +1,49 @@
+{
+  "name": "lumen",
+  "version": "0.1.0",
+  "description": "Lumen —— 面向个人开发者的中文优先终端编码助手 CLI（DeepSeek 驱动）",
+  "type": "module",
+  "license": "MIT",
+  "author": "Lumen 项目作者",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "tsx src/cli/index.ts",
+    "build": "tsup",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "biome check src tests",
+    "lint:fix": "biome check --write src tests",
+    "typecheck": "tsc --noEmit",
+    "verify": "npm run build && npm run lint && npm run typecheck && npm run test -- --silent"
+  },
+  "dependencies": {
+    "cli-highlight": "^2.1.11",
+    "commander": "^12.1.0",
+    "ink": "^7.1.1",
+    "react": "^19.2.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.7",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.2.0",
+    "ink-testing-library": "^4.0.0",
+    "tsup": "^8.5.1",
+    "tsx": "^4.23.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.9"
+  }
+}

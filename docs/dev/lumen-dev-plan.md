@@ -1,0 +1,141 @@
+# Lumen v0.1 详细开发计划
+
+> 状态：已批准待执行（2026-08-07）
+> 项目：从 0 新建的个人开发者编码助手 CLI
+> 技术栈：TypeScript (strict) + Node ≥22 + Ink（已定）
+> 定位：DeepSeek 驱动 · 中文优先 · 最小闭环先行
+
+---
+
+## 0. 定位与范围
+
+**一句话定位**：面向个人开发者的终端编码助手——在项目目录里启动，读取代码、提出 diff 方案、征求命令许可、跑验证、留下会话记录。
+
+**v0.1 范围（7 项，硬约束）**：
+1. 项目骨架与工具链
+2. DeepSeek 流式客户端
+3. 工具集与审批流（读/搜/编辑/shell）
+4. 会话循环 + JSONL 持久化 + resume
+5. Ink TUI（输入/流式/审批/成本条）
+6. 项目规则加载（AGENTS.md/CARBON.md）
+7. 测试与验收
+
+**非目标（v0.2 再做）**：缓存优先上下文、工具调用修复管线、子代理、技能系统、MCP 接入、history 存档机制、多语言（EN 版）。
+
+## 1. 技术栈与依赖
+
+**运行时**：Node ≥22（原生 fetch / SSE 流式），ESM，`"type": "module"`。
+
+| 依赖 | 用途 |
+| --- | --- |
+| `ink` ^7 + `react` ^19 | TUI 组件化渲染 |
+| `commander` ^12 | CLI 命令解析（chat/run/init） |
+| `zod` | 工具参数 schema 校验 |
+| `cli-highlight` | 代码高亮（diff/输出） |
+
+**devDependencies**：`typescript` ^5.6（strict）、`tsx`（开发运行）、`vitest` ^2（测试）、`@biomejs/biome`（lint/format）、`tsup`（打包）、`ink-testing-library`（UI 测试）、`@types/react`、`@types/node`。
+
+**npm scripts（对齐 Carbon Code 成熟度）**：
+```
+dev / build / test / test:watch / lint / lint:fix / typecheck / verify
+```
+`verify = build + lint + typecheck + test --silent`（验收主命令）。
+
+## 2. 目录结构（文件级）
+
+```
+lumen/
+├── package.json / tsconfig.json / biome.json / vitest.config.ts / tsup.config.ts
+├── README.md
+├── docs/                        ← 本计划 + 后续设计文档
+├── src/
+│   ├── index.ts                 库入口 barrel（v0.1 导出 client/loop/types）
+│   ├── cli/
+│   │   ├── index.ts             commander 入口：lumen / lumen chat / lumen run "任务"
+│   │   ├── chat.ts              chat 命令装配（TUI + loop + store）
+│   │   └── run.ts               run 一次性非交互执行
+│   ├── ui/
+│   │   ├── App.tsx              根组件（装配 + 状态机，≤500 行）
+│   │   ├── PromptInput.tsx      多行输入（Enter 发送 / Shift+Enter 换行）
+│   │   ├── StreamingView.tsx    流式回复渲染（markdown 简化版）
+│   │   ├── modals.tsx           EditConfirm / ShellConfirm / PlanConfirm 三个审批框
+│   │   └── StatusBar.tsx        token 数 + 成本 + 模型名
+│   ├── loop/
+│   │   ├── loop.ts              主循环：消息组装 → 模型 → 工具分发 → 回填（顺序版，缓存优化留 v0.2）
+│   │   ├── messages.ts          ChatMessage 构造/序列化
+│   │   └── types.ts             ChatMessage / ToolCall / ToolSpec
+│   ├── model/
+│   │   ├── client.ts            DeepSeek SSE 客户端（fetch + ReadableStream 解析，超时/重试/abort）
+│   │   ├── models.ts            模型表：deepseek-v4-flash（默认）/ deepseek-v4-pro，含定价
+│   │   └── tokenizer.ts         简易 token 估算（字符/4 近似，精确版 v0.2 换 BPE）
+│   ├── tools/
+│   │   ├── registry.ts          工具注册表 + zod schema + 分发（保留 parallelSafe 字段位）
+│   │   ├── read.ts              read_file / search_content / list_directory（只读，可并行）
+│   │   ├── edit.ts              SEARCH/REPLACE 编辑 + 统一 diff 输出（内部计算，落盘前审批）
+│   │   └── shell.ts             run_command（白名单前缀 + 每次审批 + 超时）
+│   ├── store/
+│   │   ├── session.ts           JSONL 会话记录（~/.lumen/sessions/）+ --resume 续接
+│   │   └── project-rules.ts     AGENTS.md → CARBON.md 优先级加载，≤8000 字符注入系统提示
+│   └── i18n/
+│       └── zh.ts                中文文案表（提示语/错误/审批框）
+└── tests/                       镜像 src 结构（*.test.ts）
+```
+
+## 3. 核心数据流
+
+```
+启动（读项目规则）→ TUI 输入
+      ↓
+loop: 消息追加 → DeepSeek SSE 流式
+      ↓ 返回工具调用（tool_calls）
+tools 分发 → read/search（只读直跑）| edit/shell（弹审批模态框）
+      ↓ 审批通过后执行，结果回填消息
+循环直到模型给出最终回复 → 显示总结 → 写 JSONL
+```
+
+**安全基线**（v0.1 就内置）：
+- 编辑与 shell 一律审批，无 yolo 模式
+- shell 支持允许前缀白名单（如 `npm test`、`git status`）
+- 工具结果按长度截断回填，防上下文膨胀
+
+## 4. 开发顺序与验收标准（6 个里程碑）
+
+| 里程碑 | 内容 | 验收标准 |
+| --- | --- | --- |
+| **M1 骨架** | package.json/tsconfig/biome/vitest/tsup/git init/README/目录空壳 | `npm run verify` 全通（空测试绿） |
+| **M2 DeepSeek 客户端** | client.ts/models.ts/tokenizer.ts + 单测 | mock SSE 流解析测试绿；有 key 时可真实冒烟 |
+| **M3 工具集与审批** | registry/read/edit/shell + 单测（临时目录、mock shell） | 编辑 diff 正确、审批门控生效（测试断言拒绝路径） |
+| **M4 循环+持久化** | loop.ts/messages.ts/session.ts + 集成测试（mock 模型） | mock 模型跑通"输入→工具→回复→存档→resume" |
+| **M5 TUI** | App/PromptInput/Streaming/modals/StatusBar + ink-testing-library | 渲染测试绿 + 手动冒烟（npm run dev 起 chat） |
+| **M6 规则+收尾** | project-rules.ts + i18n 文案 + README + docs 迁移 | 规则注入测试绿；最终 `npm run verify` 全绿 |
+
+每个里程碑完成即 git commit（如 `M2: DeepSeek SSE client`），独立可回滚。
+
+## 5. 测试策略
+
+- **单元**：SSE 分块解析（含跨 chunk 边界）、工具逻辑（临时目录）、规则加载优先级
+- **集成**：loop 用 mock 模型驱动全链路（含审批拒绝分支）
+- **UI**：ink-testing-library 渲染断言（审批框出现/状态条更新）
+- **网络**：真实 API 调用不进入 CI，仅本地冒烟（无 key 时跳过）
+
+## 6. 风险与缓解
+
+| 风险 | 缓解 |
+| --- | --- |
+| 无 API key 无法联调 | 全链路 mock；key 缺失时 CLI 友好报错指引配置 |
+| SSE 流式解析边界（分块截断 JSON） | 专用解析器 + 跨块测试；v0.2 可借鉴 Carbon Code 修复管线 |
+| TUI 审批交互回归 | ink-testing-library + 手动冒烟脚本 |
+| 范围膨胀 | 7 项硬约束，非目标列表明确拒绝 |
+
+## 7. 开放问题
+
+1. 目录确认 `F:\developer\2026\lumen`？（需 `/add-dir` 或新开会话）
+2. API key 用环境变量 `DEEPSEEK_API_KEY`？（不写入任何配置文件）
+3. 初始版本号 `0.1.0`？
+4. 仓库初始化：git init + 首次提交？（remote 后补）
+
+## 8. 部署形态（v0.1 后）
+
+- npm 包名 `@lumen/cli`（发布前查 npm 占用），bin：`lumen`
+- 安装：`npm install -g @lumen/cli`，使用：`cd 项目 && lumen`
+- v0.2 起按需追加：缓存优先上下文、工具修复、子代理、MCP、EN 文案

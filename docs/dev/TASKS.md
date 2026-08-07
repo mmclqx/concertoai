@@ -1,0 +1,130 @@
+# Lumen v0.1 任务拆解（10 个任务）
+
+> 来源：`docs/dev/lumen-dev-plan.md`（已批准，2026-08-07）
+> 执行顺序：T1 → T2/T3/T4/T9（可并行）→ T5/T6 → T7 → T8 → T10
+> 每个任务独立可提交、可回滚；完成即 `git commit`
+
+---
+
+## 版权声明
+
+**本项目（Lumen）为全新独立项目，非任何上游项目的复制或派生。**
+所有代码、文档、测试的版权归项目作者个人所有，保留一切权利。
+对外使用条款（开源许可）待定，见文末「开放问题」。
+
+---
+
+## T1 · M1 项目骨架与工具链
+
+- **目标**：搭建 ESM + TypeScript(strict) + Node ≥22 工程骨架，工具链全部就位，`npm run verify` 全绿，完成首次 git 提交。
+- **涉及文件**：
+  - `package.json`（`"type": "module"`，脚本 `dev / build / test / test:watch / lint / lint:fix / typecheck / verify`，verify = build + lint + typecheck + test --silent）
+  - `tsconfig.json`（strict 全开）、`biome.json`（lint/format）、`vitest.config.ts`、`tsup.config.ts`（ESM 打包）
+  - `.gitignore`、`README.md`（项目定位 + 中文使用说明骨架）
+  - `tests/smoke.test.ts`（最小冒烟测试，保证空骨架测试非空）
+- **依赖前置**：无（`docs/dev/lumen-dev-plan.md` 已就位）
+- **预计耗时**：约 2 小时（含依赖安装）
+- **验收**：`npm run verify` 全通；git 提交 `M1: project skeleton & toolchain`（分支改名为 `main`）
+
+## T2 · DeepSeek SSE 流式客户端
+
+- **目标**：实现 `client.ts`——基于原生 fetch + ReadableStream 的 SSE 解析（正确处理跨 chunk 截断的 JSON），支持超时、重试、abort；配套 mock 流单测。
+- **涉及文件**：`src/model/client.ts`、`tests/model/client.test.ts`
+- **依赖前置**：T1
+- **预计耗时**：约 3 小时
+- **验收**：mock SSE 流解析测试全绿（含分块边界用例）；有 key 时本地冒烟（不进 CI）
+
+## T3 · 模型表与 token 估算
+
+- **目标**：`models.ts` 维护模型表（`deepseek-v4-flash` 默认 / `deepseek-v4-pro`，含每百万 token 定价）；`tokenizer.ts` 实现字符/4 近似估算（v0.2 换 BPE）。
+- **涉及文件**：`src/model/models.ts`、`src/model/tokenizer.ts`、`tests/model/tokenizer.test.ts`
+- **依赖前置**：T1（与 T2、T4、T9 相互独立，可并行）
+- **预计耗时**：约 1.5 小时
+- **验收**：估算与定价单测绿
+
+## T4 · 工具注册表与只读工具
+
+- **目标**：`registry.ts` 工具注册表（zod schema 校验 + 按名分发，保留 `parallelSafe` 字段位）；`read.ts` 实现 `read_file / search_content / list_directory` 三个只读工具（可并行直跑，无需审批）。
+- **涉及文件**：`src/tools/registry.ts`、`src/tools/read.ts`、`tests/tools/read.test.ts`（临时目录夹具）
+- **依赖前置**：T1
+- **预计耗时**：约 3 小时
+- **验收**：只读工具单测绿（路径越界、大文件截断等边界）
+
+## T5 · SEARCH/REPLACE 编辑与 diff
+
+- **目标**：`edit.ts` 实现 SEARCH/REPLACE 编辑，内部计算统一 diff 输出；落盘前走审批门控（审批函数可注入——测试注入 stub，TUI 注入模态框），测试必须断言"拒绝路径不落盘"。
+- **涉及文件**：`src/tools/edit.ts`、`tests/tools/edit.test.ts`
+- **依赖前置**：T4（复用 registry 模式）
+- **预计耗时**：约 3 小时
+- **验收**：diff 输出正确；审批通过才落盘、拒绝不落盘，测试全绿
+
+## T6 · shell 工具与审批
+
+- **目标**：`shell.ts` 实现 `run_command`——允许前缀白名单（如 `npm test`、`git status`）+ 每次执行都审批 + 超时控制；mock shell 单测覆盖白名单命中/拒绝、审批拒绝、超时三条路径。
+- **涉及文件**：`src/tools/shell.ts`、`tests/tools/shell.test.ts`
+- **依赖前置**：T4
+- **预计耗时**：约 2.5 小时
+- **验收**：白名单/审批/超时单测绿
+
+## T7 · 会话循环与消息模型
+
+- **目标**：`types.ts` 定义 `ChatMessage / ToolCall / ToolSpec`；`messages.ts` 消息构造与序列化；`loop.ts` 主循环（消息组装 → 模型调用 → 工具分发 → 结果回填，顺序版，工具结果按长度截断防上下文膨胀）；用 mock 模型做集成测试，覆盖"输入 → 工具调用 → 回复"全链路及审批拒绝分支。
+- **涉及文件**：`src/loop/loop.ts`、`src/loop/messages.ts`、`src/loop/types.ts`、`tests/loop/loop.test.ts`
+- **依赖前置**：T2、T4、T5、T6
+- **预计耗时**：约 4 小时
+- **验收**：mock 模型全链路集成测试绿
+
+## T8 · JSONL 会话持久化与 resume
+
+- **目标**：`session.ts` 把会话按 JSONL 写入 `~/.lumen/sessions/`（消息行结构可续接），支持 `--resume` 从历史会话恢复上下文。
+- **涉及文件**：`src/store/session.ts`、`tests/store/session.test.ts`
+- **依赖前置**：T7（复用 ChatMessage 类型）
+- **预计耗时**：约 2 小时
+- **验收**：存档 → 重读 → 续接测试绿
+
+## T9 · 项目规则加载与 i18n 文案
+
+- **目标**：`project-rules.ts` 按 AGENTS.md → CARBON.md 优先级加载项目规则，截断至 ≤8000 字符注入系统提示；`zh.ts` 建立中文文案表（提示语/错误/审批框文案，全项目唯一文案来源）。
+- **涉及文件**：`src/store/project-rules.ts`、`src/i18n/zh.ts`、`tests/store/project-rules.test.ts`
+- **依赖前置**：T1（与 T4~T8 相互独立，可并行）
+- **预计耗时**：约 2 小时
+- **验收**：规则加载优先级、截断逻辑测试绿
+
+## T10 · TUI、CLI 装配与收尾（M5 + M6）
+
+- **目标**：完成全部 UI 与入口装配并收尾：
+  - `src/ui/`：`App.tsx`（根组件 + 状态机 ≤500 行）、`PromptInput.tsx`（Enter 发送 / Shift+Enter 换行）、`StreamingView.tsx`（流式 markdown 简化渲染）、`modals.tsx`（EditConfirm / ShellConfirm / PlanConfirm 三个审批框）、`StatusBar.tsx`（token 数 + 成本 + 模型名）
+  - `src/cli/`：`index.ts`（commander：`lumen / lumen chat / lumen run "任务"`）、`chat.ts`（TUI + loop + store 装配）、`run.ts`（一次性非交互执行）
+  - `src/index.ts` 库入口 barrel（导出 client/loop/types）
+  - ink-testing-library 渲染测试（审批框出现、状态条更新）
+  - README 完善、`docs/` 文档归位、最终 `npm run verify` 全绿
+- **涉及文件**：`src/ui/*.tsx`、`src/cli/*.ts`、`src/index.ts`、`tests/ui/*.test.tsx`、`README.md`
+- **依赖前置**：T7、T8、T9
+- **预计耗时**：约 6 小时
+- **验收**：UI 渲染测试绿；`npm run verify` 全绿；`npm run dev` 手动冒烟起 chat；git 提交 `M5: TUI + M6: release-ready`
+
+---
+
+## 依赖关系总览
+
+| 任务 | 内容 | 依赖 | 预计耗时 |
+| --- | --- | --- | --- |
+| T1 | 骨架与工具链 | — | 2h |
+| T2 | DeepSeek SSE 客户端 | T1 | 3h |
+| T3 | 模型表 + token 估算 | T1 | 1.5h |
+| T4 | 注册表 + 只读工具 | T1 | 3h |
+| T5 | SEARCH/REPLACE 编辑 + diff | T4 | 3h |
+| T6 | shell 工具 + 审批 | T4 | 2.5h |
+| T7 | 会话循环 + 消息模型 | T2, T4, T5, T6 | 4h |
+| T8 | JSONL 持久化 + resume | T7 | 2h |
+| T9 | 项目规则 + i18n | T1 | 2h |
+| T10 | TUI + CLI 装配 + 收尾 | T7, T8, T9 | 6h |
+
+**合计约 29 小时**。关键路径：T1 → T2/T4 → T5/T6 → T7 → T8 → T10（约 22.5h）；T3、T9 可并行消化。
+
+## 开放问题
+
+1. **license 字段**：默认按「MIT，版权归作者」处理（README 与 package.json 声明 `Copyright (c) 2026 <作者>`）；如需完全闭源改 `UNLICENSED`。
+2. **git 身份**：当前 repo 身份是默认的 `root / 326906514@qq.com`，首次提交前建议改为你的名字（`git config user.name/user.email`）。
+3. **API key**：按计划用环境变量 `DEEPSEEK_API_KEY`，不写入任何配置文件。
+4. **版本号**：初始 `0.1.0`（当前 stub 是 1.0.0，T1 会改掉）。
