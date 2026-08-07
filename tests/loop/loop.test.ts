@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { z } from 'zod';
 import type { LoopEvent } from '../../src/loop/loop';
 import { MAX_LOOP_TURNS, runLoop } from '../../src/loop/loop';
 import { assistantMessage, systemMessage, userMessage } from '../../src/loop/messages';
@@ -17,7 +18,7 @@ import type {
 import { ApiError } from '../../src/model/client';
 import { editFileTool } from '../../src/tools/edit';
 import { readFileTool } from '../../src/tools/read';
-import type { ToolContext } from '../../src/tools/registry';
+import type { ToolContext, ToolSpec } from '../../src/tools/registry';
 import { ToolRegistry } from '../../src/tools/registry';
 
 interface FakeReply {
@@ -426,5 +427,135 @@ describe('runLoop 工具链路', () => {
     await expect(runLoop({ model, client: modelClient, registry, ctx }, [], 'hi')).rejects.toThrow(
       '最大轮数',
     );
+  });
+});
+
+describe('并行工具调度（T3.1）', () => {
+  it('parallelSafe 工具并行执行（并发计数到达组大小）', async () => {
+    let concurrent = 0;
+    let maxConcurrent = 0;
+    const slowTool: ToolSpec = {
+      name: 'slow_tool',
+      description: '测试用慢工具',
+      parameters: z.object({}),
+      parallelSafe: true,
+      execute: async () => {
+        concurrent += 1;
+        maxConcurrent = Math.max(maxConcurrent, concurrent);
+        await new Promise((resolve) => setTimeout(resolve, 30));
+        concurrent -= 1;
+        return { ok: true, data: { done: true } };
+      },
+    };
+    const reg = new ToolRegistry().register(slowTool);
+    const modelClient = new FakeModel([
+      () => ({
+        toolCalls: [
+          { id: 'a', name: 'slow_tool', arguments: '{}' },
+          { id: 'b', name: 'slow_tool', arguments: '{}' },
+          { id: 'c', name: 'slow_tool', arguments: '{}' },
+        ],
+      }),
+      () => ({ content: '完成' }),
+    ]);
+    await runLoop({ model, client: modelClient, registry: reg, ctx }, [], 'hi');
+    expect(maxConcurrent).toBe(3);
+  });
+
+  it('审批类工具（edit_file）串行执行', async () => {
+    let concurrent = 0;
+    let maxConcurrent = 0;
+    const approvalCtx: ToolContext = {
+      cwd: tmp,
+      requestApproval: async () => {
+        concurrent += 1;
+        maxConcurrent = Math.max(maxConcurrent, concurrent);
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        concurrent -= 1;
+        return true;
+      },
+    };
+    const modelClient = new FakeModel([
+      () => ({
+        toolCalls: [
+          { id: 'e1', name: 'edit_file', arguments: '{"path":"b.txt","search":"","replace":"x"}' },
+          { id: 'e2', name: 'edit_file', arguments: '{"path":"c.txt","search":"","replace":"y"}' },
+        ],
+      }),
+      () => ({ content: '完成' }),
+    ]);
+    await runLoop({ model, client: modelClient, registry, ctx: approvalCtx }, [], 'hi');
+    expect(maxConcurrent).toBe(1);
+    expect(readFileSync(path.join(tmp, 'b.txt'), 'utf8')).toBe('x');
+    expect(readFileSync(path.join(tmp, 'c.txt'), 'utf8')).toBe('y');
+  });
+
+  it('混合调用：parallelSafe 组内并行、审批类独立串行，事件按原始顺序', async () => {
+    writeFileSync(path.join(tmp, 'a.txt'), '内容');
+    const events: LoopEvent[] = [];
+    const modelClient = new FakeModel([
+      () => ({
+        toolCalls: [
+          { id: 'r1', name: 'read_file', arguments: '{"path":"a.txt"}' },
+          { id: 'e1', name: 'edit_file', arguments: '{"path":"b.txt","search":"","replace":"hi"}' },
+          { id: 'r2', name: 'read_file', arguments: '{"path":"a.txt"}' },
+        ],
+      }),
+      () => ({ content: '完成' }),
+    ]);
+    await runLoop(
+      { model, client: modelClient, registry, ctx, onEvent: (e) => events.push(e) },
+      [],
+      'hi',
+    );
+    const callIds = events
+      .filter((e) => e.type === 'tool_call')
+      .map((e) => (e as { toolCall: ToolCall }).toolCall.id);
+    const resultIds = events
+      .filter((e) => e.type === 'tool_result')
+      .map((e) => (e as { toolCall: ToolCall }).toolCall.id);
+    expect(callIds).toEqual(['r1', 'e1', 'r2']);
+    expect(resultIds).toEqual(['r1', 'e1', 'r2']);
+    expect(readFileSync(path.join(tmp, 'b.txt'), 'utf8')).toBe('hi');
+  });
+
+  it('并行组内完成顺序不同，tool_result 仍按调用顺序回填', async () => {
+    const delayTool: ToolSpec = {
+      name: 'delay_tool',
+      description: '可配置延迟的并行安全工具',
+      parameters: z.object({ ms: z.number() }),
+      parallelSafe: true,
+      execute: async (rawArgs) => {
+        const { ms } = rawArgs as { ms: number };
+        await new Promise((resolve) => setTimeout(resolve, ms));
+        return { ok: true, data: { ms } };
+      },
+    };
+    const reg = new ToolRegistry().register(delayTool);
+    const events: LoopEvent[] = [];
+    const modelClient = new FakeModel([
+      () => ({
+        toolCalls: [
+          { id: 'slow', name: 'delay_tool', arguments: '{"ms":60}' },
+          { id: 'fast', name: 'delay_tool', arguments: '{"ms":10}' },
+        ],
+      }),
+      (messages) => {
+        // 第二个工具先完成，但 tool 消息顺序必须与调用顺序一致
+        const toolMsgs = messages.filter((m) => m.role === 'tool');
+        expect(String(toolMsgs[0]?.content)).toContain('"ms":60');
+        expect(String(toolMsgs[1]?.content)).toContain('"ms":10');
+        return { content: '完成' };
+      },
+    ]);
+    await runLoop(
+      { model, client: modelClient, registry: reg, ctx, onEvent: (e) => events.push(e) },
+      [],
+      'hi',
+    );
+    const resultIds = events
+      .filter((e) => e.type === 'tool_result')
+      .map((e) => (e as { toolCall: ToolCall }).toolCall.id);
+    expect(resultIds).toEqual(['slow', 'fast']);
   });
 });

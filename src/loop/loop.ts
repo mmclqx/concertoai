@@ -3,7 +3,8 @@
  *
  * - 单次 runLoop = 「一轮用户输入 → 最终回复」，返回完整消息历史（含本轮新增），
  *   调用方（TUI / run 模式）持有历史并继续下一轮，也便于持久化；
- * - 工具调用按序执行（并行调度留 v0.2，registry 已保留 parallelSafe 字段位）；
+ * - 工具调度：parallelSafe 工具组内并行执行，审批类（edit/shell）独立串行；
+ *   事件与消息回填保持原始调用顺序；
  * - 工具结果按长度截断回填（防上下文膨胀）；工具失败不中断循环，回填错误让模型自行修正；
  * - 模型调用失败（网络/鉴权等）直接上抛，由调用方展示；
  * - 流中中断/断流（Ctrl+C / 网络断开）：保留已生成内容回填会话，错误经 error 事件上报，不自动重连；
@@ -72,21 +73,71 @@ export async function runLoop(
       return messages;
     }
 
-    for (const call of calls) {
-      options.onEvent?.({ type: 'tool_call', toolCall: call });
-      let result: ToolResult;
-      try {
-        const args = JSON.parse(call.arguments) as unknown;
-        result = await options.registry.run(call.name, args, options.ctx);
-      } catch (error) {
-        result = { ok: false, error: error instanceof Error ? error.message : String(error) };
-      }
-      options.onEvent?.({ type: 'tool_result', toolCall: call, result });
-      messages.push(toolResultMessage(call.id, formatToolResult(result, call.name)));
+    for (const group of groupToolCalls(calls, options.registry)) {
+      await executeGroup(options, group, messages);
     }
   }
 
   throw new Error(`工具循环超过最大轮数 ${MAX_LOOP_TURNS}，已终止`);
+}
+
+/**
+ * 按并行安全分组：连续的 parallelSafe 工具聚合为一组（并行执行），
+ * 不可并行工具（审批类）各自独立成组（串行，阻塞前后组的并行）。
+ */
+function groupToolCalls(calls: ToolCall[], registry: ToolRegistry): ToolCall[][] {
+  const groups: ToolCall[][] = [];
+  let current: ToolCall[] = [];
+  for (const call of calls) {
+    const spec = registry.get(call.name);
+    if (spec?.parallelSafe === true) {
+      current.push(call);
+    } else {
+      if (current.length > 0) {
+        groups.push(current);
+        current = [];
+      }
+      groups.push([call]);
+    }
+  }
+  if (current.length > 0) {
+    groups.push(current);
+  }
+  return groups;
+}
+
+/**
+ * 执行一组工具：tool_call 事件按序先行发出，组内并行执行，
+ * 完成后按原始顺序回填 tool_result 事件与 tool 消息（与 tool_calls 顺序一致）。
+ */
+async function executeGroup(
+  options: LoopOptions,
+  group: ToolCall[],
+  messages: ChatMessage[],
+): Promise<void> {
+  for (const call of group) {
+    options.onEvent?.({ type: 'tool_call', toolCall: call });
+  }
+  const results = await Promise.all(group.map((call) => executeToolCall(options, call)));
+  for (let i = 0; i < group.length; i += 1) {
+    const call = group[i];
+    const result = results[i];
+    if (call === undefined || result === undefined) {
+      continue;
+    }
+    options.onEvent?.({ type: 'tool_result', toolCall: call, result });
+    messages.push(toolResultMessage(call.id, formatToolResult(result, call.name)));
+  }
+}
+
+/** 执行单个工具调用：参数解析失败转为 ok:false 结构化结果。 */
+async function executeToolCall(options: LoopOptions, call: ToolCall): Promise<ToolResult> {
+  try {
+    const args = JSON.parse(call.arguments) as unknown;
+    return await options.registry.run(call.name, args, options.ctx);
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
 }
 
 /** 调用模型并流式累积出一条完整的 assistant 消息（含 tool_calls 增量拼接）。 */

@@ -47,9 +47,8 @@ export interface ToolSpec {
   description: string;
   parameters: z.ZodTypeAny;
   /**
-   * 预留字段位：是否可与其他工具并行执行。
-   * v0.1 顺序执行，但 read 等只读工具已声明并行安全，
-   * 为 v0.2 的并行调度保留契约位。
+   * 是否可与其他 parallelSafe 工具并行执行（T3.1 起由 loop 调度消费）。
+   * 只读工具为 true；审批类（edit/shell）必须为 false。
    */
   parallelSafe: boolean;
   /** 执行工具。入参已被 parameters 校验通过（实现内按需断言类型）。 */
