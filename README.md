@@ -2,27 +2,38 @@
 
 Lumen —— 面向个人开发者的**中文优先**终端编码助手 CLI（DeepSeek 驱动）。
 
-在项目目录里启动：读取代码 → 提出 diff 方案 → 征求命令许可 → 跑验证 → 留下会话记录。
+在项目目录里启动：读取代码 → 提出 diff 方案 → 征求命令许可 → 跑验证 → 留下可续接的会话记录。
 
-> 状态：v0.1 开发完成（全部 10 个任务验收通过，见 `docs/dev/TASKS.md`）。
+> 状态：v1.0 发布版（`npm run verify` 全绿，211+ 用例；`npm audit` 0 漏洞）。
 
 ## 环境要求
 
-- Node.js ≥ 22（原生 fetch / SSE 流式）
+- Node.js ≥ 22
 - `DEEPSEEK_API_KEY` 环境变量（不写入任何配置文件）
+
+## 安装
+
+```bash
+npm install -g @lumen/cli
+```
+
+安装后直接使用 `lumen` 命令（开发仓库内可用 `npm run dev` 代替）。
 
 ## 快速开始
 
 ```bash
-# 1. 设置 API key
-set DEEPSEEK_API_KEY=sk-xxx        # Windows
+# 1. 设置 API key（PowerShell 用 $env: 语法）
+set DEEPSEEK_API_KEY=sk-xxx        # Windows cmd
 export DEEPSEEK_API_KEY=sk-xxx     # macOS / Linux
 
 # 2. 进入项目目录，启动交互式对话
-npm run dev                        # 等价于 lumen chat
+lumen                              # 等价于 lumen chat
 
-# 3. 或者一次性执行任务（非交互）
-npm run dev -- run "看看这个项目"   # 等价于 lumen run "任务"
+# 3. 一次性执行任务（非交互）
+lumen run "看看这个项目"
+
+# 4. 先生成执行计划，批准后自动执行
+lumen plan "重构这个模块"
 ```
 
 ## 交互方式
@@ -30,53 +41,95 @@ npm run dev -- run "看看这个项目"   # 等价于 lumen run "任务"
 | 操作 | 效果 |
 | --- | --- |
 | 输入文本 + Enter | 发送消息 |
+| ← / → / Home / End | 移动光标（插入/删除位置） |
+| ↑ / ↓ | 浏览本会话输入历史（去重） |
 | Shift+Enter | 换行 |
+| Ctrl+C（生成中） | 中断生成，已生成内容保留 |
 | 审批框出现时按 `y` / `n` | 批准 / 拒绝编辑或命令 |
+| 输入 `/plan 任务` | 对话内计划模式：先出计划，批准后执行 |
 | Esc | 退出（会话自动保存） |
-| `lumen chat -r <会话ID>` | 恢复历史会话继续对话 |
-| `lumen run "任务" --auto-approve` | 非交互执行并自动批准（谨慎） |
+
+## 命令参考
+
+| 命令 | 说明 |
+| --- | --- |
+| `lumen` / `lumen chat` | 交互式对话（`-r [id]` 恢复 / `-l` 仅列会话 / `-m` 模型 / `--lang`） |
+| `lumen run "任务"` | 一次性执行（`--auto-approve` 谨慎使用 / `-m` / `--lang`） |
+| `lumen plan "任务"` | 计划-批准-执行三段式（`--auto-approve` 跳过确认） |
+| `lumen chat -l` | 仅打印历史会话列表 |
 
 ## 安全模型
 
-- **编辑与命令一律审批**：`edit_file` / `run_command` 在落盘/执行前弹出审批框，无 yolo 模式
-- **白名单免审批**：`git status` / `git diff` / `npm test` / `npm run test` 命中前缀直接执行
+- **编辑与命令一律审批**：`edit_file` / `run_command` 在落盘/执行前弹出审批框，无 yolo 模式；审批拒绝绝不自动重试
+- **白名单免审批**：`git status` / `git diff` / `npm test` / `npm run test` 默认命中前缀直接执行（可在配置中自定义）
+- **审批策略**：`ask`（默认逐个审批）/ `allowlist-only`（只放行白名单，其余一律拒绝，不弹框）
 - **fail-closed**：审批回调未配置（如 `run` 默认模式）时，危险操作一律拒绝
 - **路径沙箱**：所有工具只能访问项目目录内（`..` 逃逸 / 绝对路径越界一律拒绝）
-- **上下文保护**：文件读取、搜索结果、工具回填、命令输出均按长度截断
+- **上下文保护**：文件读取、搜索结果、工具回填、命令输出均按长度截断；超模型 80% 预算自动裁剪旧消息
+- **健壮性**：可修复的工具失败限 2 次重试后终止；连续失败、循环失控均有上限
+
+## 配置
+
+配置文件：`~/.lumen/config.json`（带 `schemaVersion` 字段；不存在即用默认）。
+
+```json
+{
+  "schemaVersion": 1,
+  "defaultModel": "deepseek-v4-flash",
+  "allowlist": ["npm test", "git status"],
+  "approvalPolicy": "ask",
+  "sessionDir": "C:/data/lumen-sessions",
+  "locale": "zh"
+}
+```
+
+优先级：**CLI 参数 > 环境变量 > 配置文件 > 默认值**。
+
+| 配置项 | 环境变量 | 默认 |
+| --- | --- | --- |
+| 模型 | `LUMEN_MODEL` | deepseek-v4-flash |
+| 白名单（逗号分隔） | `LUMEN_ALLOWLIST` | 内置 4 条 |
+| 审批策略 | `LUMEN_APPROVAL` | ask |
+| 会话目录 | `LUMEN_SESSION_DIR` | `~/.lumen/sessions` |
+| 语言 | `LUMEN_LOCALE`（或 `LANG` zh/en 前缀） | zh |
 
 ## 会话记录
 
 - 存储位置：`~/.lumen/sessions/<时间戳>.jsonl`（JSONL，每行一条消息）
-- 自动保存：每轮对话结束即追加落盘，可随时 `-r` 续接
+- 自动保存：每轮对话结束即追加落盘；`lumen chat -r` 无 ID 时列出全部会话供选择
 - 项目规则：自动加载项目根的 `AGENTS.md`（优先）或 `CARBON.md`，截断至 8000 字符注入系统提示
+
+## FAQ
+
+**没有 API key 会怎样？** 启动时报错退出，提示设置 `DEEPSEEK_API_KEY`。
+
+**管道/编辑器内嵌终端无法使用 chat？** chat 需要真实 TTY；用 `lumen run "任务"` 走非交互路径。
+
+**成本如何？** 状态条实时显示 token 与成本（API 真实 usage，带"（真实）"标记）；模型定价按 DeepSeek 官方定价页维护在 `MODEL_PROFILES`。
+
+**数据存在哪？** 全部本地：会话在 `~/.lumen/sessions/`，配置在 `~/.lumen/config.json`；仅对话请求发送给 DeepSeek API。
+
+**如何换英文？** `lumen chat --lang en`，或配置 `locale: "en"` / 环境变量 `LUMEN_LOCALE=en`。
+
+**从 v0.1 迁移？** v0.1 为开发期版本（`npm run dev` 直接跑源码）；v1.0 通过 `npm install -g @lumen/cli` 安装，命令与配置完全兼容，会话文件格式不变（JSONL）。
 
 ## 开发命令
 
 | 命令 | 作用 |
 | --- | --- |
-| `npm run dev` | 开发运行（进入 chat） |
-| `npm run test` | 单元 + 集成 + UI 渲染测试（vitest，131 个用例） |
-| `npm run test:watch` | 测试监听模式 |
-| `npm run lint` / `npm run lint:fix` | Biome 检查 / 自动修复 |
+| `npm run dev` | 开发运行（tsx 直接跑源码） |
+| `npm run test` / `test:watch` | 单元 + 集成 + UI 渲染测试 |
+| `npm run lint` / `lint:fix` | Biome 检查 / 自动修复 |
 | `npm run typecheck` | TypeScript 严格类型检查 |
-| `npm run build` | tsup 打包到 `dist/`（ESM + d.ts） |
+| `npm run build` | tsup 打包到 `dist/`（ESM + d.ts + CLI 入口） |
 | `npm run verify` | 验收主命令：build + lint + typecheck + test |
 
-## 目录结构
+## 文档
 
-```
-lumen/
-├── docs/dev/             # 开发文档（开发计划、任务拆解）
-├── src/
-│   ├── cli/              # commander 入口（chat / run）
-│   ├── ui/               # Ink TUI（App / 输入框 / 流式 / 审批框 / 状态条）
-│   ├── loop/             # 会话主循环（工具分发 / 结果回填）
-│   ├── model/            # DeepSeek SSE 客户端 / 模型表 / token 估算
-│   ├── tools/            # 工具注册表（读 / 编辑 / shell，含审批门控）
-│   ├── store/            # 会话持久化 / 项目规则加载
-│   └── i18n/             # 中文文案表（全项目唯一文案来源）
-└── tests/                # 镜像 src 结构的测试（12 个测试文件，131 个用例）
-```
+- [用户手册](docs/user-guide.md) —— 详细使用说明
+- [架构文档](docs/02-架构设计/ARCHITECTURE.md) —— 技术设计
+- [发布流程](docs/04-发布流程.md) —— 版本与发布
+- [贡献指南](CONTRIBUTING.md) —— 参与开发
 
 ## 版权
 
