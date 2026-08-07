@@ -13,6 +13,7 @@ import type { SessionStore } from '../store/session';
 import type { MemoryInjector } from '../loop/memory-injector';
 import { retrieveLocalMemories } from '../loop/local-memory';
 import type { MemoryStore } from '../store/memory-store';
+import { executeMemoryCommand, parseMemoryCommand } from '../cli/slash/memory';
 import type { ApprovalRequest, ToolContext, ToolRegistry } from '../tools/registry';
 import { ApprovalModal, PlanConfirm } from './modals';
 import { PromptInput } from './PromptInput';
@@ -296,6 +297,20 @@ export function App({
         return;
       }
       const trimmed = text.trim();
+
+      // 记忆管理命令（/remember /forget /memories）→ 不经过模型
+      if (memoryStore !== undefined) {
+        const memCmd = parseMemoryCommand(trimmed);
+        if (memCmd !== null) {
+          const { message, handled } = await executeMemoryCommand(memCmd, memoryStore);
+          if (handled) {
+            setMessages((prev) => [...prev, { role: 'user', content: text }, message]);
+            setTokens((t) => ({ ...t, input: t.input + estimateTokens(text) }));
+            return;
+          }
+        }
+      }
+
       if (trimmed.startsWith('/plan')) {
         await sendPlan(trimmed.slice('/plan'.length).trim());
         return;
