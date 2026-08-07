@@ -175,11 +175,11 @@
 
 ### V1.1-M1：MCP 基础接入（P0，约 8h）
 
-- [ ] **T1.1** 实现 MCP 客户端核心（连接、发现、调用工具）
-  - 涉及文件：`src/mcp/client.ts`, `src/mcp/manager.ts`, `src/mcp/types.ts`
-  - 预估：3h
+- [x] **T1.1** 实现 MCP 客户端核心（连接、发现、调用工具）
+  - 涉及文件：`src/mcp/client.ts`, `src/mcp/manager.ts`, `src/mcp/types.ts`, `src/mcp/zod-adapter.ts`, `src/mcp/index.ts`
+  - 预估：3h | 实际：约 2h
   - 依赖：无
-  - 待开始
+  - ✅ 2026-08-08 完成：stdio 客户端（握手/请求/响应/超时）+ 多服务管理器（并发/聚合/路由/故障隔离）+ mock 服务 + 18 测试全绿
 
 - [ ] **T1.2** 集成 filesystem MCP 服务
   - 涉及文件：`src/mcp/builtin-servers.ts`, `src/store/config.ts`, `src/cli/chat.tsx`

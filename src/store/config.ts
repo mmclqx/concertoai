@@ -21,6 +21,18 @@ export const DEFAULT_CONFIG_PATH = path.join(os.homedir(), '.lumen', 'config.jso
 
 export type ApprovalPolicy = 'ask' | 'allowlist-only';
 
+/** MCP 服务连接配置（配置文件中的条目）。 */
+export interface MCPServerEntry {
+  /** 服务名（用于日志与工具名前缀）。 */
+  name: string;
+  /** 启动命令（如 npx / node / 本地二进制）。 */
+  command: string;
+  /** 命令参数。 */
+  args?: string[];
+  /** 环境变量（可选）。 */
+  env?: Record<string, string>;
+}
+
 export interface LumenConfig {
   schemaVersion: number;
   /** 默认模型 ID（CLI -m / LUMEN_MODEL 优先）。 */
@@ -33,6 +45,8 @@ export interface LumenConfig {
   sessionDir?: string;
   /** 界面语言（LUMEN_LOCALE 覆盖；T4.5 消费）。 */
   locale?: string;
+  /** MCP 服务配置列表（v1.1）。 */
+  mcpServers?: MCPServerEntry[];
 }
 
 export interface ResolvedConfig {
@@ -43,6 +57,8 @@ export interface ResolvedConfig {
   approvalPolicy: ApprovalPolicy;
   sessionDir: string;
   locale: string;
+  /** MCP 服务配置（v1.1）。 */
+  mcpServers: MCPServerEntry[];
 }
 
 /** 空配置（默认值由解析层兜底）。 */
@@ -110,5 +126,5 @@ export function resolveConfig(
   const langMatch = langEnv !== undefined && /^(zh|en)/i.test(langEnv) ? langEnv : undefined;
   const locale = cliLocale ?? env('LUMEN_LOCALE') ?? langMatch ?? file.locale ?? 'zh';
 
-  return { model, allowlist, approvalPolicy, sessionDir, locale };
+  return { model, allowlist, approvalPolicy, sessionDir, locale, mcpServers: file.mcpServers ?? [] };
 }

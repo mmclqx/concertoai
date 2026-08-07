@@ -12,9 +12,12 @@ import { loadProjectRules } from '../store/project-rules';
 import { SessionStore } from '../store/session';
 import { editFileTool } from '../tools/edit';
 import { listDirectoryTool, readFileTool, searchContentTool } from '../tools/read';
-import type { ToolContext } from '../tools/registry';
+import type { ToolContext, ToolSpec } from '../tools/registry';
 import { ToolRegistry } from '../tools/registry';
 import { shellTool } from '../tools/shell';
+import { McpManager } from '../mcp/manager';
+import { toMcpServerConfig } from '../mcp/builtin-servers';
+import type { MCPServerConfig } from '../mcp/types';
 import { App } from '../ui/App';
 import { formatSessionTime, SessionPicker } from '../ui/SessionPicker';
 
@@ -37,13 +40,19 @@ export function resolveModel(modelId: string | undefined): string {
   return profile.id;
 }
 
-export function buildRegistry(): ToolRegistry {
-  return new ToolRegistry()
+export function buildRegistry(mcpTools?: ToolSpec[]): ToolRegistry {
+  const registry = new ToolRegistry()
     .register(readFileTool)
     .register(listDirectoryTool)
     .register(searchContentTool)
     .register(editFileTool)
     .register(shellTool);
+  if (mcpTools !== undefined) {
+    for (const tool of mcpTools) {
+      registry.register(tool);
+    }
+  }
+  return registry;
 }
 
 export interface RunChatOptions {
@@ -75,7 +84,34 @@ export async function runChat(options: RunChatOptions): Promise<void> {
   }
   const model = resolveModel(resolved.model);
   const client = new DeepSeekClient({ apiKey: options.apiKey });
-  const registry = buildRegistry();
+
+  // MCP 服务初始化（v1.1）
+  let mcpManager: McpManager | undefined;
+  if (resolved.mcpServers.length > 0) {
+    const configs: MCPServerConfig[] = resolved.mcpServers.map(toMcpServerConfig);
+    mcpManager = new McpManager(configs);
+    const status = await mcpManager.start();
+    for (const s of status) {
+      if (s.connected) {
+        console.log(`MCP 服务已连接: ${s.name}（${s.toolCount} 个工具）`);
+      } else {
+        console.error(`MCP 服务连接失败: ${s.name} —— ${s.error ?? '未知错误'}`);
+      }
+    }
+  }
+
+  // 将 MCP 工具转为 ToolSpec 并注册
+  const mcpTools: ToolSpec[] | undefined = mcpManager?.listTools().map((t) => ({
+    name: t.name,
+    description: t.description,
+    parameters: t.parameters,
+    parallelSafe: false,
+    execute: async (args: unknown) => {
+      return mcpManager!.callTool(t.name, args);
+    },
+  }));
+
+  const registry = buildRegistry(mcpTools);
   const rules = await loadProjectRules(options.cwd);
   const ctx: ToolContext = {
     cwd: options.cwd,
