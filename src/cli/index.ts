@@ -8,6 +8,7 @@ import { Command } from 'commander';
 import { zh } from '../i18n/zh';
 import { VERSION } from '../index';
 import { runChat } from './chat';
+import { runPlan } from './plan';
 import { runTask } from './run';
 
 function getApiKey(): string {
@@ -54,6 +55,21 @@ program
   .option('--auto-approve', '自动批准编辑与命令执行（谨慎使用；默认全部拒绝）')
   .action(async (task: string, options: { model?: string; autoApprove?: boolean }) => {
     await runTask({
+      cwd: process.cwd(),
+      apiKey: getApiKey(),
+      task,
+      model: options.model,
+      autoApprove: options.autoApprove ?? false,
+    });
+  });
+
+program
+  .command('plan <task>')
+  .description(zh.cli.plan.description)
+  .option('-m, --model <id>', zh.cli.model.description)
+  .option('--auto-approve', '自动批准计划与编辑/命令执行（谨慎使用）')
+  .action(async (task: string, options: { model?: string; autoApprove?: boolean }) => {
+    await runPlan({
       cwd: process.cwd(),
       apiKey: getApiKey(),
       task,

@@ -34,3 +34,27 @@ export function EditConfirm(props: Omit<ApprovalModalProps, 'kind'>) {
 export function ShellConfirm(props: Omit<ApprovalModalProps, 'kind'>) {
   return <ApprovalModal {...props} kind="shell" />;
 }
+
+/** 计划展示最大字符数（超出截断显示，审批详情仍完整）。 */
+const PLAN_DISPLAY_MAX = 2_000;
+
+export interface PlanConfirmProps {
+  plan: string;
+}
+
+/** 计划审批框：magenta 框 + 计划全文（超长截断）+ 按键提示。 */
+export function PlanConfirm({ plan }: PlanConfirmProps) {
+  const display =
+    plan.length > PLAN_DISPLAY_MAX
+      ? `${plan.slice(0, PLAN_DISPLAY_MAX)}\n…（计划已截断显示）`
+      : plan;
+  return (
+    <Box flexDirection="column" borderStyle="single" borderColor="magenta" paddingX={1} marginY={1}>
+      <Text bold color="magenta">
+        {zh.plan.title}
+      </Text>
+      <Text>{display}</Text>
+      <Text dimColor>{zh.plan.hint}</Text>
+    </Box>
+  );
+}

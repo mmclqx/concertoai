@@ -335,4 +335,43 @@ describe('App 集成', () => {
     });
     unmount();
   });
+
+  it('/plan 批准后自动执行计划', async () => {
+    const model = new FakeModel([{ content: '1. 读取文件\n2. 总结' }, { content: '已按计划完成' }]);
+    const { stdin, lastFrame, unmount } = render(
+      <App client={model} registry={registry} ctx={{ cwd: tmp }} model="deepseek-v4-flash" />,
+    );
+    stdin.write('/plan 总结项目');
+    await sleep(50);
+    stdin.write('\r');
+    // 计划展示 + PlanConfirm 审批框
+    await waitFor(() => {
+      expect(lastFrame()).toContain('执行计划');
+    });
+    expect(lastFrame()).toContain('1. 读取文件');
+    stdin.write('y');
+    // 批准后自动执行（第二阶段回复）
+    await waitFor(() => {
+      expect(lastFrame()).toContain('已按计划完成');
+    });
+    unmount();
+  });
+
+  it('/plan 拒绝后不执行', async () => {
+    const model = new FakeModel([{ content: '计划内容' }]);
+    const { stdin, lastFrame, unmount } = render(
+      <App client={model} registry={registry} ctx={{ cwd: tmp }} model="deepseek-v4-flash" />,
+    );
+    stdin.write('/plan 任务');
+    await sleep(50);
+    stdin.write('\r');
+    await waitFor(() => {
+      expect(lastFrame()).toContain('执行计划');
+    });
+    stdin.write('n');
+    await waitFor(() => {
+      expect(lastFrame()).toContain('计划已拒绝');
+    });
+    unmount();
+  });
 });

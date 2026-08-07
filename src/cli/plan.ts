@@ -1,0 +1,104 @@
+/**
+ * plan 命令：先生成执行计划，批准后自动执行。
+ *
+ * 流程：
+ * 1. 计划阶段：注入「输出分步计划」提示词，模型只输出计划文本（不执行工具）；
+ * 2. 展示计划，等待用户批准（y/n，需交互式终端；--auto-approve 跳过）；
+ * 3. 执行阶段：把已批准计划注入上下文，按原始任务继续 runLoop（工具审批照旧）。
+ */
+
+import { createInterface } from 'node:readline';
+
+import { fmt, zh } from '../i18n/zh';
+import { runLoop } from '../loop/loop';
+import { userMessage } from '../loop/messages';
+import type { ChatMessage } from '../loop/types';
+import { DeepSeekClient } from '../model/client';
+import { getModel } from '../model/models';
+import { loadProjectRules } from '../store/project-rules';
+import { SessionStore } from '../store/session';
+import type { ToolContext } from '../tools/registry';
+import { buildRegistry, DEFAULT_ALLOWLIST, resolveModel } from './chat';
+
+export interface RunPlanOptions {
+  cwd: string;
+  apiKey: string;
+  task: string;
+  model?: string;
+  resume?: string;
+  autoApprove?: boolean;
+}
+
+/** 终端确认：批准计划 (y/n)。 */
+function confirmPlan(): Promise<boolean> {
+  return new Promise((resolve) => {
+    const rl = createInterface({ input: process.stdin, output: process.stdout });
+    rl.question('批准计划并开始执行 (y/n): ', (answer) => {
+      rl.close();
+      resolve(answer.trim().toLowerCase() === 'y');
+    });
+  });
+}
+
+export async function runPlan(options: RunPlanOptions): Promise<void> {
+  if (options.autoApprove !== true && process.stdin.isTTY !== true) {
+    console.error(zh.errors.planNeedsTty);
+    process.exit(1);
+  }
+
+  const model = resolveModel(options.model);
+  const client = new DeepSeekClient({ apiKey: options.apiKey });
+  const registry = buildRegistry();
+  const rules = await loadProjectRules(options.cwd);
+  const store = new SessionStore();
+  const ctx: ToolContext = {
+    cwd: options.cwd,
+    allowlistedPrefixes: DEFAULT_ALLOWLIST,
+    requestApproval: options.autoApprove === true ? async () => true : undefined,
+  };
+
+  let sessionId: string;
+  let history: ChatMessage[] = [];
+  if (options.resume !== undefined) {
+    const { messages } = await store.read(options.resume);
+    history = messages;
+    sessionId = options.resume;
+  } else {
+    sessionId = await store.create([]);
+  }
+
+  const baseLoopOptions = {
+    model,
+    client,
+    registry,
+    ctx,
+    systemPrompt: rules.text === '' ? undefined : rules.text,
+    contextWindow: getModel(model)?.contextWindow,
+  };
+
+  // 阶段 1：计划
+  const baseHistory = history;
+  const planPrompt = `请为任务「${options.task}」输出分步执行计划。\n格式：markdown 列表，每一步一行，说明要执行的操作（读取文件 / 编辑文件 / 运行命令）。\n只输出计划本身，不要调用任何工具。`;
+  const planHistory = await runLoop({ ...baseLoopOptions }, baseHistory, planPrompt);
+  const plan = planHistory.at(-1)?.content ?? '';
+  history = planHistory;
+  await store.appendAll(sessionId, planHistory.slice(baseHistory.length));
+
+  // 展示计划
+  process.stdout.write(`\n${plan}\n\n`);
+
+  // 阶段 2：批准
+  const approved = options.autoApprove === true ? true : await confirmPlan();
+  if (!approved) {
+    process.stdout.write(`${zh.plan.rejected}\n`);
+    return;
+  }
+  process.stdout.write(`${zh.plan.approved}\n`);
+
+  // 阶段 3：执行（计划注入上下文）
+  const execHistory = [...history, userMessage(`已批准的计划（请严格按计划逐步执行）：\n${plan}`)];
+  const result = await runLoop({ ...baseLoopOptions }, execHistory, options.task);
+  const added = result.slice(history.length);
+  await store.appendAll(sessionId, added);
+  process.stdout.write(`\n\n${fmt(zh.session.saved, { id: sessionId })}\n`);
+}

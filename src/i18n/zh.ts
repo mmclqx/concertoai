@@ -20,6 +20,9 @@ export const zh = {
     list: {
       description: '仅列出历史会话，不进入对话',
     },
+    plan: {
+      description: '先生成执行计划，批准后自动执行',
+    },
     model: {
       description: '指定模型（默认 deepseek-v4-flash）',
     },
@@ -32,6 +35,7 @@ export const zh = {
     loopMaxTurns: '工具循环超过最大轮数，已终止',
     streamAborted: '生成已中断，已保留已生成内容。可重新输入继续。',
     streamInterrupted: '网络中断：{message}。已保留已生成内容，请重试。',
+    planNeedsTty: 'plan 模式需要交互式终端来批准计划（或使用 --auto-approve）',
     unknownTool: '未知工具: {name}',
     invalidSessionId: '非法的会话 id: {id}',
     sessionNotFound: '会话不存在: {id}',
@@ -63,6 +67,12 @@ export const zh = {
     saved: '会话已保存: {id}',
     pickerHint: '↑/↓ 选择，Enter 确认，Esc 取消',
     noUserMessage: '（无用户消息）',
+  },
+  plan: {
+    title: '执行计划',
+    hint: '批准计划 (y) / 拒绝 (n)',
+    approved: '计划已批准，开始执行',
+    rejected: '计划已拒绝，未执行',
   },
   ui: {
     thinking: '思考中…',

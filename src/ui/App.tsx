@@ -4,19 +4,20 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import { fmt, zh } from '../i18n/zh';
 import type { LoopEvent } from '../loop/loop';
 import { runLoop } from '../loop/loop';
+import { userMessage } from '../loop/messages';
 import type { ChatMessage, ToolCall } from '../loop/types';
 import type { ModelClient } from '../model/client';
 import { costFor, getModel } from '../model/models';
 import { estimateMessageListTokens, estimateTokens } from '../model/tokenizer';
 import type { SessionStore } from '../store/session';
 import type { ApprovalRequest, ToolContext, ToolRegistry } from '../tools/registry';
-import { ApprovalModal } from './modals';
+import { ApprovalModal, PlanConfirm } from './modals';
 import { PromptInput } from './PromptInput';
 import { Spinner } from './Spinner';
 import { StatusBar } from './StatusBar';
 import { StreamingView } from './StreamingView';
 
-type Phase = 'idle' | 'streaming' | 'approval';
+type Phase = 'idle' | 'streaming' | 'approval' | 'plan-approval';
 
 export interface AppProps {
   client: ModelClient;
@@ -72,7 +73,9 @@ export function App({
   const busy = useRef(false);
   /** 当前生成任务的取消控制器（Ctrl+C 中断流式生成）。 */
   const abortRef = useRef<AbortController | null>(null);
-
+  /** 待审批的 /plan 计划文本与对应任务。 */
+  const [plan, setPlan] = useState<string | null>(null);
+  const lastPlanTaskRef = useRef('');
   /** 审批回调：挂起当前流程，等待 y/n 按键决议。 */
   const requestApproval = useCallback(async (request: ApprovalRequest): Promise<boolean> => {
     setPending(request);
@@ -87,9 +90,178 @@ export function App({
     [ctx, requestApproval],
   );
 
+  /** 构造统一的事件回调（流式输出/工具状态/usage/错误展示）。 */
+  const makeOnEvent = useCallback(
+    (controller: AbortController) =>
+      (event: LoopEvent): void => {
+        if (event.type === 'chunk') {
+          setStreamed((s) => s + event.text);
+        } else if (event.type === 'tool_call') {
+          setActiveTool(event.toolCall);
+        } else if (event.type === 'usage') {
+          setRealUsage((u) => ({
+            input: u.input + event.usage.prompt_tokens,
+            output: u.output + event.usage.completion_tokens,
+          }));
+        } else if (event.type === 'error') {
+          setError(
+            controller.signal.aborted
+              ? zh.errors.streamAborted
+              : fmt(zh.errors.streamInterrupted, { message: event.error.message }),
+          );
+        } else {
+          setActiveTool(null);
+        }
+      },
+    [],
+  );
+
+  /** /plan 阶段一：让模型输出分步计划，进入 plan-approval 等待审批。 */
+  const sendPlan = useCallback(
+    async (task: string) => {
+      if (busy.current || task === '') {
+        return;
+      }
+      const controller = new AbortController();
+      abortRef.current = controller;
+      busy.current = true;
+      lastPlanTaskRef.current = task;
+      setError(null);
+      setInput('');
+      setStreamed('');
+      setActiveTool(null);
+      setTokens((t) => ({ ...t, input: t.input + estimateTokens(`/plan ${task}`) }));
+      const history = messages;
+      setMessages([...history, userMessage(`/plan ${task}`)]);
+      setPhase('streaming');
+      try {
+        const planHistory = await runLoop(
+          {
+            model,
+            client,
+            registry,
+            ctx: ctxWithApproval,
+            systemPrompt,
+            onEvent: makeOnEvent(controller),
+            signal: controller.signal,
+            contextWindow: getModel(model)?.contextWindow,
+          },
+          history,
+          `请为任务「${task}」输出分步执行计划：markdown 列表，每一步说明要执行的操作（读取/编辑/运行命令）。只输出计划本身，不要调用工具。`,
+        );
+        const added = planHistory.slice(history.length);
+        setMessages(planHistory);
+        setTokens((t) => ({ ...t, output: t.output + estimateMessageListTokens(added) }));
+        if (store !== undefined && sessionId !== undefined) {
+          await store.appendAll(sessionId, added);
+        }
+        const planText = planHistory.at(-1)?.content ?? '';
+        if (planText === '') {
+          setError('模型未输出计划，请重试');
+          return;
+        }
+        setPlan(planText);
+        setPhase('plan-approval');
+      } catch (err) {
+        if (controller.signal.aborted) {
+          setError(zh.errors.streamAborted);
+        } else if (err instanceof Error) {
+          setError(err.message);
+        } else {
+          setError(String(err));
+        }
+      } finally {
+        abortRef.current = null;
+        busy.current = false;
+      }
+    },
+    [
+      client,
+      ctxWithApproval,
+      messages,
+      model,
+      registry,
+      store,
+      sessionId,
+      systemPrompt,
+      makeOnEvent,
+    ],
+  );
+
+  /** /plan 阶段二：计划已批准，把计划注入上下文后按任务执行。 */
+  const executePlan = useCallback(
+    async (task: string, planText: string) => {
+      if (busy.current) {
+        return;
+      }
+      const controller = new AbortController();
+      abortRef.current = controller;
+      busy.current = true;
+      setError(null);
+      setStreamed('');
+      setActiveTool(null);
+      const history = messages;
+      setPhase('streaming');
+      try {
+        const execHistory = [
+          ...history,
+          userMessage(`已批准的计划（请严格按计划逐步执行）：\n${planText}`),
+        ];
+        const result = await runLoop(
+          {
+            model,
+            client,
+            registry,
+            ctx: ctxWithApproval,
+            systemPrompt,
+            onEvent: makeOnEvent(controller),
+            signal: controller.signal,
+            contextWindow: getModel(model)?.contextWindow,
+          },
+          execHistory,
+          task,
+        );
+        const added = result.slice(history.length);
+        setMessages(result);
+        setTokens((t) => ({ ...t, output: t.output + estimateMessageListTokens(added) }));
+        if (store !== undefined && sessionId !== undefined) {
+          await store.appendAll(sessionId, added);
+        }
+      } catch (err) {
+        if (controller.signal.aborted) {
+          setError(zh.errors.streamAborted);
+        } else if (err instanceof Error) {
+          setError(err.message);
+        } else {
+          setError(String(err));
+        }
+      } finally {
+        abortRef.current = null;
+        setPhase('idle');
+        busy.current = false;
+      }
+    },
+    [
+      client,
+      ctxWithApproval,
+      messages,
+      model,
+      registry,
+      store,
+      sessionId,
+      systemPrompt,
+      makeOnEvent,
+    ],
+  );
+
   const send = useCallback(
     async (text: string) => {
       if (busy.current || text.trim() === '') {
+        return;
+      }
+      const trimmed = text.trim();
+      if (trimmed.startsWith('/plan')) {
+        await sendPlan(trimmed.slice('/plan'.length).trim());
         return;
       }
       const controller = new AbortController();
@@ -104,26 +276,7 @@ export function App({
       setMessages([...history, { role: 'user', content: text }]);
       setPhase('streaming');
       try {
-        const onEvent = (event: LoopEvent): void => {
-          if (event.type === 'chunk') {
-            setStreamed((s) => s + event.text);
-          } else if (event.type === 'tool_call') {
-            setActiveTool(event.toolCall);
-          } else if (event.type === 'usage') {
-            setRealUsage((u) => ({
-              input: u.input + event.usage.prompt_tokens,
-              output: u.output + event.usage.completion_tokens,
-            }));
-          } else if (event.type === 'error') {
-            setError(
-              controller.signal.aborted
-                ? zh.errors.streamAborted
-                : fmt(zh.errors.streamInterrupted, { message: event.error.message }),
-            );
-          } else {
-            setActiveTool(null);
-          }
-        };
+        const onEvent = makeOnEvent(controller);
         const result = await runLoop(
           {
             model,
@@ -158,10 +311,35 @@ export function App({
         busy.current = false;
       }
     },
-    [client, ctxWithApproval, messages, model, registry, store, sessionId, systemPrompt],
+    [
+      client,
+      ctxWithApproval,
+      messages,
+      model,
+      registry,
+      store,
+      sessionId,
+      systemPrompt,
+      sendPlan,
+      makeOnEvent,
+    ],
   );
 
   useInput((input, key) => {
+    if (phase === 'plan-approval') {
+      if (input === 'y') {
+        const planText = plan ?? '';
+        const task = lastPlanTaskRef.current;
+        setPlan(null);
+        setPhase('idle');
+        void executePlan(task, planText);
+      } else if (input === 'n') {
+        setPlan(null);
+        setPhase('idle');
+        setError(zh.plan.rejected);
+      }
+      return;
+    }
     if (phase === 'approval') {
       if (input === 'y') {
         approvalResolver.current?.(true);
@@ -204,6 +382,7 @@ export function App({
       {pending !== null && phase === 'approval' && (
         <ApprovalModal kind={pending.kind} summary={pending.summary} detail={pending.detail} />
       )}
+      {plan !== null && phase === 'plan-approval' && <PlanConfirm plan={plan} />}
       {error !== null && <Text color="red">{error}</Text>}
       <PromptInput
         value={input}
