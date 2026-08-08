@@ -7,6 +7,8 @@
  * 显式传 --auto-approve 才会自动批准。
  */
 
+import { registerBuiltinSubagents } from '../agent/builtin';
+import { SubagentSpawner } from '../agent/spawner';
 import { fmt, resolveLocale, setLocale, t } from '../i18n';
 import { runLoop } from '../loop/loop';
 import type { ChatMessage } from '../loop/types';
@@ -16,6 +18,7 @@ import { loadConfig, resolveConfig } from '../store/config';
 import { loadProjectRules } from '../store/project-rules';
 import { SessionStore } from '../store/session';
 import type { ToolContext } from '../tools/registry';
+import { createSpawnSubagentTool } from '../tools/spawn';
 import { buildRegistry, DEFAULT_ALLOWLIST, resolveModel } from './chat';
 
 export interface RunTaskOptions {
@@ -36,7 +39,13 @@ export async function runTask(options: RunTaskOptions): Promise<void> {
   setLocale(resolveLocale(resolved.locale));
   const model = resolveModel(resolved.model);
   const client = new DeepSeekClient({ apiKey: options.apiKey });
-  const registry = buildRegistry();
+
+  // v2.0 子代理系统
+  const spawner = new SubagentSpawner(client, { cwd: options.cwd }, model);
+  registerBuiltinSubagents(spawner);
+  const spawnTool = createSpawnSubagentTool(spawner);
+
+  const registry = buildRegistry(undefined, spawnTool);
   const rules = await loadProjectRules(options.cwd);
   const store = new SessionStore(resolved.sessionDir);
   const ctx: ToolContext = {

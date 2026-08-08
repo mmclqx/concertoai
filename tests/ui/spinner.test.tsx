@@ -5,9 +5,9 @@ import { Spinner } from '../../src/ui/Spinner';
 
 describe('Spinner', () => {
   it('显示动画帧与文本', () => {
-    const { lastFrame, unmount } = render(<Spinner text="思考中" />);
+    const { lastFrame, unmount } = render(<Spinner text="思索中" />);
     const frame = lastFrame();
-    expect(frame).toContain('思考中');
+    expect(frame).toContain('思索中');
     // 帧为 Braille spinner 字符之一
     expect(frame).toMatch(/[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/);
     unmount();

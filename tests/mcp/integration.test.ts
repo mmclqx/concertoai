@@ -4,7 +4,12 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { FILESYSTEM_SERVER, GITHUB_SERVER, MEMORY_SERVER, toMcpServerConfig } from '../../src/mcp/builtin-servers';
+import {
+  FILESYSTEM_SERVER,
+  GITHUB_SERVER,
+  MEMORY_SERVER,
+  toMcpServerConfig,
+} from '../../src/mcp/builtin-servers';
 import type { ToolSpec } from '../../src/tools/registry';
 
 describe('内置 MCP 服务配置', () => {

@@ -4,8 +4,8 @@ Lumen —— 面向个人开发者的**中文优先**终端编码助手 CLI（De
 
 在项目目录里启动：读取代码 → 提出 diff 方案 → 征求命令许可 → 跑验证 → 留下可续接的会话记录。
 
-> 状态：v1.1 开发中（`npm run verify` 全绿，292 个用例；`npm audit` 0 漏洞）。
-> v1.0 已发布 GitHub，v1.1 新增 MCP 协议接入 / 任务规划增强 / 跨会话记忆。
+> 状态：v2.0.0 已发布（`npm run verify` 全绿，337 用例 / 37 测试文件；`npm audit` 0 漏洞）。
+> v2.0 新增：BPE 精确 Token / 智能摘要压缩 / 子代理系统 / 技能系统 / MCP 动态管理。
 
 ## 环境要求
 
@@ -59,6 +59,113 @@ lumen plan "重构这个模块"
 | `lumen plan "任务"` | 计划-批准-执行三段式（`--auto-approve` 跳过确认） |
 | `lumen chat -l` | 仅打印历史会话列表 |
 
+## MCP 服务接入
+
+Lumen 支持通过 [MCP（Model Context Protocol）](https://modelcontextprotocol.io) 连接外部工具服务，扩展模型的能力边界。
+
+### 配置方式
+
+在 `~/.lumen/config.json` 中添加 `mcpServers` 数组：
+
+```json
+{
+  "schemaVersion": 1,
+  "mcpServers": [
+    {
+      "name": "filesystem",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/dir"]
+    }
+  ]
+}
+```
+
+### 内置预配置
+
+Lumen 提供了三种常用 MCP 服务的推荐配置（`src/mcp/builtin-servers.ts`）：
+
+| 服务 | 用途 | 需额外准备 |
+| --- | --- | --- |
+| `filesystem` | 文件系统读写，受限在指定目录内 | 允许访问的目录路径 |
+| `memory` | 跨会话知识图谱存储与检索 | 无 |
+| `github` | GitHub 仓库操作（Issue/PR/文件） | `GITHUB_PERSONAL_ACCESS_TOKEN` 环境变量 |
+
+### 工具命名
+
+MCP 服务的工具以 `服务名/工具名` 格式注册（如 `filesystem/read_file`），与内置工具（`read_file`）并存，避免命名冲突。MCP 服务不可用时自动降级，不影响内置工具正常工作。
+
+## v2.0 新增功能
+
+### BPE 精确 Token 计数
+
+v2.0 使用 `tiktoken`（o200k_base 编码器）替换 v1.0 的 CJK 加权估算，误差从 ±40% 降至 <5%。成本计算精确到缓存命中 token（`💾 缓存命中 N token（¥X）`）。
+
+### 智能摘要压缩
+
+上下文超过 80% 预算时，v2.0 不再粗暴丢弃旧消息，而是优先调用模型生成对话摘要，保留关键决策和上下文。摘要失败时自动回退到旧裁剪策略。
+
+### 子代理系统
+
+模型可在对话中调用 `spawn_subagent` 工具启动隔离子代理执行探索/研究任务：
+
+| 子代理 | 用途 |
+|--------|------|
+| `explore` | 只读探索代码库，返回 ≤200 字结论 + 文件路径引用 |
+| `research` | 深度研究分析，对比多文件/模式，返回 ≤500 字结论 |
+
+子代理拥有独立的对话上下文和受限工具集，只回传结论不污染主对话。
+
+### 技能系统
+
+通过 `/skill` 命令调用预定义的技能指令，注入为 system prompt：
+
+| 命令 | 说明 |
+|------|------|
+| `/skill list` | 列出所有可用技能（名称 + 版本 + 描述） |
+| `/skill code-review <路径>` | 对指定文件/目录执行代码审查 |
+| `/skill explain <路径>` | 逐段解读代码逻辑与数据流 |
+| `/skill refactor <策略> <路径>` | 按指定策略重构代码 |
+
+自定义技能：将 `SKILL.md` 放入 `.lumen/skills/<name>/` 目录即可注册。
+
+### MCP 动态管理
+
+v2.0 支持运行时管理 MCP 服务连接：
+
+| 命令 | 说明 |
+|------|------|
+| `/mcp status` | 查看所有 MCP 服务连接状态（✅/❌ + 工具数） |
+| `/mcp connect <name>` | 手动连接/重连指定服务 |
+| `/mcp disconnect <name>` | 断开指定服务 |
+
+状态条实时显示 MCP 连接摘要（`🔌 2/3 服务`）。
+
+## 跨会话记忆
+
+Lumen 支持项目级跨会话记忆，存储位置为项目根目录的 `.lumen-memory/memories.jsonl`。
+
+### 对话内命令
+
+| 命令 | 说明 |
+| --- | --- |
+| `/remember <内容>` | 让模型生成记忆摘要，确认后写入存储 |
+| `/forget <关键词>` | 搜索匹配的记忆，选择后删除 |
+| `/memories` | 列出当前项目所有已保存的记忆 |
+
+每轮对话开始时，Lumen 自动从本地记忆中检索与当前问题相关的内容（按关键词 + 标签匹配，最多 5 条），注入系统提示，帮助模型「记住」项目上下文。
+
+> **注意**：本地记忆与 MCP memory 服务互补——本地记忆轻量、零依赖，适合项目级知识；MCP memory 适合外部知识库。两者可同时启用，记忆会合并注入。
+
+## 计划增强
+
+计划模式对 `lumen plan` 和对话内 `/plan` 进行了三项增强：
+
+| 能力 | 说明 |
+| --- | --- |
+| **依赖检测** | 自动分析计划步骤间的依赖关系（显式声明 + 文件引用），按拓扑顺序调度，循环依赖提前报错 |
+| **进度跟踪** | 执行时 TUI 实时展示每步骤状态（⏳ 进行中 / ✅ 已完成 / ❌ 失败 / ⬜ 待执行），失败步骤可跳过或重试 |
+| **文件回滚** | 编辑操作前自动创建文件快照（`.lumen/snapshots/`），步骤失败时可回滚所有已完成步骤的文件变更；正常完成后自动清理 |
+
 ## 安全模型
 
 - **编辑与命令一律审批**：`edit_file` / `run_command` 在落盘/执行前弹出审批框，无 yolo 模式；审批拒绝绝不自动重试
@@ -80,7 +187,10 @@ lumen plan "重构这个模块"
   "allowlist": ["npm test", "git status"],
   "approvalPolicy": "ask",
   "sessionDir": "~/.lumen/sessions",
-  "locale": "zh"
+  "locale": "zh",
+  "mcpServers": [
+    { "name": "filesystem", "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/dir"] }
+  ]
 }
 ```
 
@@ -93,6 +203,7 @@ lumen plan "重构这个模块"
 | 审批策略 | `LUMEN_APPROVAL` | ask |
 | 会话目录 | `LUMEN_SESSION_DIR` | `~/.lumen/sessions` |
 | 语言 | `LUMEN_LOCALE`（或 `LANG` zh/en 前缀） | zh |
+| MCP 服务 | —（通过配置文件声明） | 无 |
 
 ## 会话记录
 

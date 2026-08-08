@@ -23,10 +23,37 @@ const DEPENDS_ON_RE = /(?:depends?\s+on|依赖)[：:]\s*(?:步骤\s*)?([\d,\s]+)
 const FILE_REF_RE = /(?:[`'"]|^)([^\s`'"]*\.\w{1,10})(?:[`'"]|$)/gim;
 
 /** 写操作关键词。 */
-const WRITE_KEYWORDS = ['编辑', '创建', '修改', '写入', '删除', '追加', 'edit', 'create', 'write', 'modify', 'delete', 'update', 'append'];
+const WRITE_KEYWORDS = [
+  '编辑',
+  '创建',
+  '修改',
+  '写入',
+  '删除',
+  '追加',
+  'edit',
+  'create',
+  'write',
+  'modify',
+  'delete',
+  'update',
+  'append',
+];
 
 /** 读操作关键词。 */
-const READ_KEYWORDS = ['读取', '查看', '检查', '搜索', '列出', 'read', 'view', 'check', 'search', 'list', 'find', 'grep'];
+const READ_KEYWORDS = [
+  '读取',
+  '查看',
+  '检查',
+  '搜索',
+  '列出',
+  'read',
+  'view',
+  'check',
+  'search',
+  'list',
+  'find',
+  'grep',
+];
 
 // ── 主函数 ──
 
@@ -89,12 +116,13 @@ function extractSteps(text: string): PlanStep[] {
 
     // 文件路径引用
     const refs = new Set<string>();
-    let fileMatch: RegExpExecArray | null;
-    while ((fileMatch = FILE_REF_RE.exec(step.description)) !== null) {
+    let fileMatch = FILE_REF_RE.exec(step.description);
+    while (fileMatch !== null) {
       const ref = fileMatch[1];
       if (ref !== undefined) {
         refs.add(ref);
       }
+      fileMatch = FILE_REF_RE.exec(step.description);
     }
     step.fileRefs = [...refs];
 
@@ -216,7 +244,8 @@ function topologicalSort(
 
   const ordered: number[] = [];
   while (queue.length > 0) {
-    const node = queue.shift()!;
+    const node = queue.shift();
+    if (node === undefined) break;
     ordered.push(node);
     for (const neighbor of adj.get(node) ?? []) {
       const newDegree = (inDegree.get(neighbor) ?? 1) - 1;
@@ -252,7 +281,7 @@ function computeParallelGroups(ordered: number[], deps: StepDependency[]): numbe
     if (!depMap.has(dep.from)) {
       depMap.set(dep.from, new Set());
     }
-    depMap.get(dep.from)!.add(dep.to);
+    depMap.get(dep.from)?.add(dep.to);
   }
 
   const groups: number[][] = [];

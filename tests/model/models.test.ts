@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ModelProfile } from '../../src/model/models';
-import { costFor, getDefaultModel, getModel, listModels } from '../../src/model/models';
+import {
+  cacheHitCostFor,
+  costFor,
+  getDefaultModel,
+  getModel,
+  listModels,
+} from '../../src/model/models';
 
 describe('模型表', () => {
   it('包含 flash 与 pro 两个模型', () => {
@@ -75,5 +81,32 @@ describe('costFor', () => {
 
   it('未知模型抛错', () => {
     expect(() => costFor('no-such-model', 1, 1)).toThrow('未知模型');
+  });
+
+  it('缓存命中 token 按缓存命中价格计费（输入拆分）', () => {
+    const flash = getModel('deepseek-v4-flash');
+    if (flash === undefined) throw new Error('测试夹具：模型未找到');
+    const input = 1_000_000;
+    const cacheHit = 800_000;
+    const miss = input - cacheHit; // 200_000
+    const expected =
+      (miss / 1e6) * flash.inputPricePerM + (cacheHit / 1e6) * flash.inputCacheHitPricePerM;
+    expect(costFor(flash.id, input, 0, cacheHit)).toBeCloseTo(expected);
+    // 缓存命中成本应远低于普通输入
+    expect((cacheHit / 1e6) * flash.inputCacheHitPricePerM).toBeLessThan(0.1);
+  });
+
+  it('cacheHitCostFor 单独计算缓存命中成本', () => {
+    const flash = getModel('deepseek-v4-flash');
+    if (flash === undefined) throw new Error('测试夹具：模型未找到');
+    const cacheHit = 500_000;
+    expect(cacheHitCostFor(flash.id, cacheHit)).toBeCloseTo(
+      (cacheHit / 1e6) * flash.inputCacheHitPricePerM,
+    );
+    expect(cacheHitCostFor(flash.id, 0)).toBe(0);
+  });
+
+  it('cacheHitCostFor 未知模型抛错', () => {
+    expect(() => cacheHitCostFor('no-such-model', 1)).toThrow('未知模型');
   });
 });

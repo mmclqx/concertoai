@@ -8,7 +8,31 @@
 
 ## [Unreleased]
 
-### Added — v1.1
+（暂无未发布变更）
+
+## [2.0.0] - 2026-08-08
+
+### Added — v2.0
+
+- **BPE 精确 Token 计数**：使用 `tiktoken`（o200k_base 编码器）替换 CJK 加权估算，误差 <5%；懒加载单例避免重复初始化
+- **缓存命中成本**：状态条显示 `💾 缓存命中 N token（¥X）`，缓存命中与普通输入按各自单价计费
+- **智能摘要压缩**：上下文超 80% 预算时优先调模型生成对话摘要，失败回退旧裁剪策略
+- **子代理系统**：`src/agent/` 模块；`explore`（只读探索）和 `research`（深度研究）两个内置子代理
+- **spawn_subagent 工具**：模型可调用子代理执行隔离任务，结果结构化回填不污染主对话
+- **技能系统**：`src/skill/` 模块；SKILL.md 规范 + 3 个内置技能（code-review/explain/refactor）
+- **/skill 命令**：`/skill list` 列出技能、`/skill <name>` 注入技能指令为 system prompt
+- **MCP 动态管理**：`/mcp status` `/mcp connect <name>` `/mcp disconnect <name>` 运行时管理
+- **MCP 状态条**：状态条显示 `🔌 N/M 服务` 连接摘要
+- **子代理/技能 E2E 测试**：`tests/agent/` 和 `tests/skill/` 共 13 个新用例
+
+### Changed — v2.0
+
+- `costFor` 支持缓存命中 token 拆分计费；新增 `cacheHitCostFor` 函数
+- `trimContext` → `compressContext`（异步智能压缩）；`trimContext` 保留为降级方案
+- `LoopOptions.maxTurns` 可选覆写（子代理用更少轮数上限）
+- 旧 `estimateTokens` 内部指向 BPE `countTokens`（向后兼容别名，v2.1 移除）
+
+### Added — v1.1（随 v2.0.0 首次发布）
 
 - **MCP 协议接入**：`src/mcp/` 模块（客户端/管理器/类型），支持 stdio transport 连接外部 MCP 服务
 - **MCP 工具注册**：MCP 服务工具以 `serverName/toolName` 前缀自动注册到 ToolRegistry

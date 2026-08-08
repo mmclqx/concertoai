@@ -276,7 +276,7 @@ describe('App 集成', () => {
     stdin.write('\r');
     // 流式过程中（首 chunk 延迟 60ms）：状态条仍显示估算值，无「真实」标记
     await waitFor(() => {
-      expect(lastFrame()).toContain('2/0');
+      expect(lastFrame()).toContain('1/0');
     });
     expect(lastFrame()).not.toContain('真实');
     // 流式结束后：显示 API 返回的真实 usage

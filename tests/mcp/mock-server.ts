@@ -81,7 +81,9 @@ async function handleRequest(
       break;
 
     case 'tools/call': {
-      const callParams = params as { name?: string; arguments?: Record<string, unknown> } | undefined;
+      const callParams = params as
+        | { name?: string; arguments?: Record<string, unknown> }
+        | undefined;
       const toolName = callParams?.name;
       const args = callParams?.arguments ?? {};
 

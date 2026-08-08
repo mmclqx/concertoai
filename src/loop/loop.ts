@@ -17,7 +17,7 @@
 import type { ModelClient, Usage } from '../model/client';
 import type { ToolContext, ToolRegistry, ToolResult } from '../tools/registry';
 import { toApiTools } from '../tools/registry';
-import { trimContext } from './context';
+import { compressContext } from './context';
 import {
   assistantMessage,
   formatToolResult,
@@ -47,6 +47,10 @@ export interface LoopOptions {
   signal?: AbortSignal;
   /** 模型上下文窗口（token）：超过 80% 预算时自动裁剪发送给模型的旧消息。 */
   contextWindow?: number;
+  /** 最大工具循环轮数（默认 MAX_LOOP_TURNS = 10；子代理可覆写为更小值）。 */
+  maxTurns?: number;
+  /** 最大可修复失败次数（默认 MAX_REPAIRS = 2；探索类子代理可设更高值）。 */
+  maxRepairs?: number;
 }
 
 /** runLoop 返回结构：完整消息历史 + 是否因达到轮数上限而中断。 */
@@ -81,7 +85,8 @@ export async function runLoop(
 
   // 修复管线计数跨轮共享：一次 runLoop 内可修复失败累计（T3.2）
   const repairState: RepairState = { count: 0 };
-  for (let turn = 0; turn < MAX_LOOP_TURNS; turn += 1) {
+  const maxTurns = options.maxTurns ?? MAX_LOOP_TURNS;
+  for (let turn = 0; turn < maxTurns; turn += 1) {
     const assistant = await streamAssistantReply(options, messages);
     messages.push(assistant);
 
@@ -166,9 +171,10 @@ async function executeGroup(
     // 修复管线：可修复失败累计超限即终止（审批拒绝/越界等 repairable: false 不计数）
     if (result.ok === false && result.repairable !== false) {
       repairState.count += 1;
-      if (repairState.count > MAX_REPAIRS) {
+      const maxRepairs = options.maxRepairs ?? MAX_REPAIRS;
+      if (repairState.count > maxRepairs) {
         throw new Error(
-          `工具调用连续失败 ${repairState.count} 次（可修复错误，上限 ${MAX_REPAIRS}），已终止`,
+          `工具调用连续失败 ${repairState.count} 次（可修复错误，上限 ${maxRepairs}），已终止`,
         );
       }
     }
@@ -195,11 +201,18 @@ async function streamAssistantReply(
   /** 最后一个带 usage 的 chunk（DeepSeek 在流末尾 chunk 返回用量统计）。 */
   let lastUsage: Usage | undefined;
 
-  // 发送前按上下文窗口预算裁剪（仅发送视角；messages 本体保持不变）
-  const toSend =
-    options.contextWindow !== undefined
-      ? trimContext(messages, options.contextWindow).messages
-      : messages;
+  // 发送前按上下文窗口预算压缩（v2.0：优先摘要，失败回退裁剪）
+  let toSend: ChatMessage[];
+  if (options.contextWindow !== undefined) {
+    const result = await compressContext(messages, {
+      client: options.client,
+      model: options.model,
+      contextWindow: options.contextWindow,
+    });
+    toSend = result.messages;
+  } else {
+    toSend = messages;
+  }
 
   const apiTools = toApiTools(options.registry.list());
 

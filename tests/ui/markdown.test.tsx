@@ -73,9 +73,9 @@ describe('StreamingView', () => {
     unmount();
   });
 
-  it('空文本显示思考中', () => {
+  it('空文本显示思索中', () => {
     const { lastFrame, unmount } = render(<StreamingView text="" />);
-    expect(lastFrame()).toContain('思考中');
+    expect(lastFrame()).toContain('思索中');
     unmount();
   });
 });

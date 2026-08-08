@@ -9,11 +9,11 @@
  * - 工具调用路由：按前缀解析 → 转发到对应客户端。
  */
 
-import { z } from 'zod';
+import type { z } from 'zod';
 
 import type { ToolResult } from '../tools/registry';
 import { McpClient } from './client';
-import type { CallToolParams, MCPToolDef, MCPServerConfig } from './types';
+import type { CallToolParams, MCPServerConfig, MCPToolDef } from './types';
 import { toZodSchema } from './zod-adapter';
 
 // ── 聚合工具元数据 ──
@@ -125,7 +125,9 @@ export class McpManager {
       const result = await client.callTool(params);
       // 提取文本内容块拼接为字符串回填
       const text = result.content
-        .filter((block): block is typeof block & { type: 'text'; text: string } => block.type === 'text')
+        .filter(
+          (block): block is typeof block & { type: 'text'; text: string } => block.type === 'text',
+        )
         .map((block) => block.text)
         .join('\n');
       const isError = result.isError === true;
@@ -141,6 +143,90 @@ export class McpManager {
   /** 按服务名查找客户端（用于检查连接状态）。 */
   getClient(name: string): McpClient | undefined {
     return this.clients.get(name);
+  }
+
+  /** 连接指定服务（已连接时幂等返回）。 */
+  async connect(name: string): Promise<MCPServerStatus> {
+    const existing = this.clients.get(name);
+    if (existing?.connected) {
+      const serverTools = [...this.tools.values()].filter((t) => t.serverName === name);
+      return {
+        name,
+        command: this.configs.find((c) => c.name === name)?.command ?? '',
+        connected: true,
+        toolCount: serverTools.length,
+      };
+    }
+
+    const config = this.configs.find((c) => c.name === name);
+    if (config === undefined) {
+      return {
+        name,
+        command: '',
+        connected: false,
+        toolCount: 0,
+        error: `未找到 MCP 服务配置: ${name}`,
+      };
+    }
+
+    try {
+      const client = new McpClient(config);
+      await client.connect();
+      const tools = await client.listTools();
+      this.clients.set(name, client);
+      for (const def of tools) {
+        const prefixedName = `${name}/${def.name}`;
+        this.tools.set(prefixedName, { def, serverName: name, prefixedName });
+      }
+      return { name, command: config.command, connected: true, toolCount: tools.length };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      return { name, command: config.command, connected: false, toolCount: 0, error: msg };
+    }
+  }
+
+  /** 断开指定服务连接（未连接时幂等返回）。 */
+  disconnectServer(name: string): MCPServerStatus {
+    const client = this.clients.get(name);
+    if (client !== undefined) {
+      client.disconnect();
+      this.clients.delete(name);
+      // 清理该服务的工具
+      for (const [key, tool] of this.tools) {
+        if (tool.serverName === name) {
+          this.tools.delete(key);
+        }
+      }
+    }
+    const config = this.configs.find((c) => c.name === name);
+    return {
+      name,
+      command: config?.command ?? '',
+      connected: false,
+      toolCount: 0,
+    };
+  }
+
+  /** 获取所有服务的连接状态快照（含未连接但有配置的服务）。 */
+  statusAll(): MCPServerStatus[] {
+    return this.configs.map((config) => {
+      const client = this.clients.get(config.name);
+      if (client !== undefined) {
+        const serverTools = [...this.tools.values()].filter((t) => t.serverName === config.name);
+        return {
+          name: config.name,
+          command: config.command,
+          connected: client.connected,
+          toolCount: serverTools.length,
+        };
+      }
+      return {
+        name: config.name,
+        command: config.command,
+        connected: false,
+        toolCount: 0,
+      };
+    });
   }
 
   /** 获取所有服务的连接状态快照。 */

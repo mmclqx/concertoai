@@ -58,6 +58,7 @@ export const zh = {
     cost: '成本',
     yuan: '元',
     real: '真实',
+    cacheHit: '缓存命中',
   },
   session: {
     resumed: '已恢复会话 {id}（{count} 条消息）',
@@ -75,7 +76,7 @@ export const zh = {
     rejected: '计划已拒绝，未执行',
   },
   ui: {
-    thinking: '思考中…',
+    thinking: '思索中',
     toolRunning: '执行工具: {name}',
     toolDone: '工具完成: {name}',
     quit: '已退出。会话已保存。',

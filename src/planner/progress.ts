@@ -58,10 +58,7 @@ export class PlanProgress {
 
   constructor(analysis: DepsAnalysis, onProgress?: ProgressCallback) {
     this.states = new Map(
-      analysis.steps.map((step) => [
-        step.index,
-        { step, status: 'pending' as StepStatus },
-      ]),
+      analysis.steps.map((step) => [step.index, { step, status: 'pending' as StepStatus }]),
     );
     this.callback = onProgress ?? null;
   }

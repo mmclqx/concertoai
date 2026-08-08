@@ -70,7 +70,9 @@ export async function executeMemoryCommand(
       const entry = await store.create(title, cmd.content);
       return {
         handled: true,
-        message: assistantReply(`✅ 已记忆：**${entry.title}**\n\`/memories\` 查看全部，\`/forget <关键词>\` 删除`),
+        message: assistantReply(
+          `✅ 已记忆：**${entry.title}**\n\`/memories\` 查看全部，\`/forget <关键词>\` 删除`,
+        ),
       };
     }
 
@@ -83,7 +85,10 @@ export async function executeMemoryCommand(
         };
       }
       if (matches.length === 1) {
-        const entry = matches[0]!;
+        const entry = matches[0];
+        if (entry === undefined) {
+          return { handled: true, message: assistantReply('内部错误：匹配结果为空。') };
+        }
         await store.delete(entry.id);
         return {
           handled: true,
@@ -91,9 +96,7 @@ export async function executeMemoryCommand(
         };
       }
       // 多条匹配 → 列出来让用户精确删除
-      const list = matches
-        .map((m, i) => `${i + 1}. ${m.title}`)
-        .join('\n');
+      const list = matches.map((m, i) => `${i + 1}. ${m.title}`).join('\n');
       return {
         handled: true,
         message: assistantReply(
@@ -115,7 +118,9 @@ export async function executeMemoryCommand(
         .join('\n');
       return {
         handled: true,
-        message: assistantReply(`📋 项目记忆（${all.length} 条）：\n${list}\n\n\`/forget <关键词>\` 删除`),
+        message: assistantReply(
+          `📋 项目记忆（${all.length} 条）：\n${list}\n\n\`/forget <关键词>\` 删除`,
+        ),
       };
     }
 

@@ -5,8 +5,8 @@
 import { describe, expect, it } from 'vitest';
 
 import { analyzeDeps } from '../../src/planner/deps';
-import { PlanProgress } from '../../src/planner/progress';
 import type { ProgressEvent } from '../../src/planner/progress';
+import { PlanProgress } from '../../src/planner/progress';
 
 describe('PlanProgress 状态机', () => {
   const plan = ['1. 步骤一', '2. 步骤二', '3. 步骤三'].join('\n');

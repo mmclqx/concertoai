@@ -1,7 +1,7 @@
 # AGENTS.md - Lumen 项目开发规范
 
 > 最后更新：2026-08-08
-> 版本：v1.0.0
+> 版本：v2.0.0
 
 ---
 
@@ -26,7 +26,7 @@ npm install -g @lumen/cli
 cd path/to/project
 lumen
 ```
-### v1.0 已完成，核心能力包括：
+### v2.0 已完成，核心能力包括：
 
 CLI 交互（lumen chat / lumen run / lumen init / lumen plan）
 
@@ -41,6 +41,16 @@ DeepSeek 流式对话
 Ink TUI 交互界面
 
 项目规则加载（AGENTS.md / CARBON.md）
+
+BPE 精确 Token 计数与缓存命中成本
+
+智能摘要压缩（超预算优先摘要，失败回退裁剪）
+
+子代理系统（explore / research）
+
+技能系统（/skill，SKILL.md 规范 + 3 个内置技能）
+
+MCP 动态管理（/mcp status / connect / disconnect）
 
 ## 技术栈
 类别	技术选型
@@ -70,7 +80,7 @@ CLI 解析	Commander 12
 
 UI 测试：Ink 组件需用 ink-testing-library 覆盖
 
-测试目标：保持 218+ 用例全绿
+测试目标：保持 337+ 用例全绿
 
 ### it 规范
 主分支：main
@@ -98,43 +108,47 @@ npm 包	@lumen/cli（如被占用则备选 lumen-cli）
 短命令	lumen（不安装 cc，避免与 C 编译器冲突）
 
 ## 当前开发阶段
-v1.0.0 已完成，全部 20 个任务（T1.1 ~ T4.6）已落地：
+v2.0.0 已完成，全部 v2.0 任务已落地：
 
-✅ 可靠性加固（模型核实 / usage 透传 / CRLF / 并发写 / 上下文裁剪）
+✅ BPE 精确 Token 计数（tiktoken / o200k_base，误差 <5%）与缓存命中成本
 
-✅ 体验升级（markdown / 光标历史 / resume 列表 / 中断进度）
+✅ 智能摘要压缩（超预算优先调模型生成摘要，失败回退旧裁剪策略）
 
-✅ 能力扩展（并行调度 / 修复管线 / plan 模式 / 配置系统）
+✅ 子代理系统（explore / research，spawn_subagent 工具，独立上下文隔离）
 
-✅ 发布工程（npm 包 / 发布管线 / CI / 依赖升级 / EN 文案 / 文档）
+✅ 技能系统（SKILL.md 规范 + code-review / explain / refactor 三个内置技能）
 
-v1.1 规划方向：
+✅ MCP 动态管理（/mcp status / connect / disconnect + 状态条摘要）
 
-MCP 协议接入（filesystem / memory / github）
+✅ 子代理 / 技能 E2E 测试（13 个新用例，总计 337 用例全绿）
 
-Plan-Then-Execute 模式增强
+v2.1 规划方向：
 
-跨会话记忆系统
+子代理 MCP 工具支持（allowedMcpServers 声明加载）
 
-上下文压缩与摘要
+技能嵌套与技能市场（@skill / @agent 引用、/skill install）
+
+轻量级知识图谱 + RAG（SQLite + ONNX / TF-IDF 降级）
+
+Reviewer Agent 代码评审智能体（9 维审查 / 自动测试 / 自动修正回滚）
 
 ## 发布门检查清单
-1.0.0 发布前已全部通过：
+2.0.0 发布前已全部通过：
 
 ☑ 模型 ID 与定价经官方文档核实
-☑ npm run verify 全绿（218 用例）
+☑ npm run verify 全绿（337 用例 / 37 测试文件）
 ☑ npm audit 无 high/critical
 ☑ 真实 API 冒烟通过
 ☑ Windows 冒烟通过（CRLF / 中文 / TTY）
 ☑ npm pack 预演通过
-☑ 文档齐备（README / 用户手册 / 架构文档）
-☑ v1.0.0 tag 已打
+☑ 文档齐备（README / 用户手册 / 架构文档 / CHANGELOG）
+☑ v2.0.0 tag 已打
 
 ## 重要决策（已确定）
 决策	说明
 会话存储	JSONL 格式，存储在 ~/.lumen/sessions/
 审批流	fail-closed（默认拒绝），编辑与 Shell 一律审批
-上下文管理	v1.0 采用裁剪策略（保留 system + 最近 N 轮）
+上下文管理	v2.0 采用智能摘要压缩（优先摘要，失败回退裁剪）
 模型默认	deepseek-v4-flash，困难任务自动升级到 pro
 配置系统	~/.lumen/config.json，CLI > 环境变量 > 配置文件 > 默认值
 

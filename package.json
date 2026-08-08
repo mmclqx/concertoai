@@ -1,6 +1,6 @@
 {
   "name": "@lumen/cli",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Lumen —— 面向个人开发者的中文优先终端编码助手 CLI（DeepSeek 驱动）",
   "type": "module",
   "license": "MIT",
@@ -46,6 +46,7 @@
     "commander": "^15.0.0",
     "ink": "^7.1.1",
     "react": "^19.2.0",
+    "tiktoken": "^1.0.22",
     "zod": "^4.4.3"
   },
   "devDependencies": {

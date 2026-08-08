@@ -10,6 +10,11 @@ export function systemMessage(content: string): ChatMessage {
   return { role: 'system', content };
 }
 
+/** 构造摘要消息（v2.0 智能压缩）：以 system 角色注入对话摘要。 */
+export function summaryMessage(summary: string): ChatMessage {
+  return { role: 'system', content: `# 对话摘要\n${summary}` };
+}
+
 export function userMessage(content: string): ChatMessage {
   return { role: 'user', content };
 }

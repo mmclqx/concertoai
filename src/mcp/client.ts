@@ -59,8 +59,12 @@ export class McpClient {
   private initResolve: (() => void) | null = null;
   private initReject: ((error: Error) => void) | null = null;
   private cachedTools: MCPToolDef[] | null = null;
+  private debug: (msg: string) => void;
 
-  constructor(private readonly config: MCPServerConfig) {}
+  constructor(private readonly config: MCPServerConfig) {
+    // 默认静默；设置 MCP_DEBUG=1 环境变量可启用调试输出
+    this.debug = process.env.MCP_DEBUG === '1' ? (msg) => console.error(msg) : () => {};
+  }
 
   get serverName(): string {
     return this.config.name;
@@ -103,24 +107,26 @@ export class McpClient {
       this.process = null;
     });
 
-    // stderr 仅记录日志（非协议消息）
+    // stderr 仅在调试模式下输出（避免污染终端）
     if (proc.stderr !== null) {
       let stderrBuf = '';
       proc.stderr.on('data', (chunk: Buffer) => {
         stderrBuf += chunk.toString();
-        // 按行输出到 console.error
         const lines = stderrBuf.split('\n');
         stderrBuf = lines.pop() ?? '';
         for (const line of lines) {
           if (line.trim() !== '') {
-            console.error(`[MCP ${this.config.name}] ${line}`);
+            this.debug(`[MCP ${this.config.name}] ${line}`);
           }
         }
       });
     }
 
     // stdout 逐行解析 JSON-RPC 消息
-    const rl = createInterface({ input: proc.stdout!, crlfDelay: Infinity });
+    if (proc.stdout === null) {
+      throw new McpClientError('MCP 服务进程 stdout 不可用', this.config.name);
+    }
+    const rl = createInterface({ input: proc.stdout, crlfDelay: Infinity });
     rl.on('line', (line: string) => {
       const trimmed = line.trim();
       if (trimmed === '') {
@@ -130,7 +136,7 @@ export class McpClient {
         const msg = JSON.parse(trimmed) as JsonRpcResponse | JsonRpcNotification;
         this.handleMessage(msg);
       } catch {
-        console.error(`[MCP ${this.config.name}] 无法解析响应: ${trimmed.slice(0, 200)}`);
+        this.debug(`[MCP ${this.config.name}] 无法解析响应: ${trimmed.slice(0, 200)}`);
       }
     });
 
@@ -178,7 +184,10 @@ export class McpClient {
   /** 调用服务提供的工具。 */
   async callTool(params: CallToolParams): Promise<CallToolResult> {
     await this.ensureConnected();
-    return this.sendRequest<CallToolResult>('tools/call', params as unknown as Record<string, unknown>);
+    return this.sendRequest<CallToolResult>(
+      'tools/call',
+      params as unknown as Record<string, unknown>,
+    );
   }
 
   // ── 内部方法 ──
@@ -257,7 +266,7 @@ export class McpClient {
       this.pending.set(id, { resolve: resolve as (value: unknown) => void, reject, timer });
 
       try {
-        this.process!.stdin!.write(`${payload}\n`);
+        this.process?.stdin?.write(`${payload}\n`);
       } catch (error) {
         clearTimeout(timer);
         this.pending.delete(id);

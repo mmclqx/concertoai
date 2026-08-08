@@ -11,8 +11,8 @@
  * - 读取时损坏行跳过并计数。
  */
 
-import { mkdir, readFile, rename, rm, unlink, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
+import { mkdir, readFile, rename, rm, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 // ── 类型 ──
@@ -80,14 +80,20 @@ export class MemoryStore {
   }
 
   /** 更新记忆（按 id）。不存在时返回 null。 */
-  async update(id: string, patch: Partial<Pick<MemoryEntry, 'title' | 'content' | 'tags'>>): Promise<MemoryEntry | null> {
+  async update(
+    id: string,
+    patch: Partial<Pick<MemoryEntry, 'title' | 'content' | 'tags'>>,
+  ): Promise<MemoryEntry | null> {
     return this.withLock(async () => {
       const all = await this.readAll();
       const idx = all.findIndex((m) => m.id === id);
       if (idx === -1) {
         return null;
       }
-      const existing = all[idx]!;
+      const existing = all[idx];
+      if (existing === undefined) {
+        return null;
+      }
       const updated: MemoryEntry = {
         ...existing,
         ...patch,
@@ -129,7 +135,10 @@ export class MemoryStore {
    * 检索记忆：按关键词（标题/内容包含）+ 标签过滤。
    * 匹配度排序：标题命中 > 内容命中 > 标签命中。
    */
-  async search(query: string, options?: { tags?: string[]; limit?: number }): Promise<MemoryEntry[]> {
+  async search(
+    query: string,
+    options?: { tags?: string[]; limit?: number },
+  ): Promise<MemoryEntry[]> {
     const all = await this.readAll();
     const limit = options?.limit ?? 5;
     const filterTags = options?.tags ?? [];
@@ -144,7 +153,10 @@ export class MemoryStore {
         }
         for (const tag of m.tags) {
           if (q !== '' && tag.toLowerCase().includes(q)) score += 3;
-          if (filterTags.length > 0 && filterTags.some((ft) => tag.toLowerCase().includes(ft.toLowerCase()))) {
+          if (
+            filterTags.length > 0 &&
+            filterTags.some((ft) => tag.toLowerCase().includes(ft.toLowerCase()))
+          ) {
             score += 2;
           }
         }
@@ -202,7 +214,7 @@ export class MemoryStore {
     }
     const tmp = `${this.file}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
     try {
-      await writeFile(tmp, existing + `${line}\n`, 'utf8');
+      await writeFile(tmp, `${existing}${line}\n`, 'utf8');
       await rename(tmp, this.file);
     } finally {
       await unlink(tmp).catch(() => {});

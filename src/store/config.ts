@@ -126,5 +126,12 @@ export function resolveConfig(
   const langMatch = langEnv !== undefined && /^(zh|en)/i.test(langEnv) ? langEnv : undefined;
   const locale = cliLocale ?? env('LUMEN_LOCALE') ?? langMatch ?? file.locale ?? 'zh';
 
-  return { model, allowlist, approvalPolicy, sessionDir, locale, mcpServers: file.mcpServers ?? [] };
+  return {
+    model,
+    allowlist,
+    approvalPolicy,
+    sessionDir,
+    locale,
+    mcpServers: file.mcpServers ?? [],
+  };
 }

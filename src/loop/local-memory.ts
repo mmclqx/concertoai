@@ -22,9 +22,7 @@ export async function retrieveLocalMemories(
     if (entries.length === 0) {
       return '';
     }
-    const lines = entries.map(
-      (e, i) => `${i + 1}. ${e.title}: ${e.content.slice(0, 300)}`,
-    );
+    const lines = entries.map((e, i) => `${i + 1}. ${e.title}: ${e.content.slice(0, 300)}`);
     return `# 项目记忆\n${lines.join('\n')}`;
   } catch {
     return '';

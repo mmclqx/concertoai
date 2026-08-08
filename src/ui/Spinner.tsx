@@ -1,6 +1,6 @@
 import { Text } from 'ink';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 /** Braille spinner 帧序列。 */
 const FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'] as const;
@@ -11,20 +11,28 @@ export interface SpinnerProps {
   text: string;
 }
 
-/** 动态进度指示：Braille spinner + 文本（思考中 / 工具执行 / 等待审批）。 */
+/** 动态进度指示：Braille spinner + 文本 + 已用秒数。 */
 export function Spinner({ text }: SpinnerProps) {
   const [frame, setFrame] = useState(0);
+  const [elapsed, setElapsed] = useState(0);
+  const startedAt = useRef(Date.now());
 
   useEffect(() => {
-    const timer = setInterval(() => {
+    const frameTimer = setInterval(() => {
       setFrame((f) => (f + 1) % FRAMES.length);
     }, FRAME_MS);
-    return () => clearInterval(timer);
+    const elapsedTimer = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - startedAt.current) / 1000));
+    }, 250);
+    return () => {
+      clearInterval(frameTimer);
+      clearInterval(elapsedTimer);
+    };
   }, []);
 
   return (
     <Text dimColor>
-      {FRAMES[frame]} {text}
+      {FRAMES[frame]} {text} {elapsed}s
     </Text>
   );
 }

@@ -88,7 +88,7 @@ describe('MCP 全链路 E2E', () => {
         description: t.description,
         parameters: t.parameters,
         parallelSafe: false,
-        execute: async (args: unknown) => manager.callTool(t.name, args),
+        execute: async (args: unknown, _ctx: unknown) => manager.callTool(t.name, args),
       }));
 
       expect(specs.length).toBeGreaterThanOrEqual(3);
@@ -96,7 +96,7 @@ describe('MCP 全链路 E2E', () => {
       // 模拟 ToolRegistry.run 行为
       for (const spec of specs) {
         if (spec.name.endsWith('/echo')) {
-          const result = await spec.execute({ message: 'test' });
+          const result = await spec.execute({ message: 'test' }, { cwd: process.cwd() });
           expect(result.ok).toBe(true);
         }
       }

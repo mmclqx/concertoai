@@ -11,11 +11,9 @@ import { analyzeDeps } from '../../src/planner/deps';
 
 describe('步骤提取', () => {
   it('编号列表被解析为步骤', () => {
-    const plan = [
-      '1. 读取 src/index.ts',
-      '2. 编辑 src/index.ts 添加导出',
-      '3. 运行 npm test',
-    ].join('\n');
+    const plan = ['1. 读取 src/index.ts', '2. 编辑 src/index.ts 添加导出', '3. 运行 npm test'].join(
+      '\n',
+    );
 
     const result = analyzeDeps(plan);
     expect(result.steps).toHaveLength(3);
@@ -47,11 +45,7 @@ describe('步骤提取', () => {
 
 describe('显式依赖', () => {
   it('depends on: 格式被解析', () => {
-    const plan = [
-      '1. 初始化项目',
-      '2. 编写代码 depends on: 1',
-      '3. 运行测试',
-    ].join('\n');
+    const plan = ['1. 初始化项目', '2. 编写代码 depends on: 1', '3. 运行测试'].join('\n');
 
     const result = analyzeDeps(plan);
     const deps = result.dependencies.filter((d) => d.from === 2 && d.to === 1);
@@ -59,11 +53,7 @@ describe('显式依赖', () => {
   });
 
   it('多依赖用逗号分隔', () => {
-    const plan = [
-      '1. 步骤一',
-      '2. 步骤二',
-      '3. 步骤三 depends on: 1, 2',
-    ].join('\n');
+    const plan = ['1. 步骤一', '2. 步骤二', '3. 步骤三 depends on: 1, 2'].join('\n');
 
     const result = analyzeDeps(plan);
     expect(result.dependencies.some((d) => d.from === 3 && d.to === 1)).toBe(true);
@@ -73,10 +63,7 @@ describe('显式依赖', () => {
 
 describe('文件依赖检测', () => {
   it('后续步骤引用前序步骤写入的文件 → 自动建立依赖', () => {
-    const plan = [
-      '1. 创建 `src/config.ts`',
-      '2. 编辑 `src/config.ts` 添加新字段',
-    ].join('\n');
+    const plan = ['1. 创建 `src/config.ts`', '2. 编辑 `src/config.ts` 添加新字段'].join('\n');
 
     const result = analyzeDeps(plan);
     const fileDep = result.dependencies.find(
@@ -88,11 +75,7 @@ describe('文件依赖检测', () => {
 
 describe('拓扑排序', () => {
   it('链式依赖按顺序排列', () => {
-    const plan = [
-      '1. 第一步',
-      '2. 第二步 depends on: 1',
-      '3. 第三步 depends on: 2',
-    ].join('\n');
+    const plan = ['1. 第一步', '2. 第二步 depends on: 1', '3. 第三步 depends on: 2'].join('\n');
 
     const result = analyzeDeps(plan);
     expect(result.ordered).toEqual([1, 2, 3]);
@@ -108,10 +91,7 @@ describe('拓扑排序', () => {
 
 describe('循环检测', () => {
   it('循环依赖被检出', () => {
-    const plan = [
-      '1. A depends on: 2',
-      '2. B depends on: 1',
-    ].join('\n');
+    const plan = ['1. A depends on: 2', '2. B depends on: 1'].join('\n');
 
     const result = analyzeDeps(plan);
     expect(result.cycles.length).toBeGreaterThan(0);
@@ -129,11 +109,7 @@ describe('并行组', () => {
   });
 
   it('有依赖时分组正确', () => {
-    const plan = [
-      '1. 第一步',
-      '2. 第二步 depends on: 1',
-      '3. 第三步',
-    ].join('\n');
+    const plan = ['1. 第一步', '2. 第二步 depends on: 1', '3. 第三步'].join('\n');
 
     const result = analyzeDeps(plan);
     // 步骤 1 和 3 可并行，步骤 2 依赖 1

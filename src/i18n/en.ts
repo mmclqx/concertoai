@@ -32,7 +32,8 @@ export const en = {
     noTty:
       'chat mode requires an interactive terminal. Run `lumen chat` directly (not via a pipe/script), or use `lumen run "<task>"` instead.',
     modelCallFailed: 'Model call failed: {message}',
-    loopMaxTurns: 'Tool call limit reached (10 turns). Progress saved — continue typing to let the assistant resume.',
+    loopMaxTurns:
+      'Tool call limit reached (10 turns). Progress saved — continue typing to let the assistant resume.',
     streamAborted: 'Generation interrupted; generated content was kept. You can continue typing.',
     streamInterrupted: 'Network interrupted: {message}. Generated content was kept; please retry.',
     planNeedsTty:
@@ -59,6 +60,7 @@ export const en = {
     cost: 'Cost',
     yuan: '¥',
     real: 'actual',
+    cacheHit: 'Cache hit',
   },
   session: {
     resumed: 'Resumed session {id} ({count} messages)',
@@ -76,7 +78,7 @@ export const en = {
     rejected: 'Plan rejected; nothing was executed',
   },
   ui: {
-    thinking: 'Thinking…',
+    thinking: 'Thinking',
     toolRunning: 'Running tool: {name}',
     toolDone: 'Tool finished: {name}',
     quit: 'Exited. Session saved.',

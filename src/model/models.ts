@@ -69,15 +69,36 @@ export function getDefaultModel(): ModelProfile {
 
 /**
  * 计算一次请求的成本（元）。
- * 未知模型 ID 抛错——调用方传入错误 ID 属于编程错误。
+ *
+ * - `inputTokens` 为总输入 token 数（含缓存命中与未命中）；
+ * - `cacheHitTokens` 为其中缓存命中的 token 数，按缓存命中价格计费；
+ * - 未知模型 ID 抛错——调用方传入错误 ID 属于编程错误。
  */
-export function costFor(modelId: string, inputTokens: number, outputTokens: number): number {
+export function costFor(
+  modelId: string,
+  inputTokens: number,
+  outputTokens: number,
+  cacheHitTokens = 0,
+): number {
   const model = getModel(modelId);
   if (model === undefined) {
     throw new Error(`未知模型: ${modelId}`);
   }
+  const missTokens = Math.max(0, inputTokens - cacheHitTokens);
   return (
-    (inputTokens / 1_000_000) * model.inputPricePerM +
+    (missTokens / 1_000_000) * model.inputPricePerM +
+    (cacheHitTokens / 1_000_000) * model.inputCacheHitPricePerM +
     (outputTokens / 1_000_000) * model.outputPricePerM
   );
+}
+
+/**
+ * 单独计算缓存命中 token 的成本（元）。
+ */
+export function cacheHitCostFor(modelId: string, cacheHitTokens: number): number {
+  const model = getModel(modelId);
+  if (model === undefined) {
+    throw new Error(`未知模型: ${modelId}`);
+  }
+  return (cacheHitTokens / 1_000_000) * model.inputCacheHitPricePerM;
 }

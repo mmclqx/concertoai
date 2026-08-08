@@ -1,9 +1,11 @@
 /**
- * Lumen 库入口（barrel）：导出 v0.1 全部公共 API。
+ * Lumen 库入口（barrel）：导出 v2.0 全部公共 API。
  */
 
-export const VERSION = '0.1.0';
+export const VERSION = '2.0.0';
 
+// v2.0 子代理系统
+export type { SubagentDef, SubagentResult, SubagentTask, SubagentToolName } from './agent';
 export type { ZhDict } from './i18n/zh';
 export { fmt, zh } from './i18n/zh';
 export type { LoopEvent, LoopOptions, RunLoopResult } from './loop/loop';
@@ -35,11 +37,16 @@ export {
 } from './model/client';
 export type { ModelProfile } from './model/models';
 export { costFor, getDefaultModel, getModel, listModels, MODEL_PROFILES } from './model/models';
-export { estimateMessageListTokens, estimateTokens } from './model/tokenizer';
+export {
+  countMessageListTokens,
+  countTokens,
+  estimateMessageListTokens,
+  estimateTokens,
+  isTokenEstimate,
+} from './model/tokenizer';
 export type { ProjectRules } from './store/project-rules';
 export { loadProjectRules, MAX_RULES_CHARS, RULE_FILENAMES } from './store/project-rules';
 export type { SessionSummary } from './store/session';
-
 export { DEFAULT_SESSION_DIR, SessionStore } from './store/session';
 export { editFileTool, planEdit } from './tools/edit';
 export {

@@ -113,7 +113,9 @@ export class MemoryInjector {
 
     try {
       // memory MCP 的 search_nodes 返回 JSON 结构
-      const parsed = JSON.parse(text) as { results?: Array<{ name?: string; observations?: string[]; score?: number }> };
+      const parsed = JSON.parse(text) as {
+        results?: Array<{ name?: string; observations?: string[]; score?: number }>;
+      };
       return (parsed.results ?? []).map((r) => ({
         title: r.name ?? '(未命名)',
         content: (r.observations ?? []).join('; '),
@@ -127,9 +129,7 @@ export class MemoryInjector {
 
   /** 格式化为系统提示注入块。 */
   private formatInjectBlock(entries: MemoryEntry[]): string {
-    const lines = entries.map(
-      (e, i) => `${i + 1}. ${e.title}: ${e.content.slice(0, 300)}`,
-    );
+    const lines = entries.map((e, i) => `${i + 1}. ${e.title}: ${e.content.slice(0, 300)}`);
     return `# 相关记忆\n${lines.join('\n')}`;
   }
 }

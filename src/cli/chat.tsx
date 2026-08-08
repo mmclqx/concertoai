@@ -3,11 +3,19 @@
  */
 
 import { render } from 'ink';
+import { registerBuiltinSubagents } from '../agent/builtin';
+import { SubagentSpawner } from '../agent/spawner';
 import { fmt, resolveLocale, setLocale, t } from '../i18n';
+import { MemoryInjector } from '../loop/memory-injector';
 import type { ChatMessage } from '../loop/types';
+import { toMcpServerConfig } from '../mcp/builtin-servers';
+import { McpManager } from '../mcp/manager';
+import type { MCPServerConfig } from '../mcp/types';
 import { DeepSeekClient } from '../model/client';
 import { getDefaultModel, getModel, listModels } from '../model/models';
+import { SkillLoader } from '../skill/loader';
 import { loadConfig, resolveConfig } from '../store/config';
+import { MemoryStore } from '../store/memory-store';
 import { loadProjectRules } from '../store/project-rules';
 import { SessionStore } from '../store/session';
 import { editFileTool } from '../tools/edit';
@@ -15,11 +23,7 @@ import { listDirectoryTool, readFileTool, searchContentTool } from '../tools/rea
 import type { ToolContext, ToolSpec } from '../tools/registry';
 import { ToolRegistry } from '../tools/registry';
 import { shellTool } from '../tools/shell';
-import { McpManager } from '../mcp/manager';
-import { toMcpServerConfig } from '../mcp/builtin-servers';
-import type { MCPServerConfig } from '../mcp/types';
-import { MemoryInjector } from '../loop/memory-injector';
-import { MemoryStore } from '../store/memory-store';
+import { createSpawnSubagentTool } from '../tools/spawn';
 import { App } from '../ui/App';
 import { formatSessionTime, SessionPicker } from '../ui/SessionPicker';
 
@@ -42,13 +46,16 @@ export function resolveModel(modelId: string | undefined): string {
   return profile.id;
 }
 
-export function buildRegistry(mcpTools?: ToolSpec[]): ToolRegistry {
+export function buildRegistry(mcpTools?: ToolSpec[], spawnTool?: ToolSpec): ToolRegistry {
   const registry = new ToolRegistry()
     .register(readFileTool)
     .register(listDirectoryTool)
     .register(searchContentTool)
     .register(editFileTool)
     .register(shellTool);
+  if (spawnTool !== undefined) {
+    registry.register(spawnTool);
+  }
   if (mcpTools !== undefined) {
     for (const tool of mcpTools) {
       registry.register(tool);
@@ -92,14 +99,8 @@ export async function runChat(options: RunChatOptions): Promise<void> {
   if (resolved.mcpServers.length > 0) {
     const configs: MCPServerConfig[] = resolved.mcpServers.map(toMcpServerConfig);
     mcpManager = new McpManager(configs);
-    const status = await mcpManager.start();
-    for (const s of status) {
-      if (s.connected) {
-        console.log(`MCP 服务已连接: ${s.name}（${s.toolCount} 个工具）`);
-      } else {
-        console.error(`MCP 服务连接失败: ${s.name} —— ${s.error ?? '未知错误'}`);
-      }
-    }
+    // 静默启动 MCP 服务（连接状态通过 /mcp status 和状态条查看，不污染终端）
+    await mcpManager.start();
   }
 
   // 将 MCP 工具转为 ToolSpec 并注册
@@ -109,11 +110,16 @@ export async function runChat(options: RunChatOptions): Promise<void> {
     parameters: t.parameters,
     parallelSafe: false,
     execute: async (args: unknown) => {
-      return mcpManager!.callTool(t.name, args);
+      return mcpManager?.callTool(t.name, args);
     },
   }));
 
-  const registry = buildRegistry(mcpTools);
+  // v2.0 子代理系统：创建 spawner + 注册内置子代理
+  const spawner = new SubagentSpawner(client, { cwd: options.cwd }, model);
+  registerBuiltinSubagents(spawner);
+  const spawnTool = createSpawnSubagentTool(spawner);
+
+  const registry = buildRegistry(mcpTools, spawnTool);
   const rules = await loadProjectRules(options.cwd);
   const ctx: ToolContext = {
     cwd: options.cwd,
@@ -147,10 +153,11 @@ export async function runChat(options: RunChatOptions): Promise<void> {
       sessionId={sessionId}
       initialHistory={history}
       approvalStrategy={resolved.approvalPolicy}
-      memoryInjector={
-        mcpManager !== undefined ? new MemoryInjector(mcpManager) : undefined
-      }
+      memoryInjector={mcpManager !== undefined ? new MemoryInjector(mcpManager) : undefined}
       memoryStore={new MemoryStore({ cwd: options.cwd })}
+      skillLoader={new SkillLoader()}
+      mcpManager={mcpManager}
+      spawner={spawner}
     />,
   );
 }

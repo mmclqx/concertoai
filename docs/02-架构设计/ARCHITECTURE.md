@@ -1,8 +1,8 @@
 # Lumen 架构文档
 
-> 版本：v1.1 · 2026-08-08 · 当前提交 `38cec62`（V1.1-M3 记忆管理完成）
+> 版本：v2.0 · 2026-08-08
 > 本文档基于当前代码实现编写，作为后续维护与扩展的技术参考。
-> 配套文档：[v1.1 开发计划](../03-开发计划与任务/v1.1-dev-plan.md)、[任务看板](../03-开发计划与任务/TASKS.md)
+> 配套文档：[v2.0 开发任务](../03-开发计划与任务/v2.0-dev-tasks.md)、[任务看板](../03-开发计划与任务/TASKS.md)
 
 ---
 
@@ -12,7 +12,7 @@ Lumen 是一款**中文优先**的终端编码助手 CLI（DeepSeek 驱动）。
 
 - **技术栈**：TypeScript (strict) + Node ≥22 + ESM，Ink 7 (React 19) 渲染 TUI，commander 解析 CLI，zod 做工具参数校验，vitest 测试，Biome 检查，tsup 打包
 - **运行时依赖**：`ink` / `react` / `commander` / `zod` / `cli-highlight` / `chalk`
-- **测试现状**：22 个测试文件、218 个用例，`npm run verify` 全绿，`npm audit` 0 漏洞；已用真实 `DEEPSEEK_API_KEY` 完成端到端冒烟（`lumen run` 真实调用 DeepSeek API 成功）
+- **测试现状**：37 个测试文件、337 个用例，`npm run verify` 全绿，`npm audit` 0 漏洞；已用真实 `DEEPSEEK_API_KEY` 完成端到端冒烟
 - **安全基线**：编辑与命令一律审批（fail-closed）、路径沙箱、结果截断、白名单免审批——无 yolo 模式
 
 ## 2. 架构全景图
@@ -57,16 +57,27 @@ Lumen 是一款**中文优先**的终端编码助手 CLI（DeepSeek 驱动）。
 │  session.ts       JSONL 会话（~/.lumen/sessions/）            │
 │  project-rules.ts AGENTS.md→CARBON.md 规则加载（≤8000 字符）  │
 │  config.ts        ~/.lumen/config.json（schema + 优先级解析）  │
+│  memory-store.ts  项目级跨会话记忆（.lumen-memory/ JSONL）     │
 │  zh.ts / en.ts / index.ts  多语言字典 + locale 解析（t/setLocale）
-└─────────────────────────────────────────────────────────────┘
+└─────────────────────────────────┬───────────────────────────┘
+                                  │
+┌─────────────────────────────────▼───────────────────────────┐
+│ mcp/  MCP 客户端（src/mcp/）    planner/ 任务规划（src/planner/）│
+│  client.ts     stdio 传输层     deps.ts     步骤依赖检测       │
+│  manager.ts    多服务聚合       progress.ts 进度状态机         │
+│  types.ts      协议类型定义     rollback.ts 文件快照与回滚      │
+│  zod-adapter.ts JSON Schema→zod types.ts    计划步骤类型        │
+│  builtin-servers.ts 预配置      │                              │
+│  index.ts       barrel          │                              │
+└─────────────────────────────────┴───────────────────────────┘
 ```
 
 **依赖方向**（上层依赖下层，无反向）：
 
 ```
-cli → ui → loop → model / tools → store / i18n
-             ↘        ↘
-          loop/types（共享类型）   i18n（全项目引用）
+cli → ui → loop → model / tools → store / i18n / mcp / planner
+             ↘        ↘          ↘
+          loop/types   i18n     mcp（工具注入 loop）
 ```
 
 ## 3. 核心数据流
@@ -128,6 +139,26 @@ API 层 ApiMessage { role, content, name?, tool_call_id?, tool_calls? }
 ~/.lumen/sessions/<id>.jsonl
 ```
 
+### 3.5 MCP 服务交互路径（v1.1）
+
+```
+启动（chat.tsx）
+  → loadConfig()：读取 mcpServers 配置
+  → McpManager(configs)：并发启动所有 MCP 服务（stdio transport）
+  → manager.listTools() → 聚合为 ToolSpec（serverName/toolName 前缀）
+  → registry.registerExternal(tools)：注入 ToolRegistry
+
+模型调用 MCP 工具
+  → loop：tool_call 事件 → registry.run('serverName/toolName', args)
+  → manager.callTool(name, args)：按前缀路由到对应 McpClient
+  → MCP 服务进程：执行 tools/call → 返回 content[]
+  → 结果回填：formatToolResult(mcpResult) → tool 消息追加到历史
+
+MCP 服务故障
+  → 单服务断开：不影响其他服务；manager 标记 disconnected
+  → 内置工具不受影响（独立于 MCP 工具）
+```
+
 ## 4. 关键设计决策
 
 > **先读这里再动手**：本节记录关键决策的「原因」。当你想修改某个模块（工具分发、审批流、会话存储、SSE 解析……）时，请先查阅对应条目，理解其设计意图。很多约束（fail-closed、路径沙箱、分层截断）是安全基线的一部分，破坏它们等于破坏产品承诺。
@@ -143,7 +174,7 @@ API 层 ApiMessage { role, content, name?, tool_call_id?, tool_calls? }
 | D7 | **路径沙箱 resolveSafe**：所有工具路径基于 `ctx.cwd` 解析，越界拒绝 | 模型不可信，防止 `..` 逃逸/绝对路径越界 | `src/tools/read.ts` |
 | D8 | **分层截断防上下文膨胀**：read_file 50k 字符 / search 100 条 / 工具回填 20k / shell 输出 20k / 规则 8k | 成本与上下文控制 | 各工具 + `messages.ts` + `project-rules.ts` |
 | D9 | **会话 JSONL 宽松读取**（空行跳过、损坏行计数） | 容忍手动编辑；毫秒时间戳 id + `wx` 排他创建防同毫秒覆盖 | `src/store/session.ts` |
-| D10 | **token 估算 CJK 加权**（中文 1 token/字，其余 4 字符/token） | 纯字符/4 会低估中文 4 倍，成本条失真 | `src/model/tokenizer.ts` |
+| D10 | **BPE 精确 Token 计数**（v2.0 升级）：tiktoken o200k_base 编码器，懒加载单例；失败降级 CJK 加权 | 误差从 ±40% 降至 <5%；缓存命中 token 按低价计费 | `src/model/tokenizer.ts` |
 | D11 | **工具失败不中断循环**：ok:false 回填让模型自行修正 | 模型可自愈（换参数/换工具），循环上限兜底 | `src/loop/loop.ts` |
 | D12 | **中文文案单一来源** `i18n/zh.ts` + `fmt()` 占位符 | 全项目文案可检索、可统一改 | `src/i18n/zh.ts` |
 | D13 | **并行工具调度**（T3.1）：连续 `parallelSafe` 工具组内并行，审批类串行 | 只读工具并行提速；审批框不与并行执行交错；事件按原始顺序回填 | `loop.ts` + `registry.ts` |
@@ -153,6 +184,14 @@ API 层 ApiMessage { role, content, name?, tool_call_id?, tool_calls? }
 | D17 | **配置优先级**（T3.4）：CLI > 环境变量 > 配置文件 > 默认值 | 可预测、可覆盖；schema 版本兜底 | `store/config.ts` |
 | D18 | **locale 字典**（T4.5）：`zh`/`en` 键同构 + `setLocale`/`t()` | 文案单点维护；启动期固定语言 | `i18n/index.ts` |
 | D19 | **会话原子写**（T1.5）：进程内锁 + 临时文件 rename + 写后 size 校验 | 并发不损坏；跨进程冲突提示（尽力而为） | `store/session.ts` |
+| D20 | **MCP 多服务聚合**（v1.1）：`serverName/toolName` 前缀 + 故障隔离 + 降级 | 工具名不冲突；单服务故障不影响全局；内置工具在 MCP 不可用时仍可用 | `mcp/manager.ts` |
+| D21 | **计划依赖拓扑排序**（v1.1）：显式声明 + 文件引用 + 隐式读写 → 拓扑序 | 确保步骤按正确顺序执行；循环依赖提前报错 | `planner/deps.ts` |
+| D22 | **文件快照回滚**（v1.1）：编辑前自动备份 → 失败可选回滚 → 成功后清理 | 计划执行中某步失败时可恢复；非文件操作回滚时跳过并提示 | `planner/rollback.ts` |
+| D23 | **双源记忆注入**（v1.1）：本地 JSONL + MCP memory 知识图谱合并注入 | 本地轻量零依赖，MCP 支持复杂查询；两者互补 | `loop/local-memory.ts` + `loop/memory-injector.ts` |
+| D24 | **智能摘要压缩**（v2.0）：触发 80% 预算时优先调模型生成摘要，失败回退裁剪 | 保留信息密度而非粗暴丢弃；摘要自身计入预算 | `loop/context.ts` |
+| D25 | **子代理隔离执行**（v2.0）：独立 runLoop + 受限 ToolRegistry + 无审批 | 探索/研究任务不污染主上下文；只读无需审批 | `agent/spawner.ts` |
+| D26 | **技能系统 SKILL.md**（v2.0）：frontmatter 元数据 + markdown 正文，通过 /skill 命令注入 | 可复用指令模板；项目级/全局级双路径 | `skill/loader.ts` + `cli/slash/skill.ts` |
+| D27 | **MCP 动态管理**（v2.0）：`/mcp` 命令 + 状态条实时摘要 + 单服务级 connect/disconnect | 运行时灵活管理，无需重启 | `cli/slash/mcp.ts` + `ui/StatusBar.tsx` |
 
 ## 5. 目录结构说明
 
@@ -177,9 +216,11 @@ lumen/
 │   ├── index.ts          barrel：导出 v1.0 公共 API（VERSION / client / loop / tools / store / i18n）
 │   ├── cli/
 │   │   ├── index.ts      commander 入口：lumen（默认 chat）/ chat / run / plan；DEEPSEEK_API_KEY 检查
-│   │   ├── chat.tsx      chat 装配：TTY 检查、配置加载、注册表、规则加载、resume、render(App)
+│   │   ├── chat.tsx      chat 装配：TTY 检查、配置加载、注册表、规则加载、MCP 启动、resume、render(App)
 │   │   ├── run.ts        run 装配：非交互、stdout 流式、--auto-approve 显式开启、存档
-│   │   └── plan.ts       plan 装配：计划轮 → 终端 y/n → 执行轮
+│   │   ├── plan.ts       plan 装配：计划轮 → 终端 y/n → 执行轮（含依赖检测/进度/回滚）
+│   │   └── slash/
+│   │       └── memory.ts 斜杠命令：/remember /forget /memories
 │   ├── ui/
 │   │   ├── App.tsx       状态机组件：send/sendPlan/executePlan/审批挂起/消息渲染/错误显示
 │   │   ├── PromptInput.tsx  光标移动 + 历史浏览 + 多行输入
@@ -193,25 +234,40 @@ lumen/
 │   │   ├── loop.ts       runLoop / MAX_LOOP_TURNS=10 / MAX_REPAIRS=2 / LoopEvent（chunk/tool_call/tool_result/usage/error）
 │   │   ├── context.ts    上下文窗口管理（trimContext：80% 预算、整轮保留、日志）
 │   │   ├── messages.ts   消息构造 + toApiMessages + formatToolResult（20k 截断）
-│   │   └── types.ts      ChatMessage / ToolCall / Role
+│   │   ├── types.ts      ChatMessage / ToolCall / Role
+│   │   ├── local-memory.ts  本地记忆检索与注入（v1.1）
+│   │   └── memory-injector.ts MCP memory 检索与注入（v1.1）
 │   ├── model/
 │   │   ├── client.ts     DeepSeekClient（implements ModelClient）+ readSseEvents + ApiError/TimeoutError + Usage
 │   │   ├── models.ts     MODEL_PROFILES（flash 默认/pro，官方定价 2026-08 核实）+ costFor
 │   │   └── tokenizer.ts  estimateTokens（CJK 加权）/ estimateMessageListTokens
 │   ├── tools/
-│   │   ├── registry.ts   ToolSpec/ToolContext/ToolRegistry/ApprovalRequest/ToolResult（repairable 字段）
+│   │   ├── registry.ts   ToolSpec/ToolContext/ToolRegistry/ApprovalRequest/ToolResult（repairable/parallelSafe 字段）
 │   │   ├── read.ts       read_file/search_content/list_directory + resolveSafe（BOM 剥离）
-│   │   ├── edit.ts       edit_file：SEARCH 规范化匹配（CRLF）、保留换行风格、审批后落盘
+│   │   ├── edit.ts       edit_file：SEARCH 规范化匹配（CRLF）、保留换行风格、审批后落盘、快照（v1.1）
 │   │   └── shell.ts      run_command：白名单免审、每次审批、超时杀进程树、输出截断
+│   ├── mcp/              MCP 协议客户端（v1.1 新增，详见 §4 D20）
+│   │   ├── client.ts     stdio transport（握手/请求/响应/超时）
+│   │   ├── manager.ts    多服务生命周期管理、工具聚合与路由
+│   │   ├── types.ts      JSON-RPC 2.0 消息 + tools/list/tools/call 类型
+│   │   ├── zod-adapter.ts JSON Schema → Zod schema 转换
+│   │   ├── builtin-servers.ts filesystem/memory/github 预配置
+│   │   └── index.ts      barrel
+│   ├── planner/          任务规划增强（v1.1 新增，详见 §4 D21-D22）
+│   │   ├── deps.ts       步骤依赖解析 + 拓扑排序 + 循环检测
+│   │   ├── progress.ts   进度状态机（pending→in_progress→completed/failed/skipped）
+│   │   ├── rollback.ts   文件快照存储与回滚恢复
+│   │   └── types.ts      计划步骤、依赖关系类型定义
 │   ├── store/
 │   │   ├── session.ts    SessionStore：create/append/appendAll/read/list；锁 + 原子写 + 冲突检测
 │   │   ├── project-rules.ts  loadProjectRules：AGENTS→CARBON 优先级、8k 截断
-│   │   └── config.ts      loadConfig/writeConfig/resolveConfig（CLI > env > 配置 > 默认）
+│   │   ├── config.ts      loadConfig/writeConfig/resolveConfig（CLI > env > 配置 > 默认；含 mcpServers）
+│   │   └── memory-store.ts   MemoryStore：JSONL CRUD + 标签/关键词检索 + 项目隔离（v1.1）
 │   └── i18n/
 │       ├── zh.ts         中文字典 + fmt()
 │       ├── en.ts         英文字典（键与 zh 同构）
 │       └── index.ts      resolveLocale / setLocale / t() / DICTS
-└── tests/                镜像 src 结构（22 个文件 / 218 用例）
+└── tests/                镜像 src 结构（32 个文件 / 292 用例），新增 tests/mcp/（7 文件）、tests/planner/（3 文件）、tests/store/memory-store.test.ts、tests/cli/slash-memory.test.ts
 ```
 
 ## 6. 5分钟快速体验
@@ -309,11 +365,31 @@ npm run verify     # 验收：build + lint + typecheck + test（--silent）
 | audit 告警（1 critical） | ✅ T4.4 依赖升级 + esbuild overrides → 0 漏洞 | package.json |
 | `run` 模式非 `--auto-approve` 时危险操作全被拒 | 保留（安全优先，by design） | `cli/run.ts` |
 
-### 8.2 规划（v1.1+，源自开发计划非目标清单）
+### 8.2 v1.1 已解决
 
-- **精度**：BPE tokenizer 替换估算；缓存命中 token 计入成本（`inputCacheHitPricePerM` 已就绪）
-- **能力**：子代理/技能系统；MCP 接入；缓存优先上下文
-- **工程**：`@lumen/cli` 正式发布（Trusted Publishing 已配置）；TypeScript 7（原生）评估；依赖持续升级
+| 问题 | 状态 | 位置 |
+| --- | --- | --- |
+| 仅有内置工具，无法扩展 | ✅ MCP 协议接入（stdio client + 多服务管理 + 聚合路由） | `mcp/` |
+| 计划无依赖感知 | ✅ 依赖检测（显式/文件/隐式 + 拓扑排序 + 循环检测） | `planner/deps.ts` |
+| 计划执行无进度反馈 | ✅ 进度状态机 + PlanProgressView TUI 组件 | `planner/progress.ts` |
+| 计划失败无法回滚 | ✅ 文件快照 + 逐步骤回滚恢复 | `planner/rollback.ts` |
+| 记忆仅限当前会话 | ✅ 本地 JSONL 记忆（`/remember` `/forget` `/memories`）+ MCP memory 注入 | `store/memory-store.ts` + `cli/slash/memory.ts` |
+
+### 8.3 v2.0 已解决
+
+| 问题 | 状态 | 位置 |
+| --- | --- | --- |
+| Token 估算误差大（±40%） | ✅ BPE 精确计数（tiktoken o200k_base），误差 <5% | `model/tokenizer.ts` |
+| 缓存命中 token 未展示 | ✅ 状态条缓存命中行 + 分价计费 | `ui/StatusBar.tsx` + `model/models.ts` |
+| 上下文超预算直接丢弃 | ✅ 智能摘要压缩（>5 条调模型，失败回退裁剪） | `loop/context.ts` |
+| 探索/研究污染主上下文 | ✅ 子代理系统（explore/research 隔离子代理） | `agent/` |
+| 无可复用技能指令 | ✅ 技能系统（SKILL.md + /skill 命令 + 3 内置技能） | `skill/` + `cli/slash/skill.ts` |
+| MCP 启动后不可管 | ✅ /mcp 动态管理（connect/disconnect/status） | `cli/slash/mcp.ts` + `mcp/manager.ts` |
+
+### 8.4 规划（v2.1+）
+
+- **能力**：多 Agent 协作（Orchestrator 模式）、插件市场、DAG 工作流引擎
+- **工程**：TypeScript 7（原生）评估；依赖持续升级
 
 ---
 

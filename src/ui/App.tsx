@@ -1,20 +1,26 @@
 import { Box, Text, useApp, useInput } from 'ink';
 import { useCallback, useMemo, useRef, useState } from 'react';
-
+import type { SubagentSpawner } from '../agent/spawner';
+import { executeMcpCommand, parseMcpCommand } from '../cli/slash/mcp';
+import { executeMemoryCommand, parseMemoryCommand } from '../cli/slash/memory';
+import { executeSkillCommand, parseSkillCommand } from '../cli/slash/skill';
 import { fmt, t } from '../i18n';
+import { retrieveLocalMemories } from '../loop/local-memory';
 import type { LoopEvent } from '../loop/loop';
 import { runLoop } from '../loop/loop';
+import type { MemoryInjector } from '../loop/memory-injector';
 import { userMessage } from '../loop/messages';
 import type { ChatMessage, ToolCall } from '../loop/types';
+import type { McpManager } from '../mcp/manager';
 import type { ModelClient } from '../model/client';
-import { costFor, getModel } from '../model/models';
+import { cacheHitCostFor, costFor, getModel } from '../model/models';
 import { estimateMessageListTokens, estimateTokens } from '../model/tokenizer';
-import type { SessionStore } from '../store/session';
-import type { MemoryInjector } from '../loop/memory-injector';
-import { retrieveLocalMemories } from '../loop/local-memory';
+import type { SkillLoader } from '../skill/loader';
 import type { MemoryStore } from '../store/memory-store';
-import { executeMemoryCommand, parseMemoryCommand } from '../cli/slash/memory';
-import type { ApprovalRequest, ToolContext, ToolRegistry } from '../tools/registry';
+import type { SessionStore } from '../store/session';
+import type { ApprovalRequest, ToolContext } from '../tools/registry';
+import { ToolRegistry } from '../tools/registry';
+import { renderMarkdownToAnsi } from './markdown';
 import { ApprovalModal, PlanConfirm } from './modals';
 import { PromptInput } from './PromptInput';
 import { Spinner } from './Spinner';
@@ -22,6 +28,21 @@ import { StatusBar } from './StatusBar';
 import { StreamingView } from './StreamingView';
 
 type Phase = 'idle' | 'streaming' | 'approval' | 'plan-approval';
+
+/**
+ * 从完整 ToolRegistry 中提取指定工具名组成受限注册表。
+ * 技能 SKILL.md 的 `tools` 字段白名单通过此函数生效。
+ */
+function buildRestrictedRegistry(full: ToolRegistry, whitelist: string[]): ToolRegistry {
+  const restricted = new ToolRegistry();
+  for (const name of whitelist) {
+    const spec = full.get(name);
+    if (spec !== undefined) {
+      restricted.register(spec);
+    }
+  }
+  return restricted;
+}
 
 export interface AppProps {
   client: ModelClient;
@@ -39,6 +60,12 @@ export interface AppProps {
   memoryInjector?: MemoryInjector;
   /** 本地项目记忆存储（v1.1）：与 MCP memory 互补。 */
   memoryStore?: MemoryStore;
+  /** 技能加载器（v2.0）：处理 /skill 命令。 */
+  skillLoader?: SkillLoader;
+  /** MCP 管理器（v2.0）：处理 /mcp 命令。 */
+  mcpManager?: McpManager;
+  /** 子代理 spawner（v2.0）：subagent 模式技能走隔离执行，工具调用不暴露到 TUI。 */
+  spawner?: SubagentSpawner;
 }
 
 /**
@@ -49,24 +76,133 @@ export interface AppProps {
 /** 终端单消息最大显示字符数（超过则截断显示，但完整内容已落盘）。 */
 const MAX_DISPLAY_CHARS = 8_000;
 
-/** 单条消息的渲染：角色前缀 + 内容（超长截断显示）。 */
-function MessageLine({ message }: { message: ChatMessage }) {
+/** 单条消息的渲染：角色前缀 + 内容（超长截断显示，助手消息走 Markdown 渲染，工具消息折叠）。 */
+function MessageLine({
+  message,
+  messages,
+  messageIndex,
+}: {
+  message: ChatMessage;
+  messages: ChatMessage[];
+  messageIndex: number;
+}) {
   const prefix = message.role === 'user' ? '你' : message.role === 'assistant' ? '助手' : '工具';
   const color =
-    message.role === 'user' ? 'cyan' : message.role === 'assistant' ? 'white' : 'yellow';
+    message.role === 'user' ? 'cyan' : message.role === 'assistant' ? 'green' : 'yellow';
   const body = message.content ?? '';
+
+  // 工具消息：只显示文件名/参数，不显示内容；编辑结果显示彩色 diff
+  if (message.role === 'tool' && message.toolCallId !== undefined) {
+    const tc = findToolCall(messages, messageIndex, message.toolCallId);
+    const toolName = tc?.name;
+    const isEdit = toolName === 'edit_file' || toolName === 'write_file';
+    const isRead = toolName === 'read_file';
+    const isSearch = toolName === 'search_content';
+    const filePath = extractArg(tc, 'path');
+    const pattern = extractArg(tc, 'pattern');
+
+    // 编辑工具：彩色 diff
+    if (isEdit) {
+      const coloredDiff = colorizeDiff(body);
+      return (
+        <Box flexDirection="column">
+          <Text color="red">
+            {toolName} {filePath ?? ''}
+          </Text>
+          <Text>{coloredDiff}</Text>
+        </Box>
+      );
+    }
+
+    // 读取工具：只显示红色文件名
+    if (isRead) {
+      return (
+        <Box>
+          <Text color="red">
+            {toolName} {filePath ?? ''}
+          </Text>
+        </Box>
+      );
+    }
+
+    // 搜索工具：显示模式 + 命中行数
+    if (isSearch) {
+      const matchCount = body.split('\n').filter((l) => l.trim() !== '').length;
+      const query = pattern ?? '';
+      return (
+        <Box>
+          <Text color="red">
+            {toolName} &quot;{query}&quot; → {matchCount} 条结果
+          </Text>
+        </Box>
+      );
+    }
+
+    // 其他工具：只显示工具名
+    return (
+      <Box>
+        <Text dimColor>{toolName ?? '工具'}</Text>
+      </Box>
+    );
+  }
+
   const display =
     body.length > MAX_DISPLAY_CHARS
       ? `${body.slice(0, MAX_DISPLAY_CHARS)}…（共 ${body.length} 字符，终端仅显示前 ${MAX_DISPLAY_CHARS}）`
       : body;
+
+  const content = message.role === 'assistant' ? renderMarkdownToAnsi(display) : display;
+
   return (
     <Box flexDirection="column">
       <Text bold color={color}>
         {prefix}
       </Text>
-      <Text>{display}</Text>
+      <Text>{content}</Text>
     </Box>
   );
+}
+
+/** 在消息历史中向前查找 toolCallId 对应的工具调用。 */
+function findToolCall(
+  messages: ChatMessage[],
+  currentIndex: number,
+  toolCallId: string,
+): ToolCall | undefined {
+  for (let i = currentIndex - 1; i >= 0; i--) {
+    const msg = messages[i];
+    if (msg?.role === 'assistant' && msg.toolCalls !== undefined) {
+      const tc = msg.toolCalls.find((c) => c.id === toolCallId);
+      if (tc !== undefined) {
+        return tc;
+      }
+    }
+  }
+  return undefined;
+}
+
+/** 解析工具参数 JSON，提取 path 字段（read_file / edit_file 等）。 */
+function extractArg(tc: ToolCall | undefined, key: string): string | undefined {
+  if (tc === undefined) return undefined;
+  try {
+    const args = JSON.parse(tc.arguments) as Record<string, unknown>;
+    const val = args[key];
+    return typeof val === 'string' ? val : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** 给 diff 文本加上 ANSI 颜色：+ 绿色，- 红色，@@ 青色。 */
+function colorizeDiff(diff: string): string {
+  const lines = diff.split('\n');
+  const colored = lines.map((line) => {
+    if (line.startsWith('+') && !line.startsWith('+++')) return `\x1b[32m${line}\x1b[39m`;
+    if (line.startsWith('-') && !line.startsWith('---')) return `\x1b[31m${line}\x1b[39m`;
+    if (line.startsWith('@@')) return `\x1b[36m${line}\x1b[39m`;
+    return `\x1b[2m${line}\x1b[22m`;
+  });
+  return colored.join('\n');
 }
 
 export function App({
@@ -81,6 +217,9 @@ export function App({
   approvalStrategy = 'ask',
   memoryInjector,
   memoryStore,
+  skillLoader,
+  mcpManager,
+  spawner,
 }: AppProps) {
   const { exit } = useApp();
   const [messages, setMessages] = useState<ChatMessage[]>(initialHistory ?? []);
@@ -92,7 +231,7 @@ export function App({
   const [error, setError] = useState<string | null>(null);
   const [tokens, setTokens] = useState({ input: 0, output: 0 });
   /** API 返回的真实 usage 累计（usage 事件累加；流式中途仍显示估算值）。 */
-  const [realUsage, setRealUsage] = useState({ input: 0, output: 0 });
+  const [realUsage, setRealUsage] = useState({ input: 0, output: 0, cacheHit: 0 });
   const approvalResolver = useRef<((approved: boolean) => void) | null>(null);
   const busy = useRef(false);
   /** 当前生成任务的取消控制器（Ctrl+C 中断流式生成）。 */
@@ -128,6 +267,7 @@ export function App({
           setRealUsage((u) => ({
             input: u.input + event.usage.prompt_tokens,
             output: u.output + event.usage.completion_tokens,
+            cacheHit: u.cacheHit + (event.usage.prompt_cache_hit_tokens ?? 0),
           }));
         } else if (event.type === 'error') {
           setError(
@@ -298,6 +438,157 @@ export function App({
       }
       const trimmed = text.trim();
 
+      // 技能命令（/skill）→ 列表直接显示；调用技能注入指令后调模型
+      if (skillLoader !== undefined) {
+        const skillCmd = parseSkillCommand(trimmed);
+        if (skillCmd !== null) {
+          const result = executeSkillCommand(skillCmd, skillLoader, ctx.cwd);
+          if (result.handled && result.message !== undefined) {
+            const msg = result.message;
+            setMessages((prev) => [...prev, { role: 'user', content: text }, msg]);
+            setTokens((t) => ({ ...t, input: t.input + estimateTokens(text) }));
+          }
+          if (result.handled) {
+            return;
+          }
+          // subagent 模式技能：走隔离子代理执行，工具调用不暴露到 TUI
+          if (
+            result.runAs === 'subagent' &&
+            spawner !== undefined &&
+            result.skillBody !== undefined
+          ) {
+            setInput('');
+            busy.current = true;
+            setError(null);
+            setStreamed('');
+            setPhase('streaming');
+            setActiveTool({ id: 'skill', name: result.skillName ?? 'skill', arguments: '{}' });
+            setTokens((t) => ({ ...t, input: t.input + estimateTokens(text) }));
+            setMessages((prev) => [...prev, { role: 'user', content: text }]);
+
+            const agentName = `skill:${result.skillName ?? 'unknown'}`;
+            const allowedTools = (
+              result.skillTools && result.skillTools.length > 0
+                ? result.skillTools
+                : ['read_file', 'search_content', 'list_directory']
+            ) as Array<'read_file' | 'search_content' | 'list_directory'>;
+
+            // 提取用户参数（/skill <name> <args>）
+            const skillArgs = text.replace(/^\/skill\s+\S+\s*/, '').trim();
+            const prompt = skillArgs !== '' ? skillArgs : text;
+
+            spawner.register({
+              name: agentName,
+              description: result.skillName ?? 'skill',
+              allowedTools,
+              maxTurns: 12,
+              timeoutMs: 120_000,
+              systemPrompt: result.skillBody,
+              maxRepairs: 2,
+            });
+
+            try {
+              const subResult = await spawner.spawn({ agentName, prompt });
+              setMessages((prev) => [...prev, { role: 'assistant', content: subResult.summary }]);
+              setTokens((t) => ({
+                ...t,
+                output: t.output + estimateTokens(subResult.summary),
+              }));
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : String(err);
+              setError(msg);
+            } finally {
+              busy.current = false;
+              setActiveTool(null);
+              setStreamed('');
+              setPhase('idle');
+            }
+            return;
+          }
+          // inline 模式技能：注入技能正文为 system prompt，继续正常流程
+          if (result.skillBody !== undefined) {
+            setInput('');
+            setPhase('streaming');
+            busy.current = true;
+            const controller = new AbortController();
+            abortRef.current = controller;
+            setError(null);
+            setStreamed('');
+            setActiveTool(null);
+            setTokens((t) => ({ ...t, input: t.input + estimateTokens(text) }));
+            const history = messages;
+            const skillUserMsg = result.skillName ? `[技能: ${result.skillName}]\n${text}` : text;
+            setMessages([...history, { role: 'user', content: skillUserMsg }]);
+            try {
+              // 技能指定了工具白名单 → 创建受限 ToolRegistry
+              const skillRegistry =
+                result.skillTools !== undefined
+                  ? buildRestrictedRegistry(registry, result.skillTools)
+                  : registry;
+
+              const effectivePrompt = [result.skillBody, systemPrompt].filter(Boolean).join('\n\n');
+              const onEvent = makeOnEvent(controller);
+              const loopResult = await runLoop(
+                {
+                  model,
+                  client,
+                  registry: skillRegistry,
+                  ctx: ctxWithApproval,
+                  systemPrompt: effectivePrompt || undefined,
+                  onEvent,
+                  signal: controller.signal,
+                  contextWindow: getModel(model)?.contextWindow,
+                  maxRepairs: 5,
+                },
+                history,
+                skillUserMsg,
+              );
+              if (loopResult.interrupted) {
+                setError(t().errors.loopMaxTurns);
+              }
+              const added = loopResult.messages.slice(history.length);
+              setMessages(loopResult.messages);
+              setTokens((t) => ({
+                ...t,
+                output: t.output + estimateMessageListTokens(added),
+              }));
+              if (store !== undefined && sessionId !== undefined && added.length > 0) {
+                await store.appendAll(sessionId, added);
+              }
+            } catch (err) {
+              if (controller.signal.aborted) {
+                setError(t().errors.streamAborted);
+              } else if (err instanceof Error) {
+                setError(err.message);
+              } else {
+                setError(String(err));
+              }
+            } finally {
+              abortRef.current = null;
+              setActiveTool(null);
+              setStreamed('');
+              setPhase('idle');
+              busy.current = false;
+            }
+            return;
+          }
+        }
+      }
+
+      // MCP 管理命令（/mcp status / connect / disconnect）
+      if (mcpManager !== undefined) {
+        const mcpCmd = parseMcpCommand(trimmed);
+        if (mcpCmd !== null) {
+          const mcpResult = await executeMcpCommand(mcpCmd, mcpManager);
+          if (mcpResult.handled && mcpResult.message !== undefined) {
+            const msg = mcpResult.message;
+            setMessages((prev) => [...prev, { role: 'user', content: text }, msg]);
+            setTokens((t) => ({ ...t, input: t.input + estimateTokens(text) }));
+          }
+          return;
+        }
+      }
+
       // 记忆管理命令（/remember /forget /memories）→ 不经过模型
       if (memoryStore !== undefined) {
         const memCmd = parseMemoryCommand(trimmed);
@@ -339,9 +630,7 @@ export function App({
         }
         const memoryBlock = blocks.join('\n\n');
         const effectivePrompt =
-          memoryBlock !== ''
-            ? `${memoryBlock}\n\n${systemPrompt ?? ''}`.trim()
-            : systemPrompt;
+          memoryBlock !== '' ? `${memoryBlock}\n\n${systemPrompt ?? ''}`.trim() : systemPrompt;
 
         const onEvent = makeOnEvent(controller);
         const result = await runLoop(
@@ -404,6 +693,12 @@ export function App({
       systemPrompt,
       sendPlan,
       makeOnEvent,
+      memoryStore,
+      memoryInjector,
+      skillLoader,
+      spawner,
+      ctx.cwd,
+      mcpManager,
     ],
   );
 
@@ -451,13 +746,25 @@ export function App({
 
   const showReal = realUsage.input + realUsage.output > 0;
   const display = phase === 'streaming' || !showReal ? tokens : realUsage;
-  const cost = costFor(model, display.input, display.output);
+  const displayCacheHit = showReal ? realUsage.cacheHit : 0;
+  const cost = costFor(model, display.input, display.output, displayCacheHit);
+  const hitCost = cacheHitCostFor(model, displayCacheHit);
+
+  // MCP 状态摘要
+  const mcpSummary = mcpManager
+    ? (() => {
+        const all = mcpManager.statusAll();
+        if (all.length === 0) return undefined;
+        const connected = all.filter((s) => s.connected).length;
+        return `${connected}/${all.length} 服务`;
+      })()
+    : undefined;
 
   return (
     <Box flexDirection="column" paddingX={1}>
       {messages.map((m, i) => (
         // biome-ignore lint/suspicious/noArrayIndexKey: 聊天历史只追加不重排，索引 key 稳定
-        <MessageLine key={i} message={m} />
+        <MessageLine key={i} message={m} messages={messages} messageIndex={i} />
       ))}
       {phase === 'streaming' && <StreamingView text={streamed} />}
       {activeTool !== null && <Spinner text={fmt(t().ui.toolRunning, { name: activeTool.name })} />}
@@ -481,6 +788,9 @@ export function App({
         outputTokens={display.output}
         cost={cost}
         isReal={showReal && phase !== 'streaming'}
+        cacheHitTokens={displayCacheHit}
+        cacheHitCost={hitCost}
+        mcpStatus={mcpSummary}
       />
     </Box>
   );

@@ -145,7 +145,11 @@ describe('runLoop 基础路径', () => {
   it('历史消息透传', async () => {
     const modelClient = new FakeModel([() => ({ content: '这是新回答' })]);
     const history: ChatMessage[] = [userMessage('第一问'), assistantMessage('第一答')];
-    const { messages } = await runLoop({ model, client: modelClient, registry, ctx }, history, '第二问');
+    const { messages } = await runLoop(
+      { model, client: modelClient, registry, ctx },
+      history,
+      '第二问',
+    );
     expect(messages.slice(0, 2)).toEqual(history);
     expect(messages.map((m) => m.role)).toEqual(['user', 'assistant', 'user', 'assistant']);
   });
@@ -352,7 +356,11 @@ describe('runLoop 工具链路', () => {
       }),
       () => ({ content: 'done' }),
     ]);
-    const { messages: result } = await runLoop({ model, client: modelClient, registry, ctx }, [], '双工具');
+    const { messages: result } = await runLoop(
+      { model, client: modelClient, registry, ctx },
+      [],
+      '双工具',
+    );
     const assistant = result[1];
     expect(assistant?.toolCalls).toEqual([
       { id: 'c1', name: 'read_file', arguments: '{"path":"a.txt"}' },
@@ -393,7 +401,11 @@ describe('runLoop 工具链路', () => {
       () => ({ toolCalls: [{ id: 'c1', name: 'read_file', arguments: '{bad json' }] }),
       () => ({ content: '参数有问题' }),
     ]);
-    const { messages: result } = await runLoop({ model, client: modelClient, registry, ctx }, [], 'hi');
+    const { messages: result } = await runLoop(
+      { model, client: modelClient, registry, ctx },
+      [],
+      'hi',
+    );
     expect(String(result[2]?.content)).toContain('执行失败');
     expect(result[3]?.content).toBe('参数有问题');
   });
@@ -403,7 +415,11 @@ describe('runLoop 工具链路', () => {
       () => ({ toolCalls: [{ id: 'c1', name: 'no_such_tool', arguments: '{}' }] }),
       () => ({ content: '我用不了这个工具' }),
     ]);
-    const { messages: result } = await runLoop({ model, client: modelClient, registry, ctx }, [], 'hi');
+    const { messages: result } = await runLoop(
+      { model, client: modelClient, registry, ctx },
+      [],
+      'hi',
+    );
     expect(String(result[2]?.content)).toContain('未知工具');
   });
 
@@ -608,7 +624,11 @@ describe('工具调用修复管线（T3.2）', () => {
       () => ({ toolCalls: [{ id: 'c2', name: 'read_file', arguments: '{"path":"a.txt"}' }] }),
       () => ({ content: '读到了' }),
     ]);
-    const { messages: result } = await runLoop({ model, client: modelClient, registry, ctx }, [], 'hi');
+    const { messages: result } = await runLoop(
+      { model, client: modelClient, registry, ctx },
+      [],
+      'hi',
+    );
     expect(result.at(-1)?.content).toBe('读到了');
   });
 
@@ -622,7 +642,11 @@ describe('工具调用修复管线（T3.2）', () => {
       () => ({ toolCalls: [{ id: 'c4', name: 'edit_file', arguments: editArgs }] }),
       () => ({ content: '放弃了' }),
     ]);
-    const { messages } = await runLoop({ model, client: modelClient, registry, ctx: denyCtx }, [], 'hi');
+    const { messages } = await runLoop(
+      { model, client: modelClient, registry, ctx: denyCtx },
+      [],
+      'hi',
+    );
     expect(messages.at(-1)?.content).toBe('放弃了');
   });
 
