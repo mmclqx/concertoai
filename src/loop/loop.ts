@@ -29,7 +29,7 @@ import {
 import type { ChatMessage, ToolCall } from './types';
 
 /** 单次输入允许的最大工具循环轮数。 */
-export const MAX_LOOP_TURNS = 10;
+export const MAX_LOOP_TURNS = 50;
 
 /** 可修复工具失败允许的最大累计次数（超过即终止，T3.2 修复管线）。 */
 export const MAX_REPAIRS = 2;

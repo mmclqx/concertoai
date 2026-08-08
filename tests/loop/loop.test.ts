@@ -446,8 +446,8 @@ describe('runLoop 工具链路', () => {
       'hi',
     );
     expect(interrupted).toBe(true);
-    // user + 10 轮 assistant + 10 轮 tool = 21 条消息
-    expect(messages.length).toBe(21);
+    // user + MAX_LOOP_TURNS 轮 assistant + MAX_LOOP_TURNS 轮 tool
+    expect(messages.length).toBe(MAX_LOOP_TURNS * 2 + 1);
     expect(messages[0]?.role).toBe('user');
     const toolMsgs = messages.filter((m) => m.role === 'tool');
     expect(toolMsgs.length).toBe(MAX_LOOP_TURNS);
