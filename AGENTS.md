@@ -241,6 +241,11 @@ v2.1.0 发布门检查（当前）：
 - 从可能为 `undefined` 的对象中解构属性时，使用可选链和默认值
 - 模式：`const { key } = obj ?? {}` 或 `obj?.key ?? ''`
 
+### 数组访问安全
+- `noUncheckedIndexedAccess` 开启时，数组下标访问返回 `T | undefined`，使用前必须空值检查
+- 模式：`const item = arr[i]; if (item === undefined) break;`（或 `continue;`）
+- 禁止用非空断言 `!` 绕过检查；循环内越界时 `break`（游标）或 `continue`（跳过）
+
 ### 检查标准
 - 新增代码必须通过 `npm run typecheck`（零类型错误）
 - 禁止使用 `any` 类型绕过检查
