@@ -83,7 +83,7 @@ export async function runLoop(
   messages.push(userMessage(input));
 
   // 修复管线计数跨轮共享：一次 runLoop 内可修复失败累计（T3.2）
-  const repairState: RepairState = { count: 0 };
+  const repairState: RepairState = { count: 0, failures: [] };
   const maxTurns = options.maxTurns ?? MAX_LOOP_TURNS;
   for (let turn = 0; turn < maxTurns; turn += 1) {
     const assistant = await streamAssistantReply(options, messages);
@@ -104,16 +104,62 @@ export async function runLoop(
       if (options.signal?.aborted) {
         return { messages, interrupted: false };
       }
-      await executeGroup(options, group, messages, repairState);
+      await executeGroup(options, group, messages, repairState, turn, input);
     }
   }
 
   return { messages, interrupted: true };
 }
 
-/** 修复管线状态：可修复失败的累计次数（跨并行组共享）。 */
+/** 修复管线状态：可修复失败的累计次数 + 详情记录（跨并行组共享）。 */
 interface RepairState {
   count: number;
+  /** 失败详情（供爆雷时输出上下文）。 */
+  failures: Array<{ toolName: string; error: string; turn: number }>;
+}
+
+/**
+ * 工具修复管线终止错误：包含失败详情和上下文的富文本错误。
+ * 与普通 Error 的区别：message 已包含完整诊断信息，调用方可直接展示。
+ */
+class ToolRepairError extends Error {
+  constructor(
+    state: RepairState,
+    maxRepairs: number,
+    userInput: string,
+  ) {
+    const failures = state.failures;
+    const uniqueTools = [...new Set(failures.map((f) => f.toolName))];
+    const lastTurn = failures[failures.length - 1]?.turn ?? 0;
+
+    const lines = [
+      `工具调用连续失败 ${state.count} 次（可修复错误上限 ${maxRepairs}），已终止。`,
+      '',
+      `📌 你的输入：${userInput.slice(0, 200)}${userInput.length > 200 ? '…' : ''}`,
+      '',
+      `🔧 涉及的工具：${uniqueTools.join('、')}`,
+      `📊 失败发生在第 ${lastTurn + 1} 轮工具调用`,
+      '',
+      '📋 失败详情：',
+    ];
+
+    for (const f of failures) {
+      lines.push(`  ${f.turn + 1}. ${f.toolName} → ${f.error}`);
+    }
+
+    lines.push(
+      '',
+      '💡 建议：',
+      '  • 检查工具参数是否正确（路径有无拼写错误？）',
+      '  • 检查被操作的文件是否存在',
+      '  • 检查网络/MCP 服务是否正常',
+      '  • 简化你的请求再试一次',
+      '  • 使用 /resume 恢复上次会话继续',
+    );
+
+    super(lines.join('\n'));
+    this.name = 'ToolRepairError';
+  }
 }
 
 /**
@@ -150,6 +196,8 @@ async function executeGroup(
   group: ToolCall[],
   messages: ChatMessage[],
   repairState: RepairState,
+  turn: number,
+  userInput: string,
 ): Promise<void> {
   // 中断信号已触发 → 跳过工具执行
   if (options.signal?.aborted) {
@@ -170,11 +218,14 @@ async function executeGroup(
     // 修复管线：可修复失败累计超限即终止（审批拒绝/越界等 repairable: false 不计数）
     if (result.ok === false && result.repairable !== false) {
       repairState.count += 1;
+      repairState.failures.push({
+        toolName: call.name,
+        error: result.error ?? '未知错误',
+        turn,
+      });
       const maxRepairs = options.maxRepairs ?? MAX_REPAIRS;
       if (repairState.count > maxRepairs) {
-        throw new Error(
-          `工具调用连续失败 ${repairState.count} 次（可修复错误，上限 ${maxRepairs}），已终止`,
-        );
+        throw new ToolRepairError(repairState, maxRepairs, userInput);
       }
     }
   }
