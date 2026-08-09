@@ -1,7 +1,7 @@
 # Lumen 开发任务看板
 
 > 最后更新：2026-08-09
-> 当前里程碑：**🚀 v3.0 开发中**（M1 接口定义 · T1.1 已完成）（v1.0: 20/20 ✅ · v1.1: 12/12 ✅ · v2.0: 15/15 ✅ · v2.1: 25/25 ✅ · v3.0: 3/24）
+> 当前里程碑：**🚀 v3.0 开发中**（M1 接口定义 · T1.1/T1.2 已完成）（v1.0: 20/20 ✅ · v1.1: 12/12 ✅ · v2.0: 15/15 ✅ · v2.1: 25/25 ✅ · v3.0: 4/24）
 > 基于：[v3.0 开发计划](./v3.0-dev-plan.md) · [v3.0 详细任务](./v3.0-dev-tasks.md)
 
 ---
@@ -14,9 +14,9 @@
 | P0 任务 | 30（v1.1: 6 ✅ + v2.0: 5 ✅ + v2.1: 5 ✅ + v3.0: 14） |
 | P1 任务 | 30（v1.1: 6 ✅ + v2.0: 10 ✅ + v2.1: 4 ✅ + v3.0: 10） |
 | P2 任务 | 8（v2.1: 8） |
-| 待开始 | 21 |
+| 待开始 | 20 |
 | 进行中 | 0 |
-| 已完成 | 75 |
+| 已完成 | 76 |
 | 已阻塞 | 0 |
 
 ---
@@ -613,10 +613,11 @@
   - 依赖：T0.2
   - ✅ 2026-08-09 完成：AgentMessage 泛型 + 判别联合 + 类型守卫、AgentContext/Artifact、AgentDef（zod schema）、AgentState/AgentRuntimeState 分离，落实 ADR-016 全部 5 项修正项；15 测试（424 全绿）
 
-- [ ] **T1.2** 定义 Agent 注册表接口 + 标准 Agent 接口
+- [x] **T1.2** 定义 Agent 注册表接口 + 标准 Agent 接口
   - 涉及文件：`src/agents/protocol.ts`（新增）、`src/agents/registry.ts`（新增）、`src/agents/index.ts`（新增）
   - 预估：2h
   - 依赖：T0.2、T1.1
+  - ✅ 2026-08-09 完成：Agent 契约（execute/send/receive + AgentRuntimeState + 输入输出 Schema 校验）+ InMemoryAgentRegistry（register/unregister/get/list/has/permissionsOf）；16 测试（440 全绿）
 
 - [ ] **T1.3** 实现显式上下文管理器
   - 涉及文件：`src/orchestrator/context.ts`（新增）
@@ -784,6 +785,7 @@
 | 2026-08-09 | **V3.0-M0 启动**：T0.1 ADR-009~014 回填 DECISIONS.md（6 条 ADR 格式对齐 ADR-001~008，409 用例全绿） | Carbon Code |
 | 2026-08-09 | **V3.0-M0 完成**：T0.2 接口草图评审（AgentMessage/AgentContext/AgentDef 定稿，ADR-016 已采纳，5 项 M1 修正项） | Carbon Code |
 | 2026-08-09 | **V3.0-M1 启动**：T1.1 Agent 通信协议类型（src/orchestrator/types.ts + index.ts，15 测试，424 全绿） | Carbon Code |
+| 2026-08-09 | **V3.0-M1 推进**：T1.2 Agent 注册表 + 标准 Agent 接口（src/agents/，16 测试，440 全绿，达 v3.0 用例目标） | Carbon Code |
 
 ---
 
