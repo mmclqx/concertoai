@@ -3,6 +3,16 @@
  */
 
 export {
+  ArchitectAgent,
+  type ArchitectAgentOptions,
+  type ArchitectFile,
+  type ArchitectInterface,
+  type ArchitectSpec,
+  architectSpecSchema,
+  generateArchitectSpec,
+  parseArchitectSpec,
+} from './architect';
+export {
   artifactTypeForAgent,
   decomposeRequirement,
   Orchestrator,
