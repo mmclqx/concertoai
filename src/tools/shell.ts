@@ -119,7 +119,7 @@ function runShellCommand(command: string, cwd: string, timeoutMs: number): Promi
     child.on('error', (error) => {
       const hint =
         (error as NodeJS.ErrnoException).code === 'ENOENT'
-          ? `\n💡 命令不存在或无法启动，请检查命令名是否正确（Windows cmd 不支持 pwd/ls/cat 等 UNIX 命令，请用 node -e / dir / type 替代）`
+          ? `\n💡 命令不存在或无法启动，请检查命令名是否正确（Windows 已自动适配 npx.cmd/cat→type/tail→Get-Content/grep→findstr 等，若仍失败请用 node -e / dir / type 替代）`
           : '';
       finish({
         ok: false,
@@ -166,33 +166,112 @@ function runShellCommand(command: string, cwd: string, timeoutMs: number): Promi
   });
 }
 
+// ── 跨平台命令兼容体系（v3.0 §3.4）──────────────────────────
+
+/** 平台适配器：检测操作系统并转换命令，保证 Windows/macOS/Linux 一致可用。 */
+export interface PlatformAdapter {
+  /** 是否 Windows（process.platform === 'win32'）。 */
+  isWindows: boolean;
+  /** 是否 macOS（process.platform === 'darwin'）。 */
+  isMac: boolean;
+  /** 是否 Linux。 */
+  isLinux: boolean;
+  /** 按当前平台转换命令（跨平台兼容层核心）。 */
+  adaptCommand: (command: string) => string;
+}
+
+/**
+ * 获取平台适配器。
+ *
+ * @param platform 平台标识（默认 process.platform；测试可注入模拟不同系统）。
+ */
+export function getPlatformAdapter(platform: NodeJS.Platform = process.platform): PlatformAdapter {
+  return {
+    isWindows: platform === 'win32',
+    isMac: platform === 'darwin',
+    isLinux: platform === 'linux',
+    adaptCommand: (command) => adaptCommandForPlatform(command, platform),
+  };
+}
+
+/** 按平台分派命令转换；Linux 视为基准（原样返回，保持最大兼容）。 */
+function adaptCommandForPlatform(command: string, platform: NodeJS.Platform): string {
+  if (platform === 'win32') {
+    return translateWindowsCommand(command);
+  }
+  if (platform === 'darwin') {
+    return translateMacCommand(command);
+  }
+  return command;
+}
+
 /**
  * Windows 命令兼容翻译。
- * 检测到 head/tail/cat 等 Linux 命令时，自动转为 PowerShell 等效命令。
+ * 检测到 npx、head/tail/cat/grep/rm/mkdir/pwd 等命令时，
+ * 自动转为 Windows 原生 / PowerShell 等效命令。
  */
 function translateWindowsCommand(command: string): string {
-  if (process.platform !== 'win32') return command;
+  // 1. npx → npx.cmd（行首或 && 连接处，规避 Windows 脚本执行策略）
+  command = command.replace(/^(npx)(?=\s|$)/gm, 'npx.cmd');
+  command = command.replace(/(&&\s+)npx(?=\s|$)/g, '$1npx.cmd');
 
-  // 1. | head -N → PowerShell Select-Object -First N
+  // 2. | head -N → PowerShell Select-Object -First N
   command = command.replace(
     /\|\s*head\s+-(\d+)/g,
     '| powershell -Command "$input | Select-Object -First $1"',
   );
 
-  // 2. | tail -N → PowerShell Select-Object -Last N
+  // 3. | tail -N → PowerShell Select-Object -Last N
   command = command.replace(
     /\|\s*tail\s+-(\d+)/g,
     '| powershell -Command "$input | Select-Object -Last $1"',
   );
 
-  // 3. 独立 cat file → type file
+  // 4. 独立 tail -N FILE → PowerShell Get-Content FILE -Tail N
+  command = command.replace(
+    /^tail\s+-(\d+)\s+(.+)$/gm,
+    'powershell -Command "Get-Content \'$2\' -Tail $1"',
+  );
+
+  // 5. 独立 head -N FILE → PowerShell Get-Content FILE -Head N
+  command = command.replace(
+    /^head\s+-(\d+)\s+(.+)$/gm,
+    'powershell -Command "Get-Content \'$2\' -Head $1"',
+  );
+
+  // 6. 独立 cat FILE → type FILE
   command = command.replace(/^cat\s+(.+)$/gm, 'type $1');
 
-  // 4. pwd → echo %cd%
+  // 7. 独立 grep PATTERN → findstr PATTERN（基本模式；-i → /i 常见参数适配）
+  command = command.replace(
+    /^grep\s+(-i\s+)?(.+)$/gm,
+    (_match, flag: string | undefined, rest: string) => {
+      const findstrFlag = flag !== undefined ? '/i ' : '';
+      return `findstr ${findstrFlag}${rest}`;
+    },
+  );
+
+  // 8. rm -rf DIR → rmdir /s /q DIR
+  command = command.replace(/^rm\s+-rf\s+(.+)$/gm, 'rmdir /s /q $1');
+
+  // 9. mkdir -p DIR → mkdir DIR 2>nul（cmd 自动创建中间目录，2>nul 抑制"已存在"错误）
+  command = command.replace(/^mkdir\s+-p\s+(.+)$/gm, 'mkdir $1 2>nul');
+
+  // 10. pwd → echo %cd%
   if (/^pwd\s*$/m.test(command)) {
     command = 'echo %cd%';
   }
 
+  return command;
+}
+
+/**
+ * macOS 命令兼容翻译（BSD 工具链差异）。
+ * 处理 sed -i：BSD sed 要求备份后缀，自动补空后缀 ''。
+ */
+function translateMacCommand(command: string): string {
+  // sed -i 's/a/b/' file → sed -i '' 's/a/b/' file
+  command = command.replace(/sed\s+-i(?=\s+)/g, "sed -i ''");
   return command;
 }
 
@@ -216,7 +295,7 @@ export const shellTool: ToolSpec = {
       }
     }
 
-    const command = translateWindowsCommand(args.command);
+    const command = getPlatformAdapter().adaptCommand(args.command);
     return runShellCommand(command, ctx.cwd, timeoutMs);
   },
 };
