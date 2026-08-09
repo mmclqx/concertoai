@@ -1,6 +1,6 @@
 # Lumen 架构文档
 
-> 版本：v2.0 · 2026-08-08
+> 版本：v2.1 · 2026-08-08
 > 本文档基于当前代码实现编写，作为后续维护与扩展的技术参考。
 > 配套文档：[v2.0 开发任务](../03-开发计划与任务/v2.0-dev-tasks.md)、[任务看板](../03-开发计划与任务/TASKS.md)
 
@@ -12,7 +12,7 @@ Lumen 是一款**中文优先**的终端编码助手 CLI（DeepSeek 驱动）。
 
 - **技术栈**：TypeScript (strict) + Node ≥22 + ESM，Ink 7 (React 19) 渲染 TUI，commander 解析 CLI，zod 做工具参数校验，vitest 测试，Biome 检查，tsup 打包
 - **运行时依赖**：`ink` / `react` / `commander` / `zod` / `cli-highlight` / `chalk`
-- **测试现状**：37 个测试文件、337 个用例，`npm run verify` 全绿，`npm audit` 0 漏洞；已用真实 `DEEPSEEK_API_KEY` 完成端到端冒烟
+- **测试现状**：42 个测试文件、409 个用例，`npm run verify` 全绿，`npm audit` 0 漏洞；已用真实 `DEEPSEEK_API_KEY` 完成端到端冒烟
 - **安全基线**：编辑与命令一律审批（fail-closed）、路径沙箱、结果截断、白名单免审批——无 yolo 模式
 
 ## 2. 架构全景图
@@ -106,7 +106,7 @@ cli/index.ts（无子命令或 chat）
       ④ 有工具调用 → 逐条执行（顺序）：
            JSON.parse(arguments) → registry.run(name, args, ctx)
            → 结果 formatToolResult 截断回填为 tool 消息
-         → 回到 ②（最多 MAX_LOOP_TURNS = 10 轮，超限抛错）
+         → 回到 ②（最多 MAX_LOOP_TURNS = 50 轮，超限返回 interrupted 不抛错，已累积结果保留）
   → App：消息历史更新、token 估算累计、store.appendAll 落盘
 ```
 
@@ -192,6 +192,11 @@ MCP 服务故障
 | D25 | **子代理隔离执行**（v2.0）：独立 runLoop + 受限 ToolRegistry + 无审批 | 探索/研究任务不污染主上下文；只读无需审批 | `agent/spawner.ts` |
 | D26 | **技能系统 SKILL.md**（v2.0）：frontmatter 元数据 + markdown 正文，通过 /skill 命令注入 | 可复用指令模板；项目级/全局级双路径 | `skill/loader.ts` + `cli/slash/skill.ts` |
 | D27 | **MCP 动态管理**（v2.0）：`/mcp` 命令 + 状态条实时摘要 + 单服务级 connect/disconnect | 运行时灵活管理，无需重启 | `cli/slash/mcp.ts` + `ui/StatusBar.tsx` |
+| D28 | **知识图谱**（v2.1）：JSONL 持久化 + 内存邻接表索引 + LRU 淘汰（1000 实体），按项目隔离 | 轻量零依赖，O(1) 关系查询；批量写入去重不退化平方级 | `knowledge/store.ts` + `tools/knowledge.ts` |
+| D29 | **子代理 MCP 工具**（v2.1）：allowedMcpServers 声明加载，MCP 工具去前缀注册 | 子代理可访问 filesystem/github 等外部能力；服务不可用静默降级 | `agent/spawner.ts` |
+| D30 | **技能嵌套与市场**（v2.1）：@skill 递归展开（≤3 层 + 循环检测）+ @agent 引用 + /skill install/search/update | 技能可组合复用；市场命令异步网络操作 | `skill/loader.ts` + `cli/slash/skill.ts` |
+| D31 | **Reviewer Agent**（v2.1）：9 维审查聚合为 5 个并行子代理 + 自动测试（npm run verify） | 多视角交叉验证；结果按 (file,title) 去重 + 严重程度排序 | `reviewer/engine.ts` + `reviewer/dimensions.ts` |
+| D32 | **系统性性能优化**（v2.1）：O_APPEND 追加 / chunk 一次 join / 工具定义缓存 / 关系邻接表 / 懒加载 / 流式节流 | 大会话与长回复不再 O(n²) 退化 | session/loop/tools/knowledge/ui 各模块 |
 
 ## 5. 目录结构说明
 
@@ -231,7 +236,7 @@ lumen/
 │   │   ├── Spinner.tsx   Braille 进度指示
 │   │   └── StatusBar.tsx 模型名/token（真实 usage/估算）/成本（costFor 实时计算）
 │   ├── loop/
-│   │   ├── loop.ts       runLoop / MAX_LOOP_TURNS=10 / MAX_REPAIRS=2 / LoopEvent（chunk/tool_call/tool_result/usage/error）
+│   │   ├── loop.ts       runLoop / MAX_LOOP_TURNS=50 / MAX_REPAIRS=2 / LoopEvent（chunk/tool_call/tool_result/usage/error）
 │   │   ├── context.ts    上下文窗口管理（trimContext：80% 预算、整轮保留、日志）
 │   │   ├── messages.ts   消息构造 + toApiMessages + formatToolResult（20k 截断）
 │   │   ├── types.ts      ChatMessage / ToolCall / Role
@@ -258,6 +263,15 @@ lumen/
 │   │   ├── progress.ts   进度状态机（pending→in_progress→completed/failed/skipped）
 │   │   ├── rollback.ts   文件快照存储与回滚恢复
 │   │   └── types.ts      计划步骤、依赖关系类型定义
+│   ├── knowledge/        知识图谱存储（v2.1，详见 §4 D28）
+│   │   ├── store.ts      JSONL 持久化 + 内存邻接表索引 + LRU 淘汰 + 懒加载
+│   │   ├── search.ts     关键词检索（name/type/observation 评分）
+│   │   └── types.ts      实体/关系/图类型
+│   ├── reviewer/         Reviewer Agent（v2.1，详见 §4 D31）
+│   │   ├── engine.ts     6 步审查工作流（5 并行子代理 + 自动测试 npm run verify）
+│   │   ├── dimensions.ts 9 维审查定义与 5 子代理分组
+│   │   ├── knowledge.ts  知识库上下文加载
+│   │   └── types.ts      审查报告/问题/严重程度类型
 │   ├── store/
 │   │   ├── session.ts    SessionStore：create/append/appendAll/read/list；锁 + 原子写 + 冲突检测
 │   │   ├── project-rules.ts  loadProjectRules：AGENTS→CARBON 优先级、8k 截断
@@ -267,7 +281,7 @@ lumen/
 │       ├── zh.ts         中文字典 + fmt()
 │       ├── en.ts         英文字典（键与 zh 同构）
 │       └── index.ts      resolveLocale / setLocale / t() / DICTS
-└── tests/                镜像 src 结构（32 个文件 / 292 用例），新增 tests/mcp/（7 文件）、tests/planner/（3 文件）、tests/store/memory-store.test.ts、tests/cli/slash-memory.test.ts
+└── tests/                镜像 src 结构（42 个文件 / 409 用例），含 tests/mcp/、tests/planner/、tests/knowledge/、tests/reviewer/、tests/skill/、tests/agent/ 等
 ```
 
 ## 6. 5分钟快速体验
@@ -386,9 +400,19 @@ npm run verify     # 验收：build + lint + typecheck + test（--silent）
 | 无可复用技能指令 | ✅ 技能系统（SKILL.md + /skill 命令 + 3 内置技能） | `skill/` + `cli/slash/skill.ts` |
 | MCP 启动后不可管 | ✅ /mcp 动态管理（connect/disconnect/status） | `cli/slash/mcp.ts` + `mcp/manager.ts` |
 
-### 8.4 规划（v2.1+）
+### 8.4 v2.1 已解决
 
-- **能力**：多 Agent 协作（Orchestrator 模式）、插件市场、DAG 工作流引擎
+| 问题 | 状态 | 位置 |
+| --- | --- | --- |
+| 子代理仅内置只读工具 | ✅ allowedMcpServers 声明加载 MCP 工具（explore→filesystem、research→filesystem/github；服务不可用降级） | `agent/spawner.ts` |
+| 技能不可组合、无市场 | ✅ @skill 递归展开（≤3 层 + 循环检测）+ @agent 引用 + /skill install/search/update | `skill/loader.ts` + `cli/slash/skill.ts` |
+| 无项目级结构化记忆 | ✅ 轻量知识图谱（JSONL + 内存邻接表索引 + LRU，按项目隔离），knowledge_* 5 工具 + 双源记忆注入 | `knowledge/` + `tools/knowledge.ts` + `loop/memory-injector.ts` |
+| 无自动化代码评审 | ✅ Reviewer Agent（/review）：9 维审查聚合 5 并行子代理 → 聚合排序 → 自动测试 | `reviewer/` + `cli/slash/review.ts` + `ui/ReviewReport.tsx` |
+| 长会话/长回复性能退化 | ✅ 系统性 O(n²)→O(n) 优化（O_APPEND / chunk join / registry 缓存 / 邻接表 / 懒加载 / 流式节流） | session/loop/tools/knowledge/ui |
+
+### 8.5 规划（v2.2+）
+
+- **能力**：多 Agent 协作（Orchestrator 模式）、插件市场、DAG 工作流引擎、Reviewer autoFix 落地（自动修正回滚）
 - **工程**：TypeScript 7（原生）评估；依赖持续升级
 
 ---

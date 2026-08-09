@@ -1,7 +1,7 @@
 # AGENTS.md - Lumen 项目开发规范
 
 > 最后更新：2026-08-08
-> 版本：v2.0.0
+> 版本：v2.1.0
 
 ---
 
@@ -52,6 +52,18 @@ BPE 精确 Token 计数与缓存命中成本
 
 MCP 动态管理（/mcp status / connect / disconnect）
 
+### v2.1 已完成，核心能力包括：
+
+子代理 MCP 工具支持（allowedMcpServers 声明加载：explore→filesystem、research→filesystem/github）
+
+技能嵌套与技能市场（@skill / @agent 引用、/skill install / search / update）
+
+轻量级知识图谱 + 双源记忆注入（JSONL + 内存邻接表索引 + LRU，按项目隔离；knowledge_* 5 工具）
+
+Reviewer Agent 代码评审智能体（/review，9 维审查聚合 5 并行子代理 + 自动测试 npm run verify）
+
+系统性性能优化（O_APPEND 会话追加 / chunk 一次 join / 工具定义缓存 / 关系邻接表 / 懒加载 / 流式节流）
+
 ## 技术栈
 类别	技术选型
 运行时	Node ≥22，ESM
@@ -80,7 +92,7 @@ CLI 解析	Commander 12
 
 UI 测试：Ink 组件需用 ink-testing-library 覆盖
 
-测试目标：保持 337+ 用例全绿
+测试目标：保持 409+ 用例全绿
 
 ### it 规范
 主分支：main
@@ -122,15 +134,29 @@ v2.0.0 已完成，全部 v2.0 任务已落地：
 
 ✅ 子代理 / 技能 E2E 测试（13 个新用例，总计 337 用例全绿）
 
-v2.1 规划方向：
+v2.1.0 已完成，全部 v2.1 任务已落地：
 
-子代理 MCP 工具支持（allowedMcpServers 声明加载）
+✅ 子代理 MCP 工具支持（allowedMcpServers 声明加载：explore→filesystem、research→filesystem/github，服务不可用降级）
 
-技能嵌套与技能市场（@skill / @agent 引用、/skill install）
+✅ 技能嵌套与技能市场（@skill / @agent 引用递归展开 + /skill install / search / update）
 
-轻量级知识图谱 + RAG（SQLite + ONNX / TF-IDF 降级）
+✅ 轻量级知识图谱（JSONL + 内存邻接表索引 + LRU，按项目隔离；knowledge_* 5 工具 + 双源记忆注入）
 
-Reviewer Agent 代码评审智能体（9 维审查 / 自动测试 / 自动修正回滚）
+✅ Reviewer Agent 代码评审智能体（/review：9 维审查聚合 5 并行子代理 + 自动测试 npm run verify）
+
+✅ 系统性性能优化（O_APPEND / chunk join / 工具定义缓存 / 关系邻接表 / 懒加载 / 流式节流）
+
+✅ v2.1 新增测试（knowledge/reviewer/mcp 等，总计 409 用例 / 42 文件全绿）
+
+v2.2 规划方向：
+
+- Reviewer Agent autoFix 落地（自动修正回滚）
+
+- 多 Agent 协作（Orchestrator 模式）
+
+- 插件市场、DAG 工作流引擎
+
+- TypeScript 7（原生）评估
 
 ## 发布门检查清单
 2.0.0 发布前已全部通过：
@@ -143,6 +169,10 @@ Reviewer Agent 代码评审智能体（9 维审查 / 自动测试 / 自动修正
 ☑ npm pack 预演通过
 ☑ 文档齐备（README / 用户手册 / 架构文档 / CHANGELOG）
 ☑ v2.0.0 tag 已打
+
+v2.1.0 发布门检查（当前）：
+
+☑ npm run verify 全绿（409 用例 / 42 测试文件）
 
 ## 重要决策（已确定）
 决策	说明
