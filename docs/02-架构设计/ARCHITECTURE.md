@@ -39,7 +39,7 @@ Lumen 是一款**中文优先**的终端编码助手 CLI（DeepSeek 驱动）。
                        │ ctx.requestApproval（审批挂起/恢复）
 ┌──────────────────────▼──────────────────────────────────────┐
 │ loop/ 会话主循环（src/loop/）                                 │
-│   loop.ts     runLoop：消息组装→模型→工具分发→回填（≤10 轮）   │
+│   loop.ts     runLoop：消息组装→模型→工具分发→回填（≤50 轮）   │
 │   context.ts  上下文窗口管理（80% 预算裁剪 + 日志）            │
 │   messages.ts ChatMessage⇄ApiMessage 序列化 / 工具结果格式化   │
 │   types.ts    ChatMessage / ToolCall / Role                  │
@@ -218,14 +218,27 @@ lumen/
 │   └── 06-会议与决策记录/DECISIONS.md（ADR）
 ├── .github/workflows/     ci.yml（push/PR verify + 手动冒烟）/ publish.yml（Trusted Publishing）
 ├── src/
-│   ├── index.ts          barrel：导出 v1.0 公共 API（VERSION / client / loop / tools / store / i18n）
+│   ├── index.ts          barrel：导出公共 API（VERSION / agent / loop / model / tools / store / i18n 等）
+│   ├── version.ts        VERSION 常量（轻量 --version，独立于 barrel，v2.1）
+│   ├── agent/            子代理系统（v2.0，详见 §4 D25 / D29）
+│   │   ├── spawner.ts    子代理隔离执行（独立 runLoop + 受限 registry + allowedMcpServers）
+│   │   ├── types.ts      SubagentDef / SubagentResult / SubagentTask 类型
+│   │   ├── index.ts      barrel
+│   │   └── builtin/      内置子代理注册
+│   │       ├── explore.ts  只读探索子代理（read/search/list，结论 ≤200 字）
+│   │       ├── research.ts 研究型子代理（多角度对比分析，结论 ≤500 字）
+│   │       └── index.ts    registerBuiltinSubagents
 │   ├── cli/
 │   │   ├── index.ts      commander 入口：lumen（默认 chat）/ chat / run / plan；DEEPSEEK_API_KEY 检查
 │   │   ├── chat.tsx      chat 装配：TTY 检查、配置加载、注册表、规则加载、MCP 启动、resume、render(App)
 │   │   ├── run.ts        run 装配：非交互、stdout 流式、--auto-approve 显式开启、存档
 │   │   ├── plan.ts       plan 装配：计划轮 → 终端 y/n → 执行轮（含依赖检测/进度/回滚）
-│   │   └── slash/
-│   │       └── memory.ts 斜杠命令：/remember /forget /memories
+│   │   ├── common.ts     CLI 共享：白名单 / 注册表构建 / OS 提示（轻量加载，v2.1）
+│   │   └── slash/        斜杠命令处理器
+│   │       ├── memory.ts /remember /forget /memories
+│   │       ├── mcp.ts    /mcp status / connect / disconnect（v2.0）
+│   │       ├── skill.ts  /skill list / use / install / search / update（v2.0/v2.1）
+│   │       └── review.ts /review 审查命令（v2.1）
 │   ├── ui/
 │   │   ├── App.tsx       状态机组件：send/sendPlan/executePlan/审批挂起/消息渲染/错误显示
 │   │   ├── PromptInput.tsx  光标移动 + 历史浏览 + 多行输入
@@ -250,7 +263,8 @@ lumen/
 │   │   ├── registry.ts   ToolSpec/ToolContext/ToolRegistry/ApprovalRequest/ToolResult（repairable/parallelSafe 字段）
 │   │   ├── read.ts       read_file/search_content/list_directory + resolveSafe（BOM 剥离）
 │   │   ├── edit.ts       edit_file：SEARCH 规范化匹配（CRLF）、保留换行风格、审批后落盘、快照（v1.1）
-│   │   └── shell.ts      run_command：白名单免审、每次审批、超时杀进程树、输出截断
+│   │   ├── shell.ts      run_command：白名单免审、每次审批、超时杀进程树、输出截断
+│   │   └── spawn.ts      spawn_subagent 工具工厂（子代理调用，v2.0）
 │   ├── mcp/              MCP 协议客户端（v1.1 新增，详见 §4 D20）
 │   │   ├── client.ts     stdio transport（握手/请求/响应/超时）
 │   │   ├── manager.ts    多服务生命周期管理、工具聚合与路由
@@ -266,12 +280,18 @@ lumen/
 │   ├── knowledge/        知识图谱存储（v2.1，详见 §4 D28）
 │   │   ├── store.ts      JSONL 持久化 + 内存邻接表索引 + LRU 淘汰 + 懒加载
 │   │   ├── search.ts     关键词检索（name/type/observation 评分）
-│   │   └── types.ts      实体/关系/图类型
+│   │   ├── types.ts      实体/关系/图类型
+│   │   └── index.ts      barrel（v2.1）
 │   ├── reviewer/         Reviewer Agent（v2.1，详见 §4 D31）
 │   │   ├── engine.ts     6 步审查工作流（5 并行子代理 + 自动测试 npm run verify）
 │   │   ├── dimensions.ts 9 维审查定义与 5 子代理分组
 │   │   ├── knowledge.ts  知识库上下文加载
-│   │   └── types.ts      审查报告/问题/严重程度类型
+│   │   ├── types.ts      审查报告/问题/严重程度类型
+│   │   └── index.ts      barrel（v2.1）
+│   ├── skill/            技能系统（v2.0/v2.1，详见 §4 D26 / D30）
+│   │   ├── loader.ts     SKILL.md 加载 + @skill 递归展开（≤3 层）/ @agent 引用
+│   │   ├── types.ts      SkillDef / SkillFrontmatter / AgentRef 类型
+│   │   └── index.ts      barrel
 │   ├── store/
 │   │   ├── session.ts    SessionStore：create/append/appendAll/read/list；锁 + 原子写 + 冲突检测
 │   │   ├── project-rules.ts  loadProjectRules：AGENTS→CARBON 优先级、8k 截断
