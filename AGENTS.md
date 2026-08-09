@@ -1,7 +1,7 @@
 # AGENTS.md - Lumen 项目开发规范
 
 > 最后更新：2026-08-09
-> 版本：v2.1.0（v3.0 开发中）
+> 版本：v3.0.0
 
 ---
 
@@ -106,11 +106,15 @@ UI 测试：Ink 组件需用 ink-testing-library 覆盖
 每个任务完成后打标签（如 v1.0.0）
 
 ### 文档规范
-所有文档放在 docs/ 目录下，编号规范（01-07）
+所有文档放在 docs/ 目录下，编号规范（01-09）
 
 新增功能需同步更新 ARCHITECTURE.md
 
-重要决策记录在 DECISIONS.md 中
+重要决策记录在 DECISIONS.md 中（ADR 格式见 docs/06-会议与决策记录/DECISIONS.md）
+
+踩坑记录：遇到 Bug 并修复后，立即在 docs/09-踩坑记录/ 新增 YYYY-MM-DD-问题简述.md（格式与维护规则见该目录 README.md）
+
+测试报告：每次版本发布前，生成 docs/07.{版本号}-手工测试报告-v{版本号}.md（参考 07.1/07.2/07.3 格式，含测试日期/环境/通过失败项/已知问题）
 
 ### 提交前自查（文档 vs 代码一致性）
 每次提交前对照以下清单，防止「注释与代码不一致」「目录树遗漏」类问题（历史教训：MAX_LOOP_TURNS 注释写 10 实际 50；knowledge/、reviewer/ 目录树漏 index.ts）：
@@ -120,6 +124,7 @@ UI 测试：Ink 组件需用 ink-testing-library 覆盖
 3. **数字与行为描述**：搜索文档中带数字的描述（如「≤10 轮」「5 个工具」），与实际代码常量 / 工具数量核对
 4. **路径存在性**：docs/ 中引用的文件路径（如 src/xxx.ts）用 read_file 验证真实存在
 5. **三处同步**：新增模块时，目录树（第 5 节）+ 决策表（D#）+ 模块说明（§4 / §8）同步更新
+6. **文档落盘**：本次提交涉及「Bug 修复 / 版本发布 / 重要决策」时，核对三处是否落盘：踩坑记录（docs/09-踩坑记录/YYYY-MM-DD-*.md）、手工测试报告（docs/07.{版本号}-*）、DECISIONS.md（ADR 新条目）
 
 ## 命名与包
 项目	内容
@@ -167,10 +172,13 @@ v2.2 规划方向：
 
 - TypeScript 7（原生）评估
 
-v3.0 开发中（多 Agent 协作 / Orchestrator）：
+v3.0.0 已完成（多 Agent 协作 / Orchestrator）：
 
 - ✅ 跨平台命令执行兼容体系（src/tools/shell.ts：getPlatformAdapter 平台检测 + npx→npx.cmd / cat→type / tail→Get-Content / grep→findstr / rm -rf→rmdir / mkdir -p / sed -i 命令映射）
-- 🚧 M0 启动前置 + M1 接口定义进行中（ADR-009~016 / AgentMessage / AgentDef / AgentRegistry / 显式上下文）
+- ✅ Orchestrator 中介模式 + 显式上下文（ADR-015/016 / AgentMessage / AgentDef / AgentRegistry / AgentContext）
+- ✅ 4 角色 Agent 团队（Architect/Coder/Reviewer/QA）+ 对抗性闭环（MAX_LOOP_ATTEMPTS=5）
+- ✅ 多文件事务回滚（SnapshotManager）+ Agent 市场（/agent）+ 可观测性（TraceStore/AuditLogger）
+- ✅ 全量 24 任务落地 · 63 文件 706 用例全绿 · v3.0.0 tag 已打（7f477a5）
 
 ## 发布门检查清单
 2.0.0 发布前已全部通过：
@@ -184,9 +192,12 @@ v3.0 开发中（多 Agent 协作 / Orchestrator）：
 ☑ 文档齐备（README / 用户手册 / 架构文档 / CHANGELOG）
 ☑ v2.0.0 tag 已打
 
-v2.1.0 发布门检查（当前）：
+v3.0.0 发布门检查（当前）：
 
-☑ npm run verify 全绿（409 用例 / 42 测试文件）
+☑ npm run verify 全绿（706 用例 / 63 测试文件）
+☑ 版本号一致性核对（package.json / src/version.ts / tests/smoke.test.ts = 3.0.0）
+☑ 踩坑记录已归档（docs/09-踩坑记录/：I1 版本号不同步、I2 Reviewer 上下文丢失）
+☑ v3.0.0 tag 已打（7f477a5）
 
 ## 重要决策（已确定）
 决策	说明
@@ -249,6 +260,7 @@ v2.1.0 发布门检查（当前）：
 ### 检查标准
 - 新增代码必须通过 `npm run typecheck`（零类型错误）
 - 禁止使用 `any` 类型绕过检查
+- 禁止用 `_` 前缀参数忽略 Agent.execute 的 context：要么使用（传递给依赖），要么从签名删除（历史教训：TeamReviewerAgent 忽略 _context 导致显式上下文丢失）
 
 ## 代码格式规范
 
@@ -272,6 +284,10 @@ v2.1.0 发布门检查（当前）：
 
 文档同步：代码修改后同步更新相关文档（ARCHITECTURE.md 目录树 / 决策表 / JSDoc 中的数字与常量）
 
+踩坑落盘：修复 Bug 后立即写入 docs/09-踩坑记录/（问题/根因/方案/教训，格式见该目录 README）
+
+发布前测试报告：版本发布前生成 docs/07.{版本号}-手工测试报告-v{版本号}.md 并落盘
+
 提交前自查：提交前按「工程规范 → 提交前自查」核对文档 vs 代码一致性，全绿后再提交
 
 安全第一：所有危险操作必须走审批流
@@ -290,3 +306,5 @@ v2.1.0 发布门检查（当前）：
 - 会议与决策记录
 
 - 测试报告
+
+- 踩坑记录
