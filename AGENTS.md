@@ -1,7 +1,7 @@
 # AGENTS.md - Lumen 项目开发规范
 
-> 最后更新：2026-08-08
-> 版本：v2.1.0
+> 最后更新：2026-08-09
+> 版本：v2.1.0（v3.0 开发中）
 
 ---
 
@@ -167,6 +167,11 @@ v2.2 规划方向：
 
 - TypeScript 7（原生）评估
 
+v3.0 开发中（多 Agent 协作 / Orchestrator）：
+
+- ✅ 跨平台命令执行兼容体系（src/tools/shell.ts：getPlatformAdapter 平台检测 + npx→npx.cmd / cat→type / tail→Get-Content / grep→findstr / rm -rf→rmdir / mkdir -p / sed -i 命令映射）
+- 🚧 M0 启动前置 + M1 接口定义进行中（ADR-009~016 / AgentMessage / AgentDef / AgentRegistry / 显式上下文）
+
 ## 发布门检查清单
 2.0.0 发布前已全部通过：
 
@@ -190,6 +195,55 @@ v2.1.0 发布门检查（当前）：
 上下文管理	v2.0 采用智能摘要压缩（优先摘要，失败回退裁剪）
 模型默认	deepseek-v4-flash，困难任务自动升级到 pro
 配置系统	~/.lumen/config.json，CLI > 环境变量 > 配置文件 > 默认值
+
+## 跨平台兼容性规范
+
+### 命令执行规则
+1. 所有 `run_command` 执行的命令，在执行前必须检测操作系统
+2. 优先使用跨平台命令（如 `npm`、`node`），避免使用系统特有命令
+3. 必须使用系统特有命令时，用 `process.platform` 判断并分别实现
+
+### 路径处理规则
+1. 使用 `path.join()` 和 `path.resolve()`，不使用硬编码分隔符
+2. 用户输入路径时，自动转换 `\` 为 `/`（或反之）
+
+### 换行符规则
+1. 文件读取时使用 `\r?\n` 正则匹配
+2. 文件写入时保持原文件的换行符风格（或统一为 LF，由 `.gitattributes` 控制）
+
+### 验证方式
+- 每个里程碑在 Windows 和 Linux（或 WSL）上分别验证
+- CI 矩阵包含 `windows-latest` 和 `ubuntu-latest`
+
+### 命令兼容层（src/tools/shell.ts）
+`getPlatformAdapter()` 检测操作系统并转换命令，命令在 `run_command` 执行前自动适配：
+
+| 通用命令 | Windows | macOS / Linux |
+|---------|---------|---------------|
+| `npx` | `npx.cmd` | `npx` |
+| `tail -N` | `powershell Get-Content -Tail N` | `tail -N` |
+| `head -N` | `powershell Get-Content -Head N` | `head -N` |
+| `grep PATTERN` | `findstr PATTERN` | `grep PATTERN` |
+| `cat FILE` | `type FILE` | `cat FILE` |
+| `rm -rf DIR` | `rmdir /s /q DIR` | `rm -rf DIR` |
+| `mkdir -p DIR` | `mkdir DIR 2>nul` | `mkdir -p DIR` |
+| `sed -i`（macOS） | — | `sed -i ''`（BSD 需备份后缀） |
+
+## TypeScript 类型安全规范
+
+### 函数参数空值检查
+- 所有可能为 `undefined` 的参数，在访问其属性前必须进行空值检查
+- 模式：
+  - `if (!param) return;` 或 `if (!param) throw new Error('...')`
+  - 使用可选链：`param?.property ?? defaultValue`
+
+### 数组/对象解构安全
+- 从可能为 `undefined` 的对象中解构属性时，使用可选链和默认值
+- 模式：`const { key } = obj ?? {}` 或 `obj?.key ?? ''`
+
+### 检查标准
+- 新增代码必须通过 `npm run typecheck`（零类型错误）
+- 禁止使用 `any` 类型绕过检查
 
 ## 开发原则
 单会话串行：一次只做一个任务，不并行
