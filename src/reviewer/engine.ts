@@ -17,6 +17,7 @@ import { createReviewAgents, parseReviewOutput } from './dimensions';
 import { formatKnowledgeContext, loadKnowledgeBase } from './knowledge';
 import type {
   ReviewAgentGroup,
+  ReviewContextArtifact,
   ReviewIssue,
   ReviewOptions,
   ReviewReport,
@@ -46,6 +47,9 @@ export class ReviewerEngine {
 
     // Step 1: 上下文收集
     const scope = this.resolveScope(options.scope);
+    // v3.0 I2：显式上下文中的代码工件（Coder 产出）内联注入审查 prompt，
+    // 保证 Reviewer 能看到上下文中的代码（含无磁盘路径的虚拟工件）
+    const artifactCtx = formatContextArtifacts(options.contextArtifacts);
     const kb = loadKnowledgeBase(this.cwd);
     const knowledgeCtx = formatKnowledgeContext(kb);
 
@@ -61,7 +65,7 @@ export class ReviewerEngine {
       agents.map(async (def) => {
         const result = await ag.spawn({
           agentName: def.name,
-          prompt: `请审查以下文件的代码质量：\n${scope}\n\n严格按照你负责的维度进行审查，输出 JSON 格式结果。`,
+          prompt: `请审查以下代码质量：\n${scope}${artifactCtx}\n\n严格按照你负责的维度进行审查，输出 JSON 格式结果。`,
         });
         return { group: def.name as ReviewAgentGroup, result };
       }),
@@ -222,6 +226,23 @@ export class ReviewerEngine {
     }
     return summary;
   }
+}
+
+/**
+ * 将显式上下文中的代码工件格式化为内联代码块（v3.0 I2 修复）。
+ *
+ * 审查子代理直接阅读工件内容（优先于磁盘文件），保证 Reviewer 能看到
+ * Coder 产出的代码（含无磁盘路径的虚拟工件）。无工件时返回空字符串。
+ */
+export function formatContextArtifacts(artifacts: ReviewContextArtifact[] | undefined): string {
+  if (artifacts === undefined || artifacts.length === 0) {
+    return '';
+  }
+  const lines = artifacts.map((a) => {
+    const header = `文件：${a.path ?? '（无路径工件）'}`;
+    return `${header}\n\`\`\`\n${a.content}\n\`\`\``;
+  });
+  return `\n\n上下文代码工件（Coder 产出，优先于磁盘文件）：\n${lines.join('\n\n')}`;
 }
 
 /** 格式化单个问题为 markdown。 */

@@ -294,16 +294,29 @@ export class Orchestrator {
     executions: Map<string, TaskExecution>,
   ): Promise<{ ok: boolean; error?: string }> {
     const entry = this.options.registry.get(task.agent);
-    const impl: Agent | undefined = entry?.impl;
-    if (impl === undefined) {
+    // S3 建议修复：区分「未注册」与「已注册但无实现」，便于调用方定位问题
+    if (entry === undefined) {
+      const message = `Agent 未注册: ${task.agent}`;
       executions.set(task.id, {
         taskId: task.id,
         agent: task.agent,
         ok: false,
-        error: `Agent 未注册或未提供实现: ${task.agent}`,
+        error: message,
         artifacts: [],
       });
-      return { ok: false, error: `Agent 未注册或未提供实现: ${task.agent}` };
+      return { ok: false, error: message };
+    }
+    const impl: Agent | undefined = entry.impl;
+    if (impl === undefined) {
+      const message = `Agent 已注册但未提供实现实例: ${task.agent}`;
+      executions.set(task.id, {
+        taskId: task.id,
+        agent: task.agent,
+        ok: false,
+        error: message,
+        artifacts: [],
+      });
+      return { ok: false, error: message };
     }
     try {
       const data = await impl.execute({ description: task.description }, context);

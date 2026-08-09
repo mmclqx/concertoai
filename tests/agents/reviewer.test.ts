@@ -15,8 +15,10 @@ import {
   ALL_DIMENSIONS,
   buildReviewResult,
   determineReviewAction,
+  type ReviewContextArtifact,
   type ReviewIssue,
   type ReviewReport,
+  type ReviewScope,
 } from '../../src/reviewer';
 
 // ── 测试辅助 ──────────────────────────────────────────────────
@@ -67,16 +69,21 @@ function makeReport(issues: ReviewIssue[], testPassed: boolean | null = null): R
   };
 }
 
-/** Fake 审查引擎（支持 autoFix）。 */
+/** Fake 审查引擎（支持 autoFix，记录最近一次 review 选项供 I2 断言）。 */
 class FakeEngine implements ReviewEngineLike {
   report: ReviewReport;
   fixed = 0;
+  lastOptions?: { scope: ReviewScope; contextArtifacts?: ReviewContextArtifact[] };
 
   constructor(report: ReviewReport) {
     this.report = report;
   }
 
-  async review(): Promise<ReviewReport> {
+  async review(options: {
+    scope: ReviewScope;
+    contextArtifacts?: ReviewContextArtifact[];
+  }): Promise<ReviewReport> {
+    this.lastOptions = options;
     return this.report;
   }
 
@@ -179,6 +186,57 @@ describe('TeamReviewerAgent（标准 Agent 契约）', () => {
     expect(result.action).toBe('reject');
     expect(result.issues[0]?.severity).toBe('critical');
     expect(result.summary).toContain('打回 Coder 修复');
+  });
+
+  it('execute：将显式上下文中的 code 工件传递给审查引擎（I2 修复，非 code 工件被过滤）', async () => {
+    const engine = new FakeEngine(makeReport([]));
+    const agent = new TeamReviewerAgent({ engine });
+    await agent.execute(
+      { description: '审查代码', scope: { type: 'auto' } },
+      makeContext({
+        artifacts: [
+          {
+            id: 'art-1',
+            type: 'code',
+            path: 'src/gen.ts',
+            content: 'export const gen = 1;',
+            metadata: { fromAgent: 'coder' },
+          },
+          {
+            id: 'art-2',
+            type: 'file',
+            content: '纯文本工件',
+            metadata: {},
+          },
+          {
+            id: 'art-3',
+            type: 'review-result',
+            content: '不应透传的摘要',
+            metadata: {},
+          },
+        ],
+      }),
+    );
+    // code/file 工件透传给引擎（Reviewer 可见代码工件）
+    expect(engine.lastOptions?.contextArtifacts).toEqual([
+      { type: 'code', path: 'src/gen.ts', content: 'export const gen = 1;' },
+      { type: 'file', content: '纯文本工件' },
+    ]);
+    // review-result 等非代码工件不进入审查范围
+    expect(
+      engine.lastOptions?.contextArtifacts?.some((a) => a.type !== 'code' && a.type !== 'file'),
+    ).toBe(false);
+  });
+
+  it('execute：context 无 code 工件 → contextArtifacts 为空数组', async () => {
+    const engine = new FakeEngine(makeReport([]));
+    const agent = new TeamReviewerAgent({ engine });
+    await agent.execute(
+      { description: '审查代码', scope: { type: 'files', paths: ['src/a.ts'] } },
+      makeContext(),
+    );
+    expect(engine.lastOptions?.contextArtifacts).toEqual([]);
+    expect(engine.lastOptions?.scope).toEqual({ type: 'files', paths: ['src/a.ts'] });
   });
 
   it('autoFix：委托引擎修正 🟢 suggestion（保留 v2.1 能力）', async () => {

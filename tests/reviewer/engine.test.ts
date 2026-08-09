@@ -11,7 +11,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { executeReviewCommand, parseReviewCommand } from '../../src/cli/slash/review';
-import { ReviewerEngine } from '../../src/reviewer/engine';
+import { formatContextArtifacts, ReviewerEngine } from '../../src/reviewer/engine';
 import type { ReviewDimension, ReviewIssue } from '../../src/reviewer/types';
 
 let tmp: string;
@@ -107,6 +107,39 @@ describe('ReviewerEngine.formatReport', () => {
     expect(text).toContain('📊 汇总');
     expect(text).toContain('types');
     expect(text).toContain('1'); // critical count
+  });
+});
+
+// ── 上下文工件格式化（v3.0 I2 修复）───────────────────────
+
+describe('formatContextArtifacts（Reviewer 可见上下文代码工件）', () => {
+  it('无工件（undefined / 空数组）→ 返回空字符串', () => {
+    expect(formatContextArtifacts(undefined)).toBe('');
+    expect(formatContextArtifacts([])).toBe('');
+  });
+
+  it('含 code 工件 → 生成带路径的内联代码块', () => {
+    const text = formatContextArtifacts([
+      { type: 'code', path: 'src/a.ts', content: 'export const a = 1;' },
+    ]);
+    expect(text).toContain('上下文代码工件');
+    expect(text).toContain('src/a.ts');
+    expect(text).toContain('export const a = 1;');
+  });
+
+  it('无路径工件 → 标记为「无路径工件」', () => {
+    const text = formatContextArtifacts([{ type: 'file', content: 'plain' }]);
+    expect(text).toContain('无路径工件');
+    expect(text).toContain('plain');
+  });
+
+  it('多个工件 → 逐个分隔', () => {
+    const text = formatContextArtifacts([
+      { type: 'code', path: 'src/a.ts', content: 'aaa' },
+      { type: 'code', path: 'src/b.ts', content: 'bbb' },
+    ]);
+    expect(text).toContain('src/a.ts');
+    expect(text).toContain('src/b.ts');
   });
 });
 

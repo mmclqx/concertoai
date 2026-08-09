@@ -13,9 +13,9 @@
  */
 
 import { z } from 'zod';
-import type { AgentContext, AgentDef } from '../orchestrator';
+import type { AgentContext, AgentDef, Artifact } from '../orchestrator';
 import { createAgentRuntimeState } from '../orchestrator';
-import type { ReviewReport, ReviewResult, ReviewScope } from '../reviewer';
+import type { ReviewContextArtifact, ReviewReport, ReviewResult, ReviewScope } from '../reviewer';
 import { buildReviewResult } from '../reviewer';
 import type { Agent } from './protocol';
 
@@ -34,7 +34,11 @@ export interface AutoFixLike {
 /** Team Reviewer 可注入的审查引擎（v2.1 ReviewerEngine 满足；测试注入 Fake）。 */
 export interface ReviewEngineLike extends Partial<AutoFixLike> {
   /** 执行完整审查（9 维并行子代理 + 自动测试），返回 v2.1 ReviewReport。 */
-  review(options: { scope: ReviewScope }): Promise<ReviewReport>;
+  review(options: {
+    scope: ReviewScope;
+    /** 显式上下文代码工件（v3.0 I2：Reviewer 直接阅读 Coder 产出，而非只依赖磁盘路径）。 */
+    contextArtifacts?: ReviewContextArtifact[];
+  }): Promise<ReviewReport>;
 }
 
 /** Team Reviewer 输入。 */
@@ -60,10 +64,16 @@ export interface TeamReviewerOptions {
   engine: ReviewEngineLike;
 }
 
+/** 类型守卫：context.artifacts 中可交给审查引擎的代码工件（code/file）。 */
+function isCodeArtifact(a: Artifact): a is Artifact & { type: 'code' | 'file' } {
+  return a.type === 'code' || a.type === 'file';
+}
+
 /**
  * Team Reviewer Agent（标准 Agent 契约）。
  *
- * execute：调用审查引擎 → buildReviewResult（判定 action + 中文 summary）。
+ * execute：调用审查引擎 → buildReviewResult（判定 action + 中文 summary）；
+ * 显式上下文中的 code/file 工件随审查调用传递给引擎（I2 修复，Reviewer 可见代码工件）。
  */
 export class TeamReviewerAgent implements Agent {
   /** Agent 定义（name=reviewer，输入 ReviewInput / 输出 ReviewResult，权限只读）。 */
@@ -96,8 +106,16 @@ export class TeamReviewerAgent implements Agent {
   }
 
   /** 执行核心：审查引擎 → ReviewResult（action 判定 + summary）。 */
-  async execute(input: ReviewInput, _context: AgentContext): Promise<ReviewResult> {
-    const report = await this.options.engine.review({ scope: input.scope });
+  async execute(input: ReviewInput, context: AgentContext): Promise<ReviewResult> {
+    // v3.0 I2 修复：不再忽略显式上下文，将 context.artifacts 中的 code/file 工件
+    // 传递给审查引擎（Reviewer 能看到 Coder 产出的代码，含无磁盘路径的虚拟工件）
+    const contextArtifacts = context.artifacts
+      .filter(isCodeArtifact)
+      .map((a) => ({ type: a.type, path: a.path, content: a.content }));
+    const report = await this.options.engine.review({
+      scope: input.scope,
+      contextArtifacts,
+    });
     return buildReviewResult(report);
   }
 

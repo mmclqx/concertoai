@@ -108,10 +108,28 @@ export const AGENT_DIMENSIONS: Record<ReviewAgentGroup, ReviewDimension[]> = {
 
 // ── 审查配置 ────────────────────────────────────────────────
 
+/**
+ * 显式上下文代码工件（v3.0 I2 修复：Reviewer 可见上下文中的代码工件）。
+ *
+ * 结构兼容 orchestrator.Artifact 的 code/file 子集。定义在 reviewer 模块内部
+ * 而非引入 orchestrator，保持依赖方向单向（orchestrator → agents → reviewer，
+ * reviewer 不反向依赖 orchestrator）。
+ */
+export interface ReviewContextArtifact {
+  /** 工件类型（code=代码 / file=通用文件）。 */
+  type: 'code' | 'file';
+  /** 关联文件路径（可选，虚拟工件可无路径）。 */
+  path?: string;
+  /** 工件内容（文本）。 */
+  content: string;
+}
+
 /** RA 可选配置。 */
 export interface ReviewOptions {
   /** 审查模式。 */
   scope: ReviewScope;
+  /** 显式上下文代码工件（v3.0：审查子代理直接阅读 Coder 产出，优先于磁盘文件）。 */
+  contextArtifacts?: ReviewContextArtifact[];
   /** 是否自动修正 🟢 suggestion 级别问题。 */
   autoFix?: boolean;
   /** 各审查子代理超时（默认 60s）。 */

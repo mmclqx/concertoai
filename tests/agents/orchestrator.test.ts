@@ -293,6 +293,28 @@ describe('Orchestrator.run（拆解 → 审批 → 调度 → 聚合）', () => 
     expect(result.skipped).toContain('t3');
   });
 
+  it('Agent 已注册但无实现实例 → 错误信息区分「已注册但未提供实现」', async () => {
+    const registry = new InMemoryAgentRegistry();
+    registerFakeAgent(registry, 'architect', { spec: 'v1' });
+    // t2 负责人 'coder' 仅注册 def（未关联实现实例）
+    registry.register({
+      name: 'coder',
+      version: '1.0.0',
+      interfaces: {
+        input: z.object({ description: z.string() }),
+        output: z.unknown(),
+        version: '1.0.0',
+      },
+      permissions: [],
+    });
+    const orch = new Orchestrator({ client: makeClient(), model: 'fake', registry });
+    const result = await orch.run('需求', makeContext());
+    expect(result.ok).toBe(false);
+    expect(result.failed.t2).toContain('已注册但未提供实现');
+    expect(result.failed.t2).not.toContain('未注册:');
+    expect(result.skipped).toContain('t3');
+  });
+
   it('空任务清单（模型未拆解出任务）→ ok 为 false', async () => {
     const registry = makeRegistry();
     const client = new FakeModelClient([JSON.stringify([])]);

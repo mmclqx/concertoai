@@ -335,6 +335,10 @@ export function parseAgentPackage(
  *
  * interfaces.input/output 在包内为描述性结构（JSON 无法携带 zod 实例），
  * 注册时以宽松 zod schema 兜底；真实接口校验由 Agent 实现侧（T4.4 脚手架）负责。
+ *
+ * S1 建议：外部 Agent 的运行时输入/输出校验由脚手架侧（promote 生成的
+ * index.js 中）自行实现；v3.1 可考虑将 schema 序列化为 JSON Schema
+ * （复用 src/mcp/zod-adapter.ts）以支持注册表侧运行时校验。
  */
 export function agentDefFromPackage(def: AgentPackageDef, version: string): AgentDef {
   return {

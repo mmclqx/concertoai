@@ -3,10 +3,11 @@
  */
 
 export { createReviewAgents } from './dimensions';
-export { ReviewerEngine } from './engine';
+export { formatContextArtifacts, ReviewerEngine } from './engine';
 export { formatKnowledgeContext, loadKnowledgeBase } from './knowledge';
 export type {
   ReviewAction,
+  ReviewContextArtifact,
   ReviewDimension,
   ReviewIssue,
   ReviewOptions,
