@@ -35,6 +35,10 @@ interface ShellOutput {
   stdout: string;
   stderr: string;
   truncated: boolean;
+  /** 执行的完整命令。 */
+  command: string;
+  /** 命令执行的工作目录。 */
+  cwd: string;
 }
 
 /**
@@ -77,6 +81,16 @@ function runShellCommand(command: string, cwd: string, timeoutMs: number): Promi
     let done = false;
     let timer: NodeJS.Timeout | undefined;
 
+    const buildData = (exitCode: number): ShellOutput => ({
+      exitCode,
+      stdout: stdout.slice(0, MAX_SHELL_OUTPUT_CHARS),
+      stderr: stderr.slice(0, MAX_SHELL_OUTPUT_CHARS),
+      truncated:
+        stdout.length > MAX_SHELL_OUTPUT_CHARS || stderr.length > MAX_SHELL_OUTPUT_CHARS,
+      command,
+      cwd,
+    });
+
     const finish = (result: ToolResult): void => {
       if (done) {
         return;
@@ -92,7 +106,8 @@ function runShellCommand(command: string, cwd: string, timeoutMs: number): Promi
       killTree(child);
       finish({
         ok: false,
-        error: `命令执行超时（${timeoutMs}ms），已终止`,
+        error: `命令执行超时（${timeoutMs}ms），已终止:\n  ${command}`,
+        data: buildData(-1),
       });
     }, timeoutMs);
 
@@ -103,21 +118,34 @@ function runShellCommand(command: string, cwd: string, timeoutMs: number): Promi
       stderr += chunk.toString();
     });
     child.on('error', (error) => {
-      finish({ ok: false, error: `命令启动失败: ${error.message}` });
+      const hint = (error as NodeJS.ErrnoException).code === 'ENOENT'
+        ? `\n💡 命令不存在或无法启动，请检查命令名是否正确（Windows cmd 不支持 pwd/ls/cat 等 UNIX 命令，请用 node -e / dir / type 替代）`
+        : '';
+      finish({
+        ok: false,
+        error: `命令启动失败: ${error.message}\n  命令: ${command}\n  目录: ${cwd}${hint}`,
+        data: buildData(-1),
+      });
     });
     child.on('close', (code) => {
-      const truncated =
-        stdout.length > MAX_SHELL_OUTPUT_CHARS || stderr.length > MAX_SHELL_OUTPUT_CHARS;
-      const data: ShellOutput = {
-        exitCode: code ?? -1,
-        stdout: stdout.slice(0, MAX_SHELL_OUTPUT_CHARS),
-        stderr: stderr.slice(0, MAX_SHELL_OUTPUT_CHARS),
-        truncated,
-      };
-      if (code === 0) {
+      const exitCode = code ?? -1;
+      const data = buildData(exitCode);
+      if (exitCode === 0) {
         finish({ ok: true, data });
       } else {
-        finish({ ok: false, error: `命令退出码 ${code ?? -1}`, data });
+        const lines = [`命令退出码 ${exitCode}`];
+        lines.push(`  命令: ${command}`);
+        lines.push(`  目录: ${cwd}`);
+        if (data.stderr.trim() !== '') {
+          lines.push(`  stderr: ${data.stderr.trim().split('\n')[0]?.slice(0, 200) ?? ''}`);
+        }
+        // 解释常见退出码
+        if (exitCode === 255 || exitCode === 127) {
+          lines.push('  💡 退出码 255/127 通常表示命令不存在。Windows cmd 不支持 pwd/ls/cat 等 UNIX 命令。');
+        } else if (exitCode === 1) {
+          lines.push('  💡 退出码 1 通常表示命令执行出错（参数错误或运行时错误）。');
+        }
+        finish({ ok: false, error: lines.join('\n'), data });
       }
     });
   });
