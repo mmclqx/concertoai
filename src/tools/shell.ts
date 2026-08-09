@@ -166,6 +166,30 @@ function runShellCommand(command: string, cwd: string, timeoutMs: number): Promi
   });
 }
 
+/**
+ * Windows 命令兼容翻译。
+ * 检测到 head/tail/cat 等 Linux 命令时，自动转为 PowerShell 等效命令。
+ */
+function translateWindowsCommand(command: string): string {
+  if (process.platform !== 'win32') return command;
+
+  // 1. | head -N → PowerShell Select-Object -First N
+  command = command.replace(/\|\s*head\s+-(\d+)/g, '| powershell -Command "$input | Select-Object -First $1"');
+
+  // 2. | tail -N → PowerShell Select-Object -Last N
+  command = command.replace(/\|\s*tail\s+-(\d+)/g, '| powershell -Command "$input | Select-Object -Last $1"');
+
+  // 3. 独立 cat file → type file
+  command = command.replace(/^cat\s+(.+)$/gm, 'type $1');
+
+  // 4. pwd → echo %cd%
+  if (/^pwd\s*$/m.test(command)) {
+    command = 'echo %cd%';
+  }
+
+  return command;
+}
+
 export const shellTool: ToolSpec = {
   name: 'run_command',
   description: `在项目目录执行 shell 命令。白名单前缀（如 npm test、git status）免审批直跑；其余命令每次执行前需要审批。默认超时 ${DEFAULT_SHELL_TIMEOUT_MS}ms。`,
@@ -186,6 +210,7 @@ export const shellTool: ToolSpec = {
       }
     }
 
-    return runShellCommand(args.command, ctx.cwd, timeoutMs);
+    const command = translateWindowsCommand(args.command);
+    return runShellCommand(command, ctx.cwd, timeoutMs);
   },
 };
