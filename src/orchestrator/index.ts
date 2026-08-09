@@ -16,6 +16,23 @@ export {
   serialize,
 } from './context';
 export type {
+  InvalidTransitionRecord,
+  TaskStateChange,
+  TaskStateMachineOptions,
+  TaskStateRecord,
+  TransitionCheck,
+  TransitionListener,
+  TransitionOptions,
+} from './state-machine';
+export {
+  DEFAULT_MAX_VIOLATIONS,
+  InvalidTransitionError,
+  isTerminalStatus,
+  TaskStateMachine,
+  TRANSITIONS,
+  TransitionGuardError,
+} from './state-machine';
+export type {
   AgentContext,
   AgentDef,
   AgentInput,
