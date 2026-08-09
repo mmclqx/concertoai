@@ -1,7 +1,7 @@
 # Lumen 开发任务看板
 
 > 最后更新：2026-08-09
-> 当前里程碑：**🚀 v3.0 开发中**（M3 多角色 Agent 团队 · T3.1/T3.2 已完成）（v1.0: 20/20 ✅ · v1.1: 12/12 ✅ · v2.0: 15/15 ✅ · v2.1: 25/25 ✅ · v3.0: 10/24）
+> 当前里程碑：**🚀 v3.0 开发中**（M3 多角色 Agent 团队 · T3.1~T3.3 已完成）（v1.0: 20/20 ✅ · v1.1: 12/12 ✅ · v2.0: 15/15 ✅ · v2.1: 25/25 ✅ · v3.0: 11/24）
 > 基于：[v3.0 开发计划](./v3.0-dev-plan.md) · [v3.0 详细任务](./v3.0-dev-tasks.md)
 
 ---
@@ -14,9 +14,9 @@
 | P0 任务 | 30（v1.1: 6 ✅ + v2.0: 5 ✅ + v2.1: 5 ✅ + v3.0: 14） |
 | P1 任务 | 30（v1.1: 6 ✅ + v2.0: 10 ✅ + v2.1: 4 ✅ + v3.0: 10） |
 | P2 任务 | 8（v2.1: 8） |
-| 待开始 | 14 |
+| 待开始 | 13 |
 | 进行中 | 0 |
-| 已完成 | 82 |
+| 已完成 | 83 |
 | 已阻塞 | 0 |
 
 ---
@@ -47,7 +47,7 @@
 | **V3.0-M0 启动前置** | **P0** | **2** | ✅ 已完成 |
 | **V3.0-M1 接口定义与基础协议** | **P0** | **3** | ✅ 已完成 |
 | **V3.0-M2 Orchestrator 核心** | **P0** | **3** | ✅ 已完成 |
-| **V3.0-M3 多角色 Agent 团队** | **P0** | **6** | 🟡 进行中（T3.1/T3.2 已完成） |
+| **V3.0-M3 多角色 Agent 团队** | **P0** | **6** | 🟡 进行中（T3.1~T3.3 已完成） |
 | **V3.0-M4 Agent 市场基础** | **P1** | **4** | ⏳ 待开始 |
 | **V3.0-M5 可观测性面板** | **P1** | **3** | ⏳ 待开始 |
 | **V3.0-M6 集成测试与文档** | **P1** | **3** | ⏳ 待开始 |
@@ -659,10 +659,11 @@
   - 依赖：T1.x、T2.3、T3.1
   - ✅ 2026-08-09 完成：CoderInput（spec 实现 / issues 修复双模式）+ generateImplementation/generateFix（模型生成 + zod 校验 + 围栏容错）+ CoderAgent（审批后写盘，拒绝不写盘 fail-closed）+ CoderFileWriter 抽象（DiskFileWriter 写盘 + T3.6 事务接入点）+ diffForWrite 复用 planEdit SEARCH/REPLACE 语义；修复测试 3 个类型错误（ReviewIssue 需 dimension 字段 + FILES 常量）；14 测试（564 全绿）
 
-- [ ] **T3.3** 升级 Reviewer Agent（Team Reviewer）
-  - 涉及文件：`src/agents/reviewer.ts`（新增）、`src/reviewer/`（修改）
-  - 预估：3h
+- [x] **T3.3** 升级 Reviewer Agent（Team Reviewer）
+  - 涉及文件：`src/agents/reviewer.ts`（新增）、`tests/agents/reviewer.test.ts`（新增）、`src/reviewer/`（修改）
+  - 预估：3h | 实际：约 1.5h
   - 依赖：T1.x、T2.3
+  - ✅ 2026-08-09 完成：ReviewResult 结构化输出（action + issues[] + summary + testPassed + report）+ determineReviewAction 判定（🔴 critical 必 reject / 🟡 medium 可 reject / 🟢 suggestion 不阻断）+ buildReviewResult（Report→Result 转换）+ TeamReviewerAgent（标准 Agent 契约，包装 v2.1 9 维审查引擎，保留 autoFix 🟢 走审批能力，权限只读）；13 测试（577 全绿）
 
 - [ ] **T3.4** 实现 QA Agent
   - 涉及文件：`src/agents/qa.ts`（新增）
