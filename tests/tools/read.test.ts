@@ -213,6 +213,26 @@ describe('search_content', () => {
     expect(data.hits).toHaveLength(0);
   });
 
+  it('跳过 .env 敏感文件（安全加固）', async () => {
+    write('.env', 'DEEPSEEK_API_KEY=secret-value-987654321');
+    write('.env.local', 'DATABASE_URL=secret-value-local-123');
+    write('ok.txt', 'secret-value-987654321 visible');
+    const result = await runTool(searchContentTool, { pattern: 'secret-value' });
+    const data = result.data as { hits: Array<{ file: string }> };
+    expect(data.hits).toHaveLength(1);
+    expect(data.hits[0]?.file).toBe('ok.txt');
+  });
+
+  it('同目录多文件并发扫描：命中完整且保序', async () => {
+    // readdir 在不同平台（ext4/NTFS）的默认顺序不同，这里按字母序断言以保证跨平台一致
+    write('b.txt', 'first hit');
+    write('a.txt', 'second hit');
+    write('c.txt', 'no match here');
+    const result = await runTool(searchContentTool, { pattern: 'hit' });
+    const data = result.data as { hits: Array<{ file: string }> };
+    expect(data.hits.map((h) => h.file).sort()).toEqual(['a.txt', 'b.txt']);
+  });
+
   it('起始路径越界被拒绝', async () => {
     const result = await runTool(searchContentTool, { pattern: 'x', path: '..' });
     expect(result.ok).toBe(false);

@@ -186,6 +186,79 @@ export const searchContentTool: ToolSpec = {
     const hits: Array<{ file: string; line: number; text: string }> = [];
     let skippedBinary = 0;
 
+    interface SearchHit {
+      file: string;
+      line: number;
+      text: string;
+    }
+
+    /**
+     * 扫描单个文件，返回该文件的命中列表（保序）。
+     * v2.1 性能优化：
+     * - 文件级快速排除：先用一次 includes（C++ 实现）判断整个文件是否可能包含
+     *   needle，未命中直接跳过，不再对每一行做 toLowerCase + includes
+     *   （旧实现每行分配小写字符串，大文件开销高）；
+     * - 不区分大小写时优先用原始文本匹配（代码文件多为小写 ASCII，可直接命中，
+     *   避免整文件 toLowerCase 分配大字符串），仅当原始文本未命中才降级小写检查；
+     * - 逐行定位（需要行号与原始行文本）只发生在命中的少数文件上。
+     */
+    const scanFile = async (
+      full: string,
+    ): Promise<{ hits: SearchHit[]; skippedBinary: number }> => {
+      let size: number;
+      try {
+        size = (await fs.stat(full)).size;
+      } catch {
+        return { hits: [], skippedBinary: 0 };
+      }
+      if (size > MAX_SEARCH_FILE_BYTES) {
+        return { hits: [], skippedBinary: 0 };
+      }
+      let text: string;
+      try {
+        text = stripBom(await fs.readFile(full, 'utf8'));
+      } catch {
+        return { hits: [], skippedBinary: 0 };
+      }
+      if (text.includes('\0')) {
+        return { hits: [], skippedBinary: 1 };
+      }
+
+      // ── 文件级快速排除 ──
+      if (args.caseSensitive === true) {
+        if (!text.includes(needle)) {
+          return { hits: [], skippedBinary: 0 };
+        }
+      } else if (!text.includes(needle)) {
+        const lowerText = text.toLowerCase();
+        if (!lowerText.includes(needle)) {
+          return { hits: [], skippedBinary: 0 };
+        }
+      }
+
+      // ── 逐行定位（仅命中文件；保留原始行文本与行号）──
+      const lines = text.split('\n');
+      const fileHits: SearchHit[] = [];
+      for (let i = 0; i < lines.length; i += 1) {
+        if (hits.length + fileHits.length >= MAX_SEARCH_RESULTS) {
+          break;
+        }
+        const line = lines[i];
+        if (line === undefined) {
+          continue;
+        }
+        const hay = args.caseSensitive === true ? line : line.toLowerCase();
+        if (hay.includes(needle)) {
+          fileHits.push({ file: path.relative(ctx.cwd, full), line: i + 1, text: line.trim() });
+        }
+      }
+      return { hits: fileHits, skippedBinary: 0 };
+    };
+
+    /**
+     * v2.1 性能优化：同目录文件并发读取（Promise.all 并行），
+     * 完成后按 readdir 顺序保序合并，避免大目录逐个 await readFile 的串行等待。
+     */
     const walk = async (dir: string): Promise<void> => {
       if (hits.length >= MAX_SEARCH_RESULTS) {
         return;
@@ -196,53 +269,45 @@ export const searchContentTool: ToolSpec = {
       } catch {
         return;
       }
+      // 收集连续文件段，遇目录时先 flush（保持「目录深度优先、文件按序」的遍历顺序）
+      let fileBatch: string[] = [];
+      const flushFiles = async (): Promise<void> => {
+        if (fileBatch.length === 0 || hits.length >= MAX_SEARCH_RESULTS) {
+          fileBatch = [];
+          return;
+        }
+        const batch = fileBatch;
+        fileBatch = [];
+        const results = await Promise.all(batch.map((full) => scanFile(full)));
+        for (const r of results) {
+          if (hits.length >= MAX_SEARCH_RESULTS) {
+            break;
+          }
+          hits.push(...r.hits);
+          skippedBinary += r.skippedBinary;
+        }
+      };
       for (const entry of entries) {
         if (hits.length >= MAX_SEARCH_RESULTS) {
-          return;
+          break;
         }
         const full = path.join(dir, entry.name);
         if (entry.isDirectory()) {
           if (SKIP_DIRS.has(entry.name)) {
             continue;
           }
-          // 跳过 .env 类敏感文件
-          if (entry.isFile() && isDotEnv(entry.name)) {
-            continue;
-          }
+          await flushFiles();
           await walk(full);
         } else if (entry.isFile()) {
-          let size: number;
-          try {
-            size = (await fs.stat(full)).size;
-          } catch {
+          // 敏感文件（.env 等）不参与搜索（v2.1 安全加固：旧实现中该检查位于
+          // isDirectory 分支内属死代码，实际会扫描到 .env）
+          if (isDotEnv(entry.name)) {
             continue;
           }
-          if (size > MAX_SEARCH_FILE_BYTES) {
-            continue;
-          }
-          try {
-            const text = stripBom(await fs.readFile(full, 'utf8'));
-            if (text.includes('\0')) {
-              skippedBinary += 1;
-              continue;
-            }
-            const lines = text.split('\n');
-            for (let i = 0; i < lines.length; i += 1) {
-              const line = lines[i];
-              if (line === undefined) {
-                continue;
-              }
-              const hay = args.caseSensitive === true ? line : line.toLowerCase();
-              if (hay.includes(needle)) {
-                hits.push({ file: path.relative(ctx.cwd, full), line: i + 1, text: line.trim() });
-                if (hits.length >= MAX_SEARCH_RESULTS) {
-                  return;
-                }
-              }
-            }
-          } catch {}
+          fileBatch.push(full);
         }
       }
+      await flushFiles();
     };
 
     await walk(root);
