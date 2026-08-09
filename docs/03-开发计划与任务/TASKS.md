@@ -1,7 +1,7 @@
 # Lumen 开发任务看板
 
 > 最后更新：2026-08-09
-> 当前里程碑：**🚀 v3.0 开发中**（M3 多角色 Agent 团队 · T3.1~T3.5 已完成）（v1.0: 20/20 ✅ · v1.1: 12/12 ✅ · v2.0: 15/15 ✅ · v2.1: 25/25 ✅ · v3.0: 13/24）
+> 当前里程碑：**🚀 v3.0 开发中**（M3 多角色 Agent 团队全部完成）（v1.0: 20/20 ✅ · v1.1: 12/12 ✅ · v2.0: 15/15 ✅ · v2.1: 25/25 ✅ · v3.0: 14/24）
 > 基于：[v3.0 开发计划](./v3.0-dev-plan.md) · [v3.0 详细任务](./v3.0-dev-tasks.md)
 
 ---
@@ -14,9 +14,9 @@
 | P0 任务 | 30（v1.1: 6 ✅ + v2.0: 5 ✅ + v2.1: 5 ✅ + v3.0: 14） |
 | P1 任务 | 30（v1.1: 6 ✅ + v2.0: 10 ✅ + v2.1: 4 ✅ + v3.0: 10） |
 | P2 任务 | 8（v2.1: 8） |
-| 待开始 | 11 |
+| 待开始 | 10 |
 | 进行中 | 0 |
-| 已完成 | 85 |
+| 已完成 | 86 |
 | 已阻塞 | 0 |
 
 ---
@@ -47,7 +47,7 @@
 | **V3.0-M0 启动前置** | **P0** | **2** | ✅ 已完成 |
 | **V3.0-M1 接口定义与基础协议** | **P0** | **3** | ✅ 已完成 |
 | **V3.0-M2 Orchestrator 核心** | **P0** | **3** | ✅ 已完成 |
-| **V3.0-M3 多角色 Agent 团队** | **P0** | **6** | 🟡 进行中（T3.1~T3.5 已完成） |
+| **V3.0-M3 多角色 Agent 团队** | **P0** | **6** | ✅ 已完成 |
 | **V3.0-M4 Agent 市场基础** | **P1** | **4** | ⏳ 待开始 |
 | **V3.0-M5 可观测性面板** | **P1** | **3** | ⏳ 待开始 |
 | **V3.0-M6 集成测试与文档** | **P1** | **3** | ⏳ 待开始 |
@@ -677,10 +677,11 @@
   - 依赖：T3.1、T3.2、T3.3、T3.4
   - ✅ 2026-08-09 完成：runTeamLoop 对抗性闭环（Coder 实现 → Reviewer 审查 → reject 反馈 Coder 修复 → approve → QA 验证 → 失败反馈修复）+ 终止条件（approve 且 QA 全绿）+ MAX_LOOP_ATTEMPTS=5 超限退出保留中间结果 + onRollback 触发（T3.6 接入点）+ 每轮上下文 artifacts（code/review-result/test-report）+ 依赖接口 CoderLike/ReviewerLike/QaLike（测试注入 Fake）；8 测试（599 全绿）
 
-- [ ] **T3.6** 实现多文件事务回滚
-  - 涉及文件：`src/orchestrator/transaction.ts`（新增）、`src/cli/`（修改）
-  - 预估：2h
+- [x] **T3.6** 实现多文件事务回滚
+  - 涉及文件：`src/orchestrator/transaction.ts`（新增）、`tests/orchestrator/transaction.test.ts`（新增）、`src/cli/snapshot.ts`（新增）、`src/cli/index.ts`（修改）
+  - 预估：2h | 实际：约 1h
   - 依赖：T3.2、T3.5
+  - ✅ 2026-08-09 完成：SnapshotManager（begin 快照全部涉及文件 + recordWrite 任务写入登记 + rollback 外部修改检测恢复 + commit 清理）+ 回滚失败保留快照不静默覆盖 + `lumen snapshot`/`lumen snapshot clean` 命令（list/clean）+ taskId 路径编码防穿越；15 测试（614 全绿）
 
 ### V3.0-M4：Agent 市场基础（P1，约 7h）
 
