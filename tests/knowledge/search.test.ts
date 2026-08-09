@@ -79,4 +79,26 @@ describe('KnowledgeSearch（邻接表加权，v2.1 性能优化）', () => {
     expect(results[0]?.entity.name).toBe('target');
     expect(results[0]?.score).toBeGreaterThanOrEqual(results[1]?.score ?? 0);
   });
+
+  it('快速排除路径与旧语义一致：观察文本混合大小写计数不变', () => {
+    const store = new KnowledgeStore(tmp);
+    store.createEntities([
+      // 原始文本含小写 needle（走 includes 快速命中路径）
+      { name: 'a', entityType: 't', observations: ['world world 出现两次'] },
+      // 原始文本不含小写 needle，仅大写形式（走 toLowerCase 降级路径）
+      { name: 'b', entityType: 't', observations: ['World Wide Web 大写'] },
+      // 混合大小写：原始含小写，另有大写变体
+      { name: 'c', entityType: 't', observations: ['World world 混合'] },
+      // 完全不命中
+      { name: 'd', entityType: 't', observations: ['无关内容'] },
+    ]);
+
+    const results = new KnowledgeSearch(store).search('world');
+    const byName = new Map(results.map((r) => [r.entity.name, r.score]));
+    // 观察命中次数（不含名称/类型加权：名称 a/b/c/d 与类型 t 均不包含 world）
+    expect(byName.get('a')).toBe(2);
+    expect(byName.get('b')).toBe(1);
+    expect(byName.get('c')).toBe(2);
+    expect(byName.has('d')).toBe(false);
+  });
 });

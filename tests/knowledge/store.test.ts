@@ -55,6 +55,44 @@ describe('KnowledgeStore CRUD', () => {
     expect(store.relationCount).toBe(1);
   });
 
+  it('createRelations — 批量写入大量关系去重索引正确（O(1) Set 判重）', () => {
+    // 先建实体 A0/A1/B0/B1（search 按实体名命中需要实体存在）
+    store.createEntities([
+      { name: 'A0', entityType: 'module', observations: [] },
+      { name: 'A1', entityType: 'module', observations: [] },
+    ]);
+    // 一次写入 200 条关系（含 50 条重复），验证 Set 索引在批量场景下不重复计数
+    const batch: Array<{ from: string; to: string; relationType: string }> = [];
+    for (let i = 0; i < 100; i += 1) {
+      batch.push({ from: `A${i}`, to: `B${i}`, relationType: 'links' });
+    }
+    for (let i = 0; i < 50; i += 1) {
+      batch.push({ from: `A${i}`, to: `B${i}`, relationType: 'links' }); // 重复
+    }
+    batch.push({ from: 'A1', to: 'B2', relationType: 'links' }); // 非重复变体
+    store.createRelations(batch);
+    expect(store.relationCount).toBe(101);
+    // 关系邻接表与去重索引一致：search 不因重复关系多出条目（A0 仅 1 条关系）
+    const a0 = store.search('A0')[0];
+    expect(a0?.relations).toHaveLength(1);
+    // A1 有 A1→B1 与 A1→B2 两条
+    const a1 = store.search('A1')[0];
+    expect(a1?.relations).toHaveLength(2);
+  });
+
+  it('deleteRelations 后去重索引同步：再次创建被删关系可重新加入', () => {
+    store.createEntities([{ name: 'X', entityType: 't', observations: [] }]);
+    store.createRelations([{ from: 'X', to: 'Y', relationType: 'links' }]);
+    expect(store.relationCount).toBe(1);
+
+    store.deleteRelations([{ from: 'X', to: 'Y', relationType: 'links' }]);
+    expect(store.relationCount).toBe(0);
+
+    // 去重索引已随 rebuild 清空，同一条关系可重新创建
+    store.createRelations([{ from: 'X', to: 'Y', relationType: 'links' }]);
+    expect(store.relationCount).toBe(1);
+  });
+
   it('openNodes — 按名称查询实体及关系', () => {
     store.createEntities([
       { name: 'X', entityType: 'concept', observations: ['X 描述'] },
@@ -67,6 +105,24 @@ describe('KnowledgeStore CRUD', () => {
     expect(graph.entities[0]?.name).toBe('X');
     expect(graph.relations).toHaveLength(1);
     expect(graph.relations[0]?.from).toBe('X');
+  });
+
+  it('openNodes — 多名称查询：关系经邻接表去重，不因 from/to 双向索引重复返回', () => {
+    store.createEntities([
+      { name: 'A', entityType: 'concept', observations: [] },
+      { name: 'B', entityType: 'concept', observations: [] },
+      { name: 'C', entityType: 'concept', observations: [] },
+    ]);
+    store.createRelations([
+      { from: 'A', to: 'B', relationType: 'links' }, // 同时命中 A（from）与 B（to）
+      { from: 'A', to: 'C', relationType: 'links' },
+    ]);
+
+    const graph = store.openNodes(['A', 'B']);
+    // A-B 关系从 A 与 B 两个邻接表都会取到，但只应返回一次
+    expect(graph.relations).toHaveLength(2);
+    expect(graph.entities).toHaveLength(2);
+    expect(graph.entities.map((e) => e.name).sort()).toEqual(['A', 'B']);
   });
 
   it('deleteEntities — 删除实体及关联关系', () => {

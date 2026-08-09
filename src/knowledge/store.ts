@@ -24,6 +24,11 @@ import type {
 /** 默认最大实体数（超过时 LRU 淘汰）。 */
 const MAX_ENTITIES = 1000;
 
+/** 关系去重/删除 key：from\0to\0relationType（与 deleteRelations 的 delSet 格式一致）。 */
+function relationKey(rel: { from: string; to: string; relationType: string }): string {
+  return `${rel.from}\u0000${rel.to}\u0000${rel.relationType}`;
+}
+
 /** 知识图谱存储目录。 */
 function storeDir(): string {
   return path.join(homedir(), '.lumen', 'knowledge');
@@ -48,6 +53,13 @@ export class KnowledgeStore {
    * 消除 search/openNodes 中 O(实体数 × 关系数) 的重复 filter，降至 O(1) 查询。
    */
   private relationIndex = new Map<string, KnowledgeRelation[]>();
+  /**
+   * v2.1 性能优化：关系去重索引（key = from\0to\0relationType → true），
+   * 把 createRelations 的重复检测从 O(关系总数) 降为 O(1)（Set 哈希查找），
+   * 批量写入（如模型一次性建数百条关系）不再退化为平方级扫描。
+   * 与 deleteRelations 的 delSet key 格式保持一致，删除/重建时同步维护。
+   */
+  private relationKeys = new Set<string>();
   /**
    * 懒加载标志：构造函数不读盘（首帧优化），首次读取/写入前按需加载。
    * 所有公开方法入口调用 ensureLoaded() 保证行为与构造即加载一致。
@@ -100,13 +112,26 @@ export class KnowledgeStore {
     return entity;
   }
 
-  /** 按名称批量查询实体及关联关系。 */
+  /**
+   * 按名称批量查询实体及关联关系。
+   * v2.1 性能优化：不再 filter 全部 relations（O(关系总数)），
+   * 改走邻接表按名称取关系（O(名称数 × 平均度数)），并用 Set 去重（from/to 双向索引会重复）。
+   */
   openNodes(names: string[]): KnowledgeGraph {
     this.ensureLoaded();
     const entities: KnowledgeEntity[] = [];
-    // 用 Set 加速成员判断，避免 O(names × relations) 的 includes 扫描
-    const nameSet = new Set(names);
-    const relations = this.relations.filter((r) => nameSet.has(r.from) || nameSet.has(r.to));
+    const seen = new Set<string>();
+    const relations: KnowledgeRelation[] = [];
+    for (const name of names) {
+      const rels = this.relationIndex.get(name) ?? [];
+      for (const rel of rels) {
+        const key = relationKey(rel);
+        if (!seen.has(key)) {
+          seen.add(key);
+          relations.push(rel);
+        }
+      }
+    }
     for (const name of names) {
       const entity = this.entities.get(name);
       if (entity !== undefined) {
@@ -165,15 +190,18 @@ export class KnowledgeStore {
 
   // ── CRUD：关系 ───────────────────────────────────────────
 
-  /** 批量创建关系（去重）。 */
+  /**
+   * 批量创建关系（去重）。
+   * v2.1 性能优化：用 relationKeys（Set）O(1) 判重，
+   * 不再对每条新关系线性扫描全部已有关系（O(n×E) → O(n)）。
+   */
   createRelations(relations: KnowledgeRelation[]): void {
     this.ensureLoaded();
     for (const rel of relations) {
-      const exists = this.relations.some(
-        (r) => r.from === rel.from && r.to === rel.to && r.relationType === rel.relationType,
-      );
-      if (!exists) {
+      const key = relationKey(rel);
+      if (!this.relationKeys.has(key)) {
         this.relations.push({ ...rel });
+        this.relationKeys.add(key);
         this.indexRelation(rel);
       }
     }
@@ -184,9 +212,7 @@ export class KnowledgeStore {
   deleteRelations(deletions: KnowledgeRelationDeletion[]): void {
     this.ensureLoaded();
     const delSet = new Set(deletions.map((d) => `${d.from}\u0000${d.to}\u0000${d.relationType}`));
-    this.relations = this.relations.filter(
-      (r) => !delSet.has(`${r.from}\u0000${r.to}\u0000${r.relationType}`),
-    );
+    this.relations = this.relations.filter((r) => !delSet.has(relationKey(r)));
     this.rebuildRelationIndex();
     this.dirty = true;
   }
@@ -214,7 +240,18 @@ export class KnowledgeStore {
         score += 1;
       }
       for (const obs of entity.observations) {
-        score += obs.toLowerCase().split(q).length - 1;
+        // v2.1 性能优化：先对原始文本做 includes（无分配、C++ 实现）做快速排除，
+        // 未命中直接跳过该 observation，不再为每条观察分配小写字符串 + split 数组；
+        // 仅当原始文本可能包含 q 时才降级小写计数，大小写不敏感语义与旧实现完全一致。
+        if (!obs.includes(q)) {
+          const lowerObs = obs.toLowerCase();
+          if (!lowerObs.includes(q)) {
+            continue;
+          }
+          score += lowerObs.split(q).length - 1;
+        } else {
+          score += obs.toLowerCase().split(q).length - 1;
+        }
       }
       if (score > 0) {
         entity.lastAccessedAt = Date.now();
@@ -290,10 +327,12 @@ export class KnowledgeStore {
     push(rel.to);
   }
 
-  /** 依据 relations 全量重建邻接表（删除/淘汰后调用；关系规模小，重建成本可接受）。 */
+  /** 依据 relations 全量重建邻接表与去重索引（删除/淘汰后调用；关系规模小，重建成本可接受）。 */
   private rebuildRelationIndex(): void {
     this.relationIndex = new Map<string, KnowledgeRelation[]>();
+    this.relationKeys = new Set<string>();
     for (const rel of this.relations) {
+      this.relationKeys.add(relationKey(rel));
       this.indexRelation(rel);
     }
   }
