@@ -39,6 +39,22 @@ export {
   type TaskExecution,
 } from './orchestrator';
 export type { Agent, AgentInput, AgentOutput, AgentReply } from './protocol';
+export {
+  buildQaSummary,
+  ChildProcessQaRunner,
+  type ChildProcessQaRunnerOptions,
+  DEFAULT_VERIFY_TIMEOUT_MS,
+  formatFeedbackIssues,
+  parseVerifyOutput,
+  QaAgent,
+  type QaAgentOptions,
+  type QaFailedItem,
+  type QaInput,
+  type QaReport,
+  type QaRunner,
+  type QaRunResult,
+  qaReportSchema,
+} from './qa';
 export type { AgentEntry, AgentRegistry } from './registry';
 export { InMemoryAgentRegistry } from './registry';
 export {
