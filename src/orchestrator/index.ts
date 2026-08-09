@@ -15,6 +15,16 @@ export {
   mergeContexts,
   serialize,
 } from './context';
+export {
+  type CoderLike,
+  type LoopRoundRecord,
+  MAX_LOOP_ATTEMPTS,
+  type QaLike,
+  type ReviewerLike,
+  runTeamLoop,
+  type TeamLoopOptions,
+  type TeamLoopResult,
+} from './loop';
 export type {
   FileConflict,
   ScheduleResult,
