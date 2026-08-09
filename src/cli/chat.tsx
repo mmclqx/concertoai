@@ -17,6 +17,7 @@ import { McpManager } from '../mcp/manager';
 import type { MCPServerConfig } from '../mcp/types';
 import { DeepSeekClient } from '../model/client';
 import { preloadTokenizer } from '../model/tokenizer';
+import { AuditLogger, TraceStore } from '../observable';
 import { SkillLoader } from '../skill/loader';
 import { loadConfig, resolveConfig } from '../store/config';
 import { MemoryStore } from '../store/memory-store';
@@ -88,6 +89,10 @@ export async function runChat(options: RunChatOptions): Promise<void> {
   const agentRegistry = new InMemoryAgentRegistry();
   const agentInstaller = new AgentInstaller({ registry: agentRegistry });
 
+  // v3.0 M5：可观测性运行时（/agent 与 /review 操作记录调用链 + 审计日志）
+  const traceStore = new TraceStore();
+  const auditLogger = new AuditLogger();
+
   // MCP 后台启动：start() 内部对单服务失败 allSettled 降级（不 reject）；
   // 完成后把 MCP 工具动态注册进 registry（register 会令 apiTools 缓存失效，下一轮即可见）。
   if (mcpManager !== undefined) {
@@ -155,6 +160,8 @@ export async function runChat(options: RunChatOptions): Promise<void> {
       spawner={spawner}
       agentRegistry={agentRegistry}
       agentInstaller={agentInstaller}
+      traceStore={traceStore}
+      auditLogger={auditLogger}
     />,
   );
 

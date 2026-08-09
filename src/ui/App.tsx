@@ -27,6 +27,7 @@ import type { McpManager } from '../mcp/manager';
 import type { ModelClient } from '../model/client';
 import { cacheHitCostFor, costFor, getModel } from '../model/models';
 import { estimateMessageListTokens, estimateTokens } from '../model/tokenizer';
+import type { AuditLogger, TraceStore } from '../observable';
 import { ReviewerEngine } from '../reviewer/engine';
 import type { SkillLoader } from '../skill/loader';
 import type { MemoryStore } from '../store/memory-store';
@@ -35,6 +36,7 @@ import type { ApprovalRequest, ToolContext } from '../tools/registry';
 import { ToolRegistry } from '../tools/registry';
 import { renderMarkdownToAnsi } from './markdown';
 import { ApprovalModal, PlanConfirm } from './modals';
+import { ObservabilityPanel } from './ObservabilityPanel';
 import { PromptInput } from './PromptInput';
 import { Spinner } from './Spinner';
 import { StatusBar } from './StatusBar';
@@ -83,6 +85,10 @@ export interface AppProps {
   agentRegistry?: AgentRegistry;
   /** Agent 安装器（v3.0 M4）：/agent install/remove/list 的磁盘操作。 */
   agentInstaller?: AgentInstaller;
+  /** 调用链追踪（v3.0 M5）：/agent 与 /review 操作记录 span，'o' 键切换面板。 */
+  traceStore?: TraceStore;
+  /** 审计日志（v3.0 M5）：Agent 交互追加写入，可导出 JSON。 */
+  auditLogger?: AuditLogger;
 }
 
 /**
@@ -242,9 +248,13 @@ export function App({
   spawner,
   agentRegistry,
   agentInstaller,
+  traceStore,
+  auditLogger,
 }: AppProps) {
   const { exit } = useApp();
   const [messages, setMessages] = useState<ChatMessage[]>(initialHistory ?? []);
+  /** v3.0 M5：可观测性面板开关（'o' 键切换，默认收起不阻塞主对话流）。 */
+  const [obsOpen, setObsOpen] = useState(false);
   const [input, setInput] = useState('');
   const [phase, setPhase] = useState<Phase>('idle');
   const [streamed, setStreamedState] = useState('');
@@ -492,6 +502,21 @@ export function App({
       // v2.1 M5：审查命令（/review）→ 启动 Reviewer Agent
       const reviewCmd = parseReviewCommand(trimmed);
       if (reviewCmd !== null && spawner !== undefined) {
+        // v3.0 M5：审查操作记录调用链 + 审计日志
+        const startedAt = Date.now();
+        traceStore?.record({
+          id: `review:${startedAt}`,
+          taskId: 'review',
+          agentName: 'reviewer',
+          messageType: 'task',
+          input: { command: trimmed, scope: reviewCmd.type },
+          startedAt,
+          durationMs: 0,
+        });
+        void auditLogger?.append({
+          kind: 'message',
+          detail: { command: trimmed, type: 'review' },
+        });
         setInput('');
         setTokens((t) => ({ ...t, input: t.input + estimateTokens(text) }));
         setMessages((prev) => [...prev, { role: 'user', content: text }]);
@@ -530,6 +555,31 @@ export function App({
       if (agentInstaller !== undefined && agentRegistry !== undefined) {
         const agentCmd = parseAgentCommand(trimmed);
         if (agentCmd !== null) {
+          // v3.0 M5：Agent 操作记录调用链 + 审计日志
+          const opName =
+            agentCmd.type === 'list'
+              ? 'list'
+              : agentCmd.type === 'install'
+                ? `install:${agentCmd.name}`
+                : agentCmd.type === 'remove'
+                  ? `remove:${agentCmd.name}`
+                  : agentCmd.type === 'promote'
+                    ? `promote:${agentCmd.skillName}`
+                    : 'list';
+          const startedAt = Date.now();
+          traceStore?.record({
+            id: `agent:${opName}:${startedAt}`,
+            taskId: `agent:${opName}`,
+            agentName: 'cli',
+            messageType: 'task',
+            input: { command: trimmed },
+            startedAt,
+            durationMs: 0,
+          });
+          void auditLogger?.append({
+            kind: 'message',
+            detail: { command: trimmed, type: agentCmd.type },
+          });
           if (
             agentCmd.type === 'install' ||
             agentCmd.type === 'remove' ||
@@ -876,6 +926,8 @@ export function App({
       setStreamed,
       agentInstaller,
       agentRegistry,
+      traceStore,
+      auditLogger,
     ],
   );
 
@@ -914,6 +966,11 @@ export function App({
       } else {
         exit();
       }
+      return;
+    }
+    // v3.0 M5：'o' 键切换可观测性面板（仅空闲时，避免打断流式输出）
+    if (input === 'o' && phase === 'idle' && traceStore !== undefined) {
+      setObsOpen((v) => !v);
       return;
     }
     if (key.escape) {
@@ -959,6 +1016,7 @@ export function App({
         placeholder={t().prompt.placeholder}
         active={phase === 'idle'}
       />
+      {traceStore !== undefined && <ObservabilityPanel spans={traceStore.all()} open={obsOpen} />}
       <StatusBar
         model={model}
         inputTokens={display.input}
