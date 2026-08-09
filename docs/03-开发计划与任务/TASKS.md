@@ -1,7 +1,7 @@
 # Lumen 开发任务看板
 
 > 最后更新：2026-08-09
-> 当前里程碑：**🚀 v3.0 开发中**（M3 多角色 Agent 团队 · T3.1~T3.4 已完成）（v1.0: 20/20 ✅ · v1.1: 12/12 ✅ · v2.0: 15/15 ✅ · v2.1: 25/25 ✅ · v3.0: 12/24）
+> 当前里程碑：**🚀 v3.0 开发中**（M3 多角色 Agent 团队 · T3.1~T3.5 已完成）（v1.0: 20/20 ✅ · v1.1: 12/12 ✅ · v2.0: 15/15 ✅ · v2.1: 25/25 ✅ · v3.0: 13/24）
 > 基于：[v3.0 开发计划](./v3.0-dev-plan.md) · [v3.0 详细任务](./v3.0-dev-tasks.md)
 
 ---
@@ -14,9 +14,9 @@
 | P0 任务 | 30（v1.1: 6 ✅ + v2.0: 5 ✅ + v2.1: 5 ✅ + v3.0: 14） |
 | P1 任务 | 30（v1.1: 6 ✅ + v2.0: 10 ✅ + v2.1: 4 ✅ + v3.0: 10） |
 | P2 任务 | 8（v2.1: 8） |
-| 待开始 | 12 |
+| 待开始 | 11 |
 | 进行中 | 0 |
-| 已完成 | 84 |
+| 已完成 | 85 |
 | 已阻塞 | 0 |
 
 ---
@@ -47,7 +47,7 @@
 | **V3.0-M0 启动前置** | **P0** | **2** | ✅ 已完成 |
 | **V3.0-M1 接口定义与基础协议** | **P0** | **3** | ✅ 已完成 |
 | **V3.0-M2 Orchestrator 核心** | **P0** | **3** | ✅ 已完成 |
-| **V3.0-M3 多角色 Agent 团队** | **P0** | **6** | 🟡 进行中（T3.1~T3.4 已完成） |
+| **V3.0-M3 多角色 Agent 团队** | **P0** | **6** | 🟡 进行中（T3.1~T3.5 已完成） |
 | **V3.0-M4 Agent 市场基础** | **P1** | **4** | ⏳ 待开始 |
 | **V3.0-M5 可观测性面板** | **P1** | **3** | ⏳ 待开始 |
 | **V3.0-M6 集成测试与文档** | **P1** | **3** | ⏳ 待开始 |
@@ -671,10 +671,11 @@
   - 依赖：T1.x、T2.3
   - ✅ 2026-08-09 完成：ChildProcessQaRunner 沙箱执行 npm run verify（Windows taskkill 子树 + 超时 5min 保护）+ parseVerifyOutput 结构化解析（Test Files/Tests 计数 + FAIL 段提取文件/用例/错误）+ QaAgent（标准契约，权限 run_command 白名单 npm run verify）+ formatFeedbackIssues 失败详情→feedback 传回 Coder + 退出码兜底防漏判；修复 2 个解析 bug（failed 误匹配 FAIL / ✗ 用例行先命中 Error）；14 测试（591 全绿）
 
-- [ ] **T3.5** 实现对抗性闭环流程
-  - 涉及文件：`src/orchestrator/loop.ts`（新增）
-  - 预估：1h
+- [x] **T3.5** 实现对抗性闭环流程
+  - 涉及文件：`src/orchestrator/loop.ts`（新增）、`tests/orchestrator/loop.test.ts`（新增）、`src/orchestrator/index.ts`（修改）
+  - 预估：1h | 实际：约 0.5h
   - 依赖：T3.1、T3.2、T3.3、T3.4
+  - ✅ 2026-08-09 完成：runTeamLoop 对抗性闭环（Coder 实现 → Reviewer 审查 → reject 反馈 Coder 修复 → approve → QA 验证 → 失败反馈修复）+ 终止条件（approve 且 QA 全绿）+ MAX_LOOP_ATTEMPTS=5 超限退出保留中间结果 + onRollback 触发（T3.6 接入点）+ 每轮上下文 artifacts（code/review-result/test-report）+ 依赖接口 CoderLike/ReviewerLike/QaLike（测试注入 Fake）；8 测试（599 全绿）
 
 - [ ] **T3.6** 实现多文件事务回滚
   - 涉及文件：`src/orchestrator/transaction.ts`（新增）、`src/cli/`（修改）
