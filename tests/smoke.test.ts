@@ -4,7 +4,7 @@ import { VERSION } from '../src/index';
 
 describe('smoke', () => {
   it('库入口可加载且版本正确', () => {
-    expect(VERSION).toBe('2.0.0');
+    expect(VERSION).toBe('2.1.0');
   });
 
   it('vitest 运行正常', () => {
