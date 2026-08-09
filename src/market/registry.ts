@@ -5,14 +5,15 @@
  * 用 zod schema 校验注册表结构（与 T1.2 AgentDef zod schema 校验策略一致）。
  *
  * - parseMarketRegistry：校验任意注册表 JSON（skill + agent 条目，type 区分）；
- * - fetchRegistry / fetchAgent：网络获取注册表 / Agent 包 + sha256 校验
- *   （T4.2 安装器复用；底层逻辑与技能市场 fetch 一致）；
+ * - fetchMarketRegistry：网络获取注册表；
+ * - fetchAgentContent：下载 Agent 包 + sha256 校验（复用共享 fetchVerifiedContent，
+ *   T4.2 安装器 / 技能市场共用同一底层逻辑）；
  * - loadBuiltinRegistry：内置注册表（4 个 Agent 条目）。
  */
 
-import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import type { AgentDef } from '../orchestrator';
+import { fetchVerifiedContent } from './download';
 import type { AgentRegistryItem, MarketRegistry, RegistryItem } from './types';
 import { BUILTIN_REGISTRY } from './types';
 
@@ -128,25 +129,12 @@ export async function fetchMarketRegistry(
   }
 }
 
-/** fetch Agent 包内容并校验 sha256（失败返回 null）。 */
+/** 下载 Agent 包内容并校验 sha256（失败返回 null；复用共享下载函数）。 */
 export async function fetchAgentContent(
   url: string,
   expectedSha256: string,
 ): Promise<string | null> {
-  try {
-    const resp = await fetch(url, { signal: AbortSignal.timeout(15_000) });
-    if (!resp.ok) {
-      return null;
-    }
-    const text = await resp.text();
-    const actual = createHash('sha256').update(text).digest('hex');
-    if (actual !== expectedSha256) {
-      return null;
-    }
-    return text;
-  } catch {
-    return null;
-  }
+  return fetchVerifiedContent(url, expectedSha256);
 }
 
 /** 加载内置注册表（4 个内置 Agent 条目）。 */

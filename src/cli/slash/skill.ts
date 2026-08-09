@@ -6,12 +6,11 @@
  * v2.1 M3：新增 /skill install / search / update 命令（技能市场）。
  */
 
-import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
-
 import type { ChatMessage } from '../../loop/types';
+import { fetchVerifiedContent } from '../../market/download';
 import type { SkillLoader } from '../../skill/loader';
 import type { AgentRef } from '../../skill/types';
 
@@ -204,22 +203,9 @@ async function fetchRegistry(): Promise<Registry | null> {
   }
 }
 
-/** fetch SKILL.md 内容并校验 sha256。返回内容或 null。 */
+/** fetch SKILL.md 内容并校验 sha256。返回内容或 null（复用共享下载函数，T4.2 抽取）。 */
 async function fetchSkill(url: string, expectedSha256: string): Promise<string | null> {
-  try {
-    const resp = await fetch(url, { signal: AbortSignal.timeout(15_000) });
-    if (!resp.ok) {
-      return null;
-    }
-    const text = await resp.text();
-    const actual = createHash('sha256').update(text).digest('hex');
-    if (actual !== expectedSha256) {
-      return null;
-    }
-    return text;
-  } catch {
-    return null;
-  }
+  return fetchVerifiedContent(url, expectedSha256);
 }
 
 /** 从已安装的技能文件中解析版本号（简单 YAML frontmatter 解析）。 */
