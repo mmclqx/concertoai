@@ -1,7 +1,7 @@
 # Lumen 开发任务看板
 
 > 最后更新：2026-08-09
-> 当前里程碑：**🚀 v3.0 开发中**（M1 接口定义 · T1.1~T1.3 已完成）（v1.0: 20/20 ✅ · v1.1: 12/12 ✅ · v2.0: 15/15 ✅ · v2.1: 25/25 ✅ · v3.0: 5/24）
+> 当前里程碑：**🚀 v3.0 开发中**（M2 Orchestrator 核心 · T2.1 已完成）（v1.0: 20/20 ✅ · v1.1: 12/12 ✅ · v2.0: 15/15 ✅ · v2.1: 25/25 ✅ · v3.0: 6/24）
 > 基于：[v3.0 开发计划](./v3.0-dev-plan.md) · [v3.0 详细任务](./v3.0-dev-tasks.md)
 
 ---
@@ -14,9 +14,9 @@
 | P0 任务 | 30（v1.1: 6 ✅ + v2.0: 5 ✅ + v2.1: 5 ✅ + v3.0: 14） |
 | P1 任务 | 30（v1.1: 6 ✅ + v2.0: 10 ✅ + v2.1: 4 ✅ + v3.0: 10） |
 | P2 任务 | 8（v2.1: 8） |
-| 待开始 | 19 |
+| 待开始 | 18 |
 | 进行中 | 0 |
-| 已完成 | 77 |
+| 已完成 | 78 |
 | 已阻塞 | 0 |
 
 ---
@@ -46,7 +46,7 @@
 | **V2.1-M6 集成测试与文档** | **P1** | **2** | ✅ 已完成 |
 | **V3.0-M0 启动前置** | **P0** | **2** | ✅ 已完成 |
 | **V3.0-M1 接口定义与基础协议** | **P0** | **3** | ✅ 已完成 |
-| **V3.0-M2 Orchestrator 核心** | **P0** | **3** | ⏳ 待开始 |
+| **V3.0-M2 Orchestrator 核心** | **P0** | **3** | 🟡 进行中（T2.1 已完成） |
 | **V3.0-M3 多角色 Agent 团队** | **P0** | **6** | ⏳ 待开始 |
 | **V3.0-M4 Agent 市场基础** | **P1** | **4** | ⏳ 待开始 |
 | **V3.0-M5 可观测性面板** | **P1** | **3** | ⏳ 待开始 |
@@ -627,10 +627,11 @@
 
 ### V3.0-M2：Orchestrator 核心（P0，约 8h）
 
-- [ ] **T2.1** 实现任务状态机
-  - 涉及文件：`src/orchestrator/state-machine.ts`（新增）
-  - 预估：3h
+- [x] **T2.1** 实现任务状态机
+  - 涉及文件：`src/orchestrator/state-machine.ts`（新增）、`tests/orchestrator/state-machine.test.ts`（新增）、`src/orchestrator/index.ts`（修改）
+  - 预估：3h | 实际：约 1h
   - 依赖：T1.1、T1.2
+  - ✅ 2026-08-09 完成：TRANSITIONS 转换表（主流程 + reject/QA 失败打回 in_progress + 非终止态→failed）+ pending→in_progress 依赖守卫（fail-closed：未完成/状态未知/未配置查询均拒绝）+ canTransition/canTransitionTask 查询 + transition 执行（InvalidTransitionError / TransitionGuardError 抛错并记录 violations，上限 100）+ onTransition 事件订阅（可取消、多监听器、监听器异常不阻断）；27 测试（500 全绿）
 
 - [ ] **T2.2** 实现任务调度器
   - 涉及文件：`src/orchestrator/scheduler.ts`（新增）
