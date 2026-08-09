@@ -133,19 +133,32 @@ function runShellCommand(command: string, cwd: string, timeoutMs: number): Promi
       if (exitCode === 0) {
         finish({ ok: true, data });
       } else {
+        const hasStderr = data.stderr.trim() !== '';
+        // Windows 下 findstr/dir 等工具退出码 1 且无 stderr = "没有找到匹配"，不是真错误
+        const isNoResults = exitCode === 1 && !hasStderr && process.platform === 'win32';
+
         const lines = [`命令退出码 ${exitCode}`];
         lines.push(`  命令: ${command}`);
         lines.push(`  目录: ${cwd}`);
-        if (data.stderr.trim() !== '') {
+        if (hasStderr) {
           lines.push(`  stderr: ${data.stderr.trim().split('\n')[0]?.slice(0, 200) ?? ''}`);
         }
         // 解释常见退出码
         if (exitCode === 255 || exitCode === 127) {
-          lines.push('  💡 退出码 255/127 通常表示命令不存在。Windows cmd 不支持 pwd/ls/cat 等 UNIX 命令。');
+          lines.push('  💡 退出码 255/127 通常表示命令不存在。');
+        } else if (isNoResults) {
+          lines.push('  💡 Windows 下 findstr/dir 退出码 1 且无 stderr = 没找到匹配。这不计入可修复失败。');
         } else if (exitCode === 1) {
-          lines.push('  💡 退出码 1 通常表示命令执行出错（参数错误或运行时错误）。');
+          lines.push('  💡 退出码 1 = 命令执行出错（参数错误或运行时错误）。');
         }
-        finish({ ok: false, error: lines.join('\n'), data });
+
+        finish({
+          ok: false,
+          error: lines.join('\n'),
+          data,
+          // Windows "无结果"不算可修复失败（findstr/dir 找不到是正常结果）
+          repairable: isNoResults ? false : undefined,
+        });
       }
     });
   });
