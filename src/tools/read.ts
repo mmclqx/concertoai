@@ -30,6 +30,8 @@ function stripBom(text: string): string {
 export const MAX_SEARCH_RESULTS = 100;
 /** search_content 扫描的单个文件大小上限（字节）。 */
 export const MAX_SEARCH_FILE_BYTES = 512 * 1024;
+/** search_content 同目录文件并发读取的上限（防文件描述符耗尽）。 */
+export const SEARCH_CONCURRENCY = 32;
 
 /** 搜索时跳过的目录名（依赖/构建/版本库/缓存）。 */
 const SKIP_DIRS = new Set([
@@ -278,7 +280,16 @@ export const searchContentTool: ToolSpec = {
         }
         const batch = fileBatch;
         fileBatch = [];
-        const results = await Promise.all(batch.map((full) => scanFile(full)));
+        // v2.1 性能优化：并发读取同一目录下的文件（Promise.all 并行），
+        // 但用 SEARCH_CONCURRENCY 分片限制并发上限，防止超大目录一次性打开
+        // 数千个文件描述符（Windows 默认句柄上限较低）；分片结果按序合并，
+        // 与串行遍历的命中顺序完全一致。
+        const results: Array<{ hits: SearchHit[]; skippedBinary: number }> = [];
+        for (let i = 0; i < batch.length; i += SEARCH_CONCURRENCY) {
+          const slice = batch.slice(i, i + SEARCH_CONCURRENCY);
+          const partial = await Promise.all(slice.map((full) => scanFile(full)));
+          results.push(...partial);
+        }
         for (const r of results) {
           if (hits.length >= MAX_SEARCH_RESULTS) {
             break;

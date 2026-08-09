@@ -233,6 +233,25 @@ describe('search_content', () => {
     expect(data.hits.map((h) => h.file).sort()).toEqual(['a.txt', 'b.txt']);
   });
 
+  it('同目录文件数超过并发上限：分片扫描命中完整不遗漏', async () => {
+    // SEARCH_CONCURRENCY = 32：写 80 个文件（40 个命中），验证分片合并不丢命中
+    for (let i = 0; i < 80; i += 1) {
+      write(`f${String(i).padStart(3, '0')}.txt`, i % 2 === 0 ? 'needle here' : 'no match');
+    }
+    const result = await runTool(searchContentTool, { pattern: 'needle' });
+    const data = result.data as { hits: Array<{ file: string }> };
+    expect(data.hits).toHaveLength(40);
+    // 文件路径齐全（无遗漏）
+    const files = new Set(data.hits.map((h) => h.file));
+    for (let i = 0; i < 80; i += 2) {
+      expect(files.has(`f${String(i).padStart(3, '0')}.txt`)).toBe(true);
+    }
+    // 保序：按 readdir 顺序（NTFS 字母序）排列，即 f000, f002, f004…
+    expect(data.hits.map((h) => h.file)).toEqual(
+      Array.from({ length: 40 }, (_, i) => `f${String(i * 2).padStart(3, '0')}.txt`),
+    );
+  });
+
   it('起始路径越界被拒绝', async () => {
     const result = await runTool(searchContentTool, { pattern: 'x', path: '..' });
     expect(result.ok).toBe(false);

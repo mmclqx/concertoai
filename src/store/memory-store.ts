@@ -12,7 +12,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { mkdir, readFile, rename, rm, unlink, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, readFile, rename, rm, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 // ── 类型 ──
@@ -205,20 +205,15 @@ export class MemoryStore {
     }
   }
 
+  /**
+   * 追加一行（仅 create 使用，记忆内容只增不改的场景走 O_APPEND）。
+   * v2.1 性能优化：从「读全文件 → 拼接 → 临时文件 → rename 覆盖」改为 O_APPEND 原子追加，
+   * 单条追加从 O(记忆条目数) 降为 O(1)，不再每次把整个记忆文件读进内存再重写。
+   * 文件不存在时自动创建（appendFile 语义）；update/delete 仍需全量读改写（writeAll）。
+   */
   private async appendLine(line: string): Promise<void> {
-    let existing = '';
-    try {
-      existing = await readFile(this.file, 'utf8');
-    } catch {
-      // 文件不存在
-    }
-    const tmp = `${this.file}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
-    try {
-      await writeFile(tmp, `${existing}${line}\n`, 'utf8');
-      await rename(tmp, this.file);
-    } finally {
-      await unlink(tmp).catch(() => {});
-    }
+    await this.ensureDir();
+    await appendFile(this.file, `${line}\n`, 'utf8');
   }
 
   /** 删除整个记忆目录（危险操作，仅供测试）。 */
