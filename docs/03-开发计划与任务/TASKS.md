@@ -1,8 +1,8 @@
 # Lumen 开发任务看板
 
-> 最后更新：2026-08-08
-> 当前里程碑：**🎉 v2.1 全部完成**（v1.0: 20/20 ✅ · v1.1: 12/12 ✅ · v2.0: 15/15 ✅ · v2.1: 25/25）
-> 基于：[v2.1 开发计划](./v2.1-dev-plan.md) · [v2.1 详细任务](./v2.1-dev-tasks.md)
+> 最后更新：2026-08-09
+> 当前里程碑：**🚀 v3.0 开发中**（M0 启动前置 · T0.1 已完成）（v1.0: 20/20 ✅ · v1.1: 12/12 ✅ · v2.0: 15/15 ✅ · v2.1: 25/25 ✅ · v3.0: 1/24）
+> 基于：[v3.0 开发计划](./v3.0-dev-plan.md) · [v3.0 详细任务](./v3.0-dev-tasks.md)
 
 ---
 
@@ -10,13 +10,13 @@
 
 | 指标 | 数值 |
 |------|------|
-| 总任务数 | 72（v1.0: 20 ✅ + v1.1: 12 ✅ + v2.0: 15 ✅ + v2.1: 25） |
-| P0 任务 | 16（v1.1: 6 ✅ + v2.0: 5 ✅ + v2.1: 5） |
-| P1 任务 | 20（v1.1: 6 ✅ + v2.0: 10 ✅ + v2.1: 4） |
+| 总任务数 | 96（v1.0: 20 ✅ + v1.1: 12 ✅ + v2.0: 15 ✅ + v2.1: 25 ✅ + v3.0: 24） |
+| P0 任务 | 30（v1.1: 6 ✅ + v2.0: 5 ✅ + v2.1: 5 ✅ + v3.0: 14） |
+| P1 任务 | 30（v1.1: 6 ✅ + v2.0: 10 ✅ + v2.1: 4 ✅ + v3.0: 10） |
 | P2 任务 | 8（v2.1: 8） |
-| 待开始 | 0 |
+| 待开始 | 23 |
 | 进行中 | 0 |
-| 已完成 | 72 |
+| 已完成 | 73 |
 | 已阻塞 | 0 |
 
 ---
@@ -44,6 +44,13 @@
 | **V2.1-M4 轻量级知识图谱 + RAG** | **P1** | **4** | ✅ 已完成 |
 | **V2.1-M5 Reviewer Agent 代码评审智能体** | **P0** | **8** | ✅ 已完成 |
 | **V2.1-M6 集成测试与文档** | **P1** | **2** | ✅ 已完成 |
+| **V3.0-M0 启动前置** | **P0** | **2** | 🟡 进行中（T0.1 已完成） |
+| **V3.0-M1 接口定义与基础协议** | **P0** | **3** | ⏳ 待开始 |
+| **V3.0-M2 Orchestrator 核心** | **P0** | **3** | ⏳ 待开始 |
+| **V3.0-M3 多角色 Agent 团队** | **P0** | **6** | ⏳ 待开始 |
+| **V3.0-M4 Agent 市场基础** | **P1** | **4** | ⏳ 待开始 |
+| **V3.0-M5 可观测性面板** | **P1** | **3** | ⏳ 待开始 |
+| **V3.0-M6 集成测试与文档** | **P1** | **3** | ⏳ 待开始 |
 
 ---
 
@@ -584,6 +591,143 @@
 
 ---
 
+### V3.0-M0：启动前置（P0，约 1h）
+
+- [x] **T0.1** ADR-009~014 回填 DECISIONS.md
+  - 涉及文件：`docs/06-会议与决策记录/DECISIONS.md`（修改 — 新增 ADR-009~014）
+  - 预估：0.5h
+  - 依赖：无
+  - ✅ 2026-08-09 完成：6 条 ADR 按 ADR-001~008 格式回填（状态/日期/上下文/选项/结论/理由），409 用例全绿
+
+- [ ] **T0.2** 接口草图评审
+  - 涉及文件：`src/orchestrator/types.ts`（草图 — 评审对象，仅定稿不实现）
+  - 预估：0.5h
+  - 依赖：T0.1
+
+### V3.0-M1：接口定义与基础协议（P0，约 6h）
+
+- [ ] **T1.1** 定义 Agent 通信协议类型
+  - 涉及文件：`src/orchestrator/types.ts`（新增）、`src/orchestrator/index.ts`（新增）
+  - 预估：2h
+  - 依赖：T0.2
+
+- [ ] **T1.2** 定义 Agent 注册表接口 + 标准 Agent 接口
+  - 涉及文件：`src/agents/protocol.ts`（新增）、`src/agents/registry.ts`（新增）、`src/agents/index.ts`（新增）
+  - 预估：2h
+  - 依赖：T0.2、T1.1
+
+- [ ] **T1.3** 实现显式上下文管理器
+  - 涉及文件：`src/orchestrator/context.ts`（新增）
+  - 预估：2h
+  - 依赖：T0.2、T1.1
+
+### V3.0-M2：Orchestrator 核心（P0，约 8h）
+
+- [ ] **T2.1** 实现任务状态机
+  - 涉及文件：`src/orchestrator/state-machine.ts`（新增）
+  - 预估：3h
+  - 依赖：T1.1、T1.2
+
+- [ ] **T2.2** 实现任务调度器
+  - 涉及文件：`src/orchestrator/scheduler.ts`（新增）
+  - 预估：3h
+  - 依赖：T1.1、T1.2、T2.1
+
+- [ ] **T2.3** 实现 Orchestrator Agent 核心
+  - 涉及文件：`src/agents/orchestrator.ts`（新增）、`src/loop/`（修改）
+  - 预估：2h
+  - 依赖：T2.1、T2.2
+
+### V3.0-M3：多角色 Agent 团队（P0，约 14h）
+
+- [ ] **T3.1** 实现 Architect Agent
+  - 涉及文件：`src/agents/architect.ts`（新增）
+  - 预估：3h
+  - 依赖：T1.x、T2.3
+
+- [ ] **T3.2** 实现 Coder Agent
+  - 涉及文件：`src/agents/coder.ts`（新增）
+  - 预估：3h
+  - 依赖：T1.x、T2.3、T3.1
+
+- [ ] **T3.3** 升级 Reviewer Agent（Team Reviewer）
+  - 涉及文件：`src/agents/reviewer.ts`（新增）、`src/reviewer/`（修改）
+  - 预估：3h
+  - 依赖：T1.x、T2.3
+
+- [ ] **T3.4** 实现 QA Agent
+  - 涉及文件：`src/agents/qa.ts`（新增）
+  - 预估：2h
+  - 依赖：T1.x、T2.3
+
+- [ ] **T3.5** 实现对抗性闭环流程
+  - 涉及文件：`src/orchestrator/loop.ts`（新增）
+  - 预估：1h
+  - 依赖：T3.1、T3.2、T3.3、T3.4
+
+- [ ] **T3.6** 实现多文件事务回滚
+  - 涉及文件：`src/orchestrator/transaction.ts`（新增）、`src/cli/`（修改）
+  - 预估：2h
+  - 依赖：T3.2、T3.5
+
+### V3.0-M4：Agent 市场基础（P1，约 7h）
+
+- [ ] **T4.1** 定义 Agent 市场注册表格式
+  - 涉及文件：`src/market/types.ts`（新增）、`src/market/registry.ts`（新增）
+  - 预估：2h
+  - 依赖：T1.2
+
+- [ ] **T4.2** 实现 Agent 安装器
+  - 涉及文件：`src/market/installer.ts`（新增）
+  - 预估：2h
+  - 依赖：T4.1
+
+- [ ] **T4.3** 实现 /agent 管理命令
+  - 涉及文件：`src/cli/slash/agent.ts`（新增）、`src/ui/App.tsx`（修改）
+  - 预估：2h
+  - 依赖：T4.2
+
+- [ ] **T4.4** 实现 /agent promote <skill>
+  - 涉及文件：`src/market/promote.ts`（新增）、`src/cli/slash/agent.ts`（修改）
+  - 预估：1h
+  - 依赖：T4.3、v2.1 技能系统（src/skill/）
+
+### V3.0-M5：可观测性面板（P1，约 4h）
+
+- [ ] **T5.1** 实现调用链追踪
+  - 涉及文件：`src/observable/trace.ts`（新增）、`src/observable/index.ts`（新增）
+  - 预估：1.5h
+  - 依赖：T1.1、T2.1
+
+- [ ] **T5.2** 实现审计日志
+  - 涉及文件：`src/observable/audit.ts`（新增）
+  - 预估：1h
+  - 依赖：T5.1
+
+- [ ] **T5.3** 实现可观测性面板 TUI
+  - 涉及文件：`src/ui/ObservabilityPanel.tsx`（新增）、`src/ui/App.tsx`（修改）
+  - 预估：1.5h
+  - 依赖：T5.1、T5.2
+
+### V3.0-M6：集成测试与文档（P1，约 4h）
+
+- [ ] **T6.1** 多 Agent 协作 E2E 测试
+  - 涉及文件：`tests/e2e/orchestrator.test.ts`、`tests/e2e/team-loop.test.ts`、`tests/orchestrator/transaction.test.ts`、`tests/market/installer.test.ts`、`tests/observable/trace.test.ts`（均新增）
+  - 预估：1.5h
+  - 依赖：M1-M5 全部完成
+
+- [ ] **T6.2** 文档更新
+  - 涉及文件：`README.md`、`docs/02-架构设计/ARCHITECTURE.md`、`docs/05-用户与开发指南/user-guide.md`、`docs/05-用户与开发指南/agent-dev-guide.md`（新增）
+  - 预估：1.5h
+  - 依赖：T6.1
+
+- [ ] **T6.3** CHANGELOG + TASKS 看板 + 测试报告
+  - 涉及文件：`CHANGELOG.md`、`docs/03-开发计划与任务/TASKS.md`、`docs/07-测试报告.md`
+  - 预估：1h
+  - 依赖：T6.2
+
+---
+
 ## ⚠️ 阻塞任务清单（Blockers）
 
 > 暂无阻塞任务
@@ -634,6 +778,8 @@
 | 2026-08-08 | **V2.1-M5 完成**：T5.1-T5.8 Reviewer Agent（16 文件新增/8 任务/369 全绿） | Carbon Code |
 | 2026-08-08 | **V2.1-M4 完成**：T4.1-T4.4 轻量级知识图谱 + RAG（5 文件新增/4 任务/8 新测试/369 全绿） | Carbon Code |
 | 2026-08-08 | **V2.1-M3 完成**：T3.1-T3.4 技能市场基础（4 文件修改/4 任务/12 新测试/361 全绿） | Carbon Code |
+| 2026-08-09 | v3.0 计划建立：`v3.0-dev-plan.md`（v0.7）+ `v3.0-dev-tasks.md`，更新 TASKS 看板（+24 任务 / 7 里程碑） | Carbon Code |
+| 2026-08-09 | **V3.0-M0 启动**：T0.1 ADR-009~014 回填 DECISIONS.md（6 条 ADR 格式对齐 ADR-001~008，409 用例全绿） | Carbon Code |
 
 ---
 
