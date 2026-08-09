@@ -1,7 +1,7 @@
 # Lumen 开发任务看板
 
 > 最后更新：2026-08-09
-> 当前里程碑：**🚀 v3.0 开发中**（M1 接口定义 · T1.1/T1.2 已完成）（v1.0: 20/20 ✅ · v1.1: 12/12 ✅ · v2.0: 15/15 ✅ · v2.1: 25/25 ✅ · v3.0: 4/24）
+> 当前里程碑：**🚀 v3.0 开发中**（M1 接口定义 · T1.1~T1.3 已完成）（v1.0: 20/20 ✅ · v1.1: 12/12 ✅ · v2.0: 15/15 ✅ · v2.1: 25/25 ✅ · v3.0: 5/24）
 > 基于：[v3.0 开发计划](./v3.0-dev-plan.md) · [v3.0 详细任务](./v3.0-dev-tasks.md)
 
 ---
@@ -14,9 +14,9 @@
 | P0 任务 | 30（v1.1: 6 ✅ + v2.0: 5 ✅ + v2.1: 5 ✅ + v3.0: 14） |
 | P1 任务 | 30（v1.1: 6 ✅ + v2.0: 10 ✅ + v2.1: 4 ✅ + v3.0: 10） |
 | P2 任务 | 8（v2.1: 8） |
-| 待开始 | 20 |
+| 待开始 | 19 |
 | 进行中 | 0 |
-| 已完成 | 76 |
+| 已完成 | 77 |
 | 已阻塞 | 0 |
 
 ---
@@ -45,7 +45,7 @@
 | **V2.1-M5 Reviewer Agent 代码评审智能体** | **P0** | **8** | ✅ 已完成 |
 | **V2.1-M6 集成测试与文档** | **P1** | **2** | ✅ 已完成 |
 | **V3.0-M0 启动前置** | **P0** | **2** | ✅ 已完成 |
-| **V3.0-M1 接口定义与基础协议** | **P0** | **3** | 🟡 进行中（T1.1 已完成） |
+| **V3.0-M1 接口定义与基础协议** | **P0** | **3** | ✅ 已完成 |
 | **V3.0-M2 Orchestrator 核心** | **P0** | **3** | ⏳ 待开始 |
 | **V3.0-M3 多角色 Agent 团队** | **P0** | **6** | ⏳ 待开始 |
 | **V3.0-M4 Agent 市场基础** | **P1** | **4** | ⏳ 待开始 |
@@ -619,10 +619,11 @@
   - 依赖：T0.2、T1.1
   - ✅ 2026-08-09 完成：Agent 契约（execute/send/receive + AgentRuntimeState + 输入输出 Schema 校验）+ InMemoryAgentRegistry（register/unregister/get/list/has/permissionsOf）；16 测试（440 全绿）
 
-- [ ] **T1.3** 实现显式上下文管理器
-  - 涉及文件：`src/orchestrator/context.ts`（新增）
-  - 预估：2h
+- [x] **T1.3** 实现显式上下文管理器
+  - 涉及文件：`src/orchestrator/context.ts`（新增）、`tests/orchestrator/context.test.ts`（新增）、`src/orchestrator/index.ts`（修改）
+  - 预估：2h | 实际：约 1h
   - 依赖：T0.2、T1.1
+  - ✅ 2026-08-09 完成：serialize/deserialize 往返一致 + extractSubset 按 taskId 子集提取 + mergeContexts 合并去重（artifactId）+ 64KB 上限保护（serialize 抛 ContextLimitError / enforceLimit 截断标记）+ createArtifact 来源追踪（fromAgent/messageId/taskId）；修复 mergeContexts 4 个类型安全错误（ctx 空值检查 + first 可选链 ?? 默认值）；19 测试（473 全绿）
 
 ### V3.0-M2：Orchestrator 核心（P0，约 8h）
 
