@@ -31,22 +31,22 @@ describe('MCP 全链路 E2E', () => {
       const specs = manager.listTools();
       expect(specs.length).toBeGreaterThanOrEqual(3);
       for (const spec of specs) {
-        expect(spec.name).toMatch(/^e2e\//);
+        expect(spec.name).toMatch(/^e2e_/);
         expect(spec.description).toBeTruthy();
       }
 
       // 3. 工具调用（echo）
-      const echoResult = await manager.callTool('e2e/echo', { message: 'hello e2e' });
+      const echoResult = await manager.callTool('e2e_echo', { message: 'hello e2e' });
       expect(echoResult.ok).toBe(true);
       expect(echoResult.data).toBe('echo: hello e2e');
 
       // 4. 工具调用（fail → 错误回填）
-      const failResult = await manager.callTool('e2e/fail', {});
+      const failResult = await manager.callTool('e2e_fail', {});
       expect(failResult.ok).toBe(false);
       expect(failResult.error).toBeTruthy();
 
       // 5. 未知工具 → 错误
-      const unknownResult = await manager.callTool('e2e/no-such-tool', {});
+      const unknownResult = await manager.callTool('e2e_no-such-tool', {});
       expect(unknownResult.ok).toBe(false);
     } finally {
       manager.disconnect();
@@ -62,14 +62,14 @@ describe('MCP 全链路 E2E', () => {
 
       // 各服务工具独立
       const allTools = manager.listTools();
-      const aTools = allTools.filter((t) => t.name.startsWith('srv-a/'));
-      const bTools = allTools.filter((t) => t.name.startsWith('srv-b/'));
+      const aTools = allTools.filter((t) => t.name.startsWith('srv-a_'));
+      const bTools = allTools.filter((t) => t.name.startsWith('srv-b_'));
       expect(aTools.length).toBeGreaterThanOrEqual(3);
       expect(bTools.length).toBeGreaterThanOrEqual(3);
 
       // 独立调用
-      const aResult = await manager.callTool('srv-a/echo', { message: 'a' });
-      const bResult = await manager.callTool('srv-b/echo', { message: 'b' });
+      const aResult = await manager.callTool('srv-a_echo', { message: 'a' });
+      const bResult = await manager.callTool('srv-b_echo', { message: 'b' });
       expect(aResult.ok).toBe(true);
       expect(bResult.ok).toBe(true);
     } finally {
@@ -95,7 +95,7 @@ describe('MCP 全链路 E2E', () => {
 
       // 模拟 ToolRegistry.run 行为
       for (const spec of specs) {
-        if (spec.name.endsWith('/echo')) {
+        if (spec.name.endsWith('_echo')) {
           const result = await spec.execute({ message: 'test' }, { cwd: process.cwd() });
           expect(result.ok).toBe(true);
         }

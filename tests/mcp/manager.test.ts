@@ -30,9 +30,9 @@ describe('McpManager 启动', () => {
 
       const tools = manager.listTools();
       expect(tools.length).toBeGreaterThanOrEqual(3);
-      // 工具名带 serverName/ 前缀
+      // 工具名带 serverName_ 前缀
       for (const tool of tools) {
-        expect(tool.name).toMatch(/^srv1\//);
+        expect(tool.name).toMatch(/^srv1_/);
       }
     } finally {
       manager.disconnect();
@@ -47,8 +47,8 @@ describe('McpManager 启动', () => {
       expect(status.every((s) => s.connected)).toBe(true);
 
       const tools = manager.listTools();
-      const fsTools = tools.filter((t) => t.name.startsWith('fs/'));
-      const memTools = tools.filter((t) => t.name.startsWith('mem/'));
+      const fsTools = tools.filter((t) => t.name.startsWith('fs_'));
+      const memTools = tools.filter((t) => t.name.startsWith('mem_'));
       expect(fsTools.length).toBeGreaterThanOrEqual(3);
       expect(memTools.length).toBeGreaterThanOrEqual(3);
     } finally {
@@ -86,7 +86,7 @@ describe('McpManager 工具调用', () => {
     const manager = new McpManager([makeConfig('test')]);
     try {
       await manager.start();
-      const result = await manager.callTool('test/echo', { message: 'hi' });
+      const result = await manager.callTool('test_echo', { message: 'hi' });
       expect(result.ok).toBe(true);
       expect(result.data).toBe('echo: hi');
     } finally {
@@ -98,7 +98,7 @@ describe('McpManager 工具调用', () => {
     const manager = new McpManager([makeConfig('test')]);
     try {
       await manager.start();
-      const result = await manager.callTool('test/fail', {});
+      const result = await manager.callTool('test_fail', {});
       expect(result.ok).toBe(false);
       expect(result.error).toBeTruthy();
     } finally {
@@ -110,7 +110,7 @@ describe('McpManager 工具调用', () => {
     const manager = new McpManager([makeConfig('test')]);
     try {
       await manager.start();
-      const result = await manager.callTool('test/no-such-tool', {});
+      const result = await manager.callTool('test_no-such-tool', {});
       expect(result.ok).toBe(false);
       expect(result.error).toContain('未知');
     } finally {
@@ -122,7 +122,7 @@ describe('McpManager 工具调用', () => {
     const manager = new McpManager([makeConfig('test')]);
     await manager.start();
     manager.disconnect();
-    const result = await manager.callTool('test/echo', {});
+    const result = await manager.callTool('test_echo', {});
     expect(result.ok).toBe(false);
   });
 });

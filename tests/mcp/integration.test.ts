@@ -43,7 +43,7 @@ describe('MCP ToolSpec 转换', () => {
     // 模拟 McpManager.listTools 返回值
     const mockTools = [
       {
-        name: 'fs/read_file',
+        name: 'fs_read_file',
         description: '读取文件',
         parameters: { _type: 'zod', _def: {} } as unknown as ToolSpec['parameters'],
         serverName: 'fs',
@@ -59,7 +59,7 @@ describe('MCP ToolSpec 转换', () => {
     }));
 
     expect(specs).toHaveLength(1);
-    expect(specs[0]?.name).toBe('fs/read_file');
+    expect(specs[0]?.name).toBe('fs_read_file');
     expect(specs[0]?.parallelSafe).toBe(false);
   });
 });

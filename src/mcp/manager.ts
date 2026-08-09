@@ -16,6 +16,9 @@ import { McpClient } from './client';
 import type { CallToolParams, MCPServerConfig, MCPToolDef } from './types';
 import { toZodSchema } from './zod-adapter';
 
+/** DeepSeek API function.name 允许的字符集（不符合的工具不注册，日志跳过）。 */
+const VALID_TOOL_NAME_RE = /^[a-zA-Z0-9_-]+$/;
+
 // ── 聚合工具元数据 ──
 
 export interface AggregatedTool {
@@ -55,9 +58,13 @@ export class McpManager {
         await client.connect();
         const tools = await client.listTools();
         this.clients.set(config.name, client);
-        // 以 serverName/ 前缀注册工具
+        // 以 serverName_ 前缀注册工具（`_` 避免 `/` 被 DeepSeek API 拒绝）
         for (const def of tools) {
-          const prefixedName = `${config.name}/${def.name}`;
+          const prefixedName = `${config.name}_${def.name}`;
+          if (!VALID_TOOL_NAME_RE.test(prefixedName)) {
+            console.warn(`[MCP] 跳过不符合 DeepSeek API 命名规范的工具: ${prefixedName}`);
+            continue;
+          }
           this.tools.set(prefixedName, { def, serverName: config.name, prefixedName });
         }
         return {
@@ -174,8 +181,13 @@ export class McpManager {
       await client.connect();
       const tools = await client.listTools();
       this.clients.set(name, client);
+      // 以 serverName_ 前缀注册工具（`_` 避免 `/` 被 DeepSeek API 拒绝）
       for (const def of tools) {
-        const prefixedName = `${name}/${def.name}`;
+        const prefixedName = `${name}_${def.name}`;
+        if (!VALID_TOOL_NAME_RE.test(prefixedName)) {
+          console.warn(`[MCP] 跳过不符合 DeepSeek API 命名规范的工具: ${prefixedName}`);
+          continue;
+        }
         this.tools.set(prefixedName, { def, serverName: name, prefixedName });
       }
       return { name, command: config.command, connected: true, toolCount: tools.length };

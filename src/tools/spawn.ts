@@ -46,6 +46,9 @@ export function createSpawnSubagentTool(spawner: SubagentSpawner): ToolSpec {
 
       return {
         ok: result.ok,
+        // v2.1 修复：失败时 ToolResult.error 也需回填，否则 loop 修复管线
+        // 取 result.error ?? '未知错误' 永远得 '未知错误'，子代理真实错误被吞掉。
+        error: result.ok ? undefined : (result.error ?? '子代理执行失败'),
         data: {
           text: lines.join('\n'),
           ok: result.ok,
