@@ -174,10 +174,16 @@ function translateWindowsCommand(command: string): string {
   if (process.platform !== 'win32') return command;
 
   // 1. | head -N → PowerShell Select-Object -First N
-  command = command.replace(/\|\s*head\s+-(\d+)/g, '| powershell -Command "$input | Select-Object -First $1"');
+  command = command.replace(
+    /\|\s*head\s+-(\d+)/g,
+    '| powershell -Command "$input | Select-Object -First $1"',
+  );
 
   // 2. | tail -N → PowerShell Select-Object -Last N
-  command = command.replace(/\|\s*tail\s+-(\d+)/g, '| powershell -Command "$input | Select-Object -Last $1"');
+  command = command.replace(
+    /\|\s*tail\s+-(\d+)/g,
+    '| powershell -Command "$input | Select-Object -Last $1"',
+  );
 
   // 3. 独立 cat file → type file
   command = command.replace(/^cat\s+(.+)$/gm, 'type $1');
