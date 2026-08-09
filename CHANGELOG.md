@@ -29,7 +29,9 @@
 
 ## [Unreleased]
 
-（暂无未发布变更）
+### Fixed
+- **Windows MCP 连接失败**：`McpClient` 在 Windows 上 spawn `npx` 报 `ENOENT`（npm 全局命令为 `.cmd` 批处理包装器，spawn 默认不执行）；现与 MCP 官方 TS SDK 一致，Windows 平台经 shell 启动子进程
+- **真实 MCP 冒烟脚本**：新增 `scripts/smoke-mcp.ts`，读取 `~/.lumen/config.json` 连接真实 MCP 服务，验证连接/工具发现/只读探针调用/断开（filesystem 14 工具、memory 9 工具实测通过）
 
 ## [2.0.0] - 2026-08-08
 

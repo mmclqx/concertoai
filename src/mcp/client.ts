@@ -80,8 +80,10 @@ export class McpClient {
     const proc = spawn(this.config.command, this.config.args ?? [], {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: { ...process.env, ...this.config.env },
-      // Windows 兼容：shell: true 仅在 command 不含空格时安全
-      shell: false,
+      // Windows 兼容：npm 全局命令（npx/npm）为 .cmd 批处理包装器，
+      // spawn 默认不执行 .cmd 文件（ENOENT）。与 MCP 官方 TS SDK 行为一致，
+      // Windows 上经 shell 启动子进程；args 由 Node 逐项转义（command 应为无空格可执行名）。
+      shell: process.platform === 'win32',
     });
 
     this.process = proc;
