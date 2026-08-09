@@ -156,12 +156,17 @@ function* handleLine(line: string, state: SseState): Generator<string> {
  * - TextDecoder(stream: true) 保证 UTF-8 多字节字符跨 chunk 截断时不产生乱码；
  * - 按 \n 切行、容忍 \r\n；空行作为事件分隔符，多个 data: 行拼接为一条 payload；
  * - 流结束时 flush 尚未以空行收尾的残余事件。
+ *
+ * v2.1 性能优化：用 cursor 下标逐行消费，仅在每 chunk 末尾 compact 一次，
+ * 替代旧实现对每行 buffer.slice(0, newline) + buffer.slice(newline + 1) 的双重复制
+ * （SSE 高频小 chunk 场景下字符串复制从 O(行数 × 缓冲区) 降为 O(缓冲区)）。
  */
 export async function* readSseEvents(stream: ReadableStream<Uint8Array>): AsyncGenerator<string> {
   const reader = stream.getReader();
   const decoder = new TextDecoder();
   const state: SseState = { pendingData: '', hasData: false };
   let buffer = '';
+  let cursor = 0;
 
   try {
     while (true) {
@@ -171,16 +176,21 @@ export async function* readSseEvents(stream: ReadableStream<Uint8Array>): AsyncG
         break;
       }
       buffer += decoder.decode(value, { stream: true });
-      let newline = buffer.indexOf('\n');
+      let newline = buffer.indexOf('\n', cursor);
       while (newline !== -1) {
-        const line = buffer.slice(0, newline);
-        buffer = buffer.slice(newline + 1);
+        const line = buffer.slice(cursor, newline);
+        cursor = newline + 1;
         yield* handleLine(line, state);
-        newline = buffer.indexOf('\n');
+        newline = buffer.indexOf('\n', cursor);
+      }
+      // compact：丢弃已消费的前缀，避免 buffer 随流增长（每 chunk 至多一次复制）
+      if (cursor > 0) {
+        buffer = buffer.slice(cursor);
+        cursor = 0;
       }
     }
-    if (buffer !== '') {
-      yield* handleLine(buffer, state);
+    if (cursor < buffer.length) {
+      yield* handleLine(buffer.slice(cursor), state);
     }
     if (state.hasData) {
       yield state.pendingData;
