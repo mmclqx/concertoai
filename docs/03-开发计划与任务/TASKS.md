@@ -1,7 +1,7 @@
 # Lumen 开发任务看板
 
 > 最后更新：2026-08-09
-> 当前里程碑：**🚀 v3.0 开发中**（M2 Orchestrator 核心 · T2.1/T2.2 已完成）（v1.0: 20/20 ✅ · v1.1: 12/12 ✅ · v2.0: 15/15 ✅ · v2.1: 25/25 ✅ · v3.0: 7/24）
+> 当前里程碑：**🚀 v3.0 开发中**（M2 Orchestrator 核心全部完成）（v1.0: 20/20 ✅ · v1.1: 12/12 ✅ · v2.0: 15/15 ✅ · v2.1: 25/25 ✅ · v3.0: 8/24）
 > 基于：[v3.0 开发计划](./v3.0-dev-plan.md) · [v3.0 详细任务](./v3.0-dev-tasks.md)
 
 ---
@@ -14,9 +14,9 @@
 | P0 任务 | 30（v1.1: 6 ✅ + v2.0: 5 ✅ + v2.1: 5 ✅ + v3.0: 14） |
 | P1 任务 | 30（v1.1: 6 ✅ + v2.0: 10 ✅ + v2.1: 4 ✅ + v3.0: 10） |
 | P2 任务 | 8（v2.1: 8） |
-| 待开始 | 17 |
+| 待开始 | 16 |
 | 进行中 | 0 |
-| 已完成 | 79 |
+| 已完成 | 80 |
 | 已阻塞 | 0 |
 
 ---
@@ -46,7 +46,7 @@
 | **V2.1-M6 集成测试与文档** | **P1** | **2** | ✅ 已完成 |
 | **V3.0-M0 启动前置** | **P0** | **2** | ✅ 已完成 |
 | **V3.0-M1 接口定义与基础协议** | **P0** | **3** | ✅ 已完成 |
-| **V3.0-M2 Orchestrator 核心** | **P0** | **3** | 🟡 进行中（T2.1/T2.2 已完成） |
+| **V3.0-M2 Orchestrator 核心** | **P0** | **3** | ✅ 已完成 |
 | **V3.0-M3 多角色 Agent 团队** | **P0** | **6** | ⏳ 待开始 |
 | **V3.0-M4 Agent 市场基础** | **P1** | **4** | ⏳ 待开始 |
 | **V3.0-M5 可观测性面板** | **P1** | **3** | ⏳ 待开始 |
@@ -639,10 +639,11 @@
   - 依赖：T1.1、T1.2、T2.1
   - ✅ 2026-08-09 完成：topologicalSort 拓扑排序 + 循环依赖检测（CyclicDependencyError 含环路径）+ hasDependencyPath + detectFileConflicts 文件级依赖冲突 + TaskScheduler 逐层并行（默认并发 3）+ 重试（最多 2 次指数退避）+ 级联跳过 + 8 个 barrel 导出接入 index.ts；修复 2 个 noUncheckedIndexedAccess 类型错误（游标越界防御）；26 测试（526 全绿）
 
-- [ ] **T2.3** 实现 Orchestrator Agent 核心
-  - 涉及文件：`src/agents/orchestrator.ts`（新增）、`src/loop/`（修改）
-  - 预估：2h
+- [x] **T2.3** 实现 Orchestrator Agent 核心
+  - 涉及文件：`src/agents/orchestrator.ts`（新增）、`tests/agents/orchestrator.test.ts`（新增）、`src/agents/index.ts`（修改）
+  - 预估：2h | 实际：约 1.5h
   - 依赖：T2.1、T2.2
+  - ✅ 2026-08-09 完成：decomposeRequirement 模型拆解（低温度 + zod 校验 + JSON 围栏容错）→ onPlan 审批流（确认执行/拒绝取消无副作用）→ TaskScheduler 按 task.agent 分发到注册表 Agent → 聚合输出（executions/artifacts 中间工件引用/中文 summary）；artifactTypeForAgent 角色映射（spec/code/review-result/test-report）；13 测试（539 全绿）
 
 ### V3.0-M3：多角色 Agent 团队（P0，约 14h）
 
