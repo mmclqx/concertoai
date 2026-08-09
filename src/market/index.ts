@@ -17,6 +17,15 @@ export {
   parseAgentPackage,
 } from './installer';
 export {
+  agentDefFromScaffold,
+  buildScaffoldIndexJs,
+  derivePermissions,
+  type PromoteFailureCode,
+  type PromoteOptions,
+  type PromoteResult,
+  promoteSkill,
+} from './promote';
+export {
   DEFAULT_REGISTRY_URL,
   fetchAgentContent,
   fetchMarketRegistry,
