@@ -245,6 +245,19 @@ v2.1.0 发布门检查（当前）：
 - 新增代码必须通过 `npm run typecheck`（零类型错误）
 - 禁止使用 `any` 类型绕过检查
 
+## 代码格式规范
+
+### Biome 格式检查
+- Lumen 使用 Biome 进行代码检查和格式化
+- 常见可自动修复的问题：
+  - `organizeImports`：import 语句排序问题 → 执行 `npx.cmd biome check --write <文件路径>`
+  - `format`：缩进/空格/换行问题 → 执行 `npx.cmd biome format --write <文件路径>`
+  - `lint/style`：代码风格问题 → 执行 `npx.cmd biome check --write <文件路径>`
+
+### 处理策略
+- 当 `npm run verify` 因 `FIXABLE` 错误失败时，优先执行 `npm run lint:fix` 自动修复
+- 如果 `lint:fix` 无法修复，再分析具体错误内容
+
 ## 开发原则
 单会话串行：一次只做一个任务，不并行
 
