@@ -2,6 +2,7 @@
  * chat 命令装配：TUI + loop + store 组装。
  */
 
+import os from 'node:os';
 import { render } from 'ink';
 import { registerBuiltinSubagents } from '../agent/builtin';
 import { SubagentSpawner } from '../agent/spawner';
@@ -14,6 +15,7 @@ import { McpManager } from '../mcp/manager';
 import type { MCPServerConfig } from '../mcp/types';
 import { DeepSeekClient } from '../model/client';
 import { getDefaultModel, getModel, listModels } from '../model/models';
+import { preloadTokenizer } from '../model/tokenizer';
 import { SkillLoader } from '../skill/loader';
 import { loadConfig, resolveConfig } from '../store/config';
 import { MemoryStore } from '../store/memory-store';
@@ -31,6 +33,19 @@ import { formatSessionTime, SessionPicker } from '../ui/SessionPicker';
 
 /** 免审批直跑的安全命令白名单（用户可后续配置化）。 */
 export const DEFAULT_ALLOWLIST = ['git status', 'git diff', 'npm test', 'npm run test'];
+
+/** 构建操作系统信息提示，注入 system prompt 使模型自动适配命令。 */
+export function buildOsHint(): string {
+  const platform = os.platform();
+  const arch = os.arch();
+  if (platform === 'win32') {
+    return `## 运行环境\n操作系统: Windows ${arch}\n终端: cmd.exe / PowerShell\n\n> ⚠️ 命令适配：请使用 Windows 兼容的命令。不支持 pwd/ls/cat/grep 等 UNIX 命令。替代方案：cd/dir/type/findstr。获取当前目录请用 \`node -e "console.log(process.cwd())"\`。`;
+  }
+  if (platform === 'darwin') {
+    return `## 运行环境\n操作系统: macOS ${arch}\n终端: zsh/bash`;
+  }
+  return `## 运行环境\n操作系统: Linux ${arch}\n终端: bash`;
+}
 
 export function resolveModel(modelId: string | undefined): string {
   if (modelId === undefined) {
@@ -176,7 +191,11 @@ export async function runChat(options: RunChatOptions): Promise<void> {
       registry={registry}
       ctx={ctx}
       model={model}
-      systemPrompt={rules.text === '' ? undefined : rules.text}
+      systemPrompt={
+        [buildOsHint(), rules.text !== '' ? rules.text : undefined]
+          .filter(Boolean)
+          .join('\n\n') || undefined
+      }
       store={store}
       sessionId={sessionId}
       initialHistory={history}
@@ -190,6 +209,10 @@ export async function runChat(options: RunChatOptions): Promise<void> {
       spawner={spawner}
     />,
   );
+
+  // 性能优化：首帧渲染完成后后台预加载 tokenizer（WASM ~100ms），
+  // 使首轮对话的 token 计数不再阻塞在编码器加载上。
+  preloadTokenizer();
 }
 
 /** 打印历史会话列表（-l）：id、时间、消息数、首条摘要。 */

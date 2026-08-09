@@ -14,12 +14,13 @@ import { runLoop } from '../loop/loop';
 import type { ChatMessage } from '../loop/types';
 import { DeepSeekClient } from '../model/client';
 import { getModel } from '../model/models';
+import { preloadTokenizer } from '../model/tokenizer';
 import { loadConfig, resolveConfig } from '../store/config';
 import { loadProjectRules } from '../store/project-rules';
 import { SessionStore } from '../store/session';
 import type { ToolContext } from '../tools/registry';
 import { createSpawnSubagentTool } from '../tools/spawn';
-import { buildRegistry, DEFAULT_ALLOWLIST, resolveModel } from './chat';
+import { buildOsHint, buildRegistry, DEFAULT_ALLOWLIST, resolveModel } from './chat';
 
 export interface RunTaskOptions {
   cwd: string;
@@ -49,6 +50,10 @@ export async function runTask(options: RunTaskOptions): Promise<void> {
   const registry = buildRegistry(undefined, spawnTool);
   const rules = await loadProjectRules(options.cwd);
   const store = new SessionStore(resolved.sessionDir);
+
+  // 性能优化：后台预加载 tokenizer（WASM ~100ms），降低首轮计数延迟；
+  // IO 边界后 setImmediate 执行，不阻塞当前流程。
+  preloadTokenizer();
   const ctx: ToolContext = {
     cwd: options.cwd,
     allowlistedPrefixes: resolved.allowlist ?? DEFAULT_ALLOWLIST,
@@ -71,7 +76,10 @@ export async function runTask(options: RunTaskOptions): Promise<void> {
       client,
       registry,
       ctx,
-      systemPrompt: rules.text === '' ? undefined : rules.text,
+      systemPrompt:
+        [buildOsHint(), rules.text !== '' ? rules.text : undefined]
+          .filter(Boolean)
+          .join('\n\n') || undefined,
       contextWindow: getModel(model)?.contextWindow,
       onEvent: (event) => {
         if (event.type === 'chunk') {
