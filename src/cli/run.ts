@@ -20,7 +20,8 @@ import { loadProjectRules } from '../store/project-rules';
 import { SessionStore } from '../store/session';
 import type { ToolContext } from '../tools/registry';
 import { createSpawnSubagentTool } from '../tools/spawn';
-import { buildOsHint, buildRegistry, DEFAULT_ALLOWLIST, resolveModel } from './chat';
+// v2.1 性能优化：从轻量 common 模块导入，避免加载 chat.tsx 的 TUI 依赖树
+import { buildOsHint, buildRegistry, DEFAULT_ALLOWLIST, resolveModel } from './common';
 
 export interface RunTaskOptions {
   cwd: string;

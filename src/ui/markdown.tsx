@@ -42,17 +42,13 @@ const ANSI = {
 } as const;
 
 /** 剥离 C0 控制字符（防终端注入；保留 \n \t \r）。 */
+// 正则一次替换替代逐字符循环（v2.1 性能优化：流式渲染对长文本高频调用，循环拼接 O(n) 字符串构建成本高）
+// biome-ignore lint/suspicious/noControlCharactersInRegex: 此正则专门用于匹配/剥离控制字符
+const CONTROL_CHARS_RE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g;
+
 function sanitize(text: string): string {
-  let out = '';
-  for (const ch of text) {
-    const code = ch.codePointAt(0) ?? 0;
-    const isC0 = code < 0x20 && code !== 0x09 && code !== 0x0a && code !== 0x0d;
-    if (isC0 || code === 0x7f) {
-      continue;
-    }
-    out += ch;
-  }
-  return out;
+  // 无匹配时 replace 返回原引用，不产生新字符串；有匹配才走替换
+  return text.replace(CONTROL_CHARS_RE, '');
 }
 
 const INLINE_RE = /(\*\*[^*]+\*\*|`[^`]+`)/;

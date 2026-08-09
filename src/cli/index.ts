@@ -6,10 +6,7 @@
 import { Command } from 'commander';
 
 import { t } from '../i18n';
-import { VERSION } from '../index';
-import { runChat } from './chat';
-import { runPlan } from './plan';
-import { runTask } from './run';
+import { VERSION } from '../version';
 
 function getApiKey(): string {
   const key = process.env.DEEPSEEK_API_KEY;
@@ -26,9 +23,13 @@ program.name('lumen').description(t().cli.description).version(VERSION);
 
 // 无子命令时默认进入 chat（产品定位：cd 项目 && lumen）
 program.action(() => {
-  void runChat({
-    cwd: process.cwd(),
-    apiKey: getApiKey(),
+  // 动态导入（v2.1 性能优化）：启动阶段只加载 commander + i18n，
+  // TUI 依赖树（ink/react/ui/mcp/skill）在用户真正进入交互后才加载。
+  void import('./chat').then(({ runChat }) => {
+    void runChat({
+      cwd: process.cwd(),
+      apiKey: getApiKey(),
+    });
   });
 });
 
@@ -40,6 +41,7 @@ program
   .option('-m, --model <id>', t().cli.model.description)
   .action(
     async (options: { resume?: string | true; model?: string; list?: boolean; lang?: string }) => {
+      const { runChat } = await import('./chat');
       await runChat({
         cwd: process.cwd(),
         apiKey: getApiKey(),
@@ -59,6 +61,7 @@ program
   .option('--lang <zh|en>', '界面语言')
   .action(
     async (task: string, options: { model?: string; autoApprove?: boolean; lang?: string }) => {
+      const { runTask } = await import('./run');
       await runTask({
         cwd: process.cwd(),
         apiKey: getApiKey(),
@@ -78,6 +81,7 @@ program
   .option('--lang <zh|en>', '界面语言')
   .action(
     async (task: string, options: { model?: string; autoApprove?: boolean; lang?: string }) => {
+      const { runPlan } = await import('./plan');
       await runPlan({
         cwd: process.cwd(),
         apiKey: getApiKey(),

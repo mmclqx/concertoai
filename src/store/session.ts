@@ -2,14 +2,14 @@
  * JSONL 会话存储：~/.lumen/sessions/<id>.jsonl，每行一条 ChatMessage。
  *
  * - 行结构可续接：append 只追加，resume 读回完整上下文；
- * - 宽松读取：空行跳过，损坏行跳过并计数（容忍手动编辑）；
+ * - 宽松读取：空行跳过，损坏行跳过并计数（容忍手动编辑与追加中断留下的半行）；
  * - id 只允许 [\w.-]，防路径穿越；
  * - 进程内互斥：同一会话 id 的写入串行化（withLock），并发 append 不交错；
- * - 原子写入：读-改-写 + 临时文件 rename，中断/崩溃不产生半行；
+ * - v2.1 性能优化：O_APPEND 原子追加（不再全量读改写），大会话追加 O(1)；
  * - 跨进程冲突检测（尽力而为）：写后校验文件大小，被外部并发修改时抛 SessionConflictError。
  */
 
-import { mkdir, readdir, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -93,29 +93,24 @@ export class SessionStore {
   }
 
   /**
-   * 锁内原子追加：读现有内容 → 拼接 → 写临时文件 → rename 覆盖 → 写后冲突校验。
-   * 文件不存在时视为空文件自动创建；冲突（外部并发写入）抛 SessionConflictError。
+   * 锁内追加：O_APPEND 追加写 + 写后冲突校验。
+   * - v2.1 性能优化：不再「读全文件 → 拼接 → rename 覆盖」（大会话每次追加 O(n) 全量重写），
+   *   改为 O_APPEND 原子追加（单次 write，O(1)），中断最多留下半行（读取端宽容跳过）；
+   * - 文件不存在时视为空文件自动创建；冲突（外部并发写入）抛 SessionConflictError。
    */
   private async appendLocked(file: string, id: string, lines: string): Promise<void> {
     const writtenBytes = Buffer.byteLength(lines, 'utf8');
     let beforeSize: number | null = null;
-    let existing = '';
     try {
       const st = await stat(file);
       beforeSize = st.size;
-      existing = await readFile(file, 'utf8');
     } catch (error) {
       if (!isEnoent(error)) {
         throw error;
       }
     }
-    const tmp = `${file}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
-    try {
-      await writeFile(tmp, existing + lines, 'utf8');
-      await rename(tmp, file);
-    } finally {
-      await unlink(tmp).catch(() => {});
-    }
+    // O_APPEND：追加到末尾，不覆盖已有内容；Node 对单次 write 原子追加
+    await appendFile(file, lines, 'utf8');
     const after = await stat(file);
     if (isAppendConflict(beforeSize, after.size, writtenBytes)) {
       throw new SessionConflictError(id);
@@ -192,13 +187,34 @@ export class SessionStore {
         .filter((e) => e.endsWith('.jsonl'))
         .map(async (file) => {
           const id = file.slice(0, -'.jsonl'.length);
-          const st = await stat(path.join(this.dir, file));
-          const { messages } = await this.read(id);
-          const firstUser = messages.find((m) => m.role === 'user')?.content ?? null;
+          const full = path.join(this.dir, file);
+          const st = await stat(full);
+          // v2.1 性能优化：不再走 read()（JSON.parse 每一行），改为单遍扫描——
+          // 非空行计数得到 messageCount，解析到首条 user 消息即停止（首条 user
+          // 几乎总出现在文件开头几行），大会话可省去数千次 JSON.parse。
+          let messageCount = 0;
+          let firstUser: string | null = null;
+          const raw = await readFile(full, 'utf8');
+          for (const line of raw.split('\n')) {
+            if (line.trim() === '') {
+              continue;
+            }
+            messageCount += 1;
+            if (firstUser === null) {
+              try {
+                const msg = JSON.parse(line) as ChatMessage;
+                if (msg.role === 'user' && typeof msg.content === 'string') {
+                  firstUser = msg.content;
+                }
+              } catch {
+                // 损坏行跳过（与 read() 行为一致，不阻断计数）
+              }
+            }
+          }
           return {
             id,
             createdAt: st.mtimeMs,
-            messageCount: messages.length,
+            messageCount,
             firstUserMessage: firstUser === null ? null : firstUser.slice(0, SUMMARY_MAX_CHARS),
           };
         }),

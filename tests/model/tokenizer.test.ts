@@ -58,13 +58,18 @@ describe('countMessageListTokens (BPE 精确)', () => {
 
 describe('计数缓存（v2.1 性能优化）', () => {
   it('同一消息对象重复计数结果一致（消息级 WeakMap 缓存）', () => {
-    const msg = { role: 'user', content: 'Lumen 是一款面向个人开发者的终端编码助手 CLI（DeepSeek 驱动，中文优先）。' };
+    const msg = {
+      role: 'user',
+      content: 'Lumen 是一款面向个人开发者的终端编码助手 CLI（DeepSeek 驱动，中文优先）。',
+    };
     expect(countMessageTokens(msg)).toBe(countMessageTokens(msg));
     expect(countMessageListTokens([msg, msg])).toBe(countMessageTokens(msg) * 2);
   });
 
   it('长文本重复计数结果一致（文本级缓存）', () => {
-    const long = '这是一段超过六十四字符的长文本，用于验证长文本 token 缓存路径的正确性。'.repeat(3);
+    const long = '这是一段超过六十四字符的长文本，用于验证长文本 token 缓存路径的正确性。'.repeat(
+      3,
+    );
     const msgA = { role: 'system', content: long };
     const msgB = { role: 'user', content: long };
     // 不同消息对象、相同文本 → 文本缓存命中，计数一致

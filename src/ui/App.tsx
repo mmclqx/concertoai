@@ -1,5 +1,5 @@
 import { Box, Text, useApp, useInput } from 'ink';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useMemo, useRef, useState } from 'react';
 import type { SubagentSpawner } from '../agent/spawner';
 import { executeMcpCommand, parseMcpCommand } from '../cli/slash/mcp';
 import { executeMemoryCommand, parseMemoryCommand } from '../cli/slash/memory';
@@ -82,8 +82,11 @@ export interface AppProps {
 /** 终端单消息最大显示字符数（超过则截断显示，但完整内容已落盘）。 */
 const MAX_DISPLAY_CHARS = 8_000;
 
+/** 流式文本合并刷新间隔（毫秒）：窗口内多个 chunk 只触发一次 Ink 重渲染。 */
+const STREAM_FLUSH_MS = 30;
+
 /** 单条消息的渲染：角色前缀 + 内容（超长截断显示，助手消息走 Markdown 渲染，工具消息折叠）。 */
-function MessageLine({
+const MessageLine = memo(function MessageLine({
   message,
   messages,
   messageIndex,
@@ -167,7 +170,7 @@ function MessageLine({
       <Text>{content}</Text>
     </Box>
   );
-}
+});
 
 /** 在消息历史中向前查找 toolCallId 对应的工具调用。 */
 function findToolCall(
@@ -231,7 +234,27 @@ export function App({
   const [messages, setMessages] = useState<ChatMessage[]>(initialHistory ?? []);
   const [input, setInput] = useState('');
   const [phase, setPhase] = useState<Phase>('idle');
-  const [streamed, setStreamed] = useState('');
+  const [streamed, setStreamedState] = useState('');
+  /**
+   * v2.1 性能优化：流式文本节流刷新。
+   * - streamedRef：累积 chunk 文本（高频到达，不直接触发 setState）；
+   * - flushTimerRef：合并刷新定时器，STREAM_FLUSH_MS 内多个 chunk 只触发一次刷新，
+   *   避免每个 SSE chunk 都导致 Ink 全树重渲染（长文本 O(n²) 渲染退化）；
+   * - setStreamed 包装：传入 '' 时同步清空 ref 与挂起定时器（流结束/中断时统一收敛，
+   *   防止残留文本在定时器回写），其余值走 React setState。
+   */
+  const streamedRef = useRef('');
+  const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const setStreamed = useCallback((value: string) => {
+    if (value === '') {
+      streamedRef.current = '';
+      if (flushTimerRef.current !== null) {
+        clearTimeout(flushTimerRef.current);
+        flushTimerRef.current = null;
+      }
+    }
+    setStreamedState(value);
+  }, []);
   const [activeTool, setActiveTool] = useState<ToolCall | null>(null);
   const [pending, setPending] = useState<ApprovalRequest | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -266,7 +289,14 @@ export function App({
     (controller: AbortController) =>
       (event: LoopEvent): void => {
         if (event.type === 'chunk') {
-          setStreamed((s) => s + event.text);
+          // 节流：累积到 ref，定时器统一刷新（避免高频 chunk 全树重渲染）
+          streamedRef.current += event.text;
+          if (flushTimerRef.current === null) {
+            flushTimerRef.current = setTimeout(() => {
+              flushTimerRef.current = null;
+              setStreamed(streamedRef.current);
+            }, STREAM_FLUSH_MS);
+          }
         } else if (event.type === 'tool_call') {
           setActiveTool(event.toolCall);
         } else if (event.type === 'usage') {
@@ -285,7 +315,7 @@ export function App({
           setActiveTool(null);
         }
       },
-    [],
+    [setStreamed],
   );
 
   /** /plan 阶段一：让模型输出分步计划，进入 plan-approval 等待审批。 */
@@ -363,6 +393,7 @@ export function App({
       sessionId,
       systemPrompt,
       makeOnEvent,
+      setStreamed,
     ],
   );
 
@@ -434,6 +465,7 @@ export function App({
       sessionId,
       systemPrompt,
       makeOnEvent,
+      setStreamed,
     ],
   );
 
@@ -788,6 +820,7 @@ export function App({
       spawner,
       ctx.cwd,
       mcpManager,
+      setStreamed,
     ],
   );
 

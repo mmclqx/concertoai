@@ -183,9 +183,7 @@ export class KnowledgeStore {
   /** 删除指定关系。 */
   deleteRelations(deletions: KnowledgeRelationDeletion[]): void {
     this.ensureLoaded();
-    const delSet = new Set(
-      deletions.map((d) => `${d.from}\u0000${d.to}\u0000${d.relationType}`),
-    );
+    const delSet = new Set(deletions.map((d) => `${d.from}\u0000${d.to}\u0000${d.relationType}`));
     this.relations = this.relations.filter(
       (r) => !delSet.has(`${r.from}\u0000${r.to}\u0000${r.relationType}`),
     );

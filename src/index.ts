@@ -2,8 +2,6 @@
  * Lumen 库入口（barrel）：导出 v2.0 全部公共 API。
  */
 
-export const VERSION = '2.0.0';
-
 // v2.0 子代理系统
 export type { SubagentDef, SubagentResult, SubagentTask, SubagentToolName } from './agent';
 export type { ZhDict } from './i18n/zh';
@@ -60,3 +58,6 @@ export {
 export type { ApprovalRequest, ToolContext, ToolResult, ToolSpec } from './tools/registry';
 export { requestApproval, ToolRegistry } from './tools/registry';
 export { DEFAULT_SHELL_TIMEOUT_MS, isAllowlisted, shellTool } from './tools/shell';
+// 版本号独立于 barrel（v2.1 性能优化）：CLI 入口直接读取 src/version.ts，
+// 避免仅为取版本号而加载整个库的模块树。
+export { VERSION } from './version';

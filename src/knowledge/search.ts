@@ -14,19 +14,16 @@ export class KnowledgeSearch {
   /**
    * 搜索知识图谱。
    * 当前使用增强型关键词匹配（名称权重 > 类型权重 > 观察内容）。
+   *
+   * v2.1 性能优化：关联度加权直接复用 store.search 已通过邻接表返回的
+   * relations（length = in-degree + out-degree = 实体的关系度数），
+   * 不再 readGraph() 复制整个图谱再遍历全部关系（消除 O(V+E) 开销）。
    */
   search(query: string, limit = 20): KnowledgeSearchResult[] {
     const results = this.store.search(query);
-    // 考虑关系关联度加分：被多处引用的实体加权
-    const graph = this.store.readGraph();
-    const relationCounts = new Map<string, number>();
-    for (const rel of graph.relations) {
-      relationCounts.set(rel.from, (relationCounts.get(rel.from) ?? 0) + 1);
-      relationCounts.set(rel.to, (relationCounts.get(rel.to) ?? 0) + 1);
-    }
+    // 关联度加分：被多处引用的实体加权（每个关联关系加 0.5 分）
     for (const r of results) {
-      const rc = relationCounts.get(r.entity.name) ?? 0;
-      r.score += rc * 0.5; // 每个关联关系加 0.5 分
+      r.score += r.relations.length * 0.5;
     }
     results.sort((a, b) => b.score - a.score);
     return results.slice(0, limit);
