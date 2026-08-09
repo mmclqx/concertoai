@@ -1,6 +1,6 @@
 # Lumen 用户手册
 
-> 面向使用 Lumen 完成日常编码辅助的个人开发者。版本：v2.0。
+> 面向使用 Lumen 完成日常编码辅助的个人开发者。版本：v2.1。
 
 ## 1. 安装与升级
 
@@ -142,9 +142,9 @@ Lumen 支持通过 [MCP（Model Context Protocol）](https://modelcontextprotoco
 
 ### 工作原理
 
-- 启动时自动连接已配置的 MCP 服务（并发），工具以 `服务名/工具名` 格式注册；
+- 启动时自动连接已配置的 MCP 服务（并发），工具以 `服务名_工具名` 格式注册；
 - MCP 工具与内置工具共存——MCP 服务不可用时自动降级，不影响内置工具；
-- 模型在对话中可直接调用 MCP 工具（如 `filesystem/read_file`），调用结果回填上下文。
+- 模型在对话中可直接调用 MCP 工具（如 `filesystem_read_file`），调用结果回填上下文。
 
 ## 6. 跨会话记忆
 
@@ -182,7 +182,7 @@ Lumen 支持项目级跨会话记忆，帮助模型在多次对话中「记住�
 - 白名单：命令前缀词边界匹配（`npm test` 命中 `npm test --x`，不命中 `npm testx`）；
 - 截断：文件 50k 字符、搜索结果 100 条、工具回填 20k、命令输出 20k、项目规则 8k；
 - 上下文：超模型 80% 预算自动裁剪（保留 system + 最近轮），记录日志；
-- 防失控：工具循环上限 10 轮；可修复失败累计超 2 次终止；审批拒绝/越界不进入重试管线。
+- 防失控：工具循环上限 50 轮；可修复失败累计超 2 次终止；审批拒绝/越界不进入重试管线。
 
 ## 9. 故障排查
 
@@ -217,3 +217,10 @@ v2.0 新增：
 - **子代理系统**：模型可调用 `spawn_subagent` 启动隔离子代理（`explore` / `research`），独立上下文 + 只读工具集，回填结论不污染主对话；
 - **技能系统**：`/skill list` 列出技能、`/skill <name>` 注入 system prompt（内置 code-review / explain / refactor，自定义放 `.lumen/skills/<name>/SKILL.md`）；
 - **MCP 动态管理**：`/mcp status` `/mcp connect <name>` `/mcp disconnect <name>` 运行时管理连接，状态条显示 `🔌 N/M 服务`。
+
+v2.1 新增：
+
+- **轻量级知识图谱**：项目级结构化记忆（JSONL + 内存邻接表索引 + LRU，按项目隔离），`knowledge_*` 系列 5 个工具记录/查询项目知识，双源记忆注入（本地记忆 + 知识图谱）；
+- **Reviewer Agent**：`/review` 9 维审查聚合 5 个并行子代理 + 自动测试 `npm run verify`，输出按文件去重 + 严重程度排序的审查报告（auto / 指定路径 / `--pr` 三种模式）；
+- **技能市场与嵌套**：`@skill` / `@agent` 引用递归展开（≤3 层 + 循环检测），`/skill install <name>` / `search <关键词>` / `update` 市场命令；
+- **子代理 MCP 工具**：explore → filesystem、research → filesystem/github，服务不可用时静默降级。

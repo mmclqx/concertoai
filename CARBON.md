@@ -1,7 +1,7 @@
 # Lumen 项目工作知识
 
-> 最后更新：2026-08-08
-> 版本：v2.0.0
+> 最后更新：2026-08-09
+> 版本：v2.1.0
 
 Lumen 是一款面向个人开发者的终端编码助手 CLI（DeepSeek 驱动，中文优先），基于 TypeScript/Node 构建。
 
@@ -27,7 +27,7 @@ Lumen 是一款面向个人开发者的终端编码助手 CLI（DeepSeek 驱动�
 ```bash
 npm run dev          # 开发运行（进入交互模式）
 npm run build        # 构建生产版本
-npm run test         # 运行测试（22 文件 / 218 用例）
+npm run test         # 运行测试（42 文件 / 409 用例）
 npm run test:watch   # 测试监听模式
 npm run lint         # 代码检查
 npm run lint:fix     # 自动修复代码风格
@@ -60,7 +60,7 @@ docs/	所有文档（01-07 编号规范）
 ## 开发注意事项
 1. 审批流：编辑与 Shell 命令一律审批（fail-closed），无 yolo 模式
 
-2. 测试：保持 218+ 用例全绿，新增功能必须包含测试
+2. 测试：保持 409+ 用例全绿，新增功能必须包含测试
 
 3. 文档：修改代码后同步更新 docs/ 中的相关文档
 

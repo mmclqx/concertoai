@@ -4,8 +4,8 @@ Lumen —— 面向个人开发者的**中文优先**终端编码助手 CLI（De
 
 在项目目录里启动：读取代码 → 提出 diff 方案 → 征求命令许可 → 跑验证 → 留下可续接的会话记录。
 
-> 状态：v2.0.0 已发布（`npm run verify` 全绿，337 用例 / 37 测试文件；`npm audit` 0 漏洞）。
-> v2.0 新增：BPE 精确 Token / 智能摘要压缩 / 子代理系统 / 技能系统 / MCP 动态管理。
+> 状态：v2.1.0 已发布（`npm run verify` 全绿，409 用例 / 42 测试文件；`npm audit` 0 漏洞）。
+> v2.1 新增：知识图谱 / Reviewer Agent / 技能市场与嵌套 / 子代理 MCP 工具。
 
 ## 环境要求
 
@@ -92,7 +92,34 @@ Lumen 提供了三种常用 MCP 服务的推荐配置（`src/mcp/builtin-servers
 
 ### 工具命名
 
-MCP 服务的工具以 `服务名/工具名` 格式注册（如 `filesystem/read_file`），与内置工具（`read_file`）并存，避免命名冲突。MCP 服务不可用时自动降级，不影响内置工具正常工作。
+MCP 服务的工具以 `服务名_工具名` 格式注册（如 `filesystem_read_file`），与内置工具（`read_file`）并存，避免命名冲突。MCP 服务不可用时自动降级，不影响内置工具正常工作。
+
+## v2.1 新增功能
+
+### 轻量级知识图谱
+
+v2.1 引入项目级结构化记忆：知识图谱以 JSONL 持久化 + 内存邻接表索引 + LRU 淘汰（按项目隔离，上限 1000 实体），模型可通过 `knowledge_*` 系列工具（共 5 个：实体/关系/观察的创建、检索、删除）记录并查询项目知识；每轮对话开始时自动双源记忆注入（本地记忆 + 知识图谱）检索相关内容。
+
+### Reviewer Agent 代码评审
+
+输入 `/review` 启动多智能体代码评审：9 维审查维度聚合为 5 个并行子代理交叉验证，自动执行 `npm run verify` 验证可运行性，输出按文件去重 + 严重程度排序的审查报告。
+
+| 命令 | 说明 |
+|------|------|
+| `/review` | 审查最近修改的文件（auto 模式） |
+| `/review <路径>` | 审查指定文件/目录 |
+| `/review --pr` | PR 模式（审查当前分支 diff） |
+
+### 技能市场与嵌套
+
+v2.1 技能系统升级为可组合、可市场化的：
+
+- **技能嵌套**：`@skill <name>` 递归展开（≤3 层 + 循环检测）、`@agent <name>` 引用子代理；
+- **技能市场**：`/skill search <关键词>` 搜索、`/skill install <name>` 安装、`/skill update` 更新。
+
+### 子代理 MCP 工具
+
+子代理（explore / research）可通过 `allowedMcpServers` 声明加载 MCP 工具，扩展只读能力边界：`explore` → filesystem，`research` → filesystem / github。服务不可用时静默降级，不影响子代理内置工具。
 
 ## v2.0 新增功能
 
