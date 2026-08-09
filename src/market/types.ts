@@ -1,0 +1,138 @@
+/**
+ * Agent 市场类型定义（v3.0 M4 / T4.1）。
+ *
+ * 复用技能市场 registry.json schema（name/version/description/author/url/sha256），
+ * 通过 `type: 'skill' | 'agent'` 区分，Agent 条目扩展 AgentDef 字段
+ * （interfaces / permissions / runtime）与接口版本号。
+ *
+ * 与 v2.1 技能市场的关系（§4.3 渐进式升级，非替代）：
+ * - 技能注册表保持 `skills[]`；Agent 注册表新增 `agents[]`；
+ * - 共用底层字段（下载 → sha256 校验 → 写入，T4.2 抽取共享函数）；
+ * - 内置注册表初始含 4 个 Agent 条目（architect/coder/reviewer/qa）。
+ */
+
+import type { AgentDef } from '../orchestrator';
+
+/** 注册表条目类型：技能（v2.1）或 Agent（v3.0）。 */
+export type RegistryItemType = 'skill' | 'agent';
+
+/** 注册表条目公共字段（与技能市场一致）。 */
+export interface RegistryItemBase {
+  /** 条目唯一名称。 */
+  name: string;
+  /** 版本号（semver）。 */
+  version: string;
+  /** 描述。 */
+  description: string;
+  /** 作者。 */
+  author: string;
+  /** 下载地址（skill 为 SKILL.md / agent 为实现包）。 */
+  url: string;
+  /** 内容 sha256 校验值。 */
+  sha256: string;
+}
+
+/** Agent 条目：复用 AgentDef 的接口/权限字段 + 运行时类型。 */
+export interface AgentRegistryItem extends RegistryItemBase {
+  /** 类型：'agent'（与技能条目区分）。 */
+  type: 'agent';
+  /** 输入/输出 Schema 契约（对齐 AgentDef.interfaces，含接口版本号）。 */
+  interfaces: AgentDef['interfaces'];
+  /** 工具权限声明（对齐 AgentDef.permissions，fail-closed）。 */
+  permissions: AgentDef['permissions'];
+  /** 运行时类型（'builtin' 内置 / 'external' 第三方，市场分发）。 */
+  runtime: 'builtin' | 'external';
+}
+
+/** 技能条目（v2.1 技能市场，类型标记 'skill'）。 */
+export interface SkillRegistryItem extends RegistryItemBase {
+  type: 'skill';
+}
+
+/** 注册表条目判别联合（按 type 收窄）。 */
+export type RegistryItem = AgentRegistryItem | SkillRegistryItem;
+
+/** 完整市场注册表（registry URL + 技能/Agent 条目）。 */
+export interface MarketRegistry {
+  /** 注册表自身 URL（刷新/更新用）。 */
+  registry: string;
+  /** 技能条目（v2.1 兼容）。 */
+  skills: SkillRegistryItem[];
+  /** Agent 条目（v3.0 新增）。 */
+  agents: AgentRegistryItem[];
+}
+
+/** 内置 4 个 Agent 的市场条目（architect/coder/reviewer/qa）。 */
+export const BUILTIN_AGENT_ITEMS: AgentRegistryItem[] = [
+  {
+    type: 'agent',
+    name: 'architect',
+    version: '1.0.0',
+    description: '架构师——接收需求输出结构化设计 spec（接口定义 + 文件结构 + 约束条件）',
+    author: 'Lumen',
+    url: 'https://raw.githubusercontent.com/lumen/cli/main/agents/architect.js',
+    sha256: 'builtin',
+    interfaces: {
+      input: { _type: 'zod' } as unknown as AgentDef['interfaces']['input'],
+      output: { _type: 'zod' } as unknown as AgentDef['interfaces']['output'],
+      version: '1.0.0',
+    },
+    permissions: [{ tool: 'read_file' }, { tool: 'list_directory' }, { tool: 'search_content' }],
+    runtime: 'builtin',
+  },
+  {
+    type: 'agent',
+    name: 'coder',
+    version: '1.0.0',
+    description: '编码 Agent——按 spec 实现代码 + 接收审查反馈修复（审批后写盘）',
+    author: 'Lumen',
+    url: 'https://raw.githubusercontent.com/lumen/cli/main/agents/coder.js',
+    sha256: 'builtin',
+    interfaces: {
+      input: { _type: 'zod' } as unknown as AgentDef['interfaces']['input'],
+      output: { _type: 'zod' } as unknown as AgentDef['interfaces']['output'],
+      version: '1.0.0',
+    },
+    permissions: [{ tool: 'edit_file' }],
+    runtime: 'builtin',
+  },
+  {
+    type: 'agent',
+    name: 'reviewer',
+    version: '1.0.0',
+    description: 'Team Reviewer——9 维审查代码，输出 ReviewResult（approve/reject 打回）',
+    author: 'Lumen',
+    url: 'https://raw.githubusercontent.com/lumen/cli/main/agents/reviewer.js',
+    sha256: 'builtin',
+    interfaces: {
+      input: { _type: 'zod' } as unknown as AgentDef['interfaces']['input'],
+      output: { _type: 'zod' } as unknown as AgentDef['interfaces']['output'],
+      version: '1.0.0',
+    },
+    permissions: [{ tool: 'read_file' }, { tool: 'list_directory' }, { tool: 'search_content' }],
+    runtime: 'builtin',
+  },
+  {
+    type: 'agent',
+    name: 'qa',
+    version: '1.0.0',
+    description: 'QA Agent——沙箱执行 npm run verify，输出结构化测试报告',
+    author: 'Lumen',
+    url: 'https://raw.githubusercontent.com/lumen/cli/main/agents/qa.js',
+    sha256: 'builtin',
+    interfaces: {
+      input: { _type: 'zod' } as unknown as AgentDef['interfaces']['input'],
+      output: { _type: 'zod' } as unknown as AgentDef['interfaces']['output'],
+      version: '1.0.0',
+    },
+    permissions: [{ tool: 'run_command', args: { command: 'npm run verify' } }],
+    runtime: 'builtin',
+  },
+];
+
+/** 内置注册表（技能 + 4 个 Agent）。 */
+export const BUILTIN_REGISTRY: MarketRegistry = {
+  registry: 'https://raw.githubusercontent.com/lumen/cli/main/skills/registry.json',
+  skills: [],
+  agents: BUILTIN_AGENT_ITEMS,
+};
