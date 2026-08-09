@@ -1,7 +1,7 @@
 # Lumen 开发任务看板
 
 > 最后更新：2026-08-09
-> 当前里程碑：**🚀 v3.0 开发中**（M4 Agent 市场基础进行中，T4.2 完成）（v1.0: 20/20 ✅ · v1.1: 12/12 ✅ · v2.0: 15/15 ✅ · v2.1: 25/25 ✅ · v3.0: 16/24）
+> 当前里程碑：**🚀 v3.0 开发中**（M4 Agent 市场基础进行中，T4.3 完成）（v1.0: 20/20 ✅ · v1.1: 12/12 ✅ · v2.0: 15/15 ✅ · v2.1: 25/25 ✅ · v3.0: 17/24）
 > 基于：[v3.0 开发计划](./v3.0-dev-plan.md) · [v3.0 详细任务](./v3.0-dev-tasks.md)
 
 ---
@@ -14,9 +14,9 @@
 | P0 任务 | 30（v1.1: 6 ✅ + v2.0: 5 ✅ + v2.1: 5 ✅ + v3.0: 14） |
 | P1 任务 | 30（v1.1: 6 ✅ + v2.0: 10 ✅ + v2.1: 4 ✅ + v3.0: 10） |
 | P2 任务 | 8（v2.1: 8） |
-| 待开始 | 8 |
+| 待开始 | 7 |
 | 进行中 | 0 |
-| 已完成 | 88 |
+| 已完成 | 89 |
 | 已阻塞 | 0 |
 
 ---
@@ -48,7 +48,7 @@
 | **V3.0-M1 接口定义与基础协议** | **P0** | **3** | ✅ 已完成 |
 | **V3.0-M2 Orchestrator 核心** | **P0** | **3** | ✅ 已完成 |
 | **V3.0-M3 多角色 Agent 团队** | **P0** | **6** | ✅ 已完成 |
-| **V3.0-M4 Agent 市场基础** | **P1** | **4** | 🟢 进行中（T4.2 完成） |
+| **V3.0-M4 Agent 市场基础** | **P1** | **4** | 🟢 进行中（T4.3 完成） |
 | **V3.0-M5 可观测性面板** | **P1** | **3** | ⏳ 待开始 |
 | **V3.0-M6 集成测试与文档** | **P1** | **3** | ⏳ 待开始 |
 
@@ -697,10 +697,11 @@
   - 依赖：T4.1
   - ✅ 2026-08-09 完成：AgentInstaller（注册表匹配→下载→sha256 校验→接口合规检查→写入 ~/.lumen/agents/<name>/→刷新 AgentRegistry）；parseAgentPackage 接口合规检查（interfaces/permissions 完整，fail-closed，8 种失败码）；download.ts 抽取共享 fetchVerifiedContent（技能市场 fetchSkill 同步复用）；agentDefFromPackage/compareVersion/listInstalled/remove 预埋 T4.3；13 测试 + 648 用例全绿
 
-- [ ] **T4.3** 实现 /agent 管理命令
-  - 涉及文件：`src/cli/slash/agent.ts`（新增）、`src/ui/App.tsx`（修改）
-  - 预估：2h
+- [x] **T4.3** 实现 /agent 管理命令
+  - 涉及文件：`src/cli/slash/agent.ts`（新增）、`src/ui/App.tsx`（修改）、`src/cli/chat.tsx`（修改）、`tests/cli/slash-agent.test.ts`（新增）
+  - 预估：2h | 实际：约 1.5h
   - 依赖：T4.2
+  - ✅ 2026-08-09 完成：/agent list（内置 4 Agent 条目 + 已安装外部 Agent，含权限/安装时间）、/agent install <name>（复用 T4.2 AgentInstaller，8 种失败码中文提示）、/agent remove <name>（内置拒绝卸载 + 注销 AgentRegistry）；chat.tsx 装配全局 AgentRegistry + AgentInstaller 注入 App；18 测试 + 666 用例全绿
 
 - [ ] **T4.4** 实现 /agent promote <skill>
   - 涉及文件：`src/market/promote.ts`（新增）、`src/cli/slash/agent.ts`（修改）
