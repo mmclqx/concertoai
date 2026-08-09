@@ -135,6 +135,20 @@ describe('SessionStore 健壮性', () => {
     const list = await store.list();
     expect(list).toHaveLength(1);
   });
+
+  it('list 单遍扫描：损坏行不阻断计数，首条 user 仍可找到（v2.1 性能优化）', async () => {
+    const id = await store.create([systemMessage('规则'), userMessage('真问题')]);
+    const file = path.join(tmp, 'sessions', `${id}.jsonl`);
+    // 在文件头插入两条损坏行（模拟手动编辑污染）
+    writeFileSync(file, `{broken}\nnot json\n${readFileSync(file, 'utf8')}`, 'utf8');
+
+    const list = await store.list();
+    const s = list.find((item) => item.id === id);
+    expect(s).toBeDefined();
+    // v2.1 单遍扫描计所有非空行（含损坏行），共 4 行（2 损坏 + 2 有效）
+    expect(s?.messageCount).toBe(4);
+    expect(s?.firstUserMessage).toBe('真问题');
+  });
 });
 
 describe('SessionStore 并发与原子性（T1.5）', () => {
