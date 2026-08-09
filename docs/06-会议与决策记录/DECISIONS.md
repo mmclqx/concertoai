@@ -195,4 +195,69 @@
 
 ---
 
+## ADR-016：Agent 接口标准（T0.2 评审定稿）
+
+| 字段 | 内容 |
+|------|------|
+| **状态** | ✅ 已采纳 |
+| **日期** | 2026-08-09 |
+| **上下文** | v3.0 多 Agent 团队需要统一通信接口（接口优先原则 §3.1）。plan §4.4 定义了 AgentMessage / AgentContext 草图；T0.2 评审将其与 AgentDef 一并定稿，为 M1 正式实现（T1.1/T1.2）提供依据 |
+| **选项** | ① 结构化消息 + 显式上下文（接口优先） ② 沿用 v2.1 函数调用式（spawn → result） ③ 纯文本协议 |
+| **结论** | 定稿 3 个核心类型（方向确认，M1 实现时落实修正项）： |
+
+**AgentMessage**（消息载体）：
+
+```typescript
+interface AgentMessage {
+  id: string;            // 消息 ID
+  from: string;          // 发送者 Agent 名称
+  to: string;            // 接收者 Agent 名称
+  type: 'task' | 'result' | 'error' | 'feedback';
+  payload: unknown;      // 类型化 payload（M1 修正项 #1）
+  context: AgentContext; // 显式上下文（非隐式）
+  timestamp: number;
+}
+```
+
+**AgentContext**（显式上下文）：
+
+```typescript
+interface AgentContext {
+  sessionId: string;
+  taskId: string;
+  parentTaskId?: string;
+  dependencies: string[];
+  artifacts: Artifact[]; // 已产出的工件
+}
+```
+
+**AgentDef**（Agent 角色定义）：
+
+```typescript
+interface AgentDef {
+  name: string;              // Agent 标识名
+  version: string;           // Agent 版本
+  interfaces: {              // 输入/输出 Schema（M1 修正项 #2）
+    input: unknown;
+    output: unknown;
+    version: string;         // 接口版本号
+  };
+  permissions: string[];     // 工具权限声明（M1 修正项 #5）
+}
+```
+
+| **理由** | (a) 结构化消息使通信可追溯、可审计、可测试（§3.1）；(b) 显式上下文避免 v2.x 隐式注入的不可追溯问题（§3.3）；(c) AgentDef 的 permissions 为审批流集成与 Agent 市场接口合规检查（T4.2）预留契约 |
+
+**评审结论（未决问题 → M1 修正项）**：
+
+| # | 未决问题 | M1 修正项 |
+|---|----------|-----------|
+| 1 | `payload: unknown` 过于宽泛，运行时无法分派 | 按 type 引入 discriminated union 或泛型 `AgentMessage<T>`，默认 unknown 保持兼容 |
+| 2 | `AgentDef.interfaces` 的 Schema 表示法未定 | 用 zod schema 对象（运行时校验，供 T4.2 合规检查）+ 导出 TS 类型（编译期推导） |
+| 3 | AgentState 语义边界模糊 | 明确拆分：AgentState = 任务级状态机状态（T2.1）；Agent 运行时状态另行定义（lastError/attempts 等） |
+| 4 | AgentContext.artifacts 潜在膨胀 | T1.3 的 64KB 上限 + 按 taskId 子集提取即可满足，不额外加字段 |
+| 5 | permissions 粒度未定 | 工具名级别（如 `edit_file`/`run_command`）+ 可选参数约束，对齐 ADR-004 fail-closed 与 v2.1 白名单机制 |
+
+---
+
 *当重要决策做出后，请在此追加新条目。*
