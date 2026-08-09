@@ -7,9 +7,9 @@
  * - /agent list：列出内置 Agent（随 Lumen 分发）+ 已安装外部 Agent；
  * - /agent install <name>：调用 AgentInstaller 从市场安装（下载 → sha256 校验
  *   → 接口合规检查 → 写入 ~/.lumen/agents/<name>/ → 刷新 AgentRegistry）；
- * - /agent remove <name>：卸载已安装外部 Agent（内置 Agent 拒绝卸载）。
+ * - /agent remove <name>：卸载已安装外部 Agent（内置 Agent 拒绝卸载）；
+ * - /agent promote <skill>：将技能一键升级为 Agent（脚手架 + 接口声明，T4.4）。
  *
- * T4.4 将新增 /agent promote <skill>（技能一键升级为 Agent，见 src/market/promote.ts）。
  * 命令形态与 /skill（src/cli/slash/skill.ts）保持一致：parse + execute 双层结构，
  * 网络/磁盘操作走异步 executeAgentMarketCommand。
  */
@@ -21,7 +21,9 @@ import {
   type AgentRegistryItem,
   BUILTIN_AGENT_ITEMS,
   type InstalledAgent,
+  promoteSkill,
 } from '../../market';
+import type { SkillLoader } from '../../skill/loader';
 
 // ── 命令解析 ──
 
@@ -29,6 +31,7 @@ export type SlashAgentCommand =
   | { type: 'list' }
   | { type: 'install'; name: string }
   | { type: 'remove'; name: string }
+  | { type: 'promote'; skillName: string }
   | { type: 'unknown'; message: string };
 
 /** 解析用户输入，识别 Agent 管理命令。 */
@@ -47,6 +50,10 @@ export function parseAgentCommand(input: string): SlashAgentCommand | null {
     return { type: 'remove', name: trimmed.slice('/agent remove '.length).trim() };
   }
 
+  if (trimmed.startsWith('/agent promote ')) {
+    return { type: 'promote', skillName: trimmed.slice('/agent promote '.length).trim() };
+  }
+
   if (trimmed.startsWith('/agent ')) {
     const rest = trimmed.slice('/agent '.length).trim();
     if (rest === 'install') {
@@ -58,7 +65,7 @@ export function parseAgentCommand(input: string): SlashAgentCommand | null {
     if (rest === 'promote') {
       return {
         type: 'unknown',
-        message: '用法: /agent promote <skill> — 将技能升级为 Agent（开发中）',
+        message: '用法: /agent promote <skill> — 将技能升级为 Agent',
       };
     }
     if (rest === 'list') {
@@ -66,7 +73,7 @@ export function parseAgentCommand(input: string): SlashAgentCommand | null {
     }
     return {
       type: 'unknown',
-      message: `未知子命令: ${rest}。可用: /agent list | install <name> | remove <name>`,
+      message: `未知子命令: ${rest}。可用: /agent list | install <name> | remove <name> | promote <skill>`,
     };
   }
 
@@ -82,6 +89,10 @@ export interface AgentCommandDeps {
   registry: AgentRegistry;
   /** 内置 Agent 市场条目（可注入；默认 BUILTIN_AGENT_ITEMS，测试可 mock）。 */
   builtinItems?: AgentRegistryItem[];
+  /** 技能加载器（T4.4 promote 读取技能；App.tsx 传入共享 SkillLoader 实例）。 */
+  loader?: SkillLoader;
+  /** Agent 安装目录（T4.4 promote 写入；默认 ~/.lumen/agents/，测试可注入）。 */
+  installDir?: string;
 }
 
 export interface AgentCommandResult {
@@ -177,6 +188,40 @@ export async function executeAgentMarketCommand(
         role: 'assistant',
         content: `🗑️ Agent ${cmd.name} 已卸载。`,
       },
+    };
+  }
+
+  // ── /agent promote <skill> ──
+  if (cmd.type === 'promote') {
+    if (deps.loader === undefined) {
+      return {
+        handled: true,
+        message: {
+          role: 'assistant',
+          content: '❌ 技能加载器不可用，无法执行 promote（请通过对话启动 Lumen）。',
+        },
+      };
+    }
+    // 每次执行前刷新技能列表，支持运行时新增技能
+    deps.loader.loadAll(process.cwd());
+    const result = promoteSkill({
+      skillName: cmd.skillName,
+      loader: deps.loader,
+      registry: deps.registry,
+      installDir: deps.installDir,
+    });
+    if (result.ok) {
+      return {
+        handled: true,
+        message: {
+          role: 'assistant',
+          content: `✅ 技能 ${result.name} 已升级为 Agent（版本 ${result.version}）！\n\n生成位置：${result.dir}\n使用 /agent list 查看，原技能仍保留（/skill ${result.name} 可继续调用）。`,
+        },
+      };
+    }
+    return {
+      handled: true,
+      message: { role: 'assistant', content: `❌ ${result.message}` },
     };
   }
 

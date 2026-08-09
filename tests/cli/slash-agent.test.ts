@@ -7,7 +7,7 @@
  * - /agent remove <name>：卸载外部 Agent 并注销 AgentRegistry；内置拒绝卸载；
  * - 网络/磁盘错误 → 中文友好提示（与技能市场文案风格一致）。
  */
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -22,6 +22,7 @@ import {
   parseAgentCommand,
 } from '../../src/cli/slash/agent';
 import { AgentInstaller, type MarketRegistry, parseMarketRegistry } from '../../src/market';
+import { SkillLoader } from '../../src/skill/loader';
 
 let tmp: string;
 
@@ -117,11 +118,18 @@ describe('parseAgentCommand', () => {
     }
   });
 
-  it('/agent promote <skill> → 提示开发中（T4.4 支持）', () => {
-    const result = parseAgentCommand('/agent promote code-review');
+  it('/agent promote <skill> → promote', () => {
+    expect(parseAgentCommand('/agent promote code-review')).toEqual({
+      type: 'promote',
+      skillName: 'code-review',
+    });
+  });
+
+  it('/agent promote（无参数）→ 提示用法', () => {
+    const result = parseAgentCommand('/agent promote');
     expect(result).not.toBeNull();
     if (result !== null && 'message' in result) {
-      expect(result.message).toContain('promote');
+      expect(result.message).toContain('用法');
     }
   });
 
@@ -283,5 +291,71 @@ describe('executeAgentMarketCommand（/agent remove）', () => {
     const result = await executeAgentMarketCommand({ type: 'remove', name: 'no-such' }, deps);
     expect(result.handled).toBe(true);
     expect(result.message?.content).toContain('未安装');
+  });
+});
+
+// ── executeAgentMarketCommand（/agent promote，T4.4）──────────
+
+describe('executeAgentMarketCommand（/agent promote）', () => {
+  /** 写入一个项目级技能（临时 cwd）。 */
+  function writeSkill(cwd: string, name: string, body: string): void {
+    const dir = path.join(cwd, '.lumen', 'skills', name);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      path.join(dir, 'SKILL.md'),
+      `---
+name: ${name}
+description: ${name} 描述
+version: 1.0.0
+---
+
+${body}`,
+      'utf8',
+    );
+  }
+
+  it('promote 成功 → ✅ 提示 + 注册 AgentRegistry + agent.json 落盘', async () => {
+    writeSkill(tmp, 'code-review', '## 审查\n输出 ReviewResult。');
+    const loader = new SkillLoader();
+    loader.loadAll(tmp);
+    const registry = new InMemoryAgentRegistry();
+    const installer = new AgentInstaller({ installDir: path.join(tmp, 'agents') });
+
+    const result = await executeAgentMarketCommand(
+      { type: 'promote', skillName: 'code-review' },
+      { installer, registry, loader, installDir: path.join(tmp, 'agents') },
+    );
+    expect(result.handled).toBe(true);
+    expect(result.message?.content).toContain('✅');
+    expect(result.message?.content).toContain('code-review');
+    expect(registry.has('code-review')).toBe(true);
+    // agent.json 落盘（/agent list 数据源可识别）
+    const installer2 = new AgentInstaller({ installDir: path.join(tmp, 'agents') });
+    expect(installer2.listInstalled().map((a) => a.name)).toEqual(['code-review']);
+  });
+
+  it('promote 技能不存在 → SKILL_NOT_FOUND 提示', async () => {
+    const loader = new SkillLoader();
+    loader.loadAll(tmp);
+    const result = await executeAgentMarketCommand(
+      { type: 'promote', skillName: 'no-such' },
+      {
+        installer: new AgentInstaller({ installDir: tmp }),
+        registry: new InMemoryAgentRegistry(),
+        loader,
+      },
+    );
+    expect(result.handled).toBe(true);
+    expect(result.message?.content).toContain('❌');
+    expect(result.message?.content).toContain('技能不存在');
+  });
+
+  it('promote 无 loader → 提示加载器不可用', async () => {
+    const result = await executeAgentMarketCommand(
+      { type: 'promote', skillName: 'code-review' },
+      { installer: new AgentInstaller({ installDir: tmp }), registry: new InMemoryAgentRegistry() },
+    );
+    expect(result.handled).toBe(true);
+    expect(result.message?.content).toContain('技能加载器不可用');
   });
 });

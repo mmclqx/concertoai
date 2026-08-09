@@ -530,7 +530,11 @@ export function App({
       if (agentInstaller !== undefined && agentRegistry !== undefined) {
         const agentCmd = parseAgentCommand(trimmed);
         if (agentCmd !== null) {
-          if (agentCmd.type === 'install' || agentCmd.type === 'remove') {
+          if (
+            agentCmd.type === 'install' ||
+            agentCmd.type === 'remove' ||
+            agentCmd.type === 'promote'
+          ) {
             setInput('');
             setTokens((t) => ({ ...t, input: t.input + estimateTokens(text) }));
             const userMsg: ChatMessage = { role: 'user', content: text };
@@ -538,6 +542,7 @@ export function App({
             const result = await executeAgentMarketCommand(agentCmd, {
               installer: agentInstaller,
               registry: agentRegistry,
+              loader: skillLoader,
             });
             if (result.message !== undefined) {
               const msg = result.message;
@@ -548,6 +553,7 @@ export function App({
           const result = executeAgentCommand(agentCmd, {
             installer: agentInstaller,
             registry: agentRegistry,
+            loader: skillLoader,
           });
           if (result.handled && result.message !== undefined) {
             const msg = result.message;
