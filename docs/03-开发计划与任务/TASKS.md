@@ -703,10 +703,11 @@
   - 依赖：T4.2
   - ✅ 2026-08-09 完成：/agent list（内置 4 Agent 条目 + 已安装外部 Agent，含权限/安装时间）、/agent install <name>（复用 T4.2 AgentInstaller，8 种失败码中文提示）、/agent remove <name>（内置拒绝卸载 + 注销 AgentRegistry）；chat.tsx 装配全局 AgentRegistry + AgentInstaller 注入 App；18 测试 + 666 用例全绿
 
-- [ ] **T4.4** 实现 /agent promote <skill>
-  - 涉及文件：`src/market/promote.ts`（新增）、`src/cli/slash/agent.ts`（修改）
-  - 预估：1h
+- [x] **T4.4** 实现 /agent promote <skill>
+  - 涉及文件：`src/market/promote.ts`（新增）、`src/cli/slash/agent.ts`（修改）、`src/market/index.ts`（修改）、`tests/market/promote.test.ts`（新增）
+  - 预估：1h | 实际：约 1h
   - 依赖：T4.3、v2.1 技能系统（src/skill/）
+  - ✅ 2026-08-09 完成：promoteSkill（读 SKILL.md → 生成 ~/.lumen/agents/<name>/agent.json + index.js 可执行骨架 → 注册 AgentRegistry）；derivePermissions 从技能 tools 推导（无 tools 默认只读三件套，fail-closed）；agent.json 与安装器 InstalledAgent 格式兼容（/agent list 可见）；技能原样保留；buildScaffoldIndexJs 生成可 import() 的 CJS 骨架（技能正文 JSON 字面量嵌入，转义安全）；/agent promote 命令接入（App.tsx 异步分支 + deps.loader）；10 测试 + 680 用例全绿
 
 ### V3.0-M5：可观测性面板（P1，约 4h）
 
