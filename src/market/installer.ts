@@ -2,7 +2,7 @@
  * Agent 安装器（v3.0 M4 / T4.2）。
  *
  * 安装流程：fetch 注册表 → 匹配条目 → fetch url → sha256 校验 → 接口合规检查
- * → 写入本地目录（~/.lumen/agents/<name>/）→ 刷新 AgentRegistry。
+ * → 写入本地目录（~/.concertoai/agents/<name>/）→ 刷新 AgentRegistry。
  *
  * 与技能市场共用底层逻辑：下载 + sha256 校验走共享 fetchVerifiedContent
  * （src/market/download.ts），注册表获取复用 T4.1 fetchMarketRegistry。
@@ -24,21 +24,21 @@
  */
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { homedir } from 'node:os';
 import path from 'node:path';
 import { z } from 'zod';
 
 import type { AgentRegistry } from '../agents';
 import type { AgentDef, AgentPermission } from '../orchestrator';
+import { globalAgentsDir as globalAgentsPath } from '../store/paths';
 import { fetchVerifiedContent } from './download';
 import { fetchMarketRegistry, findAgentItem } from './registry';
 import type { MarketRegistry } from './types';
 
 // ── 路径 ─────────────────────────────────────────────────────
 
-/** 全局 Agent 安装目录（~/.lumen/agents/）。 */
+/** 全局 Agent 安装目录（~/.concertoai/agents/）。 */
 export function globalAgentsDir(): string {
-  return path.join(homedir(), '.lumen', 'agents');
+  return globalAgentsPath();
 }
 
 // ── 包格式 ───────────────────────────────────────────────────
@@ -122,7 +122,7 @@ export interface AgentInstallerOptions {
   fetchRegistry?: (url?: string) => Promise<MarketRegistry | null>;
   /** 包下载 + sha256 校验（可注入；默认 fetchVerifiedContent）。 */
   fetchPackage?: (url: string, sha256: string) => Promise<string | null>;
-  /** 安装目录（可注入；默认 ~/.lumen/agents/）。 */
+  /** 安装目录（可注入；默认 ~/.concertoai/agents/）。 */
   installDir?: string;
   /** Agent 注册表（提供时安装成功后自动刷新）。 */
   registry?: AgentRegistry;
@@ -186,12 +186,12 @@ export class AgentInstaller {
       };
     }
 
-    // 3. 内置 Agent 已随 Lumen 分发，无需安装
+    // 3. 内置 Agent 已随 ConcertoAI 分发，无需安装
     if (item.runtime === 'builtin') {
       return {
         ok: false,
         code: 'BUILTIN',
-        message: `${name} 是内置 Agent，已随 Lumen 分发，无需安装（可用 /agent list 查看）。`,
+        message: `${name} 是内置 Agent，已随 ConcertoAI 分发，无需安装（可用 /agent list 查看）。`,
       };
     }
 

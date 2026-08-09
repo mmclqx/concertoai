@@ -76,7 +76,7 @@ function buildSystemPrompt(
 
   const checks = dimensions.map((d) => `- **${d}**: ${dimDesc[d]}`).join('\n');
 
-  return `你是 Lumen Reviewer Agent 的一个审查子代理，专门负责以下维度的代码审查：
+  return `你是 ConcertoAI Reviewer Agent 的一个审查子代理，专门负责以下维度的代码审查：
 
 ${checks}
 

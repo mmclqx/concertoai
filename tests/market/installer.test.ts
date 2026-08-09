@@ -27,7 +27,7 @@ import {
 let tmp: string;
 
 beforeEach(() => {
-  tmp = mkdtempSync(path.join(os.tmpdir(), 'lumen-market-install-'));
+  tmp = mkdtempSync(path.join(os.tmpdir(), 'concertoai-market-install-'));
 });
 
 afterEach(() => {
@@ -361,8 +361,8 @@ describe('agentDefFromPackage / compareVersion', () => {
     expect(compareVersion('2.0.0', '1.9.9')).toBe(1);
   });
 
-  it('globalAgentsDir 指向 ~/.lumen/agents', () => {
-    expect(globalAgentsDir()).toContain('.lumen');
+  it('globalAgentsDir 指向 ~/.concertoai/agents', () => {
+    expect(globalAgentsDir()).toContain('.concertoai');
     expect(globalAgentsDir()).toContain('agents');
   });
 });

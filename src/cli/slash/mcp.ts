@@ -71,7 +71,7 @@ export async function executeMcpCommand(
         message: {
           role: 'assistant',
           content:
-            '📡 未配置 MCP 服务。\n\n在 `~/.lumen/config.json` 的 `mcpServers` 中添加服务即可。',
+            '📡 未配置 MCP 服务。\n\n在 `~/.concertoai/config.json` 的 `mcpServers` 中添加服务即可。',
         },
       };
     }

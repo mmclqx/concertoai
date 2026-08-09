@@ -1,11 +1,11 @@
 /**
- * `lumen snapshot` 命令（v3.0 M3 / T3.6）。
+ * `concertoai snapshot` 命令（v3.0 M3 / T3.6）。
  *
  * 管理多文件事务快照：
- * - `lumen snapshot` / `lumen snapshot list`：列出全部快照 taskId；
- * - `lumen snapshot clean`：清理全部过期/遗留快照（失败或取消后的残留）。
+ * - `concertoai snapshot` / `concertoai snapshot list`：列出全部快照 taskId；
+ * - `concertoai snapshot clean`：清理全部过期/遗留快照（失败或取消后的残留）。
  *
- * 快照目录：<cwd>/.lumen/snapshots/<taskId>/（SnapshotManager 管理）。
+ * 快照目录：<cwd>/.concertoai/snapshots/<taskId>/（SnapshotManager 管理）。
  */
 
 import { SnapshotManager } from '../orchestrator';

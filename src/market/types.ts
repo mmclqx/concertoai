@@ -69,8 +69,8 @@ export const BUILTIN_AGENT_ITEMS: AgentRegistryItem[] = [
     name: 'architect',
     version: '1.0.0',
     description: '架构师——接收需求输出结构化设计 spec（接口定义 + 文件结构 + 约束条件）',
-    author: 'Lumen',
-    url: 'https://raw.githubusercontent.com/lumen/cli/main/agents/architect.js',
+    author: 'ConcertoAI',
+    url: 'https://raw.githubusercontent.com/concertoai/cli/main/agents/architect.js',
     sha256: 'builtin',
     interfaces: {
       input: { _type: 'zod' } as unknown as AgentDef['interfaces']['input'],
@@ -85,8 +85,8 @@ export const BUILTIN_AGENT_ITEMS: AgentRegistryItem[] = [
     name: 'coder',
     version: '1.0.0',
     description: '编码 Agent——按 spec 实现代码 + 接收审查反馈修复（审批后写盘）',
-    author: 'Lumen',
-    url: 'https://raw.githubusercontent.com/lumen/cli/main/agents/coder.js',
+    author: 'ConcertoAI',
+    url: 'https://raw.githubusercontent.com/concertoai/cli/main/agents/coder.js',
     sha256: 'builtin',
     interfaces: {
       input: { _type: 'zod' } as unknown as AgentDef['interfaces']['input'],
@@ -101,8 +101,8 @@ export const BUILTIN_AGENT_ITEMS: AgentRegistryItem[] = [
     name: 'reviewer',
     version: '1.0.0',
     description: 'Team Reviewer——9 维审查代码，输出 ReviewResult（approve/reject 打回）',
-    author: 'Lumen',
-    url: 'https://raw.githubusercontent.com/lumen/cli/main/agents/reviewer.js',
+    author: 'ConcertoAI',
+    url: 'https://raw.githubusercontent.com/concertoai/cli/main/agents/reviewer.js',
     sha256: 'builtin',
     interfaces: {
       input: { _type: 'zod' } as unknown as AgentDef['interfaces']['input'],
@@ -117,8 +117,8 @@ export const BUILTIN_AGENT_ITEMS: AgentRegistryItem[] = [
     name: 'qa',
     version: '1.0.0',
     description: 'QA Agent——沙箱执行 npm run verify，输出结构化测试报告',
-    author: 'Lumen',
-    url: 'https://raw.githubusercontent.com/lumen/cli/main/agents/qa.js',
+    author: 'ConcertoAI',
+    url: 'https://raw.githubusercontent.com/concertoai/cli/main/agents/qa.js',
     sha256: 'builtin',
     interfaces: {
       input: { _type: 'zod' } as unknown as AgentDef['interfaces']['input'],
@@ -132,7 +132,7 @@ export const BUILTIN_AGENT_ITEMS: AgentRegistryItem[] = [
 
 /** 内置注册表（技能 + 4 个 Agent）。 */
 export const BUILTIN_REGISTRY: MarketRegistry = {
-  registry: 'https://raw.githubusercontent.com/lumen/cli/main/skills/registry.json',
+  registry: 'https://raw.githubusercontent.com/concertoai/cli/main/skills/registry.json',
   skills: [],
   agents: BUILTIN_AGENT_ITEMS,
 };

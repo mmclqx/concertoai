@@ -1,9 +1,9 @@
-# Lumen 项目工作知识
+# ConcertoAI 项目工作知识
 
 > 最后更新：2026-08-09
 > 版本：v2.1.0
 
-Lumen 是一款面向个人开发者的终端编码助手 CLI（DeepSeek 驱动，中文优先），基于 TypeScript/Node 构建。
+ConcertoAI 是一款面向个人开发者的终端编码助手 CLI（DeepSeek 驱动，中文优先），基于 TypeScript/Node 构建。
 
 ---
 
@@ -36,15 +36,15 @@ npm run verify       # 完整验收：build + lint + typecheck + test
 ```
 
 ## 产品规则
-- npm 包：@lumen/cli（备选 lumen-cli）
+- npm 包：@concertoai/cli（备选 concertoai-cli）
 
-- 主命令：lumen
+- 主命令：concertoai
 
-- 短命令：lumen（不安装 cc，避免与 C 编译器冲突）
+- 短命令：concertoai（不安装 cc，避免与 C 编译器冲突）
 
-- 用户配置：~/.lumen/config.json
+- 用户配置：~/.concertoai/config.json（v3.1 起；旧版 ~/.lumen/ 启动时自动迁移）
 
-- 会话存储：~/.lumen/sessions/（JSONL 格式）
+- 会话存储：~/.concertoai/sessions/（JSONL 格式）
 
 - 项目规则文件：AGENTS.md 优先，CARBON.md 兜底
 

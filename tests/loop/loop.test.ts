@@ -92,7 +92,7 @@ let ctx: ToolContext;
 let registry: ToolRegistry;
 
 beforeEach(() => {
-  tmp = mkdtempSync(path.join(os.tmpdir(), 'lumen-test-'));
+  tmp = mkdtempSync(path.join(os.tmpdir(), 'concertoai-test-'));
   ctx = { cwd: tmp, requestApproval: vi.fn(async () => true) };
   registry = new ToolRegistry().register(readFileTool).register(editFileTool);
 });
@@ -103,11 +103,11 @@ afterEach(() => {
 
 describe('runLoop 基础路径', () => {
   it('无工具调用：user + assistant 直接返回', async () => {
-    const modelClient = new FakeModel([() => ({ content: '你好，我是 Lumen' })]);
+    const modelClient = new FakeModel([() => ({ content: '你好，我是 ConcertoAI' })]);
     const { messages } = await runLoop({ model, client: modelClient, registry, ctx }, [], '你好');
 
     expect(messages.map((m) => m.role)).toEqual(['user', 'assistant']);
-    expect(messages[1]?.content).toBe('你好，我是 Lumen');
+    expect(messages[1]?.content).toBe('你好，我是 ConcertoAI');
     expect(modelClient.receivedMessages[0]?.map((m) => m.role)).toEqual(['user']);
   });
 

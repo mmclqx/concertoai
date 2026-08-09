@@ -97,7 +97,7 @@ const orchestratorTasksSchema = z.array(orchestratorTaskSchema);
 
 /** 拆解系统提示：要求模型输出严格 JSON 数组（低温度，可解析优先）。 */
 const DECOMPOSE_SYSTEM_PROMPT = [
-  '你是 Lumen 的任务编排器。将用户需求拆解为可串行/并行执行的任务清单。',
+  '你是 ConcertoAI 的任务编排器。将用户需求拆解为可串行/并行执行的任务清单。',
   '输出严格为 JSON 数组（不要 markdown 围栏，不要其他文字），每项格式：',
   '{"id":"t1","description":"任务描述（含验收标准）","agent":"architect|coder|reviewer|qa","dependencies":[],"files":["src/a.ts"]}',
   '要求：',

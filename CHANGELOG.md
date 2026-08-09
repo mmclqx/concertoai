@@ -15,7 +15,7 @@
 - **多 Agent 协作团队（Orchestrator 模式）**：`src/orchestrator/` + `src/agents/`；需求拆解为 Task[]（含依赖）→ DAG 拓扑调度（并行/重试/冲突检测）→ 聚合交付
 - **4 个专业 Agent**：`architect`（需求→设计 spec）/ `coder`（实现+修复）/ `reviewer`（9 维审查 approve/reject 打回）/ `qa`（沙箱执行 npm run verify）
 - **对抗性闭环**：Coder → Reviewer → QA 修复循环（≤ 5 次，`MAX_LOOP_ATTEMPTS`），超限退出保留中间结果并触发事务回滚
-- **多文件事务回滚**：`SnapshotManager` 任务级快照（`.lumen/snapshots/<taskId>/`）+ 原子回滚 + 外部修改检测 + `lumen snapshot [list|clean]` 命令
+- **多文件事务回滚**：`SnapshotManager` 任务级快照（`.concertoai/snapshots/<taskId>/`）+ 原子回滚 + 外部修改检测 + `concertoai snapshot [list|clean]` 命令
 - **Agent 市场**：`src/market/`；`/agent list / install <name> / remove <name> / promote <skill>`；复用技能市场 registry.json 架构 + sha256 校验 + 接口合规检查
 - **可观测性**：`src/observable/`；TraceStore 调用链追踪（LRU 5000）+ AuditLogger JSONL 审计日志（<10ms）+ ObservabilityPanel 流程树 TUI
 - **显式上下文管理器**：AgentContext 序列化/子集提取/合并（≤64KB）+ 来源追踪（ADR-016 修正项落实）
@@ -87,13 +87,13 @@
 - **计划依赖检测**：`src/planner/deps.ts` 步骤依赖解析 + 拓扑排序 + 循环检测 + 并行组
 - **计划进度跟踪**：`src/planner/progress.ts` 状态机 + PlanProgressView TUI 组件
 - **计划回滚**：`src/planner/rollback.ts` SnapshotStore 文件快照与恢复，edit 工具自动快照
-- **配置扩展**：`LumenConfig.mcpServers` 支持 MCP 服务连接配置
+- **配置扩展**：`ConcertoAIConfig.mcpServers` 支持 MCP 服务连接配置
 
 ## [0.1.0] - 2026-08-07
 
 ### Added
 
-- CLI 三命令：`lumen chat`（交互式 TUI）/ `lumen run <task>`（一次性执行）/ `lumen plan <task>`（计划-批准-执行）
+- CLI 三命令：`concertoai chat`（交互式 TUI）/ `concertoai run <task>`（一次性执行）/ `concertoai plan <task>`（计划-批准-执行）
 - DeepSeek 流式对话（SSE 解析、超时与指数退避重试、用户中断与断流保留）
 - 5 个核心工具：read_file / search_content / list_directory / edit_file / run_command
 - 安全基线：编辑与命令一律审批（fail-closed）、路径沙箱、结果截断、命令白名单免审批

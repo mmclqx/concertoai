@@ -1,4 +1,4 @@
-# Lumen 架构文档
+# ConcertoAI 架构文档
 
 > 版本：v3.0 · 2026-08-09
 > 本文档基于当前代码实现编写，作为后续维护与扩展的技术参考。
@@ -8,7 +8,7 @@
 
 ## 1. 项目概览
 
-Lumen 是一款**中文优先**的终端编码助手 CLI（DeepSeek 驱动）。在项目目录里启动后，它读取代码、提出 diff 方案、征求命令许可、跑验证，并留下可续接的会话记录。
+ConcertoAI 是一款**中文优先**的终端编码助手 CLI（DeepSeek 驱动）。在项目目录里启动后，它读取代码、提出 diff 方案、征求命令许可、跑验证，并留下可续接的会话记录。
 
 - **技术栈**：TypeScript (strict) + Node ≥22 + ESM，Ink 7 (React 19) 渲染 TUI，commander 解析 CLI，zod 做工具参数校验，vitest 测试，Biome 检查，tsup 打包
 - **运行时依赖**：`ink` / `react` / `commander` / `zod` / `cli-highlight` / `chalk`
@@ -20,8 +20,8 @@ Lumen 是一款**中文优先**的终端编码助手 CLI（DeepSeek 驱动）。
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │ cli/  commander 入口（src/cli/）                              │
-│   index.ts   lumen / lumen chat / lumen run "任务" / lumen plan│
-│              lumen snapshot [list|clean]（v3.0 快照清理）      │
+│   index.ts   concertoai / concertoai chat / concertoai run "任务" / concertoai plan│
+│              concertoai snapshot [list|clean]（v3.0 快照清理）      │
 │   chat.tsx   chat 装配：TUI + loop + store（含 TTY 检查）      │
 │   run.ts     run 一次性执行：loop + stdout 流式 + 存档          │
 │   plan.ts    plan 计划-批准-执行三段式（readline y/n）          │
@@ -58,9 +58,10 @@ Lumen 是一款**中文优先**的终端编码助手 CLI（DeepSeek 驱动）。
           │                     └──────────┬───────────────────┘
 ┌─────────▼─────────────────────────────────▼─────────────────┐
 │ store/ 持久化（src/store/）      i18n/ 文案（src/i18n/）       │
-│  session.ts       JSONL 会话（~/.lumen/sessions/）            │
+│  paths.ts         全局路径 ~/.concertoai + 迁移（v3.1）        │
+│  session.ts       JSONL 会话（~/.concertoai/sessions/）        │
 │  project-rules.ts AGENTS.md→CARBON.md 规则加载（≤8000 字符）  │
-│  config.ts        ~/.lumen/config.json（schema + 优先级解析）  │
+│  config.ts        ~/.concertoai/config.json（schema + 优先级解析）│
 │  memory-store.ts  项目级跨会话记忆（.lumen-memory/ JSONL）     │
 │  zh.ts / en.ts / index.ts  多语言字典 + locale 解析（t/setLocale）
 └─────────────────────────────────┬───────────────────────────┘
@@ -174,7 +175,7 @@ API 层 ApiMessage { role, content, name?, tool_call_id?, tool_calls? }
 完整 assistant 消息 → 工具结果回填 → 下一轮
    │  JSON.stringify → JSONL 行
    ▼
-~/.lumen/sessions/<id>.jsonl
+~/.concertoai/sessions/<id>.jsonl
 ```
 
 ### 3.5 MCP 服务交互路径（v1.1）
@@ -216,7 +217,7 @@ MCP 服务故障
 | D11 | **工具失败不中断循环**：ok:false 回填让模型自行修正 | 模型可自愈（换参数/换工具），循环上限兜底 | `src/loop/loop.ts` |
 | D12 | **中文文案单一来源** `i18n/zh.ts` + `fmt()` 占位符 | 全项目文案可检索、可统一改 | `src/i18n/zh.ts` |
 | D13 | **并行工具调度**（T3.1）：连续 `parallelSafe` 工具组内并行，审批类串行 | 只读工具并行提速；审批框不与并行执行交错；事件按原始顺序回填 | `loop.ts` + `registry.ts` |
-| D14 | **无子命令默认进 chat**（commander program.action） | 产品定位：`cd 项目 && lumen` 直接可用 | `src/cli/index.ts` |
+| D14 | **无子命令默认进 chat**（commander program.action） | 产品定位：`cd 项目 && concertoai` 直接可用 | `src/cli/index.ts` |
 | D15 | **修复管线**（T3.2）：`repairable` 字段区分错误，可修复失败限 2 次终止 | 防模型死循环刷失败；审批拒绝/越界绝不重试 | `loop.ts` + `registry.ts` |
 | D16 | **上下文裁剪**（T1.6）：80% 预算，保留 system + 最近整轮，仅发送视角 | 给回复留余量；不截断持久化历史 | `loop/context.ts` |
 | D17 | **配置优先级**（T3.4）：CLI > 环境变量 > 配置文件 > 默认值 | 可预测、可覆盖；schema 版本兜底 | `store/config.ts` |
@@ -241,11 +242,12 @@ MCP 服务故障
 | D36 | **Agent 市场复用技能市场架构**（v3.0 / ADR-018）：registry.json + 安装器 + sha256 校验，`type: skill|agent` 区分 | 避免重复建设；共享下载/校验/写入底层；Agent 本质是特殊技能 | `market/` + `skill/` |
 | D37 | **可观测性结构化调用链 + 审计日志**（v3.0 / ADR-019）：TraceStore LRU + AuditLogger JSONL，非外部 APM | 零外部依赖；CLI 自包含；JSON 导出即可满足审计 | `observable/` |
 | D38 | **v3.0 不做沙箱容器隔离**（v3.0 / ADR-020）：进程级隔离（子代理）足够 | Docker/K8s 复杂度高，v3.1 评估 | `agent/spawner.ts` |
+| D39 | **配置目录迁移 ~/.lumen → ~/.concertoai**（v3.1）：`store/paths.ts` 单一来源 + `migrateLegacyHome` 幂等迁移（rename 失败回退复制，CLI 入口自动调用） | 品牌统一；旧数据无缝迁移；路径定义不散落各模块 | `store/paths.ts` + `cli/index.ts` |
 
 ## 5. 目录结构说明
 
 ```
-lumen/
+concertoai/
 ├── package.json          ESM；scripts: dev/build/test/test:watch/lint/lint:fix/typecheck/verify
 ├── tsconfig.json         strict 全开；verbatimModuleSyntax；jsx: react-jsx；noEmit（tsup 负责产物）
 ├── biome.json            Biome 2.5；lint 范围 src tests
@@ -273,11 +275,11 @@ lumen/
 │   │       ├── research.ts 研究型子代理（多角度对比分析，结论 ≤500 字）
 │   │       └── index.ts    registerBuiltinSubagents
 │   ├── cli/
-│   │   ├── index.ts      commander 入口：lumen（默认 chat）/ chat / run / plan / snapshot；DEEPSEEK_API_KEY 检查
+│   │   ├── index.ts      commander 入口：concertoai（默认 chat）/ chat / run / plan / snapshot；DEEPSEEK_API_KEY 检查
 │   │   ├── chat.tsx      chat 装配：TTY 检查、配置加载、注册表、规则加载、MCP 启动、resume、render(App)
 │   │   ├── run.ts        run 装配：非交互、stdout 流式、--auto-approve 显式开启、存档
 │   │   ├── plan.ts       plan 装配：计划轮 → 终端 y/n → 执行轮（含依赖检测/进度/回滚）
-│   │   ├── snapshot.ts   lumen snapshot [list|clean]：快照残留列出/清理（v3.0 M3）
+│   │   ├── snapshot.ts   concertoai snapshot [list|clean]：快照残留列出/清理（v3.0 M3）
 │   │   ├── common.ts     CLI 共享：白名单 / 注册表构建 / OS 提示（轻量加载，v2.1）
 │   │   └── slash/        斜杠命令处理器
 │   │       ├── agent.ts  /agent list / install / remove / promote（v3.0 M4）
@@ -368,6 +370,7 @@ lumen/
 │   │   ├── audit.ts      AuditLogger JSONL 审计日志（异步追加，T5.2）
 │   │   └── index.ts      barrel
 │   ├── store/
+│   │   ├── paths.ts      全局路径单一来源（~/.concertoai/）+ migrateLegacyHome 旧目录迁移（v3.1）
 │   │   ├── session.ts    SessionStore：create/append/appendAll/read/list；锁 + 原子写 + 冲突检测
 │   │   ├── project-rules.ts  loadProjectRules：AGENTS→CARBON 优先级、8k 截断
 │   │   ├── config.ts      loadConfig/writeConfig/resolveConfig（CLI > env > 配置 > 默认；含 mcpServers）
@@ -399,7 +402,7 @@ lumen/
 
 ```bash
 # 1. 进入项目（当前未发布远程；发布后为 git clone <url>）
-cd F:\developer\2026\lumen
+cd F:\developer\2026\concertoai
 
 # 2. 安装依赖（仅首次）
 npm install
@@ -415,7 +418,7 @@ npm run dev
 #    → 输入「读一下 package.json 并总结」+ Enter
 #    → 输入「运行 npm run test 看看结果」→ npm test 命中白名单，免审批直跑
 #    → 尝试编辑类指令 → 弹出审批框，按 y 批准 / n 拒绝
-#    → Esc 退出，会话自动保存到 ~/.lumen/sessions/
+#    → Esc 退出，会话自动保存到 ~/.concertoai/sessions/
 ```
 
 **预期输出**（第 4 步）：模型流式回复 + 结尾 `会话已保存: <会话ID>`。
@@ -426,7 +429,7 @@ npm run dev
 
 ```bash
 npm install        # Node ≥22
-npm run dev        # 开发运行（= lumen，默认进 chat，需真实 TTY）
+npm run dev        # 开发运行（= concertoai，默认进 chat，需真实 TTY）
 npm run verify     # 验收：build + lint + typecheck + test（--silent）
 ```
 
@@ -511,7 +514,7 @@ npm run verify     # 验收：build + lint + typecheck + test（--silent）
 | --- | --- | --- |
 | 单 Agent 无法胜任复杂任务 | ✅ 多 Agent 团队：Orchestrator 拆解 + DAG 调度（拓扑排序/并行/重试/冲突检测）+ 聚合交付 | `orchestrator/` + `agents/orchestrator.ts` |
 | Coder↔Reviewer 无闭环 | ✅ 对抗性闭环：Coder 实现 → Reviewer 审查（approve/reject）→ QA 验证 → 修复循环 ≤ 5 次，超限回滚 | `orchestrator/loop.ts` |
-| 多文件修改无法原子回滚 | ✅ 任务级事务快照（SnapshotManager）+ `lumen snapshot clean` + 外部修改检测 | `orchestrator/transaction.ts` + `cli/snapshot.ts` |
+| 多文件修改无法原子回滚 | ✅ 任务级事务快照（SnapshotManager）+ `concertoai snapshot clean` + 外部修改检测 | `orchestrator/transaction.ts` + `cli/snapshot.ts` |
 | 无可复用的 Agent 分发机制 | ✅ Agent 市场：/agent install/remove/list + 技能 promote（sha256 + 接口合规检查，复用技能市场架构） | `market/` + `cli/slash/agent.ts` |
 | 多 Agent 协作不可观测 | ✅ 调用链追踪（TraceStore LRU）+ 审计日志（AuditLogger JSONL <10ms）+ 流程树面板 | `observable/` + `ui/ObservabilityPanel.tsx` |
 
@@ -531,7 +534,7 @@ npm run verify     # 验收：build + lint + typecheck + test（--silent）
 | fail-closed | 默认拒绝：审批回调未配置时，危险操作（编辑/命令）一律拒绝——宁可误拒，不可漏放 |
 | 路径沙箱 | 所有工具路径基于项目根（ctx.cwd）解析，`..` 逃逸 / 绝对路径越界一律拒绝 |
 | TTY | 交互式终端设备；chat 模式的 raw mode 输入依赖它，非 TTY 环境会友好报错 |
-| token | 模型文本的最小计价单位；Lumen 用 CJK 加权估算（中文 1 字 ≈ 1 token，其余 4 字符 ≈ 1 token） |
+| token | 模型文本的最小计价单位；ConcertoAI 用 CJK 加权估算（中文 1 字 ≈ 1 token，其余 4 字符 ≈ 1 token） |
 | BPE | Byte-Pair Encoding：主流 tokenizer 算法，v0.2 计划替换估算 |
 | barrel | 汇总导出文件（src/index.ts），对外暴露统一的公共 API 入口 |
 | hunk | diff 中一个连续变更块，形如 `@@ -a,b +c,d @@`（编辑工具的审批详情即 hunk 列表） |

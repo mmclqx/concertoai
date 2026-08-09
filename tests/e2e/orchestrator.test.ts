@@ -141,7 +141,7 @@ describe('E2E：Agent 市场 install + promote → /agent list 识别', () => {
   let tmp: string;
 
   beforeEach(() => {
-    tmp = mkdtempSync(path.join(os.tmpdir(), 'lumen-e2e-market-'));
+    tmp = mkdtempSync(path.join(os.tmpdir(), 'concertoai-e2e-market-'));
   });
 
   afterEach(() => {

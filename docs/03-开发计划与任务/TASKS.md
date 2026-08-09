@@ -1,4 +1,4 @@
-# Lumen 开发任务看板
+# ConcertoAI 开发任务看板
 
 > 最后更新：2026-08-09
 > 当前里程碑：**✅ v3.0 全部完成**（24/24 任务 ✅）（v1.0: 20/20 ✅ · v1.1: 12/12 ✅ · v2.0: 15/15 ✅ · v2.1: 25/25 ✅ · v3.0: 24/24 ✅）
@@ -142,7 +142,7 @@
   - 涉及文件：`src/ui/modals.tsx`, `src/loop/loop.ts`, `src/cli/run.ts`
   - 预估：4h
   - 依赖：T3.1
-  - ✅ 2026-08-07 完成：lumen plan 命令（计划→批准→执行三段式）+ 对话内 /plan（PlanConfirm 审批框，y/n）
+  - ✅ 2026-08-07 完成：concertoai plan 命令（计划→批准→执行三段式）+ 对话内 /plan（PlanConfirm 审批框，y/n）
 
 - [x] **T3.4** 配置系统（`~/.lumen/config.json`）
   - 涉及文件：`src/store/config.ts`, `src/cli/chat.tsx`
@@ -158,7 +158,7 @@
   - 涉及文件：`package.json`, `tsup.config.ts`
   - 预估：2h
   - 依赖：T1.1
-  - ✅ 2026-08-07 完成：包名 @lumen/cli（未被占用），bin + CLI 入口，npm pack 预演 + 干净目录全局安装冒烟通过
+  - ✅ 2026-08-07 完成：包名 @concertoai/cli（未被占用），bin + CLI 入口，npm pack 预演 + 干净目录全局安装冒烟通过
 
 - [x] **T4.2** 发布管线（Trusted Publishing）
   - 涉及文件：`package.json`, `CHANGELOG.md`
@@ -681,7 +681,7 @@
   - 涉及文件：`src/orchestrator/transaction.ts`（新增）、`tests/orchestrator/transaction.test.ts`（新增）、`src/cli/snapshot.ts`（新增）、`src/cli/index.ts`（修改）
   - 预估：2h | 实际：约 1h
   - 依赖：T3.2、T3.5
-  - ✅ 2026-08-09 完成：SnapshotManager（begin 快照全部涉及文件 + recordWrite 任务写入登记 + rollback 外部修改检测恢复 + commit 清理）+ 回滚失败保留快照不静默覆盖 + `lumen snapshot`/`lumen snapshot clean` 命令（list/clean）+ taskId 路径编码防穿越；15 测试（614 全绿）
+  - ✅ 2026-08-09 完成：SnapshotManager（begin 快照全部涉及文件 + recordWrite 任务写入登记 + rollback 外部修改检测恢复 + commit 清理）+ 回滚失败保留快照不静默覆盖 + `concertoai snapshot`/`concertoai snapshot clean` 命令（list/clean）+ taskId 路径编码防穿越；15 测试（614 全绿）
 
 ### V3.0-M4：Agent 市场基础（P1，约 7h）
 
@@ -781,7 +781,7 @@
 | 2026-08-07 | T4.4 完成：依赖升级评估 | Carbon Code |
 | 2026-08-07 | T4.5 完成：EN 文案与 locale 架构 | Carbon Code |
 | 2026-08-07 | T4.6 完成：文档与发布件（**v1.0 全部 20 个任务完成**） | Carbon Code |
-| 2026-08-07 | T4.6 完善：文档重构收尾（docs 目录编号 01-06、修复死链与 `lumen init` 笔误、补充 ADR 与计划文档） | Carbon Code |
+| 2026-08-07 | T4.6 完善：文档重构收尾（docs 目录编号 01-06、修复死链与 `concertoai init` 笔误、补充 ADR 与计划文档） | Carbon Code |
 | 2026-08-08 | v1.1 计划启动：生成 `v1.1-dev-plan.md`、`v1.1-dev-tasks.md`，更新 TASKS 看板（+12 任务、4 里程碑） | Carbon Code |
 | 2026-08-08 | **V1.1-M1 完成**：T1.1 MCP 客户端 + T1.2 filesystem 集成 + T1.3 memory 注入（23 新测试，mcp/ 模块全链路） | Carbon Code |
 | 2026-08-08 | **V1.1-M2 完成**：T2.1 依赖检测 + T2.2 进度跟踪 + T2.3 文件回滚（25 新测试，planner/ 模块） | Carbon Code |

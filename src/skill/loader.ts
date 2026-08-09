@@ -2,15 +2,15 @@
  * 技能加载器（v2.0）。
  *
  * 扫描指定目录下的 SKILL.md 文件，解析 YAML frontmatter + markdown 正文。
- * 支持两个加载路径：项目级（<cwd>/.lumen/skills/）和全局（~/.lumen/skills/）。
+ * 支持两个加载路径：项目级（<cwd>/.concertoai/skills/）和全局（~/.concertoai/skills/）。
  * 同名技能：项目级覆盖全局级。
  */
 
 import { type Dirent, readdirSync, readFileSync } from 'node:fs';
-import { homedir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { globalSkillsDir } from '../store/paths';
 import type { AgentRef, SkillDef, SkillFrontmatter } from './types';
 
 /** 技能嵌套最大深度（ADR-010）。 */
@@ -25,14 +25,9 @@ function refPattern(): RegExp {
 const SKILL_FILENAME = 'SKILL.md';
 
 /** 项目级技能目录名（相对于 cwd）。 */
-const PROJECT_SKILLS_DIR = '.lumen/skills';
+const PROJECT_SKILLS_DIR = '.concertoai/skills';
 
-/** 全局技能目录名。 */
-function globalSkillsDir(): string {
-  return path.join(homedir(), '.lumen', 'skills');
-}
-
-/** 内置技能目录（Lumen 仓库自带的 skills/ 目录）。 */
+/** 内置技能目录（ConcertoAI 仓库自带的 skills/ 目录）。 */
 function builtinSkillsDir(): string {
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = path.dirname(__filename);

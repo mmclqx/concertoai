@@ -1,5 +1,5 @@
 /**
- * Lumen 库入口（barrel）：导出 v2.0 全部公共 API。
+ * ConcertoAI 库入口（barrel）：导出 v2.0 全部公共 API。
  */
 
 // v2.0 子代理系统

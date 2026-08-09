@@ -1,12 +1,17 @@
 #!/usr/bin/env node
 /**
- * Lumen CLI 入口：lumen chat / lumen run "任务"。
+ * ConcertoAI CLI 入口：concertoai chat / concertoai run "任务"。
  */
 
 import { Command } from 'commander';
 
 import { t } from '../i18n';
+import { migrateLegacyHome } from '../store/paths';
 import { VERSION } from '../version';
+
+// 启动时自动迁移旧配置目录（~/.lumen → ~/.concertoai，v3.1 起）。
+// 幂等：~/.lumen 不存在或 ~/.concertoai 已存在时无操作。
+migrateLegacyHome((message) => console.error(message));
 
 function getApiKey(): string {
   const key = process.env.DEEPSEEK_API_KEY;
@@ -19,9 +24,9 @@ function getApiKey(): string {
 
 const program = new Command();
 
-program.name('lumen').description(t().cli.description).version(VERSION);
+program.name('concertoai').description(t().cli.description).version(VERSION);
 
-// 无子命令时默认进入 chat（产品定位：cd 项目 && lumen）
+// 无子命令时默认进入 chat（产品定位：cd 项目 && concertoai）
 program.action(() => {
   // 动态导入（v2.1 性能优化）：启动阶段只加载 commander + i18n，
   // TUI 依赖树（ink/react/ui/mcp/skill）在用户真正进入交互后才加载。

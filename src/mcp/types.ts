@@ -38,7 +38,7 @@ export type JsonRpcMessage = JsonRpcRequest | JsonRpcResponse | JsonRpcNotificat
 // ── MCP 协议常量 ──
 
 export const MCP_PROTOCOL_VERSION = '2024-11-05';
-export const MCP_CLIENT_NAME = 'lumen';
+export const MCP_CLIENT_NAME = 'concertoai';
 export const MCP_CLIENT_VERSION = '1.1.0';
 
 // ── initialize ──

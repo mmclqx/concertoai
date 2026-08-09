@@ -17,7 +17,7 @@ import type { ReviewDimension, ReviewIssue } from '../../src/reviewer/types';
 let tmp: string;
 
 beforeEach(() => {
-  tmp = mkdtempSync(path.join(os.tmpdir(), 'lumen-review-test-'));
+  tmp = mkdtempSync(path.join(os.tmpdir(), 'concertoai-review-test-'));
 });
 
 afterEach(() => {

@@ -1,5 +1,5 @@
 # 发布到 npm（Trusted Publishing / OIDC，无需 npm token）
-# 使用前：在 npmjs.com 的 @lumen/cli 包设置中启用 "Publish to npm via GitHub Actions"
+# 使用前：在 npmjs.com 的 @concertoai/cli 包设置中启用 "Publish to npm via GitHub Actions"
 # 并关联本仓库；发布前先执行 npm version <patch|minor|major> 更新版本与 CHANGELOG。
 name: Publish
 

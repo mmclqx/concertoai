@@ -97,7 +97,7 @@ export const architectSpecSchema = z.object({
 
 /** 生成 system prompt：要求模型输出严格 JSON（含接口/文件/约束）。 */
 const ARCHITECT_SYSTEM_PROMPT = [
-  '你是 Lumen 的架构师 Agent。根据用户需求输出结构化设计规格（ArchitectSpec），供编码 Agent 直接实现。',
+  '你是 ConcertoAI 的架构师 Agent。根据用户需求输出结构化设计规格（ArchitectSpec），供编码 Agent 直接实现。',
   '输出严格为 JSON 对象（不要 markdown 围栏，不要其他文字），结构：',
   '{',
   '  "requirement": "需求概述",',

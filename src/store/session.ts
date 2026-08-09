@@ -1,5 +1,5 @@
 /**
- * JSONL 会话存储：~/.lumen/sessions/<id>.jsonl，每行一条 ChatMessage。
+ * JSONL 会话存储：~/.concertoai/sessions/<id>.jsonl，每行一条 ChatMessage。
  *
  * - 行结构可续接：append 只追加，resume 读回完整上下文；
  * - 宽松读取：空行跳过，损坏行跳过并计数（容忍手动编辑与追加中断留下的半行）；
@@ -10,13 +10,13 @@
  */
 
 import { appendFile, mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
 
 import type { ChatMessage } from '../loop/types';
+import { sessionsDir } from './paths';
 
-/** 默认会话目录：~/.lumen/sessions/。 */
-export const DEFAULT_SESSION_DIR = path.join(os.homedir(), '.lumen', 'sessions');
+/** 默认会话目录：~/.concertoai/sessions/。 */
+export const DEFAULT_SESSION_DIR = sessionsDir();
 
 /** 会话 id 允许的字符集（防路径穿越）。 */
 const ID_RE = /^[\w.-]+$/;

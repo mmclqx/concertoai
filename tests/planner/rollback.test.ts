@@ -13,7 +13,7 @@ import { SnapshotStore } from '../../src/planner/rollback';
 let tmp: string;
 
 beforeEach(() => {
-  tmp = mkdtempSync(path.join(os.tmpdir(), 'lumen-rollback-'));
+  tmp = mkdtempSync(path.join(os.tmpdir(), 'concertoai-rollback-'));
 });
 
 afterEach(() => {
@@ -84,7 +84,7 @@ describe('SnapshotStore', () => {
     await store.cleanup();
 
     // 快照目录已被删除
-    const snapDir = path.join(tmp, '.lumen/snapshots/session-1');
+    const snapDir = path.join(tmp, '.concertoai/snapshots/session-1');
     expect(() => readFileSync(snapDir)).toThrow();
   });
 

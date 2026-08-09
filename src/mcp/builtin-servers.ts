@@ -1,7 +1,7 @@
 /**
  * 内置 MCP 服务预配置。
  *
- * 提供常用 MCP 服务的推荐配置，用户可在 ~/.lumen/config.json 中引用或自定义。
+ * 提供常用 MCP 服务的推荐配置，用户可在 ~/.concertoai/config.json 中引用或自定义。
  * 各服务以 npx 启动，需用户预先安装对应 npm 包。
  */
 

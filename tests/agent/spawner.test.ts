@@ -69,7 +69,7 @@ const TEST_AGENT: SubagentDef = {
 };
 
 beforeEach(() => {
-  tmp = mkdtempSync(path.join(os.tmpdir(), 'lumen-agent-test-'));
+  tmp = mkdtempSync(path.join(os.tmpdir(), 'concertoai-agent-test-'));
 });
 
 afterEach(() => {

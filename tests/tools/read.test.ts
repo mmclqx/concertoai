@@ -20,7 +20,7 @@ let ctx: ToolContext;
 let registry: ToolRegistry;
 
 beforeEach(() => {
-  tmp = mkdtempSync(path.join(os.tmpdir(), 'lumen-test-'));
+  tmp = mkdtempSync(path.join(os.tmpdir(), 'concertoai-test-'));
   ctx = { cwd: tmp };
   registry = new ToolRegistry()
     .register(readFileTool)
@@ -46,13 +46,14 @@ async function runTool(spec: ToolSpec, args: unknown): Promise<ReturnType<ToolRe
 
 describe('read_file', () => {
   it('读取文本文件完整内容', async () => {
-    write('a.txt', 'hello lumen');
+    write('a.txt', 'hello concertoai');
     const result = await runTool(readFileTool, { path: 'a.txt' });
     expect(result.ok).toBe(true);
     const data = result.data as { content: string; truncated: boolean; totalChars: number };
-    expect(data.content).toBe('hello lumen');
+    expect(data.content).toBe('hello concertoai');
     expect(data.truncated).toBe(false);
-    expect(data.totalChars).toBe(11);
+    // 'hello concertoai' = 5 + 1 + 10 = 16 字符（与实现 totalChars = content.length 一致）
+    expect(data.totalChars).toBe(16);
   });
 
   it('读取带 UTF-8 BOM 的文件时剥离 BOM', async () => {

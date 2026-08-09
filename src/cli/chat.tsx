@@ -85,7 +85,7 @@ export async function runChat(options: RunChatOptions): Promise<void> {
   const registry = buildRegistry(undefined, spawnTool, knowledgeTools);
 
   // v3.0 M4 T4.3：Agent 市场运行时（/agent 命令）
-  // agentRegistry 供 install/promote 落地注册；agentInstaller 管理 ~/.lumen/agents/ 磁盘安装。
+  // agentRegistry 供 install/promote 落地注册；agentInstaller 管理 ~/.concertoai/agents/ 磁盘安装。
   const agentRegistry = new InMemoryAgentRegistry();
   const agentInstaller = new AgentInstaller({ registry: agentRegistry });
 

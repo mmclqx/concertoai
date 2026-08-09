@@ -15,7 +15,7 @@ import { SkillLoader } from '../../src/skill/loader';
 let tmp: string;
 
 beforeEach(() => {
-  tmp = mkdtempSync(path.join(os.tmpdir(), 'lumen-slash-skill-'));
+  tmp = mkdtempSync(path.join(os.tmpdir(), 'concertoai-slash-skill-'));
 });
 
 afterEach(() => {
@@ -23,7 +23,7 @@ afterEach(() => {
 });
 
 function writeSkill(cwd: string, name: string, body: string): void {
-  const dir = path.join(cwd, '.lumen', 'skills', name);
+  const dir = path.join(cwd, '.concertoai', 'skills', name);
   mkdirSync(dir, { recursive: true });
   writeFileSync(
     path.join(dir, 'SKILL.md'),
@@ -186,7 +186,7 @@ describe('executeSkillMarketCommand', () => {
       name: s.name,
       version: s.version,
       description: `${s.name} 描述`,
-      author: 'Lumen',
+      author: 'ConcertoAI',
       url: `https://example.com/skills/${s.name}/SKILL.md`,
       sha256: createHash('sha256').update(s.content).digest('hex'),
     }));
@@ -308,7 +308,7 @@ version: 1.0.0
           name: 'code-review',
           version: '1.0.0',
           description: '代码审查',
-          author: 'Lumen',
+          author: 'ConcertoAI',
           url: '',
           sha256: '',
         },
@@ -316,7 +316,7 @@ version: 1.0.0
           name: 'explain',
           version: '1.0.0',
           description: '代码解释',
-          author: 'Lumen',
+          author: 'ConcertoAI',
           url: '',
           sha256: '',
         },
@@ -352,7 +352,7 @@ version: 1.0.0
           name: 'code-review',
           version: '1.0.0',
           description: '审查',
-          author: 'Lumen',
+          author: 'ConcertoAI',
           url: '',
           sha256: '',
         },

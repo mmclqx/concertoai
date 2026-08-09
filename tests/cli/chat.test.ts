@@ -12,7 +12,7 @@ let tmp: string;
 let store: SessionStore;
 
 beforeEach(() => {
-  tmp = mkdtempSync(path.join(os.tmpdir(), 'lumen-test-'));
+  tmp = mkdtempSync(path.join(os.tmpdir(), 'concertoai-test-'));
   store = new SessionStore(path.join(tmp, 'sessions'));
 });
 

@@ -1,6 +1,6 @@
-# Lumen
+# ConcertoAI
 
-Lumen —— 面向个人开发者的**中文优先**终端编码助手 CLI（DeepSeek 驱动）。
+ConcertoAI —— 面向个人开发者的**中文优先**终端编码助手 CLI（DeepSeek 驱动）。
 
 在项目目录里启动：读取代码 → 提出 diff 方案 → 征求命令许可 → 跑验证 → 留下可续接的会话记录。
 
@@ -16,10 +16,10 @@ Lumen —— 面向个人开发者的**中文优先**终端编码助手 CLI（De
 ## 安装
 
 ```bash
-npm install -g @lumen/cli
+npm install -g @concertoai/cli
 ```
 
-安装后直接使用 `lumen` 命令（开发仓库内可用 `npm run dev` 代替）。
+安装后直接使用 `concertoai` 命令（开发仓库内可用 `npm run dev` 代替）。
 
 ## 快速开始
 
@@ -29,13 +29,13 @@ set DEEPSEEK_API_KEY=sk-xxx        # Windows cmd
 export DEEPSEEK_API_KEY=sk-xxx     # macOS / Linux
 
 # 2. 进入项目目录，启动交互式对话
-lumen                              # 等价于 lumen chat
+concertoai                              # 等价于 concertoai chat
 
 # 3. 一次性执行任务（非交互）
-lumen run "看看这个项目"
+concertoai run "看看这个项目"
 
 # 4. 先生成执行计划，批准后自动执行
-lumen plan "重构这个模块"
+concertoai plan "重构这个模块"
 ```
 
 ## 交互方式
@@ -55,20 +55,20 @@ lumen plan "重构这个模块"
 
 | 命令 | 说明 |
 | --- | --- |
-| `lumen` / `lumen chat` | 交互式对话（`-r [id]` 恢复 / `-l` 仅列会话 / `-m` 模型 / `--lang`） |
-| `lumen run "任务"` | 一次性执行（`--auto-approve` 谨慎使用 / `-m` / `--lang`） |
-| `lumen plan "任务"` | 计划-批准-执行三段式（`--auto-approve` 跳过确认） |
-| `lumen chat -l` | 仅打印历史会话列表 |
-| `lumen snapshot` / `lumen snapshot list` | 列出多文件事务残留快照（taskId 列表） |
-| `lumen snapshot clean` | 清理全部残留快照（失败/取消后的遗留） |
+| `concertoai` / `concertoai chat` | 交互式对话（`-r [id]` 恢复 / `-l` 仅列会话 / `-m` 模型 / `--lang`） |
+| `concertoai run "任务"` | 一次性执行（`--auto-approve` 谨慎使用 / `-m` / `--lang`） |
+| `concertoai plan "任务"` | 计划-批准-执行三段式（`--auto-approve` 跳过确认） |
+| `concertoai chat -l` | 仅打印历史会话列表 |
+| `concertoai snapshot` / `concertoai snapshot list` | 列出多文件事务残留快照（taskId 列表） |
+| `concertoai snapshot clean` | 清理全部残留快照（失败/取消后的遗留） |
 
 ## MCP 服务接入
 
-Lumen 支持通过 [MCP（Model Context Protocol）](https://modelcontextprotocol.io) 连接外部工具服务，扩展模型的能力边界。
+ConcertoAI 支持通过 [MCP（Model Context Protocol）](https://modelcontextprotocol.io) 连接外部工具服务，扩展模型的能力边界。
 
 ### 配置方式
 
-在 `~/.lumen/config.json` 中添加 `mcpServers` 数组：
+在 `~/.concertoai/config.json` 中添加 `mcpServers` 数组：
 
 ```json
 {
@@ -85,7 +85,7 @@ Lumen 支持通过 [MCP（Model Context Protocol）](https://modelcontextprotoco
 
 ### 内置预配置
 
-Lumen 提供了三种常用 MCP 服务的推荐配置（`src/mcp/builtin-servers.ts`）：
+ConcertoAI 提供了三种常用 MCP 服务的推荐配置（`src/mcp/builtin-servers.ts`）：
 
 | 服务 | 用途 | 需额外准备 |
 | --- | --- | --- |
@@ -131,12 +131,12 @@ v3.0 引入「多 Agent 团队」工作流：Orchestrator 接收用户需求 →
 
 ### 多文件事务回滚
 
-任务级多文件原子回滚：任务开始前创建 `.lumen/snapshots/<taskId>/` 快照，失败/超限时恢复所有涉及文件（含已通过审批的部分文件）；外部修改检测拒绝静默覆盖；成功后自动清理快照，`lumen snapshot clean` 手动清理残留。
+任务级多文件原子回滚：任务开始前创建 `.concertoai/snapshots/<taskId>/` 快照，失败/超限时恢复所有涉及文件（含已通过审批的部分文件）；外部修改检测拒绝静默覆盖；成功后自动清理快照，`concertoai snapshot clean` 手动清理残留。
 
 ### 可观测性面板
 
 - **调用链追踪**：记录每个 Agent 的输入/输出/决策/耗时，按 taskId 查询完整父子任务树（LRU 上限 5000 条）；
-- **审计日志**：所有 Agent 交互（消息/状态变更/审批/回滚）JSONL 追加写入 `~/.lumen/audit/`，可导出 JSON，单条写入 < 10ms；
+- **审计日志**：所有 Agent 交互（消息/状态变更/审批/回滚）JSONL 追加写入 `~/.concertoai/audit/`，可导出 JSON，单条写入 < 10ms；
 - **面板 TUI**：对话中按快捷键展开 Agent 协作流程树（实时状态/耗时/消息数），不阻塞主对话流。
 
 ## v2.1 新增功能
@@ -198,7 +198,7 @@ v2.0 使用 `tiktoken`（o200k_base 编码器）替换 v1.0 的 CJK 加权估算
 | `/skill explain <路径>` | 逐段解读代码逻辑与数据流 |
 | `/skill refactor <策略> <路径>` | 按指定策略重构代码 |
 
-自定义技能：将 `SKILL.md` 放入 `.lumen/skills/<name>/` 目录即可注册。
+自定义技能：将 `SKILL.md` 放入 `.concertoai/skills/<name>/` 目录即可注册（项目级）或 `~/.concertoai/skills/<name>/`（全局）。
 
 ### MCP 动态管理
 
@@ -214,7 +214,7 @@ v2.0 支持运行时管理 MCP 服务连接：
 
 ## 跨会话记忆
 
-Lumen 支持项目级跨会话记忆，存储位置为项目根目录的 `.lumen-memory/memories.jsonl`。
+ConcertoAI 支持项目级跨会话记忆，存储位置为项目根目录的 `.lumen-memory/memories.jsonl`。
 
 ### 对话内命令
 
@@ -224,19 +224,19 @@ Lumen 支持项目级跨会话记忆，存储位置为项目根目录的 `.lumen
 | `/forget <关键词>` | 搜索匹配的记忆，选择后删除 |
 | `/memories` | 列出当前项目所有已保存的记忆 |
 
-每轮对话开始时，Lumen 自动从本地记忆中检索与当前问题相关的内容（按关键词 + 标签匹配，最多 5 条），注入系统提示，帮助模型「记住」项目上下文。
+每轮对话开始时，ConcertoAI 自动从本地记忆中检索与当前问题相关的内容（按关键词 + 标签匹配，最多 5 条），注入系统提示，帮助模型「记住」项目上下文。
 
 > **注意**：本地记忆与 MCP memory 服务互补——本地记忆轻量、零依赖，适合项目级知识；MCP memory 适合外部知识库。两者可同时启用，记忆会合并注入。
 
 ## 计划增强
 
-计划模式对 `lumen plan` 和对话内 `/plan` 进行了三项增强：
+计划模式对 `concertoai plan` 和对话内 `/plan` 进行了三项增强：
 
 | 能力 | 说明 |
 | --- | --- |
 | **依赖检测** | 自动分析计划步骤间的依赖关系（显式声明 + 文件引用），按拓扑顺序调度，循环依赖提前报错 |
 | **进度跟踪** | 执行时 TUI 实时展示每步骤状态（⏳ 进行中 / ✅ 已完成 / ❌ 失败 / ⬜ 待执行），失败步骤可跳过或重试 |
-| **文件回滚** | 编辑操作前自动创建文件快照（`.lumen/snapshots/`），步骤失败时可回滚所有已完成步骤的文件变更；正常完成后自动清理 |
+| **文件回滚** | 编辑操作前自动创建文件快照（`.concertoai/snapshots/`），步骤失败时可回滚所有已完成步骤的文件变更；正常完成后自动清理 |
 
 ## 安全模型
 
@@ -250,7 +250,7 @@ Lumen 支持项目级跨会话记忆，存储位置为项目根目录的 `.lumen
 
 ## 配置
 
-配置文件：`~/.lumen/config.json`（带 `schemaVersion` 字段；不存在即用默认）。
+配置文件：`~/.concertoai/config.json`（带 `schemaVersion` 字段；不存在即用默认）。
 
 ```json
 {
@@ -258,7 +258,7 @@ Lumen 支持项目级跨会话记忆，存储位置为项目根目录的 `.lumen
   "defaultModel": "deepseek-v4-flash",
   "allowlist": ["npm test", "git status"],
   "approvalPolicy": "ask",
-  "sessionDir": "~/.lumen/sessions",
+  "sessionDir": "~/.concertoai/sessions",
   "locale": "zh",
   "mcpServers": [
     { "name": "filesystem", "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/dir"] }
@@ -273,29 +273,29 @@ Lumen 支持项目级跨会话记忆，存储位置为项目根目录的 `.lumen
 | 模型 | `LUMEN_MODEL` | deepseek-v4-flash |
 | 白名单（逗号分隔） | `LUMEN_ALLOWLIST` | 内置 4 条 |
 | 审批策略 | `LUMEN_APPROVAL` | ask |
-| 会话目录 | `LUMEN_SESSION_DIR` | `~/.lumen/sessions` |
+| 会话目录 | `LUMEN_SESSION_DIR` | `~/.concertoai/sessions` |
 | 语言 | `LUMEN_LOCALE`（或 `LANG` zh/en 前缀） | zh |
 | MCP 服务 | —（通过配置文件声明） | 无 |
 
 ## 会话记录
 
-- 存储位置：`~/.lumen/sessions/<时间戳>.jsonl`（JSONL，每行一条消息）
-- 自动保存：每轮对话结束即追加落盘；`lumen chat -r` 无 ID 时列出全部会话供选择
+- 存储位置：`~/.concertoai/sessions/<时间戳>.jsonl`（JSONL，每行一条消息）
+- 自动保存：每轮对话结束即追加落盘；`concertoai chat -r` 无 ID 时列出全部会话供选择
 - 项目规则：自动加载项目根的 `AGENTS.md`（优先）或 `CARBON.md`，截断至 8000 字符注入系统提示
 
 ## FAQ
 
 **没有 API key 会怎样？** 启动时报错退出，提示设置 `DEEPSEEK_API_KEY`。
 
-**管道/编辑器内嵌终端无法使用 chat？** chat 需要真实 TTY；用 `lumen run "任务"` 走非交互路径。
+**管道/编辑器内嵌终端无法使用 chat？** chat 需要真实 TTY；用 `concertoai run "任务"` 走非交互路径。
 
 **成本如何？** 状态条实时显示 token 与成本（API 真实 usage，带"（真实）"标记）；模型定价按 DeepSeek 官方定价页维护在 `MODEL_PROFILES`。
 
-**数据存在哪？** 全部本地：会话在 `~/.lumen/sessions/`，配置在 `~/.lumen/config.json`；仅对话请求发送给 DeepSeek API。
+**数据存在哪？** 全部本地：会话在 `~/.concertoai/sessions/`，配置在 `~/.concertoai/config.json`；仅对话请求发送给 DeepSeek API。旧版本（v3.0 及以前）的 `~/.lumen/` 会在启动时自动迁移到 `~/.concertoai/`。
 
-**如何换英文？** `lumen chat --lang en`，或配置 `locale: "en"` / 环境变量 `LUMEN_LOCALE=en`。
+**如何换英文？** `concertoai chat --lang en`，或配置 `locale: "en"` / 环境变量 `LUMEN_LOCALE=en`。
 
-**从 v0.1 迁移？** v0.1 为开发期版本（`npm run dev` 直接跑源码）；v1.0 通过 `npm install -g @lumen/cli` 安装，命令与配置完全兼容，会话文件格式不变（JSONL）。
+**从 v0.1 迁移？** v0.1 为开发期版本（`npm run dev` 直接跑源码）；v1.0 通过 `npm install -g @concertoai/cli` 安装，命令与配置完全兼容，会话文件格式不变（JSONL）。
 
 ## 开发命令
 
@@ -318,6 +318,6 @@ Lumen 支持项目级跨会话记忆，存储位置为项目根目录的 `.lumen
 
 ## 版权
 
-本项目（Lumen）为**全新独立项目**，非任何上游项目的复制或派生。
+本项目（ConcertoAI）为**全新独立项目**，非任何上游项目的复制或派生。
 
-所有代码、文档、测试的版权归项目作者所有（Copyright © 2026 Lumen 项目作者 mmclqx），保留一切权利。对外使用条款见 [LICENSE](LICENSE)。
+所有代码、文档、测试的版权归项目作者所有（Copyright © 2026 mmclqx），保留一切权利。对外使用条款见 [LICENSE](LICENSE)。

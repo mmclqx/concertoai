@@ -60,7 +60,7 @@ describe('计数缓存（v2.1 性能优化）', () => {
   it('同一消息对象重复计数结果一致（消息级 WeakMap 缓存）', () => {
     const msg = {
       role: 'user',
-      content: 'Lumen 是一款面向个人开发者的终端编码助手 CLI（DeepSeek 驱动，中文优先）。',
+      content: 'ConcertoAI 是一款面向个人开发者的终端编码助手 CLI（DeepSeek 驱动，中文优先）。',
     };
     expect(countMessageTokens(msg)).toBe(countMessageTokens(msg));
     expect(countMessageListTokens([msg, msg])).toBe(countMessageTokens(msg) * 2);
@@ -95,7 +95,7 @@ describe('countTokens 覆盖混合场景', () => {
   });
 
   it('长中文文本', () => {
-    const text = 'Lumen 是一款面向个人开发者的终端编码助手 CLI（DeepSeek 驱动，中文优先）。';
+    const text = 'ConcertoAI 是一款面向个人开发者的终端编码助手 CLI（DeepSeek 驱动，中文优先）。';
     const tokens = countTokens(text);
     expect(tokens).toBeGreaterThan(5);
     expect(tokens).toBeLessThan(50);

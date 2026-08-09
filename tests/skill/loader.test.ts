@@ -10,7 +10,7 @@ let tmp: string;
 let loader: SkillLoader;
 
 beforeEach(() => {
-  tmp = mkdtempSync(path.join(os.tmpdir(), 'lumen-skill-test-'));
+  tmp = mkdtempSync(path.join(os.tmpdir(), 'concertoai-skill-test-'));
   loader = new SkillLoader();
 });
 
@@ -25,7 +25,7 @@ function writeSkill(dir: string, name: string, content: string): void {
   writeFileSync(path.join(skillDir, 'SKILL.md'), content);
 }
 
-/** 获取内置技能数量（从 Lumen 仓库 skills/ 目录加载）。 */
+/** 获取内置技能数量（从 ConcertoAI 仓库 skills/ 目录加载）。 */
 function builtinSkillCount(): number {
   const probe = new SkillLoader();
   probe.loadAll(tmp);
@@ -43,7 +43,7 @@ describe('SkillLoader', () => {
 
   it('从项目目录加载自定义 SKILL.md → 内置 + 自定义', () => {
     const builtin = builtinSkillCount();
-    const skillsDir = path.join(tmp, '.lumen', 'skills');
+    const skillsDir = path.join(tmp, '.concertoai', 'skills');
     writeSkill(
       skillsDir,
       'my-skill',
@@ -80,7 +80,7 @@ tools: read_file, search_content
 
   it('缺少必填字段 name → 跳过并记录警告（不影响内置技能）', () => {
     const log = vi.fn();
-    const skillsDir = path.join(tmp, '.lumen', 'skills');
+    const skillsDir = path.join(tmp, '.concertoai', 'skills');
     writeSkill(
       skillsDir,
       'bad-skill',
@@ -102,7 +102,7 @@ version: 1.0.0
 
   it('缺少 frontmatter → 跳过并记录警告', () => {
     const log = vi.fn();
-    const skillsDir = path.join(tmp, '.lumen', 'skills');
+    const skillsDir = path.join(tmp, '.concertoai', 'skills');
     writeSkill(skillsDir, 'no-fm', '直接是正文，没有 frontmatter');
 
     loader.loadAll(tmp, log);
@@ -115,7 +115,7 @@ version: 1.0.0
     const projectDir = path.join(tmp, 'project');
 
     writeSkill(
-      path.join(projectDir, '.lumen', 'skills'),
+      path.join(projectDir, '.concertoai', 'skills'),
       'code-review',
       `---
 name: code-review
@@ -136,7 +136,7 @@ version: 2.0.0
   });
 
   it('tools 字段可选 → tools 为 undefined', () => {
-    const skillsDir = path.join(tmp, '.lumen', 'skills');
+    const skillsDir = path.join(tmp, '.concertoai', 'skills');
     writeSkill(
       skillsDir,
       'no-tools',
@@ -156,7 +156,7 @@ version: 1.0.0
   });
 
   it('model 字段可选 → model 为 undefined', () => {
-    const skillsDir = path.join(tmp, '.lumen', 'skills');
+    const skillsDir = path.join(tmp, '.concertoai', 'skills');
     writeSkill(
       skillsDir,
       'no-model',
@@ -189,7 +189,7 @@ describe('SkillLoader 嵌套引用（v2.1 M2）', () => {
   let tmp2: string;
 
   beforeEach(() => {
-    tmp2 = mkdtempSync(path.join(os.tmpdir(), 'lumen-nest-test-'));
+    tmp2 = mkdtempSync(path.join(os.tmpdir(), 'concertoai-nest-test-'));
   });
 
   afterEach(() => {
@@ -203,7 +203,7 @@ describe('SkillLoader 嵌套引用（v2.1 M2）', () => {
   }
 
   it('@skill:<name> 引用 → 被引用技能正文内联展开', () => {
-    const dir = path.join(tmp2, '.lumen', 'skills');
+    const dir = path.join(tmp2, '.concertoai', 'skills');
     // 先写被引用技能（按字母序先扫描）
     writeSkill(
       dir,
@@ -243,7 +243,7 @@ version: 1.0.0
   });
 
   it('@agent:<name> <prompt> → 收集为 agentRefs，正文保留原样', () => {
-    const dir = path.join(tmp2, '.lumen', 'skills');
+    const dir = path.join(tmp2, '.concertoai', 'skills');
     writeSkill(
       dir,
       'agent-skill',
@@ -270,7 +270,7 @@ version: 1.0.0
   });
 
   it('直接循环 — @skill:a → @skill:a 拒绝加载', () => {
-    const dir = path.join(tmp2, '.lumen', 'skills');
+    const dir = path.join(tmp2, '.concertoai', 'skills');
     const log = vi.fn();
 
     writeSkill(
@@ -295,7 +295,7 @@ version: 1.0.0
   });
 
   it('间接循环 — A → B → A 拒绝加载', () => {
-    const dir = path.join(tmp2, '.lumen', 'skills');
+    const dir = path.join(tmp2, '.concertoai', 'skills');
     const log = vi.fn();
 
     // B 先加载（被 A 引用）
@@ -336,7 +336,7 @@ A 的技能正文。
   });
 
   it('三层正常链 — A → B → C 正常展开', () => {
-    const dir = path.join(tmp2, '.lumen', 'skills');
+    const dir = path.join(tmp2, '.concertoai', 'skills');
 
     writeSkill(
       dir,
@@ -389,7 +389,7 @@ A 的正文。
   });
 
   it('超过 3 层深度 → 拒绝加载', () => {
-    const dir = path.join(tmp2, '.lumen', 'skills');
+    const dir = path.join(tmp2, '.concertoai', 'skills');
     const log = vi.fn();
 
     // d (depth 0) → c (1) → b (2) → a (3) → ...  → exceeds limit
@@ -430,7 +430,7 @@ version: 1.0.0
   });
 
   it('超过 3 层深度 — 从外层测量', () => {
-    const dir = path.join(tmp2, '.lumen', 'skills');
+    const dir = path.join(tmp2, '.concertoai', 'skills');
     const log = vi.fn();
 
     // 创建链 A → B → C → D → E（5 层）

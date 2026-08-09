@@ -1,5 +1,5 @@
 /**
- * 配置文件：~/.lumen/config.json（带 schema 版本字段）。
+ * 配置文件：~/.concertoai/config.json（带 schema 版本字段）。
  *
  * 支持字段：defaultModel（默认模型）、allowlist（命令白名单）、
  * approvalPolicy（ask / allowlist-only）、sessionDir（会话目录）、locale。
@@ -9,15 +9,15 @@
  */
 
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
 
+import { configPath } from './paths';
 import { DEFAULT_SESSION_DIR } from './session';
 
 /** 当前配置 schema 版本。 */
 export const CONFIG_SCHEMA_VERSION = 1;
-/** 默认配置路径：~/.lumen/config.json。 */
-export const DEFAULT_CONFIG_PATH = path.join(os.homedir(), '.lumen', 'config.json');
+/** 默认配置路径：~/.concertoai/config.json。 */
+export const DEFAULT_CONFIG_PATH = configPath();
 
 export type ApprovalPolicy = 'ask' | 'allowlist-only';
 
@@ -33,7 +33,7 @@ export interface MCPServerEntry {
   env?: Record<string, string>;
 }
 
-export interface LumenConfig {
+export interface ConcertoAIConfig {
   schemaVersion: number;
   /** 默认模型 ID（CLI -m / LUMEN_MODEL 优先）。 */
   defaultModel?: string;
@@ -62,15 +62,17 @@ export interface ResolvedConfig {
 }
 
 /** 空配置（默认值由解析层兜底）。 */
-export function emptyConfig(): LumenConfig {
+export function emptyConfig(): ConcertoAIConfig {
   return { schemaVersion: CONFIG_SCHEMA_VERSION };
 }
 
 /** 读取配置文件；不存在 / 损坏 / 版本不匹配时返回空配置（不抛错）。 */
-export async function loadConfig(configPath: string = DEFAULT_CONFIG_PATH): Promise<LumenConfig> {
+export async function loadConfig(
+  configPath: string = DEFAULT_CONFIG_PATH,
+): Promise<ConcertoAIConfig> {
   try {
     const raw = await readFile(configPath, 'utf8');
-    const parsed = JSON.parse(raw) as Partial<LumenConfig>;
+    const parsed = JSON.parse(raw) as Partial<ConcertoAIConfig>;
     if (parsed.schemaVersion !== CONFIG_SCHEMA_VERSION) {
       return emptyConfig();
     }
@@ -82,7 +84,7 @@ export async function loadConfig(configPath: string = DEFAULT_CONFIG_PATH): Prom
 
 /** 写入配置文件（原子：临时文件 + rename；自动创建目录）。 */
 export async function writeConfig(
-  config: LumenConfig,
+  config: ConcertoAIConfig,
   configPath: string = DEFAULT_CONFIG_PATH,
 ): Promise<void> {
   await mkdir(path.dirname(configPath), { recursive: true });
@@ -101,7 +103,7 @@ function env(name: string): string | undefined {
  * cliModel / cliLocale 为 CLI 参数（无则 undefined）。
  */
 export function resolveConfig(
-  file: LumenConfig,
+  file: ConcertoAIConfig,
   cliModel?: string,
   cliLocale?: string,
 ): ResolvedConfig {

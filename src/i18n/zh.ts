@@ -7,7 +7,7 @@ import { MAX_LOOP_TURNS } from '../loop/loop';
 
 export const zh = {
   cli: {
-    description: 'Lumen —— 面向个人开发者的中文优先终端编码助手',
+    description: 'ConcertoAI —— 面向个人开发者的中文优先终端编码助手',
     chat: {
       description: '进入交互式对话',
     },
@@ -32,7 +32,7 @@ export const zh = {
   errors: {
     noApiKey: '未找到 DEEPSEEK_API_KEY 环境变量，请先设置后再启动。',
     noTty:
-      'chat 模式需要交互式终端。请直接运行 `lumen chat`（不要通过管道/脚本调用），或使用 `lumen run "<任务>"` 一次性执行。',
+      'chat 模式需要交互式终端。请直接运行 `concertoai chat`（不要通过管道/脚本调用），或使用 `concertoai run "<任务>"` 一次性执行。',
     modelCallFailed: '模型调用失败：{message}',
     get loopMaxTurns() {
       return `工具调用已达 ${MAX_LOOP_TURNS} 轮上限，进度已保留。你可以继续输入以让助手继续工作。`;

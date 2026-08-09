@@ -3,7 +3,7 @@
  *
  * run / plan 命令只依赖这里的纯函数与常量，从本模块导入即可，
  * 无需加载 chat.tsx 的完整 TUI 依赖树（ink/react/ui/mcp/skill），
- * 显著降低 `lumen run` / `lumen plan` 的启动成本。
+ * 显著降低 `concertoai run` / `concertoai plan` 的启动成本。
  */
 
 import os from 'node:os';

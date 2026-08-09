@@ -48,7 +48,7 @@ function makeRegistryJson(): string {
         name: 'code-review',
         version: '1.0.0',
         description: '审查',
-        author: 'Lumen',
+        author: 'ConcertoAI',
         url: 'https://example.com/skill.md',
         sha256: 'def456',
       },

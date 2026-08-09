@@ -30,7 +30,7 @@ import type { SkillLoader } from '../../src/skill/loader';
 // promote 命令层会真实落盘（promoteSkill 内部 mkdirSync），仅该组用例使用临时目录。
 let promoteTmp: string;
 beforeEach(() => {
-  promoteTmp = mkdtempSync(path.join(os.tmpdir(), 'lumen-promote-'));
+  promoteTmp = mkdtempSync(path.join(os.tmpdir(), 'concertoai-promote-'));
 });
 afterEach(() => {
   rmSync(promoteTmp, { recursive: true, force: true });
@@ -223,7 +223,7 @@ describe('executeAgentMarketCommand（/agent install）', () => {
     installerMock(deps).install.mockResolvedValue({
       ok: false,
       code: 'BUILTIN',
-      message: 'architect 是内置 Agent，已随 Lumen 分发，无需安装（可用 /agent list 查看）。',
+      message: 'architect 是内置 Agent，已随 ConcertoAI 分发，无需安装（可用 /agent list 查看）。',
     });
     const result = await executeAgentMarketCommand({ type: 'install', name: 'architect' }, deps);
     expect(result.handled).toBe(true);

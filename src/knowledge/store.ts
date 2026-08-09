@@ -8,9 +8,9 @@
 
 import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { homedir } from 'node:os';
 import path from 'node:path';
 
+import { knowledgeDir } from '../store/paths';
 import type {
   KnowledgeEntity,
   KnowledgeGraph,
@@ -31,7 +31,7 @@ function relationKey(rel: { from: string; to: string; relationType: string }): s
 
 /** 知识图谱存储目录。 */
 function storeDir(): string {
-  return path.join(homedir(), '.lumen', 'knowledge');
+  return knowledgeDir();
 }
 
 /** 按项目路径生成隔离文件名。 */

@@ -21,7 +21,7 @@ let tmp: string;
 let store: SessionStore;
 
 beforeEach(() => {
-  tmp = mkdtempSync(path.join(os.tmpdir(), 'lumen-test-'));
+  tmp = mkdtempSync(path.join(os.tmpdir(), 'concertoai-test-'));
   store = new SessionStore(path.join(tmp, 'sessions'));
 });
 
@@ -30,8 +30,8 @@ afterEach(() => {
 });
 
 describe('SessionStore 基础', () => {
-  it('默认目录为 ~/.lumen/sessions', () => {
-    expect(DEFAULT_SESSION_DIR).toBe(path.join(os.homedir(), '.lumen', 'sessions'));
+  it('默认目录为 ~/.concertoai/sessions', () => {
+    expect(DEFAULT_SESSION_DIR).toBe(path.join(os.homedir(), '.concertoai', 'sessions'));
     expect(new SessionStore().directory).toBe(DEFAULT_SESSION_DIR);
   });
 

@@ -2,7 +2,7 @@
  * 计划执行回滚：文件快照 → 失败时恢复。
  *
  * 策略：
- * - 计划执行前创建快照目录 `.lumen/snapshots/<id>/`
+ * - 计划执行前创建快照目录 `.concertoai/snapshots/<id>/`
  * - 每次 edit_file 操作前自动快照原文件（若文件存在且未被快照过）
  * - 回滚时逐文件从快照恢复，非文件操作（shell）跳过并提示
  * - 正常完成后自动清理快照目录
@@ -12,7 +12,7 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 /** 快照目录前缀。 */
-export const SNAPSHOT_DIR = '.lumen/snapshots';
+export const SNAPSHOT_DIR = '.concertoai/snapshots';
 
 // ── 快照管理器 ──
 

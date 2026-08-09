@@ -1,14 +1,14 @@
 {
-  "name": "@lumen/cli",
+  "name": "@concertoai/cli",
   "version": "3.0.0",
-  "description": "Lumen —— 面向个人开发者的中文优先终端编码助手 CLI（DeepSeek 驱动）",
+  "description": "ConcertoAI —— 面向个人开发者的中文优先终端编码助手 CLI（DeepSeek 驱动）",
   "type": "module",
   "license": "MIT",
-  "author": "Lumen 项目作者",
+  "author": "mmclqx",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "lumen": "./dist/cli/index.js"
+    "concertoai": "./dist/cli/index.js"
   },
   "exports": {
     ".": {

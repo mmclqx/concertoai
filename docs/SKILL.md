@@ -1,6 +1,6 @@
 # SKILL.md 规范
 
-> Lumen v2.0 技能系统 · 版本 v1.0 · 2026-08-08
+> ConcertoAI v2.0 技能系统 · 版本 v1.0 · 2026-08-08
 
 ## 概述
 
@@ -56,8 +56,8 @@ model: deepseek-v4-pro
 
 技能文件存放在以下目录，加载器按优先级扫描：
 
-1. **项目级**：`<cwd>/.lumen/skills/` — 项目专属技能，优先加载
-2. **全局**：`~/.lumen/skills/` — 跨项目共享技能
+1. **项目级**：`<cwd>/.concertoai/skills/` — 项目专属技能，优先加载
+2. **全局**：`~/.concertoai/skills/` — 跨项目共享技能
 
 同名技能：项目级覆盖全局级。
 

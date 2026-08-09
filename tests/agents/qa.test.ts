@@ -55,7 +55,7 @@ class FakeRunner implements QaRunner {
 
 /** 模拟 vitest 全绿输出。 */
 const PASS_OUTPUT = [
-  ' RUN  v4.1.10 F:/developer/2026/lumen',
+  ' RUN  v4.1.10 F:/developer/2026/concertoai',
   '',
   ' Test Files  51 passed (51)',
   '      Tests  577 passed (577)',

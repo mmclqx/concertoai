@@ -14,7 +14,7 @@ import { MemoryStore } from '../../src/store/memory-store';
 let tmp: string;
 
 beforeEach(() => {
-  tmp = mkdtempSync(path.join(os.tmpdir(), 'lumen-slash-'));
+  tmp = mkdtempSync(path.join(os.tmpdir(), 'concertoai-slash-'));
 });
 
 afterEach(() => {

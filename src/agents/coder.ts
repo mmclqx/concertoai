@@ -95,7 +95,7 @@ export const coderInputSchema = z.object({
 
 /** 实现模式 system prompt：按 spec 输出严格 JSON 文件集合。 */
 const IMPLEMENT_SYSTEM_PROMPT = [
-  '你是 Lumen 的编码 Agent。根据架构师给出的 ArchitectSpec 输出实现代码。',
+  '你是 ConcertoAI 的编码 Agent。根据架构师给出的 ArchitectSpec 输出实现代码。',
   '输出严格为 JSON 对象（不要 markdown 围栏，不要其他文字），结构：',
   '{"files":[{"path":"src/a.ts","content":"// 完整文件内容"}]}',
   '要求：',
@@ -107,7 +107,7 @@ const IMPLEMENT_SYSTEM_PROMPT = [
 
 /** 修复模式 system prompt：按 Reviewer 问题列表输出修复后的文件。 */
 const FIX_SYSTEM_PROMPT = [
-  '你是 Lumen 的编码 Agent。根据 Reviewer 的代码审查问题列表修复代码。',
+  '你是 ConcertoAI 的编码 Agent。根据 Reviewer 的代码审查问题列表修复代码。',
   '你收到当前全部文件的 JSON 以及问题列表，输出修复后的文件集合。',
   '输出严格为 JSON 对象（不要 markdown 围栏，不要其他文字），结构：',
   '{"files":[{"path":"src/a.ts","content":"// 修复后的完整文件内容"}]}',

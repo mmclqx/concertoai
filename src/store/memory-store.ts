@@ -1,7 +1,7 @@
 /**
  * 项目级跨会话记忆存储。
  *
- * 存储位置：项目根目录 `.lumen-memory/memories.jsonl`
+ * 存储位置：项目根目录 `.concertoai-memory/memories.jsonl`
  * 每行一条记忆（JSON），格式与 SessionStore 一致。
  *
  * 设计要点：
@@ -40,7 +40,7 @@ export class MemoryStore {
 
   constructor(options: MemoryStoreOptions = {}) {
     const cwd = options.cwd ?? process.cwd();
-    this.dir = path.join(cwd, '.lumen-memory');
+    this.dir = path.join(cwd, '.concertoai-memory');
     this.file = path.join(this.dir, 'memories.jsonl');
   }
 

@@ -2,7 +2,7 @@
  * 本地项目记忆检索与格式化。
  *
  * 从 MemoryStore 检索相关记忆，格式化为注入文本。
- * 与 MCP memory-injector（T1.3）互补：本模块处理本地 `.lumen-memory/`。
+ * 与 MCP memory-injector（T1.3）互补：本模块处理本地 `.concertoai-memory/`。
  */
 
 import type { MemoryStore } from '../store/memory-store';

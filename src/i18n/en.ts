@@ -7,7 +7,7 @@ import { MAX_LOOP_TURNS } from '../loop/loop';
 
 export const en = {
   cli: {
-    description: 'Lumen — a Chinese-first terminal coding assistant for individual developers',
+    description: 'ConcertoAI — a Chinese-first terminal coding assistant for individual developers',
     chat: {
       description: 'Start an interactive conversation',
     },
@@ -32,7 +32,7 @@ export const en = {
   errors: {
     noApiKey: 'DEEPSEEK_API_KEY not found. Set it first, then start again.',
     noTty:
-      'chat mode requires an interactive terminal. Run `lumen chat` directly (not via a pipe/script), or use `lumen run "<task>"` instead.',
+      'chat mode requires an interactive terminal. Run `concertoai chat` directly (not via a pipe/script), or use `concertoai run "<task>"` instead.',
     modelCallFailed: 'Model call failed: {message}',
     get loopMaxTurns() {
       return `Tool call limit reached (${MAX_LOOP_TURNS} turns). Progress saved — continue typing to let the assistant resume.`;

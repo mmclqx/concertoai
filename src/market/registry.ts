@@ -112,7 +112,7 @@ export function parseAgentItem(json: string): AgentRegistryItem {
 
 /** 默认注册表 URL（内置）。 */
 export const DEFAULT_REGISTRY_URL =
-  'https://raw.githubusercontent.com/lumen/cli/main/skills/registry.json';
+  'https://raw.githubusercontent.com/concertoai/cli/main/skills/registry.json';
 
 /** 从 URL fetch 并解析注册表（失败返回 null，与技能市场 fetchRegistry 一致）。 */
 export async function fetchMarketRegistry(

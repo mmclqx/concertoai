@@ -3,7 +3,7 @@
  *
  * 覆盖验收标准：
  * - /agent promote <skill>：读取技能 SKILL.md → 生成 Agent 脚手架
- *   （~/.lumen/agents/<name>/agent.json + index.js）→ 注册到 AgentRegistry；
+ *   （~/.concertoai/agents/<name>/agent.json + index.js）→ 注册到 AgentRegistry；
  * - 脚手架包含接口声明（interfaces）与权限声明（permissions 从技能 tools 推导，
  *   无 tools 时默认只读三件套，fail-closed）；
  * - 生成后 /agent list 可见（agent.json 与安装器 InstalledAgent 格式兼容）；
@@ -31,7 +31,7 @@ let tmp: string;
 let agentsDir: string;
 
 beforeEach(() => {
-  tmp = mkdtempSync(path.join(os.tmpdir(), 'lumen-promote-'));
+  tmp = mkdtempSync(path.join(os.tmpdir(), 'concertoai-promote-'));
   agentsDir = path.join(tmp, 'agents');
 });
 
@@ -43,7 +43,7 @@ afterEach(() => {
 
 /** 写入一个项目级技能（SKILL.md，可指定 tools 白名单）。 */
 function writeSkill(cwd: string, name: string, body: string, tools?: string): void {
-  const dir = path.join(cwd, '.lumen', 'skills', name);
+  const dir = path.join(cwd, '.concertoai', 'skills', name);
   mkdirSync(dir, { recursive: true });
   const frontmatter = `---
 name: ${name}

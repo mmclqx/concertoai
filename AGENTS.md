@@ -1,4 +1,4 @@
-# AGENTS.md - Lumen 项目开发规范
+# AGENTS.md - ConcertoAI 项目开发规范
 
 > 最后更新：2026-08-09
 > 版本：v3.0.0
@@ -7,7 +7,7 @@
 
 ## 项目定位
 
-Lumen 是一款**面向个人开发者的终端编码助手 CLI**（DeepSeek 驱动，中文优先）。它不是一个通用工具，而是一个有明确设计哲学的产品：
+ConcertoAI 是一款**面向个人开发者的终端编码助手 CLI**（DeepSeek 驱动，中文优先）。它不是一个通用工具，而是一个有明确设计哲学的产品：
 
 - **安全优先**：编辑与 Shell 命令一律审批，无 yolo 模式
 - **中文优先**：全中文交互与反馈，降低使用门槛
@@ -22,13 +22,13 @@ Lumen 是一款**面向个人开发者的终端编码助手 CLI**（DeepSeek 驱
 
 **核心工作流**：
 ```bash
-npm install -g @lumen/cli
+npm install -g @concertoai/cli
 cd path/to/project
-lumen
+concertoai
 ```
 ### v2.0 已完成，核心能力包括：
 
-CLI 交互（lumen chat / lumen run / lumen init / lumen plan）
+CLI 交互（concertoai chat / concertoai run / concertoai init / concertoai plan）
 
 DeepSeek 流式对话
 
@@ -128,10 +128,10 @@ UI 测试：Ink 组件需用 ink-testing-library 覆盖
 
 ## 命名与包
 项目	内容
-产品名	Lumen
-npm 包	@lumen/cli（如被占用则备选 lumen-cli）
-主命令	lumen
-短命令	lumen（不安装 cc，避免与 C 编译器冲突）
+产品名	ConcertoAI
+npm 包	@concertoai/cli（如被占用则备选 concertoai-cli）
+主命令	concertoai
+短命令	concertoai（不安装 cc，避免与 C 编译器冲突）
 
 ## 当前开发阶段
 v2.0.0 已完成，全部 v2.0 任务已落地：
@@ -201,11 +201,11 @@ v3.0.0 发布门检查（当前）：
 
 ## 重要决策（已确定）
 决策	说明
-会话存储	JSONL 格式，存储在 ~/.lumen/sessions/
+会话存储	JSONL 格式，存储在 ~/.concertoai/sessions/
 审批流	fail-closed（默认拒绝），编辑与 Shell 一律审批
 上下文管理	v2.0 采用智能摘要压缩（优先摘要，失败回退裁剪）
 模型默认	deepseek-v4-flash，困难任务自动升级到 pro
-配置系统	~/.lumen/config.json，CLI > 环境变量 > 配置文件 > 默认值
+配置系统	~/.concertoai/config.json，CLI > 环境变量 > 配置文件 > 默认值
 
 ## 跨平台兼容性规范
 
@@ -265,7 +265,7 @@ v3.0.0 发布门检查（当前）：
 ## 代码格式规范
 
 ### Biome 格式检查
-- Lumen 使用 Biome 进行代码检查和格式化
+- ConcertoAI 使用 Biome 进行代码检查和格式化
 - 常见可自动修复的问题：
   - `organizeImports`：import 语句排序问题 → 执行 `npx.cmd biome check --write <文件路径>`
   - `format`：缩进/空格/换行问题 → 执行 `npx.cmd biome format --write <文件路径>`

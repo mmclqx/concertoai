@@ -117,7 +117,7 @@ let tmp: string;
 let registry: ToolRegistry;
 
 beforeEach(() => {
-  tmp = mkdtempSync(path.join(os.tmpdir(), 'lumen-test-'));
+  tmp = mkdtempSync(path.join(os.tmpdir(), 'concertoai-test-'));
   registry = new ToolRegistry().register(readFileTool).register(editFileTool).register(shellTool);
 });
 
@@ -166,7 +166,7 @@ describe('审批框', () => {
 
 describe('App 集成', () => {
   it('输入 → 流式回复渲染', async () => {
-    const model = new FakeModel([{ content: '你好，Lumen 就绪' }]);
+    const model = new FakeModel([{ content: '你好，ConcertoAI 就绪' }]);
     const { stdin, lastFrame, unmount } = render(
       <App client={model} registry={registry} ctx={{ cwd: tmp }} model="deepseek-v4-flash" />,
     );
@@ -174,7 +174,7 @@ describe('App 集成', () => {
     await sleep(50);
     stdin.write('\r');
     await waitFor(() => {
-      expect(lastFrame()).toContain('你好，Lumen 就绪');
+      expect(lastFrame()).toContain('你好，ConcertoAI 就绪');
     });
     unmount();
   });
@@ -262,7 +262,7 @@ describe('App 集成', () => {
     const model = new FakeModel(
       [
         {
-          content: '你好，Lumen',
+          content: '你好，ConcertoAI',
           usage: { prompt_tokens: 100, completion_tokens: 50, total_tokens: 150 },
         },
       ],

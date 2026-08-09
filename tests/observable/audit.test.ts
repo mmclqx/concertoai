@@ -4,7 +4,7 @@
  * 覆盖验收标准：
  * - append/exportJson：JSONL 追加写入 → 读回保序（seq 自增 + 时间戳 + kind + detail）；
  * - 损坏行跳过（审计不因单行损坏中断）；
- * - 性能基准（§6.1）：单条写入 < 10ms（注入 tmp 路径，避免污染 ~/.lumen/audit/）。
+ * - 性能基准（§6.1）：单条写入 < 10ms（注入 tmp 路径，避免污染 ~/.concertoai/audit/）。
  */
 import { mkdtempSync, rmSync } from 'node:fs';
 import os from 'node:os';
@@ -18,7 +18,7 @@ let tmp: string;
 let logFile: string;
 
 beforeEach(() => {
-  tmp = mkdtempSync(path.join(os.tmpdir(), 'lumen-audit-'));
+  tmp = mkdtempSync(path.join(os.tmpdir(), 'concertoai-audit-'));
   logFile = path.join(tmp, 'audit.jsonl');
 });
 

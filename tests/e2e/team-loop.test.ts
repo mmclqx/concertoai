@@ -222,7 +222,7 @@ describe('E2E：闭环超限 → 事务回滚 → 文件恢复（跨 loop + tran
   let cwd: string;
 
   beforeEach(async () => {
-    cwd = await mkdtemp(path.join(tmpdir(), 'lumen-e2e-loop-'));
+    cwd = await mkdtemp(path.join(tmpdir(), 'concertoai-e2e-loop-'));
   });
 
   afterEach(async () => {

@@ -18,7 +18,7 @@ let registry: ToolRegistry;
 let approvalSpy: ReturnType<typeof vi.fn<(request: ApprovalRequest) => Promise<boolean>>>;
 
 beforeEach(() => {
-  tmp = mkdtempSync(path.join(os.tmpdir(), 'lumen-test-'));
+  tmp = mkdtempSync(path.join(os.tmpdir(), 'concertoai-test-'));
   approvalSpy = vi.fn(async () => true);
   ctx = { cwd: tmp, requestApproval: approvalSpy };
   registry = new ToolRegistry().register(shellTool);

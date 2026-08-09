@@ -12,8 +12,9 @@
 
 import { mkdirSync, readFileSync } from 'node:fs';
 import { appendFile } from 'node:fs/promises';
-import { homedir } from 'node:os';
 import path from 'node:path';
+
+import { auditDir } from '../store/paths';
 
 /** 审计条目类型：消息 / 状态变更 / 审批 / 回滚。 */
 export type AuditKind = 'message' | 'state-change' | 'approval' | 'rollback';
@@ -30,15 +31,15 @@ export interface AuditEntry {
   detail: unknown;
 }
 
-/** 默认审计目录（~/.lumen/audit/）。 */
+/** 默认审计目录（~/.concertoai/audit/）。 */
 export function defaultAuditDir(): string {
-  return path.join(homedir(), '.lumen', 'audit');
+  return auditDir();
 }
 
 /**
  * JSONL 审计日志写入器。
  *
- * @param file 日志文件路径（默认 ~/.lumen/audit/<yyyyMMdd-HHmmss>.jsonl；测试可注入 tmp 路径）。
+ * @param file 日志文件路径（默认 ~/.concertoai/audit/<yyyyMMdd-HHmmss>.jsonl；测试可注入 tmp 路径）。
  */
 export class AuditLogger {
   private seq = 0;

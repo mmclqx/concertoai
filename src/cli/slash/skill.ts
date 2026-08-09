@@ -7,12 +7,12 @@
  */
 
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { homedir } from 'node:os';
 import path from 'node:path';
 import type { ChatMessage } from '../../loop/types';
 import { fetchVerifiedContent } from '../../market/download';
 import type { SkillLoader } from '../../skill/loader';
 import type { AgentRef } from '../../skill/types';
+import { globalSkillsDir } from '../../store/paths';
 
 // ── 命令解析 ──
 
@@ -115,7 +115,7 @@ export function executeSkillCommand(
         message: {
           role: 'assistant',
           content:
-            '📋 暂无可用技能。\n\n将 SKILL.md 放入 `.lumen/skills/<name>/` 目录即可注册新技能。',
+            '📋 暂无可用技能。\n\n将 SKILL.md 放入 `.concertoai/skills/<name>/` 目录即可注册新技能。',
         },
       };
     }
@@ -182,16 +182,11 @@ interface Registry {
   skills: RegistryEntry[];
 }
 
-/** 全局技能安装目录。 */
-function globalSkillsDir(): string {
-  return path.join(homedir(), '.lumen', 'skills');
-}
-
 /** 从注册表 URL fetch 并解析注册表 JSON。 */
 async function fetchRegistry(): Promise<Registry | null> {
   try {
     const resp = await fetch(
-      'https://raw.githubusercontent.com/lumen/cli/main/skills/registry.json',
+      'https://raw.githubusercontent.com/concertoai/cli/main/skills/registry.json',
       { signal: AbortSignal.timeout(10_000) },
     );
     if (!resp.ok) {
@@ -292,7 +287,7 @@ export async function executeSkillMarketCommand(
       };
     }
 
-    // 写入 ~/.lumen/skills/<name>/SKILL.md
+    // 写入 ~/.concertoai/skills/<name>/SKILL.md
     const dir = path.join(globalSkillsDir(), cmd.name);
     mkdirSync(dir, { recursive: true });
     writeFileSync(path.join(dir, 'SKILL.md'), content, 'utf8');

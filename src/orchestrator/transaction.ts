@@ -1,7 +1,7 @@
 /**
  * 多文件事务回滚（v3.0 M3 / T3.6，§8.1）。
  *
- * 任务级多文件事务：任务开始前创建 `.lumen/snapshots/<taskId>/` 快照，
+ * 任务级多文件事务：任务开始前创建 `.concertoai/snapshots/<taskId>/` 快照，
  * 回滚时恢复所有涉及文件，保证原子性（含已通过审批的部分文件）。
  *
  * 关键设计：
@@ -10,7 +10,7 @@
  *   供 rollback 区分「任务修改」与「外部修改」；
  * - rollback(taskId)：恢复文件 → 外部修改检测 → 全部成功清理快照 / 部分失败保留快照并报错；
  * - commit(taskId)：任务成功后清理快照；
- * - 失败/取消后未 rollback → 快照保留供人工检查；`lumen snapshot clean` 手动清理；
+ * - 失败/取消后未 rollback → 快照保留供人工检查；`concertoai snapshot clean` 手动清理；
  * - 回滚失败（文件被外部修改 / 读写异常）→ 明确报错并保留快照，不静默覆盖。
  */
 
@@ -20,7 +20,7 @@ import path from 'node:path';
 // ── 常量 ──────────────────────────────────────────────────────
 
 /** 快照根目录（项目相对）。 */
-export const SNAPSHOT_ROOT = '.lumen/snapshots';
+export const SNAPSHOT_ROOT = '.concertoai/snapshots';
 
 /** 快照清单文件名（记录 relPath ↔ 编码文件映射 + 存在性）。 */
 const FILES_MANIFEST = 'files.json';
@@ -266,7 +266,7 @@ export class SnapshotManager {
     }
   }
 
-  /** 清理全部快照（`lumen snapshot clean`），返回被清理的 taskId 列表。 */
+  /** 清理全部快照（`concertoai snapshot clean`），返回被清理的 taskId 列表。 */
   async clean(): Promise<string[]> {
     const names = await this.list();
     for (const name of names) {

@@ -4,9 +4,9 @@
  * 被 App.tsx 的 send 函数在调用 runLoop 前拦截处理。
  *
  * v3.0 M4 / T4.3：
- * - /agent list：列出内置 Agent（随 Lumen 分发）+ 已安装外部 Agent；
+ * - /agent list：列出内置 Agent（随 ConcertoAI 分发）+ 已安装外部 Agent；
  * - /agent install <name>：调用 AgentInstaller 从市场安装（下载 → sha256 校验
- *   → 接口合规检查 → 写入 ~/.lumen/agents/<name>/ → 刷新 AgentRegistry）；
+ *   → 接口合规检查 → 写入 ~/.concertoai/agents/<name>/ → 刷新 AgentRegistry）；
  * - /agent remove <name>：卸载已安装外部 Agent（内置 Agent 拒绝卸载）；
  * - /agent promote <skill>：将技能一键升级为 Agent（脚手架 + 接口声明，T4.4）。
  *
@@ -108,7 +108,7 @@ export interface AgentCommandDeps {
   builtinItems?: AgentRegistryItem[];
   /** 技能加载器（T4.4 promote 读取技能；App.tsx 传入共享 SkillLoader 实例）。 */
   loader?: SkillLoader;
-  /** Agent 安装目录（T4.4 promote 写入；默认 ~/.lumen/agents/，测试可注入）。 */
+  /** Agent 安装目录（T4.4 promote 写入；默认 ~/.concertoai/agents/，测试可注入）。 */
   installDir?: string;
 }
 
@@ -182,7 +182,7 @@ export async function executeAgentMarketCommand(
         handled: true,
         message: {
           role: 'assistant',
-          content: `❌ ${cmd.name} 是内置 Agent，已随 Lumen 分发，不可卸载。`,
+          content: `❌ ${cmd.name} 是内置 Agent，已随 ConcertoAI 分发，不可卸载。`,
         },
       };
     }
@@ -215,7 +215,7 @@ export async function executeAgentMarketCommand(
         handled: true,
         message: {
           role: 'assistant',
-          content: '❌ 技能加载器不可用，无法执行 promote（请通过对话启动 Lumen）。',
+          content: '❌ 技能加载器不可用，无法执行 promote（请通过对话启动 ConcertoAI）。',
         },
       };
     }
@@ -247,7 +247,7 @@ export async function executeAgentMarketCommand(
 
 // ── 列表格式化 ──────────────────────────────────────────────
 
-/** 组装 /agent list 展示文本：内置 Agent（随 Lumen 分发）+ 已安装外部 Agent。 */
+/** 组装 /agent list 展示文本：内置 Agent（随 ConcertoAI 分发）+ 已安装外部 Agent。 */
 export function formatAgentList(deps: AgentCommandDeps): string {
   const builtin = deps.builtinItems ?? BUILTIN_AGENT_ITEMS;
   const installed = deps.installer.listInstalled();
@@ -271,7 +271,7 @@ export function formatAgentList(deps: AgentCommandDeps): string {
   }
 
   sections.push(
-    '提示：内置 Agent 随 Lumen 分发；外部 Agent 经市场安装，权限 fail-closed（未声明工具一律拒绝）。',
+    '提示：内置 Agent 随 ConcertoAI 分发；外部 Agent 经市场安装，权限 fail-closed（未声明工具一律拒绝）。',
   );
   return sections.join('\n\n');
 }

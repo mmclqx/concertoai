@@ -10,7 +10,7 @@ import { KnowledgeStore } from '../../src/knowledge/store';
 let tmp: string;
 
 beforeEach(() => {
-  tmp = mkdtempSync(path.join(os.tmpdir(), 'lumen-kg-search-'));
+  tmp = mkdtempSync(path.join(os.tmpdir(), 'concertoai-kg-search-'));
 });
 
 afterEach(() => {

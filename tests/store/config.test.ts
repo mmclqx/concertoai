@@ -17,7 +17,7 @@ import { DEFAULT_SESSION_DIR } from '../../src/store/session';
 let tmp: string;
 
 beforeEach(() => {
-  tmp = mkdtempSync(path.join(os.tmpdir(), 'lumen-test-'));
+  tmp = mkdtempSync(path.join(os.tmpdir(), 'concertoai-test-'));
   // 隔离本机系统 LANG（如 zh_CN.UTF-8），避免影响「全部缺省」类断言
   vi.stubEnv('LANG', '');
 });
@@ -63,8 +63,8 @@ describe('loadConfig / writeConfig', () => {
     expect(config).toEqual(emptyConfig());
   });
 
-  it('默认配置路径为 ~/.lumen/config.json', () => {
-    expect(DEFAULT_CONFIG_PATH).toBe(path.join(os.homedir(), '.lumen', 'config.json'));
+  it('默认配置路径为 ~/.concertoai/config.json', () => {
+    expect(DEFAULT_CONFIG_PATH).toBe(path.join(os.homedir(), '.concertoai', 'config.json'));
     expect(CONFIG_SCHEMA_VERSION).toBe(1);
   });
 });

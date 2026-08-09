@@ -4,7 +4,7 @@ import { existsSync, mkdtempSync, readdirSync, rmSync, unlinkSync } from 'node:f
 import os from 'node:os';
 import path from 'node:path';
 
-const dir = mkdtempSync(path.join(os.tmpdir(), 'lumen-smoke-'));
+const dir = mkdtempSync(path.join(os.tmpdir(), 'concertoai-smoke-'));
 const tgz = readdirSync('.').find((f) => f.endsWith('.tgz'));
 if (tgz === undefined) {
   throw new Error('未找到 tarball');
@@ -13,10 +13,10 @@ if (tgz === undefined) {
 console.log(`安装到: ${dir}`);
 execSync(`npm install -g --prefix "${dir}" "${tgz}"`, { stdio: 'inherit' });
 
-const bin = path.join(dir, 'lumen');
-console.log('--- lumen --version ---');
+const bin = path.join(dir, 'concertoai');
+console.log('--- concertoai --version ---');
 console.log(execSync(`"${bin}" --version`).toString());
-console.log('--- lumen --help ---');
+console.log('--- concertoai --help ---');
 console.log(execSync(`"${bin}" --help`).toString());
 
 rmSync(dir, { recursive: true, force: true });

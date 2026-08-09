@@ -2,7 +2,7 @@
  * 多文件事务回滚测试（v3.0 M3 / T3.6）。
  *
  * 覆盖验收标准：
- * - beginTransaction：任务开始前创建 .lumen/snapshots/<taskId>/，保存涉及文件原始内容；
+ * - beginTransaction：任务开始前创建 .concertoai/snapshots/<taskId>/，保存涉及文件原始内容；
  * - rollback：恢复所有文件到任务开始前状态（含已审批的部分文件，原子性）；
  * - commit：任务成功后清理快照；
  * - 失败/取消后保留快照供人工检查（未 rollback / rollback 失败均保留）；
@@ -21,7 +21,7 @@ import { SNAPSHOT_ROOT, SnapshotManager } from '../../src/orchestrator';
 let cwd: string;
 
 beforeEach(async () => {
-  cwd = await mkdtemp(path.join(tmpdir(), 'lumen-tx-'));
+  cwd = await mkdtemp(path.join(tmpdir(), 'concertoai-tx-'));
 });
 
 afterEach(async () => {
@@ -57,7 +57,7 @@ async function snapshotExists(taskId: string): Promise<boolean> {
 // ── begin ─────────────────────────────────────────────────────
 
 describe('begin（创建快照）', () => {
-  it('保存涉及文件原始内容到 .lumen/snapshots/<taskId>/', async () => {
+  it('保存涉及文件原始内容到 .concertoai/snapshots/<taskId>/', async () => {
     await write('src/a.ts', '原内容A');
     await write('src/b.ts', '原内容B');
     const tx = new SnapshotManager(cwd);

@@ -12,3 +12,5 @@ yarn-error.log*
 Thumbs.db
 *.tsbuildinfo
 .lumen/
+.concertoai/
+docs/起名建议/

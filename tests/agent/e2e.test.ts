@@ -39,7 +39,7 @@ let ctx: ToolContext;
 const model = 'deepseek-v4-flash';
 
 beforeEach(() => {
-  tmp = mkdtempSync(path.join(os.tmpdir(), 'lumen-agent-e2e-'));
+  tmp = mkdtempSync(path.join(os.tmpdir(), 'concertoai-agent-e2e-'));
   ctx = { cwd: tmp };
 });
 

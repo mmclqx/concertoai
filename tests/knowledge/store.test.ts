@@ -16,7 +16,7 @@ let tmp: string;
 let store: KnowledgeStore;
 
 beforeEach(() => {
-  tmp = mkdtempSync(path.join(os.tmpdir(), 'lumen-kg-test-'));
+  tmp = mkdtempSync(path.join(os.tmpdir(), 'concertoai-kg-test-'));
   store = new KnowledgeStore(tmp);
 });
 

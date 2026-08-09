@@ -1,6 +1,6 @@
-# Lumen Agent 开发指南
+# ConcertoAI Agent 开发指南
 
-> 面向第三方开发者：如何开发、打包并发布一个 Lumen Agent。
+> 面向第三方开发者：如何开发、打包并发布一个 ConcertoAI Agent。
 > 版本：v3.0 · 2026-08-09
 > 前置阅读：[用户手册](./user-guide.md)（多 Agent 协作 / Agent 市场章节）、[架构文档](../02-架构设计/ARCHITECTURE.md)（§4 D33-D38）
 
@@ -8,7 +8,7 @@
 
 ## 1. 核心概念
 
-Lumen Agent 是遵循统一接口契约（`AgentDef` + `Agent` 接口）的**可插拔能力单元**，由 Orchestrator 调度参与多 Agent 协作。
+ConcertoAI Agent 是遵循统一接口契约（`AgentDef` + `Agent` 接口）的**可插拔能力单元**，由 Orchestrator 调度参与多 Agent 协作。
 
 ```
 AgentDef（声明契约）          Agent（实现实例）
@@ -83,7 +83,7 @@ interface AgentContext {
 已有 SKILL.md 技能 → 对话内执行 `/agent promote <skill>`，自动生成脚手架：
 
 ```
-~/.lumen/agents/<skill>/
+~/.concertoai/agents/<skill>/
 ├── agent.json    # InstalledAgent 元数据（name/version/def/installedAt）
 └── index.js      # CJS 执行骨架：create({ client, model }) 工厂
 ```
@@ -97,7 +97,7 @@ interface AgentContext {
 注册到 `AgentRegistry`（`src/agents/registry.ts`）：
 
 ```typescript
-import { InMemoryAgentRegistry } from '@lumen/cli';
+import { InMemoryAgentRegistry } from '@concertoai/cli';
 
 const registry = new InMemoryAgentRegistry();
 registry.register(
@@ -159,7 +159,7 @@ registry.register(
 ### 4.3 安装流程（用户侧）
 
 `/agent install my-agent` → fetch 注册表 → 匹配条目 → 下载 → **sha256 校验** →
-**接口合规检查**（zod schema）→ 写入 `~/.lumen/agents/<name>/` → 刷新注册表。
+**接口合规检查**（zod schema）→ 写入 `~/.concertoai/agents/<name>/` → 刷新注册表。
 任何一步失败 → 明确中文报错，拒绝安装。
 
 ## 5. 发布清单
@@ -171,7 +171,7 @@ registry.register(
 - [ ] 包内容 sha256 与注册表条目一致；
 - [ ] `entry` 可被 `import()` 加载（`module.exports = { create }` 工厂）；
 - [ ] `execute` 输入/输出与 `interfaces` 声明的 Schema 一致；
-- [ ] 写操作（edit_file / run_command）在实现中走审批流（Lumen 安全基线，不可绕过）；
+- [ ] 写操作（edit_file / run_command）在实现中走审批流（ConcertoAI 安全基线，不可绕过）；
 - [ ] 本地验证：`/agent install <name>` → `/agent list` 可见 → `/agent remove <name>` 可卸载。
 
 ## 6. 常见问题
@@ -181,7 +181,7 @@ registry.register(
 | 安装被拒：`permissions 不能为空` | 权限声明是安全契约（fail-closed），补全实际使用的工具 |
 | 安装被拒：`sha256 校验不通过` | 包内容与注册表 `sha256` 不一致，重新计算并更新 |
 | 安装被拒：`AgentDef 结构不符合协议` | 对照 §4.1 包格式检查 def 字段完整性 |
-| 内置 Agent 无法安装/卸载 | 内置 4 个（architect/coder/reviewer/qa）随 Lumen 分发，`runtime: 'builtin'` 拒绝装卸 |
+| 内置 Agent 无法安装/卸载 | 内置 4 个（architect/coder/reviewer/qa）随 ConcertoAI 分发，`runtime: 'builtin'` 拒绝装卸 |
 | 如何测试自己的 Agent？ | 注入 Fake ModelClient（`tests/e2e/orchestrator.test.ts` 同款）驱动 `execute`，断言输出符合 schema |
 
 ---

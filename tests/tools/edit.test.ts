@@ -13,7 +13,7 @@ let ctx: ToolContext;
 let registry: ToolRegistry;
 
 beforeEach(() => {
-  tmp = mkdtempSync(path.join(os.tmpdir(), 'lumen-test-'));
+  tmp = mkdtempSync(path.join(os.tmpdir(), 'concertoai-test-'));
   ctx = { cwd: tmp, requestApproval: vi.fn(async () => true) };
   registry = new ToolRegistry().register(editFileTool);
 });

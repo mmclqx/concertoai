@@ -13,7 +13,7 @@ import { MemoryStore } from '../../src/store/memory-store';
 let tmp: string;
 
 beforeEach(() => {
-  tmp = mkdtempSync(path.join(os.tmpdir(), 'lumen-memory-'));
+  tmp = mkdtempSync(path.join(os.tmpdir(), 'concertoai-memory-'));
 });
 
 afterEach(() => {
@@ -123,7 +123,7 @@ describe('MemoryStore 检索', () => {
 
 describe('MemoryStore 隔离', () => {
   it('不同 cwd 的 MemoryStore 互不干扰', async () => {
-    const tmp2 = mkdtempSync(path.join(os.tmpdir(), 'lumen-memory2-'));
+    const tmp2 = mkdtempSync(path.join(os.tmpdir(), 'concertoai-memory2-'));
     try {
       const s1 = new MemoryStore({ cwd: tmp });
       const s2 = new MemoryStore({ cwd: tmp2 });

@@ -9,7 +9,7 @@ import { loadProjectRules, MAX_RULES_CHARS } from '../../src/store/project-rules
 let tmp: string;
 
 beforeEach(() => {
-  tmp = mkdtempSync(path.join(os.tmpdir(), 'lumen-test-'));
+  tmp = mkdtempSync(path.join(os.tmpdir(), 'concertoai-test-'));
 });
 
 afterEach(() => {

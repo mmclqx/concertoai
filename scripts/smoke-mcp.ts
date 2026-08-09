@@ -1,7 +1,7 @@
 /**
  * MCP 真实服务连接冒烟脚本。
  *
- * 读取 ~/.lumen/config.json 中的 mcpServers 配置，用 Lumen 自研 MCP 客户端
+ * 读取 ~/.concertoai/config.json 中的 mcpServers 配置，用 ConcertoAI 自研 MCP 客户端
  * （McpManager / McpClient）连接真实 MCP 服务：
  *   1. 并发连接所有配置的服务；
  *   2. 发现各服务工具列表；
@@ -22,12 +22,12 @@ import type { MCPServerConfig } from '../src/mcp/types';
 /** 各服务的只读探针工具（避免写入污染外部数据）。 */
 const PROBES: Record<string, { tool: string; args: Record<string, unknown> }> = {
   filesystem: { tool: 'list_allowed_directories', args: {} },
-  memory: { tool: 'search_nodes', args: { query: 'lumen' } },
+  memory: { tool: 'search_nodes', args: { query: 'concertoai' } },
   github: { tool: 'list_repositories', args: {} },
 };
 
 async function main(): Promise<void> {
-  const configPath = join(homedir(), '.lumen', 'config.json');
+  const configPath = join(homedir(), '.concertoai', 'config.json');
   let raw: { mcpServers?: unknown };
   try {
     raw = JSON.parse(await readFile(configPath, 'utf8')) as { mcpServers?: unknown };
@@ -39,7 +39,7 @@ async function main(): Promise<void> {
   }
   const entries = Array.isArray(raw.mcpServers) ? raw.mcpServers : [];
   if (entries.length === 0) {
-    console.error('配置文件中未声明任何 mcpServers，请先在 ~/.lumen/config.json 配置。');
+    console.error('配置文件中未声明任何 mcpServers，请先在 ~/.concertoai/config.json 配置。');
     process.exit(1);
   }
 

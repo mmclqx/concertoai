@@ -2,7 +2,7 @@
  * 技能 → Agent 升级（v3.0 M4 / T4.4）。
  *
  * /agent promote <skill>：读取技能 SKILL.md → 生成 Agent 脚手架
- * （~/.lumen/agents/<name>/agent.json + index.js）→ 注册到 AgentRegistry。
+ * （~/.concertoai/agents/<name>/agent.json + index.js）→ 注册到 AgentRegistry。
  *
  * 设计（§4.3 渐进式升级，非替代）：
  * - agent.json 与 T4.2 安装器共用 InstalledAgent 格式（name/version/def/installedAt），
@@ -29,7 +29,7 @@ export interface PromoteOptions {
   skillName: string;
   /** 技能加载器（需已 loadAll，提供技能 def）。 */
   loader: SkillLoader;
-  /** 安装目录（默认 ~/.lumen/agents/，测试可注入）。 */
+  /** 安装目录（默认 ~/.concertoai/agents/，测试可注入）。 */
   installDir?: string;
   /** Agent 注册表（提供时注册成功，供 /agent list 与后续调度）。 */
   registry?: AgentRegistry;
@@ -84,7 +84,7 @@ export function buildScaffoldIndexJs(name: string, version: string, body: string
   const bodyLiteral = JSON.stringify(body);
   const lines = [
     '/**',
-    ` * Lumen Agent 脚手架（由 /agent promote ${name} 生成）。`,
+    ` * ConcertoAI Agent 脚手架（由 /agent promote ${name} 生成）。`,
     ' *',
     ' * 接口契约：AgentDef（见同目录 agent.json）',
     " * 用法：const { create } = await import('<dir>/index.js');",

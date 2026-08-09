@@ -2,16 +2,17 @@
  * RA 知识库加载器（v2.1 M5）。
  *
  * 按优先级加载审查知识库文档：
- *   项目级（<cwd>/.lumen/reviewer/knowledge/）
- *   > 全局级（~/.lumen/reviewer/knowledge/）
+ *   项目级（<cwd>/.concertoai/reviewer/knowledge/）
+ *   > 全局级（~/.concertoai/reviewer/knowledge/）
  *   > 内置默认（skills/reviewer/knowledge/）
  *
  * 总 token 数超过 8000 时截断。
  */
 
 import { readFileSync } from 'node:fs';
-import { homedir } from 'node:os';
 import path from 'node:path';
+
+import { reviewerKnowledgeDir } from '../store/paths';
 
 /** 10 份内置知识库文档名。 */
 export const KB_FILES = [
@@ -40,8 +41,8 @@ function builtinKbDir(): string {
 export function loadKnowledgeBase(cwd: string): Map<string, string> {
   const docs = new Map<string, string>();
   const searchPaths = [
-    path.join(cwd, '.lumen', 'reviewer', 'knowledge'),
-    path.join(homedir(), '.lumen', 'reviewer', 'knowledge'),
+    path.join(cwd, '.concertoai', 'reviewer', 'knowledge'),
+    reviewerKnowledgeDir(),
     builtinKbDir(),
   ];
 
