@@ -15,6 +15,8 @@ export const RESEARCH_AGENT: SubagentDef = {
   maxTurns: 7,
   timeoutMs: 60_000,
   maxRepairs: 4,
+  /** v2.1 M1：当 filesystem / github MCP 服务可用时，子代理可访问对应工具。 */
+  allowedMcpServers: ['filesystem', 'github'],
   systemPrompt: `你是一个技术研究助手，专门对项目代码进行深度分析。
 
 ## 核心规则

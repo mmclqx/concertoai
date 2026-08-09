@@ -3,7 +3,12 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import type { SubagentSpawner } from '../agent/spawner';
 import { executeMcpCommand, parseMcpCommand } from '../cli/slash/mcp';
 import { executeMemoryCommand, parseMemoryCommand } from '../cli/slash/memory';
-import { executeSkillCommand, parseSkillCommand } from '../cli/slash/skill';
+import { executeReviewCommand, parseReviewCommand } from '../cli/slash/review';
+import {
+  executeSkillCommand,
+  executeSkillMarketCommand,
+  parseSkillCommand,
+} from '../cli/slash/skill';
 import { fmt, t } from '../i18n';
 import { retrieveLocalMemories } from '../loop/local-memory';
 import type { LoopEvent } from '../loop/loop';
@@ -15,6 +20,7 @@ import type { McpManager } from '../mcp/manager';
 import type { ModelClient } from '../model/client';
 import { cacheHitCostFor, costFor, getModel } from '../model/models';
 import { estimateMessageListTokens, estimateTokens } from '../model/tokenizer';
+import { ReviewerEngine } from '../reviewer/engine';
 import type { SkillLoader } from '../skill/loader';
 import type { MemoryStore } from '../store/memory-store';
 import type { SessionStore } from '../store/session';
@@ -438,10 +444,65 @@ export function App({
       }
       const trimmed = text.trim();
 
+      // v2.1 M5：审查命令（/review）→ 启动 Reviewer Agent
+      const reviewCmd = parseReviewCommand(trimmed);
+      if (reviewCmd !== null && spawner !== undefined) {
+        setInput('');
+        setTokens((t) => ({ ...t, input: t.input + estimateTokens(text) }));
+        setMessages((prev) => [...prev, { role: 'user', content: text }]);
+        const execResult = executeReviewCommand(reviewCmd);
+        if (execResult.message !== undefined) {
+          const msg = execResult.message;
+          setMessages((prev) => [...prev, msg]);
+        }
+        // 异步运行审查引擎
+        setPhase('streaming');
+        busy.current = true;
+        try {
+          const engine = new ReviewerEngine(spawner, ctx.cwd);
+          const report = await engine.review({
+            scope:
+              reviewCmd.type === 'files'
+                ? { type: 'files', paths: reviewCmd.paths }
+                : reviewCmd.type === 'pr'
+                  ? { type: 'pr', diff: '' }
+                  : { type: 'auto' },
+          });
+          const reportText = ReviewerEngine.formatReport(report);
+          setMessages((prev) => [...prev, { role: 'assistant', content: reportText }]);
+          setTokens((t) => ({ ...t, output: t.output + estimateTokens(reportText) }));
+        } catch (err) {
+          setError(err instanceof Error ? err.message : String(err));
+        } finally {
+          busy.current = false;
+          setPhase('idle');
+          setStreamed('');
+        }
+        return;
+      }
+
       // 技能命令（/skill）→ 列表直接显示；调用技能注入指令后调模型
       if (skillLoader !== undefined) {
         const skillCmd = parseSkillCommand(trimmed);
         if (skillCmd !== null) {
+          // v2.1 M3：技能市场命令（install / search / update）→ 异步网络操作
+          if (
+            skillCmd.type === 'install' ||
+            skillCmd.type === 'search' ||
+            skillCmd.type === 'update'
+          ) {
+            setInput('');
+            setTokens((t) => ({ ...t, input: t.input + estimateTokens(text) }));
+            const userMsg: ChatMessage = { role: 'user', content: text };
+            setMessages((prev) => [...prev, userMsg]);
+            const result = await executeSkillMarketCommand(skillCmd, skillLoader, ctx.cwd);
+            if (result.message !== undefined) {
+              const msg = result.message;
+              setMessages((prev) => [...prev, msg]);
+            }
+            return;
+          }
+
           const result = executeSkillCommand(skillCmd, skillLoader, ctx.cwd);
           if (result.handled && result.message !== undefined) {
             const msg = result.message;
@@ -526,7 +587,36 @@ export function App({
                   ? buildRestrictedRegistry(registry, result.skillTools)
                   : registry;
 
-              const effectivePrompt = [result.skillBody, systemPrompt].filter(Boolean).join('\n\n');
+              // v2.1 M2：处理 @agent 引用 → 异步 spawn 子代理，结果替换占位符
+              let effectiveBody = result.skillBody;
+              const agentRefs = result.agentRefs;
+              if (agentRefs !== undefined && agentRefs.length > 0 && spawner !== undefined) {
+                for (const ref of agentRefs) {
+                  const placeholder = `@agent:${ref.agentName}${ref.prompt ? ` ${ref.prompt}` : ''}`;
+                  try {
+                    const subResult = await spawner.spawn({
+                      agentName: ref.agentName,
+                      prompt: ref.prompt || `执行 ${result.skillName ?? '技能'} 的子任务`,
+                    });
+                    const quoted = subResult.summary
+                      .split('\n')
+                      .map((l) => `> ${l}`)
+                      .join('\n');
+                    effectiveBody = effectiveBody.replace(
+                      placeholder,
+                      `> **子代理 ${ref.agentName} 结论**：\n${quoted}`,
+                    );
+                  } catch (err) {
+                    const msg = err instanceof Error ? err.message : String(err);
+                    effectiveBody = effectiveBody.replace(
+                      placeholder,
+                      `（子代理 ${ref.agentName} 执行失败: ${msg}）`,
+                    );
+                  }
+                }
+              }
+
+              const effectivePrompt = [effectiveBody, systemPrompt].filter(Boolean).join('\n\n');
               const onEvent = makeOnEvent(controller);
               const loopResult = await runLoop(
                 {
@@ -619,15 +709,14 @@ export function App({
       setPhase('streaming');
       try {
         // 检索 MCP + 本地记忆，合并到 system prompt
-        const blocks: string[] = [];
-        if (memoryInjector !== undefined) {
-          const mcpBlock = await memoryInjector.retrieve(text);
-          if (mcpBlock !== '') blocks.push(mcpBlock);
-        }
-        if (memoryStore !== undefined) {
-          const localBlock = await retrieveLocalMemories(memoryStore, text);
-          if (localBlock !== '') blocks.push(localBlock);
-        }
+        // v2.1 性能优化：两路检索并行执行（原串行 await），缩短首字节延迟
+        const [mcpBlock, localBlock] = await Promise.all([
+          memoryInjector !== undefined ? memoryInjector.retrieve(text) : Promise.resolve(''),
+          memoryStore !== undefined
+            ? retrieveLocalMemories(memoryStore, text)
+            : Promise.resolve(''),
+        ]);
+        const blocks = [mcpBlock, localBlock].filter((b) => b !== '');
         const memoryBlock = blocks.join('\n\n');
         const effectivePrompt =
           memoryBlock !== '' ? `${memoryBlock}\n\n${systemPrompt ?? ''}`.trim() : systemPrompt;

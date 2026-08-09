@@ -51,6 +51,27 @@ describe('MemoryInjector', () => {
     expect(ok).toBe(false);
   });
 
+  it('MCP 检索慢于超时阈值时静默降级返回空字符串（不拖住首字节）', async () => {
+    // duck-typed 慢 client：callTool 需要 600ms > 400ms 超时阈值
+    const slowClient = {
+      connected: true,
+      callTool: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 600));
+        return { content: [], isError: false };
+      },
+    };
+    const fakeManager = {
+      getClient: () => slowClient,
+    };
+    const injector = new MemoryInjector(fakeManager as unknown as McpManager, {}, undefined);
+    const t0 = Date.now();
+    const result = await injector.retrieve('慢查询');
+    const elapsed = Date.now() - t0;
+    expect(result).toBe('');
+    // 未等待慢服务完成（600ms），被 400ms 超时截断
+    expect(elapsed).toBeLessThan(600);
+  });
+
   it('maxEntries 默认值为 5', () => {
     const manager = new McpManager([]);
     const injector = new MemoryInjector(manager);

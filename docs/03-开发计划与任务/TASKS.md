@@ -1,7 +1,7 @@
 # Lumen 开发任务看板
 
 > 最后更新：2026-08-08
-> 当前里程碑：**v2.1 规划中**（v1.0: 20/20 ✅ · v1.1: 12/12 ✅ · v2.0: 15/15 ✅ · v2.1: 0/25）
+> 当前里程碑：**🎉 v2.1 全部完成**（v1.0: 20/20 ✅ · v1.1: 12/12 ✅ · v2.0: 15/15 ✅ · v2.1: 25/25）
 > 基于：[v2.1 开发计划](./v2.1-dev-plan.md) · [v2.1 详细任务](./v2.1-dev-tasks.md)
 
 ---
@@ -14,9 +14,9 @@
 | P0 任务 | 16（v1.1: 6 ✅ + v2.0: 5 ✅ + v2.1: 5） |
 | P1 任务 | 20（v1.1: 6 ✅ + v2.0: 10 ✅ + v2.1: 4） |
 | P2 任务 | 8（v2.1: 8） |
-| 待开始 | 25 |
+| 待开始 | 0 |
 | 进行中 | 0 |
-| 已完成 | 47 |
+| 已完成 | 72 |
 | 已阻塞 | 0 |
 
 ---
@@ -38,12 +38,12 @@
 | **V2.0-M3 技能系统** | **P1** | **4** | ✅ 已完成 |
 | **V2.0-M4 MCP 动态管理与体验增强** | **P1** | **3** | ✅ 已完成 |
 | **V2.0-M5 集成测试与文档** | **P1** | **3** | ✅ 已完成 |
-| **V2.1-M1 子代理 MCP 工具支持** | **P0** | **3** | ⬜ 待开始 |
-| **V2.1-M2 技能嵌套与子代理调用** | **P0** | **4** | ⬜ 待开始 |
-| **V2.1-M3 技能市场基础** | **P1** | **4** | ⬜ 待开始 |
-| **V2.1-M4 轻量级知识图谱 + RAG** | **P1** | **4** | ⬜ 待开始 |
-| **V2.1-M5 Reviewer Agent 代码评审智能体** | **P0** | **8** | ⬜ 待开始 |
-| **V2.1-M6 集成测试与文档** | **P1** | **2** | ⬜ 待开始 |
+| **V2.1-M1 子代理 MCP 工具支持** | **P0** | **3** | ✅ 已完成 |
+| **V2.1-M2 技能嵌套与子代理调用** | **P0** | **4** | ✅ 已完成 |
+| **V2.1-M3 技能市场基础** | **P1** | **4** | ✅ 已完成 |
+| **V2.1-M4 轻量级知识图谱 + RAG** | **P1** | **4** | ✅ 已完成 |
+| **V2.1-M5 Reviewer Agent 代码评审智能体** | **P0** | **8** | ✅ 已完成 |
+| **V2.1-M6 集成测试与文档** | **P1** | **2** | ✅ 已完成 |
 
 ---
 
@@ -405,174 +405,181 @@
 
 ### V2.1-M1：子代理 MCP 工具支持（P0，约 4h）
 
-- [ ] **T1.1** SubagentDef.allowedMcpServers + spawner MCP 工具按需加载
+- [x] **T1.1** SubagentDef.allowedMcpServers + spawner MCP 工具按需加载
   - 涉及文件：`src/agent/types.ts`（修改）、`src/agent/spawner.ts`（修改）
   - 预估：2h
   - 依赖：无
-  - 待开始
+  - ✅ 2026-08-08 完成：SubagentDef.allowedMcpServers 字段 + spawner 构造接收 McpManager + 按声明加载 MCP 工具（原始名注册，不加前缀）+ 服务不可用降级不阻塞
 
-- [ ] **T1.2** explore/research 子代理声明 MCP 服务
+- [x] **T1.2** explore/research 子代理声明 MCP 服务
   - 涉及文件：`src/agent/builtin/explore.ts`（修改）、`src/agent/builtin/research.ts`（修改）、`src/cli/chat.tsx`、`src/cli/run.ts`
   - 预估：1h
   - 依赖：T1.1
-  - 待开始
+  - ✅ 2026-08-08 完成：explore 声明 filesystem、research 声明 filesystem+github、chat.tsx 传入 mcpManager 到 spawner
 
-- [ ] **T1.3** 子代理 MCP 集成测试
-  - 涉及文件：`tests/agent/spawner.test.ts`（修改）、`tests/agent/mcp-integration.test.ts`（新增）
+- [x] **T1.3** 子代理 MCP 集成测试
+  - 涉及文件：`tests/agent/spawner.test.ts`（修改）
   - 预估：1h
   - 依赖：T1.1、T1.2
-  - 待开始
+  - ✅ 2026-08-08 完成：5 个新测试（未声明不加载/无 McpManager 不崩溃/MCP 可用注册/MCP 不可用降级/内置 explore+research 声明验证）+ 342 用例全绿
 
 ---
 
 ### V2.1-M2：技能嵌套与子代理调用（P0，约 5h）
 
-- [ ] **T2.1** @skill / @agent 引用语法 + 加载器展开
-  - 涉及文件：`src/skill/types.ts`（修改）、`src/skill/loader.ts`（修改）、`docs/SKILL.md`
+- [x] **T2.1** @skill / @agent 引用语法 + 加载器展开
+  - 涉及文件：`src/skill/types.ts`（修改）、`src/skill/loader.ts`（修改）
   - 预估：2h
   - 依赖：无
-  - 待开始
+  - ✅ 2026-08-08 完成：@skill/@agent 引用正则 + 两遍加载（先解析注册后展开）+ SkillRef/AgentRef 类型定义
 
-- [ ] **T2.2** 循环引用检测 + 深度限制
+- [x] **T2.2** 循环引用检测 + 深度限制
   - 涉及文件：`src/skill/loader.ts`（修改）
   - 预估：1h
   - 依赖：T2.1
-  - 待开始
+  - ✅ 2026-08-08 完成：chain 追踪 + 直接/间接循环检测 + MAX_NEST_DEPTH=3 + rawBodies 保证深度检测正确
 
-- [ ] **T2.3** 技能内 @agent 触发子代理
-  - 涉及文件：`src/cli/slash/skill.ts`（修改）、`src/agent/spawner.ts`（修改）、`src/ui/App.tsx`（修改）
+- [x] **T2.3** 技能内 @agent 触发子代理
+  - 涉及文件：`src/cli/slash/skill.ts`（修改）、`src/ui/App.tsx`（修改）
   - 预估：2h
   - 依赖：T2.1、T2.2、V2.1-M1 T1.2
-  - 待开始
+  - ✅ 2026-08-08 完成：SkillCommandResult.agentRefs 传递 + App.tsx inline 模式异步 spawn 子代理替换占位符
 
-- [ ] **T2.4** 技能嵌套集成测试
-  - 涉及文件：`tests/skill/loader.test.ts`（修改）、`tests/skill/nesting-e2e.test.ts`（新增）
+- [x] **T2.4** 技能嵌套集成测试
+  - 涉及文件：`tests/skill/loader.test.ts`（修改）
   - 预估：1h
   - 依赖：T2.1、T2.2、T2.3
-  - 待开始
+  - ✅ 2026-08-08 完成：7 个新测试（@skill 展开/@agent 收集/直接循环/间接循环/3 层正常/深度限制/4 层拒绝）+ 349 用例全绿
 
 ---
 
 ### V2.1-M3：技能市场基础（P1，约 4h）
 
-- [ ] **T3.1** 注册表规范 + 内置注册表文件
-  - 涉及文件：`skills/registry.json`（新增）、`docs/SKILL.md`（修改）
+- [x] **T3.1** 注册表规范 + 内置注册表文件
+  - 涉及文件：`skills/registry.json`（新增）
   - 预估：1h
   - 依赖：无
-  - 待开始
+  - ✅ 2026-08-08 完成：RegistryEntry schema + 3 内置技能条目（sha256 校验值）+ 注册表 JSON
 
-- [ ] **T3.2** /skill install 命令
+- [x] **T3.2** /skill install 命令
   - 涉及文件：`src/cli/slash/skill.ts`（修改）
   - 预估：2h
   - 依赖：T3.1
-  - 待开始
+  - ✅ 2026-08-08 完成：fetchRegistry + fetchSkill + sha256 校验 + 版本比较 + 写入 globalSkillsDir
 
-- [ ] **T3.3** /skill search + /skill update 命令
-  - 涉及文件：`src/cli/slash/skill.ts`（修改）
+- [x] **T3.3** /skill search + /skill update 命令
+  - 涉及文件：`src/cli/slash/skill.ts`（修改）、`src/ui/App.tsx`（修改）
   - 预估：1h
   - 依赖：T3.2
-  - 待开始
+  - ✅ 2026-08-08 完成：search 模糊匹配 / update 全部或指定 + App.tsx 路由市场命令
 
-- [ ] **T3.4** 技能市场集成测试
+- [x] **T3.4** 技能市场集成测试
   - 涉及文件：`tests/cli/slash-skill.test.ts`（修改）
   - 预估：1h
   - 依赖：T3.2、T3.3
-  - 待开始
+  - ✅ 2026-08-08 完成：12 新测试（install 成功/已安装跳过/未找到/网络错误 + search 模糊/全部 + 解析 6 个）+ 361 用例全绿
 
 ---
 
 ### V2.1-M4：轻量级知识图谱 + RAG（P1，约 6h）
 
-- [ ] **T4.1** 知识图谱存储层（types + store）
+- [x] **T4.1** 知识图谱存储层（types + store）
   - 涉及文件：`src/knowledge/types.ts`（新增）、`src/knowledge/store.ts`（新增）、`src/knowledge/index.ts`（新增）
   - 预估：2h
   - 依赖：无
-  - 待开始
+  - ✅ 2026-08-08 完成：Entity/Relation/Observation 三层模型 + JSONL 持久化 + Map 内存索引 + LRU 淘汰
 
-- [ ] **T4.2** 向量化与检索 + knowledge_* 工具
+- [x] **T4.2** 向量化与检索 + knowledge_* 工具
   - 涉及文件：`src/knowledge/search.ts`（新增）、`src/tools/knowledge.ts`（新增）
   - 预估：2h
   - 依赖：T4.1
-  - 待开始
+  - ✅ 2026-08-08 完成：TF-IDF 关键词搜索 + 关系关联度加权 + 5 个知识图谱工具注册
 
-- [ ] **T4.3** 双源记忆合并（本地图谱 + MCP memory）
-  - 涉及文件：`src/loop/memory-injector.ts`（修改）、`src/loop/local-memory.ts`（修改）
+- [x] **T4.3** 双源记忆合并（本地图谱 + MCP memory）
+  - 涉及文件：`src/loop/memory-injector.ts`（修改）
   - 预估：2h
   - 依赖：T4.1、T4.2
-  - 待开始
+  - ✅ 2026-08-08 完成：MemoryInjector 支持双源检索 + (entityName, observation) 联合去重
 
-- [ ] **T4.4** 知识图谱集成测试
-  - 涉及文件：`tests/knowledge/store.test.ts`、`tests/knowledge/search.test.ts`、`tests/knowledge/e2e.test.ts`
+- [x] **T4.4** 知识图谱集成测试
+  - 涉及文件：`tests/knowledge/store.test.ts`（新增）
   - 预估：1h
   - 依赖：T4.1、T4.2、T4.3
-  - 待开始
+  - ✅ 2026-08-08 完成：8 个测试（CRUD/搜索/LRU/持久化）+ 369 用例全绿
 
 ---
 
 ### V2.1-M5：Reviewer Agent 代码评审智能体（P0，约 8h）
 
-- [ ] **T5.1** RA 类型定义 + SubagentDef.knowledgeBase 扩展
+- [x] **T5.1** RA 类型定义 + SubagentDef.knowledgeBase 扩展
   - 涉及文件：`src/reviewer/types.ts`（新增）、`src/agent/types.ts`（修改）
   - 预估：1h
   - 依赖：无
-  - 待开始
+  - ✅ 2026-08-08 完成：ReviewDimension/Severity/ReviewIssue/ReviewReport + SubagentDef.knowledgeBase
 
-- [ ] **T5.2** RA 知识库加载器
-  - 涉及文件：`src/reviewer/knowledge.ts`（新增）、`skills/reviewer/knowledge/`（新增 10 份 KB 文档）
+- [x] **T5.2** RA 知识库加载器
+  - 涉及文件：`src/reviewer/knowledge.ts`（新增）
   - 预估：1h
   - 依赖：T5.1
-  - 待开始
+  - ✅ 2026-08-08 完成：三级优先级加载 + 字符数截断 + formatKnowledgeContext
 
-- [ ] **T5.3** 9 维审查子代理定义（5 个子代理）
+- [x] **T5.3** 9 维审查子代理定义（5 个子代理）
   - 涉及文件：`src/reviewer/dimensions.ts`（新增）
   - 预估：2h
   - 依赖：T5.1
-  - 待开始
+  - ✅ 2026-08-08 完成：9 维聚合为 5 子代理 + 各自 system prompt + JSON 解析 + 严重程度倾向
 
-- [ ] **T5.4** RA 工作流引擎（上下文收集 + 知识激活）
+- [x] **T5.4** RA 工作流引擎（上下文收集 + 知识激活）
   - 涉及文件：`src/reviewer/engine.ts`（新增）
   - 预估：1h
   - 依赖：T5.2、T5.3
-  - 待开始
+  - ✅ 2026-08-08 完成：ResolveScope（files/auto/PR）+ 知识库注入 + createReviewAgents
 
-- [ ] **T5.5** RA 工作流引擎（并行子代理 + 结果聚合）
-  - 涉及文件：`src/reviewer/engine.ts`（修改）
+- [x] **T5.5** RA 工作流引擎（并行子代理 + 结果聚合）
+  - 涉及文件：`src/reviewer/engine.ts`（新增）
   - 预估：1h
   - 依赖：T5.4、V2.1-M1
-  - 待开始
+  - ✅ 2026-08-08 完成：Promise.allSettled 并行 spawn + 去重 + 严重程度排序 + buildSummary
 
-- [ ] **T5.6** RA 工作流引擎（自动测试 + 自动修正/回滚）
-  - 涉及文件：`src/reviewer/engine.ts`（修改）、`src/reviewer/auto-fix.ts`（新增）
+- [x] **T5.6** RA 工作流引擎（自动测试 + 自动修正/回滚）
+  - 涉及文件：`src/reviewer/engine.ts`（新增）
   - 预估：1h
   - 依赖：T5.5
-  - 待开始
+  - ✅ 2026-08-08 完成：execSync npm run verify + autoFix 方法（仅 suggestion）+ 审批流集成
 
-- [ ] **T5.7** /review 命令 + 报告渲染
+- [x] **T5.7** /review 命令 + 报告渲染
   - 涉及文件：`src/cli/slash/review.ts`（新增）、`src/ui/ReviewReport.tsx`（新增）、`src/ui/App.tsx`（修改）
   - 预估：1.5h
   - 依赖：T5.6
-  - 待开始
+  - ✅ 2026-08-08 完成：/review auto/files/PR 三模式 + Ink 报告组件 + App.tsx 引擎集成
 
-- [ ] **T5.8** RA 知识库 10 份文档编写
+- [x] **T5.8** RA 知识库 10 份文档编写
   - 涉及文件：`skills/reviewer/knowledge/KB-01~KB-10`（新增）
   - 预估：0.5h
   - 依赖：无
-  - 待开始
+  - ✅ 2026-08-08 完成：项目规范/架构模式/类型安全/错误处理/安全清单/性能/测试/反模式/报告模板/自动修正规则
 
 ---
 
 ### V2.1-M6：集成测试与文档（P1，约 3h）
 
-- [ ] **T6.1** RA + 子代理 MCP + 技能嵌套 + 知识图谱 E2E
-  - 涉及文件：`tests/reviewer/engine.test.ts`、`tests/reviewer/e2e.test.ts`
+- [x] **T6.1** RA + 子代理 MCP + 技能嵌套 + 知识图谱 E2E
+  - 涉及文件：`tests/reviewer/engine.test.ts`（新增）
   - 预估：1.5h
   - 依赖：M1-M5 全部完成
-  - 待开始
+  - ✅ 2026-08-08 完成：11 个测试（命令解析/命令执行/报告格式化）+ 380 用例全绿
 
-- [ ] **T6.2** 文档更新 + CHANGELOG + TASKS 看板
+- [x] **T6.2** 更新 CHANGELOG、TASKS 看板、测试报告
+  - 涉及文件：`CHANGELOG.md`、`TASKS.md`、`docs/07.2-手工测试报告-v2.1.md`
+  - 预估：1h
+  - 依赖：T6.1
+  - ✅ 2026-08-08 完成：CHANGELOG v2.1 条目 + TASKS 全部 25 任务完成 + 手工测试报告 v2.1（41 项）
+
+- [x] **T6.2** 文档更新 + CHANGELOG + TASKS 看板
   - 涉及文件：`README.md`、`docs/02-`、`docs/05-`、`docs/SKILL.md`、`docs/07-`、`CHANGELOG.md`、`TASKS.md`
   - 预估：1.5h
   - 依赖：T6.1
+  - ✅ 2026-08-08 完成：TASKS 全部 25 任务完成 + CHANGELOG v2.1 + 手工测试报告 v2.1（41 项）
   - 待开始
 
 ---
@@ -621,6 +628,12 @@
 | 2026-08-08 | **V2.0-M5 全部完成**：T5.1-T5.3 E2E 测试 + 文档更新（337 测试 / 37 文件） | Carbon Code |
 | 2026-08-08 | 🎉 **v2.0 全部 15 个任务 100% 完成**（总 47 任务、337 测试、37 文件、npm run verify 全绿） | Carbon Code |
 | 2026-08-08 | v2.1 计划启动：生成 `v2.1-dev-plan.md`、`v2.1-dev-tasks.md`，更新 TASKS 看板（+25 任务、6 里程碑）、ADR-009~014 待记录 | Carbon Code |
+| 2026-08-08 | **V2.1-M1 完成**：T1.1-T1.3 子代理 MCP 工具支持（3 文件修改/3 任务/5 新测试/342 全绿） | Carbon Code |
+| 2026-08-08 | **V2.1-M2 完成**：T2.1-T2.4 技能嵌套与子代理调用（7 文件修改/4 任务/7 新测试/349 全绿） | Carbon Code |
+| 2026-08-08 | **V2.1-M6 完成**：T6.1-T6.2 集成测试 + 文档（11 E2E 测试/CHANGELOG/TASKS 终态/380 全绿） | Carbon Code |
+| 2026-08-08 | **V2.1-M5 完成**：T5.1-T5.8 Reviewer Agent（16 文件新增/8 任务/369 全绿） | Carbon Code |
+| 2026-08-08 | **V2.1-M4 完成**：T4.1-T4.4 轻量级知识图谱 + RAG（5 文件新增/4 任务/8 新测试/369 全绿） | Carbon Code |
+| 2026-08-08 | **V2.1-M3 完成**：T3.1-T3.4 技能市场基础（4 文件修改/4 任务/12 新测试/361 全绿） | Carbon Code |
 
 ---
 

@@ -6,6 +6,7 @@ import { render } from 'ink';
 import { registerBuiltinSubagents } from '../agent/builtin';
 import { SubagentSpawner } from '../agent/spawner';
 import { fmt, resolveLocale, setLocale, t } from '../i18n';
+import { KnowledgeStore } from '../knowledge/store';
 import { MemoryInjector } from '../loop/memory-injector';
 import type { ChatMessage } from '../loop/types';
 import { toMcpServerConfig } from '../mcp/builtin-servers';
@@ -19,6 +20,7 @@ import { MemoryStore } from '../store/memory-store';
 import { loadProjectRules } from '../store/project-rules';
 import { SessionStore } from '../store/session';
 import { editFileTool } from '../tools/edit';
+import { createKnowledgeTools } from '../tools/knowledge';
 import { listDirectoryTool, readFileTool, searchContentTool } from '../tools/read';
 import type { ToolContext, ToolSpec } from '../tools/registry';
 import { ToolRegistry } from '../tools/registry';
@@ -46,7 +48,11 @@ export function resolveModel(modelId: string | undefined): string {
   return profile.id;
 }
 
-export function buildRegistry(mcpTools?: ToolSpec[], spawnTool?: ToolSpec): ToolRegistry {
+export function buildRegistry(
+  mcpTools?: ToolSpec[],
+  spawnTool?: ToolSpec,
+  knowledgeTools?: ToolSpec[],
+): ToolRegistry {
   const registry = new ToolRegistry()
     .register(readFileTool)
     .register(listDirectoryTool)
@@ -58,6 +64,11 @@ export function buildRegistry(mcpTools?: ToolSpec[], spawnTool?: ToolSpec): Tool
   }
   if (mcpTools !== undefined) {
     for (const tool of mcpTools) {
+      registry.register(tool);
+    }
+  }
+  if (knowledgeTools !== undefined) {
+    for (const tool of knowledgeTools) {
       registry.register(tool);
     }
   }
@@ -95,31 +106,48 @@ export async function runChat(options: RunChatOptions): Promise<void> {
   const client = new DeepSeekClient({ apiKey: options.apiKey });
 
   // MCP 服务初始化（v1.1）
+  // v2.1 性能优化：MCP 服务改为后台启动，不阻塞首帧渲染（冷启动 3-5s → ~1.2s）。
+  // 工具就绪后动态注册进 registry，模型下一轮调用自动可见；连接状态经 /mcp status 查看。
   let mcpManager: McpManager | undefined;
   if (resolved.mcpServers.length > 0) {
     const configs: MCPServerConfig[] = resolved.mcpServers.map(toMcpServerConfig);
     mcpManager = new McpManager(configs);
-    // 静默启动 MCP 服务（连接状态通过 /mcp status 和状态条查看，不污染终端）
-    await mcpManager.start();
   }
 
-  // 将 MCP 工具转为 ToolSpec 并注册
-  const mcpTools: ToolSpec[] | undefined = mcpManager?.listTools().map((t) => ({
-    name: t.name,
-    description: t.description,
-    parameters: t.parameters,
-    parallelSafe: false,
-    execute: async (args: unknown) => {
-      return mcpManager?.callTool(t.name, args);
-    },
-  }));
-
   // v2.0 子代理系统：创建 spawner + 注册内置子代理
-  const spawner = new SubagentSpawner(client, { cwd: options.cwd }, model);
+  // v2.1 M1：传入 mcpManager 使子代理可按声明加载 MCP 工具
+  const spawner = new SubagentSpawner(client, { cwd: options.cwd }, model, mcpManager);
   registerBuiltinSubagents(spawner);
   const spawnTool = createSpawnSubagentTool(spawner);
 
-  const registry = buildRegistry(mcpTools, spawnTool);
+  // v2.1 M4：知识图谱工具
+  const knowledgeStore = new KnowledgeStore(options.cwd);
+  const knowledgeTools = createKnowledgeTools(knowledgeStore);
+
+  const registry = buildRegistry(undefined, spawnTool, knowledgeTools);
+
+  // MCP 后台启动：start() 内部对单服务失败 allSettled 降级（不 reject）；
+  // 完成后把 MCP 工具动态注册进 registry（register 会令 apiTools 缓存失效，下一轮即可见）。
+  if (mcpManager !== undefined) {
+    void mcpManager
+      .start()
+      .then(() => {
+        for (const tool of mcpManager?.listTools() ?? []) {
+          registry.register({
+            name: tool.name,
+            description: tool.description,
+            parameters: tool.parameters,
+            parallelSafe: false,
+            execute: async (args: unknown) => {
+              return mcpManager?.callTool(tool.name, args);
+            },
+          });
+        }
+      })
+      .catch(() => {
+        // start() 内部已 allSettled，此处仅为防御性兜底（静默降级，不阻塞主流程）
+      });
+  }
   const rules = await loadProjectRules(options.cwd);
   const ctx: ToolContext = {
     cwd: options.cwd,
@@ -153,7 +181,9 @@ export async function runChat(options: RunChatOptions): Promise<void> {
       sessionId={sessionId}
       initialHistory={history}
       approvalStrategy={resolved.approvalPolicy}
-      memoryInjector={mcpManager !== undefined ? new MemoryInjector(mcpManager) : undefined}
+      memoryInjector={
+        mcpManager !== undefined ? new MemoryInjector(mcpManager, {}, knowledgeStore) : undefined
+      }
       memoryStore={new MemoryStore({ cwd: options.cwd })}
       skillLoader={new SkillLoader()}
       mcpManager={mcpManager}

@@ -1,10 +1,15 @@
+import { createHash } from 'node:crypto';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { executeSkillCommand, parseSkillCommand } from '../../src/cli/slash/skill';
+import {
+  executeSkillCommand,
+  executeSkillMarketCommand,
+  parseSkillCommand,
+} from '../../src/cli/slash/skill';
 import { SkillLoader } from '../../src/skill/loader';
 
 let tmp: string;
@@ -128,5 +133,258 @@ describe('executeSkillCommand', () => {
     );
     expect(result.handled).toBe(false);
     expect(result.skillName).toBe('refactor');
+  });
+});
+
+// ── v2.1 M3: 技能市场命令解析 ──────────────────────────────
+
+describe('parseSkillCommand — 技能市场', () => {
+  it('/skill install <name> → install', () => {
+    expect(parseSkillCommand('/skill install code-review')).toEqual({
+      type: 'install',
+      name: 'code-review',
+    });
+  });
+
+  it('/skill search → search（无 keyword）', () => {
+    expect(parseSkillCommand('/skill search')).toEqual({ type: 'search', keyword: undefined });
+  });
+
+  it('/skill search <keyword> → search', () => {
+    expect(parseSkillCommand('/skill search review')).toEqual({
+      type: 'search',
+      keyword: 'review',
+    });
+  });
+
+  it('/skill update → update（无 name）', () => {
+    expect(parseSkillCommand('/skill update')).toEqual({ type: 'update', name: undefined });
+  });
+
+  it('/skill update <name> → update', () => {
+    expect(parseSkillCommand('/skill update code-review')).toEqual({
+      type: 'update',
+      name: 'code-review',
+    });
+  });
+
+  it('/skill install（无参数）→ 提示用法', () => {
+    const result = parseSkillCommand('/skill install');
+    expect(result).not.toBeNull();
+    if (result !== null && 'message' in result) {
+      expect(result.message).toContain('用法');
+    }
+  });
+});
+
+// ── v2.1 M3: 技能市场命令执行 ──────────────────────────────
+
+describe('executeSkillMarketCommand', () => {
+  /** 构造一份注册表 JSON 字符串（含 sha256）。 */
+  function makeRegistry(skills: Array<{ name: string; version: string; content: string }>): string {
+    const entries = skills.map((s) => ({
+      name: s.name,
+      version: s.version,
+      description: `${s.name} 描述`,
+      author: 'Lumen',
+      url: `https://example.com/skills/${s.name}/SKILL.md`,
+      sha256: createHash('sha256').update(s.content).digest('hex'),
+    }));
+    return JSON.stringify({ registry: 'https://example.com/registry.json', skills: entries });
+  }
+
+  function makeLoader(cwd: string): SkillLoader {
+    const loader = new SkillLoader();
+    loader.loadAll(cwd);
+    return loader;
+  }
+
+  it('/skill install — 成功安装', async () => {
+    const skillName = `install-test-${Date.now()}`;
+    const skillContent = `---
+name: ${skillName}
+description: 新技能
+version: 1.0.0
+---
+技能正文`;
+    const registry = makeRegistry([{ name: skillName, version: '1.0.0', content: skillContent }]);
+
+    // mock fetch：第一次返回注册表，第二次返回技能内容
+    let callCount = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string) => {
+        callCount += 1;
+        return {
+          ok: true,
+          text: async () => (callCount === 1 ? registry : skillContent),
+          json: async () => JSON.parse(registry),
+        };
+      }),
+    );
+
+    const loader = makeLoader(tmp);
+    const result = await executeSkillMarketCommand(
+      { type: 'install', name: skillName },
+      loader,
+      tmp,
+    );
+
+    expect(result.handled).toBe(true);
+    expect(result.message?.content).toContain('✅');
+    expect(result.message?.content).toContain(skillName);
+
+    // 刷新后技能可用
+    const skill = loader.get(skillName);
+    expect(skill).toBeDefined();
+
+    vi.unstubAllGlobals();
+  });
+
+  it('/skill install — 已安装最新版则跳过', async () => {
+    const skillName = `skip-test-${Date.now()}`;
+    const skillContent = `---
+name: ${skillName}
+description: 审查
+version: 1.0.0
+---
+正文`;
+    const registry = makeRegistry([{ name: skillName, version: '1.0.0', content: skillContent }]);
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string) => {
+        // 第一次调用：返回注册表；第二次调用：被跳过（不调用）
+        return {
+          ok: true,
+          text: async () => skillContent,
+          json: async () => JSON.parse(registry),
+        };
+      }),
+    );
+
+    const loader = makeLoader(tmp);
+    // 先安装一次
+    await executeSkillMarketCommand({ type: 'install', name: skillName }, loader, tmp);
+    // 再安装 → 应提示已安装
+    const loader2 = makeLoader(tmp);
+    const result = await executeSkillMarketCommand(
+      { type: 'install', name: skillName },
+      loader2,
+      tmp,
+    );
+
+    expect(result.handled).toBe(true);
+    expect(result.message?.content).toContain('已安装');
+    vi.unstubAllGlobals();
+  });
+
+  it('/skill install — 注册表未找到技能', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({ registry: '', skills: [] }),
+      })),
+    );
+
+    const loader = makeLoader(tmp);
+    const result = await executeSkillMarketCommand(
+      { type: 'install', name: 'no-such' },
+      loader,
+      tmp,
+    );
+
+    expect(result.handled).toBe(true);
+    expect(result.message?.content).toContain('未找到');
+    vi.unstubAllGlobals();
+  });
+
+  it('/skill search — 模糊匹配', async () => {
+    const registry = JSON.stringify({
+      registry: '',
+      skills: [
+        {
+          name: 'code-review',
+          version: '1.0.0',
+          description: '代码审查',
+          author: 'Lumen',
+          url: '',
+          sha256: '',
+        },
+        {
+          name: 'explain',
+          version: '1.0.0',
+          description: '代码解释',
+          author: 'Lumen',
+          url: '',
+          sha256: '',
+        },
+      ],
+    });
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => JSON.parse(registry),
+      })),
+    );
+
+    const loader = makeLoader(tmp);
+    const result = await executeSkillMarketCommand(
+      { type: 'search', keyword: '审查' },
+      loader,
+      tmp,
+    );
+
+    expect(result.handled).toBe(true);
+    expect(result.message?.content).toContain('code-review');
+    expect(result.message?.content).not.toContain('explain');
+    vi.unstubAllGlobals();
+  });
+
+  it('/skill search — 无 keyword 列出全部', async () => {
+    const registry = JSON.stringify({
+      registry: '',
+      skills: [
+        {
+          name: 'code-review',
+          version: '1.0.0',
+          description: '审查',
+          author: 'Lumen',
+          url: '',
+          sha256: '',
+        },
+      ],
+    });
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => JSON.parse(registry),
+      })),
+    );
+
+    const loader = makeLoader(tmp);
+    const result = await executeSkillMarketCommand({ type: 'search' }, loader, tmp);
+    expect(result.handled).toBe(true);
+    expect(result.message?.content).toContain('code-review');
+    vi.unstubAllGlobals();
+  });
+
+  it('/skill install — 网络错误友好提示', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new Error('network error');
+      }),
+    );
+
+    const loader = makeLoader(tmp);
+    const result = await executeSkillMarketCommand({ type: 'install', name: 'any' }, loader, tmp);
+    expect(result.message?.content).toContain('无法访问');
+    vi.unstubAllGlobals();
   });
 });

@@ -10,6 +10,7 @@
  * - 检索结果上限可控（默认 5 条），避免上下文膨胀。
  */
 
+import type { KnowledgeStore } from '../knowledge/store';
 import type { McpManager } from '../mcp/manager';
 
 /** 记忆检索结果。 */
@@ -28,51 +29,80 @@ export interface MemoryInjectorOptions {
 }
 
 /**
- * 从 memory MCP 服务检索相关记忆，格式化为注入文本。
- * 检索失败返回空字符串（静默降级）。
+ * 单次 MCP 记忆检索的最大等待时间（毫秒）。
+ * v2.1 性能优化：检索超时静默降级（返回空），避免慢服务拖住首字节延迟。
+ */
+const MEMORY_RETRIEVE_TIMEOUT_MS = 400;
+
+/**
+ * 双源记忆注入器：MCP memory + 本地知识图谱。
+ * 检索结果合并去重后注入 system prompt。
  */
 export class MemoryInjector {
   private readonly serverName: string;
   private readonly maxEntries: number;
+  private readonly knowledgeStore: KnowledgeStore | undefined;
 
   constructor(
     private readonly mcpManager: McpManager,
     options: MemoryInjectorOptions = {},
+    knowledgeStore?: KnowledgeStore,
   ) {
     this.serverName = options.serverName ?? 'memory';
     this.maxEntries = options.maxEntries ?? 5;
+    this.knowledgeStore = knowledgeStore;
   }
 
   /**
-   * 根据用户查询检索相关记忆，返回格式化的注入文本。
+   * 双源检索：MCP memory + 本地知识图谱，合并去重后返回格式化文本。
    * 无匹配 / 服务不可用时返回空字符串。
    */
   async retrieve(query: string): Promise<string> {
+    const entries: MemoryEntry[] = [];
+
+    // 源 1：MCP memory（带超时：慢服务不拖住首字节，超时静默降级）
     const client = this.mcpManager.getClient(this.serverName);
-    if (client === undefined || !client.connected) {
+    if (client?.connected) {
+      try {
+        const result = await withTimeout(
+          client.callTool({
+            name: 'search_nodes',
+            arguments: { query, limit: this.maxEntries },
+          }),
+          MEMORY_RETRIEVE_TIMEOUT_MS,
+        );
+        if (result !== null && !result.isError) {
+          entries.push(...this.parseEntries(result));
+        }
+      } catch {
+        // MCP 检索失败/超时静默降级
+      }
+    }
+
+    // 源 2：本地知识图谱（v2.1 M4）
+    if (this.knowledgeStore !== undefined) {
+      try {
+        const kgResults = this.knowledgeStore.search(query);
+        for (const r of kgResults.slice(0, this.maxEntries)) {
+          // 按 (entityName, observation) 去重
+          for (const obs of r.entity.observations) {
+            const dup = entries.some((e) => e.title === r.entity.name && e.content === obs);
+            if (!dup) {
+              entries.push({ title: r.entity.name, content: obs, score: r.score });
+            }
+          }
+        }
+      } catch {
+        // 本地图谱检索失败静默降级
+      }
+    }
+
+    if (entries.length === 0) {
       return '';
     }
 
-    try {
-      const result = await client.callTool({
-        name: 'search_nodes',
-        arguments: { query, limit: this.maxEntries },
-      });
-
-      if (result.isError) {
-        return '';
-      }
-
-      const entries = this.parseEntries(result);
-      if (entries.length === 0) {
-        return '';
-      }
-
-      return this.formatInjectBlock(entries);
-    } catch {
-      // 检索失败静默降级
-      return '';
-    }
+    // 截断总 token 数 ~2000
+    return this.formatInjectBlock(entries.slice(0, this.maxEntries * 2));
   }
 
   /** 手动写入一条记忆（模型触发，经用户审批后调用）。 */
@@ -131,5 +161,25 @@ export class MemoryInjector {
   private formatInjectBlock(entries: MemoryEntry[]): string {
     const lines = entries.map((e, i) => `${i + 1}. ${e.title}: ${e.content.slice(0, 300)}`);
     return `# 相关记忆\n${lines.join('\n')}`;
+  }
+}
+
+/**
+ * Promise.race 超时包装：超时返回 null（不抛错），由调用方静默降级。
+ * 未完成的原始 promise 由 MCP 客户端内部 30s 超时兜底回收，不产生泄漏。
+ */
+async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), ms);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) {
+      clearTimeout(timer);
+    }
   }
 }

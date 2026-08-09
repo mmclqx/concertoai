@@ -26,6 +26,17 @@ export interface SubagentDef {
   systemPrompt: string;
   /** 最大可修复失败次数（默认与主循环 MAX_REPAIRS=2 一致；探索类子代理可设更高值容忍试错）。 */
   maxRepairs?: number;
+  /**
+   * 允许加载的 MCP 服务名列表（v2.1 M1）。
+   * 不声明或空数组 = 不加载任何 MCP 工具（默认，安全优先）。
+   * 声明的服务需在 McpManager 中已连接；未连接的服务跳过不阻塞。
+   */
+  allowedMcpServers?: string[];
+  /**
+   * v2.1 M5：知识库文件路径列表（相对于 skills/reviewer/knowledge/）。
+   * Reviewer Agent 专用字段，用于注入审查标准和最佳实践。
+   */
+  knowledgeBase?: string[];
 }
 
 // ── 子代理任务 ──────────────────────────────────────────────────

@@ -3,8 +3,8 @@
  */
 
 import type { ApiMessage } from '../model/client';
-import type { ToolResult } from '../tools/registry';
 import { maskSecrets } from '../tools/read';
+import type { ToolResult } from '../tools/registry';
 import type { ChatMessage, ToolCall } from './types';
 
 export function systemMessage(content: string): ChatMessage {

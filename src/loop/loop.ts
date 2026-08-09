@@ -16,7 +16,6 @@
 
 import type { ModelClient, Usage } from '../model/client';
 import type { ToolContext, ToolRegistry, ToolResult } from '../tools/registry';
-import { toApiTools } from '../tools/registry';
 import { compressContext } from './context';
 import {
   assistantMessage,
@@ -214,7 +213,8 @@ async function streamAssistantReply(
     toSend = messages;
   }
 
-  const apiTools = toApiTools(options.registry.list());
+  // v2.1 性能优化：走 registry 缓存，避免每轮重复 zod → JSON Schema 转换
+  const apiTools = options.registry.toApiTools();
 
   try {
     for await (const chunk of options.client.streamChat({

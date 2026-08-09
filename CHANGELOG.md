@@ -2,7 +2,28 @@
 
 ## 维护约定
 
-- 每个未发布变更先追加到 `## [Unreleased]`，发布时移动到对应版本小节；
+- 每个未发布变更先追加到 `## [Unreleased]
+
+## [2.1.0] — 2026-08-08
+
+### Added
+- **子代理 MCP 工具支持**：`SubagentDef.allowedMcpServers` 字段使子代理可按声明加载 MCP 服务工具
+- **技能嵌套与子代理调用**：`@skill:<name>` 内联展开 + `@agent:<name>` 运行时子代理触发；循环检测 + 深度限制 ≤ 3
+- **技能市场基础**：`/skill install / search / update` 命令 + `skills/registry.json` 注册表 + sha256 校验
+- **轻量级知识图谱 + RAG**：Entity/Relation/Observation 三层模型 + JSONL 持久化 + TF-IDF 搜索 + LRU 淘汰 + 5 个 `knowledge_*` 工具
+- **Reviewer Agent 代码评审智能体**：9 维审查 / 5 子代理并行 / 自动测试 / `/review` 命令 / 10 份知识库文档
+- **双源记忆合并**：MemoryInjector 同时检索本地知识图谱 + MCP memory，按 (entityName, observation) 去重
+
+### Changed
+- `SubagentSpawner` 构造接收可选 `McpManager` 参数（向后兼容）
+- `SkillLoader.loadAll()` 改为两遍加载（先解析注册 → 后展开引用）
+- `buildRegistry()` 接受可选 `knowledgeTools` 参数
+- `MemoryInjector` 支持可选 `KnowledgeStore` 双源检索
+
+### Fixed
+- `maskSecrets()` / `.env` 文件读取拒绝 / `search_content` 跳过 `.env`（安全加固）
+
+## [Unreleased]`，发布时移动到对应版本小节；
 - 条目按类型分组：`Added`（新增）/ `Changed`（变更）/ `Fixed`（修复）/ `Removed`（移除）；
 - 版本号由 `npm version <patch|minor|major>` 管理（自动 bump + 同步 `src/index.ts` 的 VERSION + git tag）。
 

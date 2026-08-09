@@ -13,6 +13,8 @@ export const EXPLORE_AGENT: SubagentDef = {
   allowedTools: ['read_file', 'search_content', 'list_directory'],
   maxTurns: 5,
   timeoutMs: 30_000,
+  /** v2.1 M1：当 filesystem MCP 服务可用时，子代理可访问文件系统工具。 */
+  allowedMcpServers: ['filesystem'],
   systemPrompt: `你是一个代码探索助手，专门在项目目录中查找信息。
 
 ## 核心规则

@@ -13,6 +13,7 @@
 
 import type { RunLoopResult } from '../loop/loop';
 import { runLoop } from '../loop/loop';
+import type { McpManager } from '../mcp/manager';
 import type { ModelClient } from '../model/client';
 import { getModel } from '../model/models';
 import { listDirectoryTool, readFileTool, searchContentTool } from '../tools/read';
@@ -30,12 +31,14 @@ const READONLY_TOOL_MAP: Record<string, typeof readFileTool> = {
 export class SubagentSpawner {
   private readonly defs = new Map<string, SubagentDef>();
   private readonly client: ModelClient;
+  private readonly mcpManager: McpManager | undefined;
   private readonly ctx: ToolContext;
   private readonly model: string;
 
-  constructor(client: ModelClient, ctx: ToolContext, model: string) {
+  constructor(client: ModelClient, ctx: ToolContext, model: string, mcpManager?: McpManager) {
     this.client = client;
     this.ctx = ctx;
+    this.mcpManager = mcpManager;
     this.model = model;
   }
 
@@ -77,12 +80,45 @@ export class SubagentSpawner {
       };
     }
 
+    // ── 创建隔离的工具注册表 ──
     // 创建隔离的工具注册表（仅白名单工具）
     const isolatedRegistry = new ToolRegistry();
     for (const name of def.allowedTools) {
       const tool = READONLY_TOOL_MAP[name];
       if (tool !== undefined) {
         isolatedRegistry.register(tool);
+      }
+    }
+
+    // ── 按声明加载 MCP 工具（v2.1 M1）──
+    const mcp = this.mcpManager;
+    if (
+      def.allowedMcpServers !== undefined &&
+      def.allowedMcpServers.length > 0 &&
+      mcp !== undefined
+    ) {
+      for (const serverName of def.allowedMcpServers) {
+        const mcpClient = mcp.getClient(serverName);
+        if (mcpClient === undefined || !mcpClient.connected) {
+          // MCP 服务不可用 → 跳过不阻塞，子代理降级使用内置工具
+          continue;
+        }
+        try {
+          const mcpTools = mcp.listTools().filter((t) => t.serverName === serverName);
+          for (const mt of mcpTools) {
+            // 子代理上下文独立，MCP 工具以原始名注册（去 serverName/ 前缀）
+            const originalName = mt.name.slice(serverName.length + 1);
+            isolatedRegistry.register({
+              name: originalName,
+              description: mt.description,
+              parameters: mt.parameters,
+              parallelSafe: true,
+              execute: async (args) => mcp.callTool(mt.name, args),
+            });
+          }
+        } catch {
+          // MCP 工具获取失败 → 跳过不阻塞
+        }
       }
     }
 

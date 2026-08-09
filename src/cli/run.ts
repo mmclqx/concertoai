@@ -41,6 +41,7 @@ export async function runTask(options: RunTaskOptions): Promise<void> {
   const client = new DeepSeekClient({ apiKey: options.apiKey });
 
   // v2.0 子代理系统
+  // v2.1 M1：run 模式暂不接入 MCP（子代理仅内置工具）
   const spawner = new SubagentSpawner(client, { cwd: options.cwd }, model);
   registerBuiltinSubagents(spawner);
   const spawnTool = createSpawnSubagentTool(spawner);

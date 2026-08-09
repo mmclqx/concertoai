@@ -29,8 +29,24 @@ export interface SkillDef {
   model?: string;
   /** 运行模式：'inline'（默认）| 'subagent'（隔离执行）。 */
   runAs?: 'inline' | 'subagent';
-  /** 技能正文 markdown（frontmatter 之后的部分）。 */
+  /** 技能正文 markdown（frontmatter 之后的部分，含已展开的 @skill 引用）。 */
   body: string;
   /** 加载来源路径（文件绝对路径）。 */
   sourcePath: string;
+  /** v2.1 M2：技能内 @agent 引用列表（运行时触发子代理）。 */
+  agentRefs?: AgentRef[];
+}
+
+/** v2.1 M2：技能内 @skill 引用（加载时展开）。 */
+export interface SkillRef {
+  /** 被引用技能名。 */
+  name: string;
+}
+
+/** v2.1 M2：技能内 @agent 引用（运行时触发子代理）。 */
+export interface AgentRef {
+  /** 子代理名。 */
+  agentName: string;
+  /** 传给子代理的 prompt。 */
+  prompt: string;
 }

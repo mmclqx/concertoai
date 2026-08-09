@@ -68,12 +68,18 @@ export interface ToolSpec {
 
 export class ToolRegistry {
   private readonly tools = new Map<string, ToolSpec>();
+  /**
+   * v2.1 性能优化：缓存 DeepSeek function-calling 格式的工具定义，
+   * 避免每轮模型调用重复执行 zod → JSON Schema 转换；register 时失效。
+   */
+  private apiToolsCache: DeepSeekApiTool[] | null = null;
 
   register(spec: ToolSpec): this {
     if (this.tools.has(spec.name)) {
       throw new Error(`工具重复注册: ${spec.name}`);
     }
     this.tools.set(spec.name, spec);
+    this.apiToolsCache = null;
     return this;
   }
 
@@ -83,6 +89,14 @@ export class ToolRegistry {
 
   list(): ToolSpec[] {
     return [...this.tools.values()];
+  }
+
+  /** 返回 DeepSeek function-calling 格式的工具定义（缓存结果，register 后自动失效）。 */
+  toApiTools(): DeepSeekApiTool[] {
+    if (this.apiToolsCache === null) {
+      this.apiToolsCache = toApiTools(this.list());
+    }
+    return this.apiToolsCache;
   }
 
   /**

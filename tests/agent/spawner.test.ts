@@ -1,10 +1,12 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { z } from 'zod';
 import { SubagentSpawner } from '../../src/agent/spawner';
 import type { SubagentDef } from '../../src/agent/types';
+import type { McpClient } from '../../src/mcp/client';
+import type { McpManager } from '../../src/mcp/manager';
 import type { ChatCompletionChunk, ModelClient } from '../../src/model/client';
 
 // ── FakeModel 工具集 ────────────────────────────────────────
@@ -174,4 +176,128 @@ describe('SubagentSpawner', () => {
     const result = await spawner.spawn({ agentName: 'test-agent', prompt: '任务' });
     expect(result.ok).toBe(true);
   });
+
+  // ── T1.3: MCP 工具支持 ──────────────────────────────────
+
+  it('allowedMcpServers 未声明 → 不加载 MCP 工具，子代理正常执行', async () => {
+    const model = singleReplyModel('无 MCP 结论');
+    // 传入 mock mcpManager 但不声明 allowedMcpServers
+    const mockMcp = createMockMcpManager();
+    const spawner = new SubagentSpawner(model, { cwd: tmp }, 'deepseek-v4-flash', mockMcp);
+    spawner.register(TEST_AGENT);
+
+    const result = await spawner.spawn({ agentName: 'test-agent', prompt: 'test' });
+    expect(result.ok).toBe(true);
+    // 验证 MCP 工具从未被查询
+    expect(mockMcp.listToolsCallCount).toBe(0);
+  });
+
+  it('allowedMcpServers 声明但 McpManager 未传入 → 跳过不崩溃', async () => {
+    const model = singleReplyModel('无 McpManager 结论');
+    const mcpAgent: SubagentDef = {
+      ...TEST_AGENT,
+      name: 'mcp-agent',
+      allowedMcpServers: ['filesystem'],
+    };
+    // 不传第四个参数 = undefined mcpManager
+    const spawner = new SubagentSpawner(model, { cwd: tmp }, 'deepseek-v4-flash');
+    spawner.register(mcpAgent);
+
+    const result = await spawner.spawn({ agentName: 'mcp-agent', prompt: 'test' });
+    expect(result.ok).toBe(true);
+    expect(result.error).toBeUndefined();
+  });
+
+  it('MCP 服务可用 → 对应工具注册到子代理，原始名去前缀', async () => {
+    const model = singleReplyModel('MCP 工具可用结论');
+    const mockMcp = createMockMcpManager({
+      'filesystem/read_file': { description: '读取文件', serverName: 'filesystem' },
+      'filesystem/list_dir': { description: '列出目录', serverName: 'filesystem' },
+    });
+    const mcpAgent: SubagentDef = {
+      ...TEST_AGENT,
+      name: 'mcp-agent',
+      allowedMcpServers: ['filesystem'],
+    };
+    const spawner = new SubagentSpawner(model, { cwd: tmp }, 'deepseek-v4-flash', mockMcp);
+    spawner.register(mcpAgent);
+
+    const result = await spawner.spawn({ agentName: 'mcp-agent', prompt: 'test' });
+    expect(result.ok).toBe(true);
+    // MCP 工具的 listTools 被调用
+    expect(mockMcp.listToolsCallCount).toBeGreaterThanOrEqual(1);
+  });
+
+  it('MCP 服务未连接 → 跳过不阻塞，子代理仍正常执行', async () => {
+    const model = singleReplyModel('降级结论');
+    // mock：getClient 返回 disconnected
+    const mockMcp = createMockMcpManager({}, false);
+    const mcpAgent: SubagentDef = {
+      ...TEST_AGENT,
+      name: 'mcp-agent',
+      allowedMcpServers: ['filesystem'],
+    };
+    const spawner = new SubagentSpawner(model, { cwd: tmp }, 'deepseek-v4-flash', mockMcp);
+    spawner.register(mcpAgent);
+
+    const result = await spawner.spawn({ agentName: 'mcp-agent', prompt: 'test' });
+    expect(result.ok).toBe(true);
+    // 降级不崩溃
+    expect(result.error).toBeUndefined();
+  });
+
+  it('内置 explore/research 子代理声明了 allowedMcpServers', async () => {
+    // 延迟导入避免污染其他测试
+    const { EXPLORE_AGENT } = await import('../../src/agent/builtin/explore');
+    const { RESEARCH_AGENT } = await import('../../src/agent/builtin/research');
+
+    expect(EXPLORE_AGENT.allowedMcpServers).toEqual(['filesystem']);
+    expect(RESEARCH_AGENT.allowedMcpServers).toEqual(['filesystem', 'github']);
+  });
 });
+
+// ── Mock McpManager 工厂 ────────────────────────────────────
+
+interface ToolDef {
+  description: string;
+  serverName: string;
+}
+
+/** 创建一个轻量 mock McpManager，用于 spawner MCP 工具测试。 */
+function createMockMcpManager(
+  toolMap: Record<string, ToolDef> = {},
+  connected = true,
+): McpManager & { listToolsCallCount: number } {
+  const tools = Object.entries(toolMap).map(([name, meta]) => ({
+    name,
+    description: meta.description,
+    parameters: z.object({}),
+    serverName: meta.serverName,
+  }));
+
+  const mock = {
+    listToolsCallCount: 0,
+
+    getClient(_name: string): McpClient | undefined {
+      return { connected, serverName: _name } as McpClient;
+    },
+
+    listTools() {
+      mock.listToolsCallCount += 1;
+      return tools;
+    },
+
+    async callTool(
+      name: string,
+      _args: unknown,
+    ): Promise<{ ok: boolean; data?: unknown; error?: string }> {
+      const tool = toolMap[name];
+      if (tool === undefined) {
+        return { ok: false, error: `未知工具: ${name}` };
+      }
+      return { ok: true, data: `mock result: ${name}` };
+    },
+  };
+
+  return mock as unknown as McpManager & { listToolsCallCount: number };
+}

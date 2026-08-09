@@ -98,7 +98,11 @@ export const readFileTool: ToolSpec = {
     const { path: p } = rawArgs as ReadFileArgs;
     const basename = path.basename(p);
     if (isDotEnv(basename)) {
-      return { ok: false, error: `敏感文件，拒绝读取: ${p}（API Key 等凭据不应在对话中传输）`, repairable: false };
+      return {
+        ok: false,
+        error: `敏感文件，拒绝读取: ${p}（API Key 等凭据不应在对话中传输）`,
+        repairable: false,
+      };
     }
     const resolved = resolveSafe(ctx.cwd, p);
     const stat = await fs.stat(resolved);
