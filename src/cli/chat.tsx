@@ -6,10 +6,12 @@ import { render } from 'ink';
 
 import { registerBuiltinSubagents } from '../agent/builtin';
 import { SubagentSpawner } from '../agent/spawner';
+import { InMemoryAgentRegistry } from '../agents';
 import { fmt, resolveLocale, setLocale, t } from '../i18n';
 import { KnowledgeStore } from '../knowledge/store';
 import { MemoryInjector } from '../loop/memory-injector';
 import type { ChatMessage } from '../loop/types';
+import { AgentInstaller } from '../market';
 import { toMcpServerConfig } from '../mcp/builtin-servers';
 import { McpManager } from '../mcp/manager';
 import type { MCPServerConfig } from '../mcp/types';
@@ -81,6 +83,11 @@ export async function runChat(options: RunChatOptions): Promise<void> {
 
   const registry = buildRegistry(undefined, spawnTool, knowledgeTools);
 
+  // v3.0 M4 T4.3：Agent 市场运行时（/agent 命令）
+  // agentRegistry 供 install/promote 落地注册；agentInstaller 管理 ~/.lumen/agents/ 磁盘安装。
+  const agentRegistry = new InMemoryAgentRegistry();
+  const agentInstaller = new AgentInstaller({ registry: agentRegistry });
+
   // MCP 后台启动：start() 内部对单服务失败 allSettled 降级（不 reject）；
   // 完成后把 MCP 工具动态注册进 registry（register 会令 apiTools 缓存失效，下一轮即可见）。
   if (mcpManager !== undefined) {
@@ -146,6 +153,8 @@ export async function runChat(options: RunChatOptions): Promise<void> {
       skillLoader={new SkillLoader()}
       mcpManager={mcpManager}
       spawner={spawner}
+      agentRegistry={agentRegistry}
+      agentInstaller={agentInstaller}
     />,
   );
 

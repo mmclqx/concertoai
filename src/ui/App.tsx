@@ -1,6 +1,12 @@
 import { Box, Text, useApp, useInput } from 'ink';
 import { memo, useCallback, useMemo, useRef, useState } from 'react';
 import type { SubagentSpawner } from '../agent/spawner';
+import type { AgentRegistry } from '../agents';
+import {
+  executeAgentCommand,
+  executeAgentMarketCommand,
+  parseAgentCommand,
+} from '../cli/slash/agent';
 import { executeMcpCommand, parseMcpCommand } from '../cli/slash/mcp';
 import { executeMemoryCommand, parseMemoryCommand } from '../cli/slash/memory';
 import { executeReviewCommand, parseReviewCommand } from '../cli/slash/review';
@@ -16,6 +22,7 @@ import { runLoop } from '../loop/loop';
 import type { MemoryInjector } from '../loop/memory-injector';
 import { userMessage } from '../loop/messages';
 import type { ChatMessage, ToolCall } from '../loop/types';
+import type { AgentInstaller } from '../market';
 import type { McpManager } from '../mcp/manager';
 import type { ModelClient } from '../model/client';
 import { cacheHitCostFor, costFor, getModel } from '../model/models';
@@ -72,6 +79,10 @@ export interface AppProps {
   mcpManager?: McpManager;
   /** 子代理 spawner（v2.0）：subagent 模式技能走隔离执行，工具调用不暴露到 TUI。 */
   spawner?: SubagentSpawner;
+  /** Agent 注册表（v3.0 M4）：/agent 命令的 install/promote 落地注册表。 */
+  agentRegistry?: AgentRegistry;
+  /** Agent 安装器（v3.0 M4）：/agent install/remove/list 的磁盘操作。 */
+  agentInstaller?: AgentInstaller;
 }
 
 /**
@@ -229,6 +240,8 @@ export function App({
   skillLoader,
   mcpManager,
   spawner,
+  agentRegistry,
+  agentInstaller,
 }: AppProps) {
   const { exit } = useApp();
   const [messages, setMessages] = useState<ChatMessage[]>(initialHistory ?? []);
@@ -511,6 +524,40 @@ export function App({
           setStreamed('');
         }
         return;
+      }
+
+      // v3.0 M4 T4.3：Agent 管理命令（/agent）→ 市场操作走异步，list 同步展示
+      if (agentInstaller !== undefined && agentRegistry !== undefined) {
+        const agentCmd = parseAgentCommand(trimmed);
+        if (agentCmd !== null) {
+          if (agentCmd.type === 'install' || agentCmd.type === 'remove') {
+            setInput('');
+            setTokens((t) => ({ ...t, input: t.input + estimateTokens(text) }));
+            const userMsg: ChatMessage = { role: 'user', content: text };
+            setMessages((prev) => [...prev, userMsg]);
+            const result = await executeAgentMarketCommand(agentCmd, {
+              installer: agentInstaller,
+              registry: agentRegistry,
+            });
+            if (result.message !== undefined) {
+              const msg = result.message;
+              setMessages((prev) => [...prev, msg]);
+            }
+            return;
+          }
+          const result = executeAgentCommand(agentCmd, {
+            installer: agentInstaller,
+            registry: agentRegistry,
+          });
+          if (result.handled && result.message !== undefined) {
+            const msg = result.message;
+            setMessages((prev) => [...prev, { role: 'user', content: text }, msg]);
+            setTokens((t) => ({ ...t, input: t.input + estimateTokens(text) }));
+          }
+          if (result.handled) {
+            return;
+          }
+        }
       }
 
       // 技能命令（/skill）→ 列表直接显示；调用技能注入指令后调模型
@@ -821,6 +868,8 @@ export function App({
       ctx.cwd,
       mcpManager,
       setStreamed,
+      agentInstaller,
+      agentRegistry,
     ],
   );
 
