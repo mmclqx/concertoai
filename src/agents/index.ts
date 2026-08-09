@@ -41,3 +41,11 @@ export {
 export type { Agent, AgentInput, AgentOutput, AgentReply } from './protocol';
 export type { AgentEntry, AgentRegistry } from './registry';
 export { InMemoryAgentRegistry } from './registry';
+export {
+  type AutoFixLike,
+  type ReviewEngineLike,
+  type ReviewInput,
+  reviewResultSchema,
+  TeamReviewerAgent,
+  type TeamReviewerOptions,
+} from './reviewer';

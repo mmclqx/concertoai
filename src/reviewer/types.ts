@@ -119,3 +119,47 @@ export interface ReviewOptions {
   /** 各审查子代理最大轮数（默认 5）。 */
   agentMaxTurns?: number;
 }
+
+// ── 对抗性闭环扩展（v3.0 M3 / T3.3）──────────────────────────
+
+/** 审查动作：approve 进入 QA / reject 打回 Coder 修复（T3.3）。 */
+export type ReviewAction = 'approve' | 'reject';
+
+/** 对抗性闭环审查结果（T3.3 结构化输出，供 T3.5 闭环消费）。 */
+export interface ReviewResult {
+  /** 审查动作：approve（进入 QA）/ reject（打回 Coder 修复）。 */
+  action: ReviewAction;
+  /** 问题列表（🔴🟡🟢，按严重程度排序）。 */
+  issues: ReviewIssue[];
+  /** 结果摘要（中文，含计数与动作说明）。 */
+  summary: string;
+  /** 自动测试是否通过（null = 未运行）。 */
+  testPassed: boolean | null;
+  /** 关联的完整审查报告（保留 v2.1 维度汇总/耗时，供可观测性）。 */
+  report?: ReviewReport;
+}
+
+/**
+ * 判定审查动作（T3.3 对抗性闭环）：
+ * - 🔴 critical 问题存在 → 必 reject（打回 Coder 修复）；
+ * - 🟡 medium 问题存在 → 可 reject（打回 Coder 修复）；
+ * - 仅 🟢 suggestion 或无问题 → approve（不阻断，进入 QA）。
+ */
+export function determineReviewAction(issues: ReviewIssue[]): ReviewAction {
+  if (issues.some((i) => i.severity === 'critical' || i.severity === 'medium')) {
+    return 'reject';
+  }
+  return 'approve';
+}
+
+/** 从 v2.1 ReviewReport 构建对抗性闭环 ReviewResult（判定 action + 生成中文摘要）。 */
+export function buildReviewResult(report: ReviewReport): ReviewResult {
+  const action = determineReviewAction(report.issues);
+  const critical = report.issues.filter((i) => i.severity === 'critical').length;
+  const medium = report.issues.filter((i) => i.severity === 'medium').length;
+  const suggestion = report.issues.filter((i) => i.severity === 'suggestion').length;
+  const actionText = action === 'reject' ? '打回 Coder 修复' : '通过，进入 QA';
+  const testText = report.testPassed === null ? '未运行' : report.testPassed ? '通过' : '失败';
+  const summary = `审查发现 🔴×${critical} 🟡×${medium} 🟢×${suggestion}；自动测试${testText}；动作：${actionText}`;
+  return { action, issues: report.issues, summary, testPassed: report.testPassed, report };
+}
