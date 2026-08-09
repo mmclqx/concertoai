@@ -11,7 +11,28 @@
  */
 
 import chalk from 'chalk';
-import { highlight } from 'cli-highlight';
+
+// cli-highlight 延迟加载（性能优化）：该模块加载约 160ms，首帧渲染并不需要代码高亮。
+// 模块加载时即后台预加载；若首个代码块渲染时尚未就绪则回退原文（不阻塞渲染）。
+let highlightFn: ((code: string, options?: Record<string, unknown>) => string) | null = null;
+let highlightReady: Promise<void> | null = null;
+
+/** 确保 cli-highlight 已加载（幂等）：返回同一 promise，加载完成/失败后 resolve。 */
+export function ensureHighlight(): Promise<void> {
+  if (highlightReady === null) {
+    highlightReady = import('cli-highlight')
+      .then((m) => {
+        highlightFn = m.highlight;
+      })
+      .catch(() => {
+        // 加载失败 → 维持 null，后续高亮回退原文
+      });
+  }
+  return highlightReady;
+}
+
+// 模块加载即后台预加载（异步，不阻塞首帧）
+void ensureHighlight();
 
 /** ANSI 样式码。 */
 const ANSI = {
@@ -61,13 +82,17 @@ function renderInline(text: string): string {
   return out;
 }
 
-/** 代码块语法高亮（cli-highlight）；未知语言/解析失败回退原文。 */
+/** 代码块语法高亮（cli-highlight）；加载未就绪/未知语言/解析失败回退原文。 */
 function highlightCode(code: string, lang: string): string {
+  const fn = highlightFn;
+  if (fn === null) {
+    return sanitize(code);
+  }
   // cli-highlight 依赖 chalk，非 TTY 环境（测试/管道）默认不输出颜色；临时提升 level 保证 ANSI 输出
   const prevLevel = chalk.level;
   chalk.level = Math.max(prevLevel, 1) as typeof chalk.level;
   try {
-    return highlight(code, { language: lang === '' ? undefined : lang, ignoreIllegals: true });
+    return fn(code, { language: lang === '' ? undefined : lang, ignoreIllegals: true });
   } catch {
     return sanitize(code);
   } finally {

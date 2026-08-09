@@ -1,7 +1,7 @@
 import { render } from 'ink-testing-library';
 import { describe, expect, it } from 'vitest';
 
-import { renderMarkdownToAnsi } from '../../src/ui/markdown';
+import { ensureHighlight, renderMarkdownToAnsi } from '../../src/ui/markdown';
 import { StreamingView } from '../../src/ui/StreamingView';
 
 const BOLD = '\u001b[1m';
@@ -29,12 +29,25 @@ describe('renderMarkdownToAnsi', () => {
     expect(renderMarkdownToAnsi('**粗**和`码`')).toBe(`${BOLD}粗${RESET}和${CYAN}码${RESET}`);
   });
 
-  it('代码块使用 cli-highlight 语法高亮（输出含 ANSI 颜色码）', () => {
+  it('代码块使用 cli-highlight 语法高亮（输出含 ANSI 颜色码）', async () => {
+    // cli-highlight 为延迟加载：先等待就绪，避免与后台预加载竞态
+    await ensureHighlight();
     const out = renderMarkdownToAnsi('```ts\nconst x = 1;\n```');
     expect(out).toContain('const');
     expect(out).toContain('\u001b[');
     // 围栏行本身不输出
     expect(out).not.toContain('```');
+  });
+
+  it('ensureHighlight 幂等：多次调用返回同一 promise，加载完成后不重复加载', async () => {
+    const p1 = ensureHighlight();
+    const p2 = ensureHighlight();
+    expect(p2).toBe(p1);
+    await p1;
+    // 加载完成后再调用仍返回同一 promise（已缓存）
+    expect(ensureHighlight()).toBe(p1);
+    // 高亮可用
+    expect(renderMarkdownToAnsi('```ts\nconst x = 1;\n```')).toContain('\u001b[');
   });
 
   it('未知语言代码块回退原文（不抛错）', () => {

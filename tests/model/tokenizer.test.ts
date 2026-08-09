@@ -5,6 +5,7 @@ import {
   countTokens,
   estimateMessageListTokens,
   estimateTokens,
+  preloadTokenizer,
 } from '../../src/model/tokenizer';
 
 describe('countTokens (BPE 精确)', () => {
@@ -68,6 +69,24 @@ describe('countTokens 覆盖混合场景', () => {
     const tokens = countTokens(text);
     expect(tokens).toBeGreaterThan(5);
     expect(tokens).toBeLessThan(50);
+  });
+});
+
+describe('preloadTokenizer（后台预加载）', () => {
+  it('调用不抛错，setImmediate 后编码器可用', async () => {
+    expect(() => preloadTokenizer()).not.toThrow();
+    // 等待 setImmediate 排队的加载任务执行
+    await new Promise<void>((resolve) => setImmediate(() => resolve()));
+    expect(countTokens('hello')).toBe(1);
+    expect(countTokens('你好世界')).toBe(2);
+  });
+
+  it('幂等：多次调用无副作用', async () => {
+    preloadTokenizer();
+    preloadTokenizer();
+    await new Promise<void>((resolve) => setImmediate(() => resolve()));
+    expect(countTokens('hello world')).toBe(2);
+    expect(countMessageListTokens([{ role: 'user', content: '你好' }])).toBe(5);
   });
 });
 

@@ -92,6 +92,19 @@ export function isTokenEstimate(): boolean {
   return _encoderFallback;
 }
 
+/**
+ * 后台预加载 BPE 编码器（WASM 加载约 100ms，性能优化）。
+ *
+ * 供启动阶段调用：通过 setImmediate 延迟到当前帧之后执行，不阻塞首帧渲染；
+ * 但能在用户首次输入前完成加载，使首轮对话的 token 计数（上下文压缩）不再产生额外延迟。
+ * 若编码器已被其他调用初始化，本函数无副作用。
+ */
+export function preloadTokenizer(): void {
+  setImmediate(() => {
+    getEncoder();
+  });
+}
+
 // ── 向后兼容（v1.0 API）────────────────────────────────────────
 // 保留旧 estimateTokens / estimateMessageListTokens 作为别名，
 // v2.1 移除。内部已指向 BPE 精确计数。
