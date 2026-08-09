@@ -1,7 +1,7 @@
 # Lumen 开发任务看板
 
 > 最后更新：2026-08-09
-> 当前里程碑：**🚀 v3.0 开发中**（M4 Agent 市场基础进行中，T4.3 完成）（v1.0: 20/20 ✅ · v1.1: 12/12 ✅ · v2.0: 15/15 ✅ · v2.1: 25/25 ✅ · v3.0: 17/24）
+> 当前里程碑：**✅ v3.0 全部完成**（24/24 任务 ✅）（v1.0: 20/20 ✅ · v1.1: 12/12 ✅ · v2.0: 15/15 ✅ · v2.1: 25/25 ✅ · v3.0: 24/24 ✅）
 > 基于：[v3.0 开发计划](./v3.0-dev-plan.md) · [v3.0 详细任务](./v3.0-dev-tasks.md)
 
 ---
@@ -10,13 +10,13 @@
 
 | 指标 | 数值 |
 |------|------|
-| 总任务数 | 96（v1.0: 20 ✅ + v1.1: 12 ✅ + v2.0: 15 ✅ + v2.1: 25 ✅ + v3.0: 24） |
-| P0 任务 | 30（v1.1: 6 ✅ + v2.0: 5 ✅ + v2.1: 5 ✅ + v3.0: 14） |
-| P1 任务 | 30（v1.1: 6 ✅ + v2.0: 10 ✅ + v2.1: 4 ✅ + v3.0: 10） |
-| P2 任务 | 8（v2.1: 8） |
-| 待开始 | 7 |
+| 总任务数 | 96（v1.0: 20 ✅ + v1.1: 12 ✅ + v2.0: 15 ✅ + v2.1: 25 ✅ + v3.0: 24 ✅） |
+| P0 任务 | 30（v1.1: 6 ✅ + v2.0: 5 ✅ + v2.1: 5 ✅ + v3.0: 14 ✅） |
+| P1 任务 | 30（v1.1: 6 ✅ + v2.0: 10 ✅ + v2.1: 4 ✅ + v3.0: 10 ✅） |
+| P2 任务 | 8（v2.1: 8 ✅） |
+| 待开始 | 0 |
 | 进行中 | 0 |
-| 已完成 | 89 |
+| 已完成 | 96 |
 | 已阻塞 | 0 |
 
 ---
@@ -48,9 +48,9 @@
 | **V3.0-M1 接口定义与基础协议** | **P0** | **3** | ✅ 已完成 |
 | **V3.0-M2 Orchestrator 核心** | **P0** | **3** | ✅ 已完成 |
 | **V3.0-M3 多角色 Agent 团队** | **P0** | **6** | ✅ 已完成 |
-| **V3.0-M4 Agent 市场基础** | **P1** | **4** | 🟢 进行中（T4.3 完成） |
-| **V3.0-M5 可观测性面板** | **P1** | **3** | ⏳ 待开始 |
-| **V3.0-M6 集成测试与文档** | **P1** | **3** | ⏳ 待开始 |
+| **V3.0-M4 Agent 市场基础** | **P1** | **4** | ✅ 已完成 |
+| **V3.0-M5 可观测性面板** | **P1** | **3** | ✅ 已完成 |
+| **V3.0-M6 集成测试与文档** | **P1** | **3** | ✅ 已完成 |
 
 ---
 
@@ -711,37 +711,43 @@
 
 ### V3.0-M5：可观测性面板（P1，约 4h）
 
-- [ ] **T5.1** 实现调用链追踪
-  - 涉及文件：`src/observable/trace.ts`（新增）、`src/observable/index.ts`（新增）
-  - 预估：1.5h
+- [x] **T5.1** 实现调用链追踪
+  - 涉及文件：`src/observable/trace.ts`（新增）、`src/observable/index.ts`（新增）、`tests/observable/trace.test.ts`（新增）
+  - 预估：1.5h | 实际：约 1h
   - 依赖：T1.1、T2.1
+  - ✅ 2026-08-09 完成：TraceStore 内存 LRU（默认上限 5000 条，防无限增长）+ record 记录输入/输出/决策/耗时 + queryByTaskId 递归收集父子任务树（parentTaskId）+ subscribeToStateMachine 订阅状态机 onTransition 自动记录 decision span；6 测试
 
-- [ ] **T5.2** 实现审计日志
-  - 涉及文件：`src/observable/audit.ts`（新增）
-  - 预估：1h
+- [x] **T5.2** 实现审计日志
+  - 涉及文件：`src/observable/audit.ts`（新增）、`tests/observable/audit.test.ts`（新增）
+  - 预估：1h | 实际：约 0.5h
   - 依赖：T5.1
+  - ✅ 2026-08-09 完成：AuditLogger JSONL 追加写入（O_APPEND，异步不阻塞主流程）+ AuditEntry（自增 seq + ts + kind：message/state-change/approval/rollback）+ exportJson 保序导出 + 损坏行跳过；性能基准单条写入 <10ms 单测断言；5 测试
 
-- [ ] **T5.3** 实现可观测性面板 TUI
-  - 涉及文件：`src/ui/ObservabilityPanel.tsx`（新增）、`src/ui/App.tsx`（修改）
-  - 预估：1.5h
+- [x] **T5.3** 实现可观测性面板 TUI
+  - 涉及文件：`src/ui/ObservabilityPanel.tsx`（新增）、`src/ui/App.tsx`（修改）、`src/cli/chat.tsx`（修改）、`tests/ui/observability-panel.test.tsx`（新增）
+  - 预估：1.5h | 实际：约 1h
   - 依赖：T5.1、T5.2
+  - ✅ 2026-08-09 完成：ObservabilityPanel 流程树组件（节点 = 任务/Agent，实时状态/耗时/消息数；输入→决策→输出摘要；可展开/收起不阻塞主对话）+ App/chat 挂载 TraceStore + AuditLogger 注入；50 节点渲染 <100ms 性能断言；4 测试
 
 ### V3.0-M6：集成测试与文档（P1，约 4h）
 
-- [ ] **T6.1** 多 Agent 协作 E2E 测试
-  - 涉及文件：`tests/e2e/orchestrator.test.ts`、`tests/e2e/team-loop.test.ts`、`tests/orchestrator/transaction.test.ts`、`tests/market/installer.test.ts`、`tests/observable/trace.test.ts`（均新增）
-  - 预估：1.5h
+- [x] **T6.1** 多 Agent 协作 E2E 测试
+  - 涉及文件：`tests/e2e/orchestrator.test.ts`（新增）、`tests/e2e/team-loop.test.ts`（新增）、`tests/orchestrator/transaction.test.ts`（新增）、`tests/market/installer.test.ts`（新增）、`tests/observable/trace.test.ts`（新增）
+  - 预估：1.5h | 实际：约 1h
   - 依赖：M1-M5 全部完成
+  - ✅ 2026-08-09 完成：E2E-1 FakeModel→Orchestrator 拆解 5 子任务→拓扑调度正确 + 并行组并发峰值 ≥2 + 聚合 5 工件；E2E-2 需求→拆解→Architect 设计 spec→闭环（approve + QA 通过）→上下文 artifacts；E2E-3 闭环超 5 次→onRollback→SnapshotManager 回滚→文件恢复任务前状态 + 快照清理；E2E-4 市场 install + promote→/agent list 识别全链路；4 个 e2e 用例 + 全量 699 用例全绿（≥440 验收通过）
 
-- [ ] **T6.2** 文档更新
-  - 涉及文件：`README.md`、`docs/02-架构设计/ARCHITECTURE.md`、`docs/05-用户与开发指南/user-guide.md`、`docs/05-用户与开发指南/agent-dev-guide.md`（新增）
-  - 预估：1.5h
+- [x] **T6.2** 文档更新
+  - 涉及文件：`README.md`（修改）、`docs/02-架构设计/ARCHITECTURE.md`（修改）、`docs/05-用户与开发指南/user-guide.md`（修改）、`docs/05-用户与开发指南/agent-dev-guide.md`（新增）、`docs/06-会议与决策记录/DECISIONS.md`（修改 — ADR-015/017~020 回填）
+  - 预估：1.5h | 实际：约 1.5h
   - 依赖：T6.1
+  - ✅ 2026-08-09 完成：README v3.0 功能章节（多 Agent 团队 / Agent 市场 / 事务回滚 / 可观测性）+ snapshot 命令；ARCHITECTURE 新增 orchestrator/agents/market/observable 模块（§2 全景图 + §4 D33-D38 + §5 目录树核对 + §8.5 v3.0 已解决）；用户手册新增 6-8 章（多 Agent / Agent 市场 / 可观测性）+ snapshot 命令 + 章节顺延至 13；Agent 开发指南完整（接口契约 + 脚手架 + 打包发布 + 发布清单）；ADR-015/017~020 回填 DECISIONS.md（发布门要求 ADR-015~020 齐）
 
-- [ ] **T6.3** CHANGELOG + TASKS 看板 + 测试报告
-  - 涉及文件：`CHANGELOG.md`、`docs/03-开发计划与任务/TASKS.md`、`docs/07-测试报告.md`
-  - 预估：1h
+- [x] **T6.3** CHANGELOG + TASKS 看板 + 测试报告
+  - 涉及文件：`CHANGELOG.md`（修改）、`docs/03-开发计划与任务/TASKS.md`（修改）、`docs/07-测试报告.md`（修改）
+  - 预估：1h | 实际：约 1h
   - 依赖：T6.2
+  - ✅ 2026-08-09 完成：CHANGELOG v3.0.0 条目（Added/Changed/Fixed，M0-M6 全部变更 + 修复原 Unreleased 格式错位）；TASKS 看板 24 个任务全部标记完成（M0-M6 全绿）；测试报告更新为 63 文件/699 用例 + v3.0 模块分层统计 + 关键场景 + 手动用例 M-23~26 + 覆盖缺口；v3.0.0 tag 待发布时打
 
 ---
 
@@ -800,6 +806,12 @@
 | 2026-08-09 | **V3.0-M0 完成**：T0.2 接口草图评审（AgentMessage/AgentContext/AgentDef 定稿，ADR-016 已采纳，5 项 M1 修正项） | Carbon Code |
 | 2026-08-09 | **V3.0-M1 启动**：T1.1 Agent 通信协议类型（src/orchestrator/types.ts + index.ts，15 测试，424 全绿） | Carbon Code |
 | 2026-08-09 | **V3.0-M1 推进**：T1.2 Agent 注册表 + 标准 Agent 接口（src/agents/，16 测试，440 全绿，达 v3.0 用例目标） | Carbon Code |
+| 2026-08-09 | **V3.0-M1 完成**：T1.3 显式上下文管理器（serialize/extractSubset/mergeContexts，64KB 上限，19 测试，473 全绿） | Carbon Code |
+| 2026-08-09 | **V3.0-M2 完成**：T2.1-T2.3 状态机 + 调度器 + Orchestrator 核心（27/26/13 测试，591 全绿） | Carbon Code |
+| 2026-08-09 | **V3.0-M3 完成**：T3.1-T3.6 多角色 Agent 团队 + 事务回滚（architect/coder/reviewer/qa + runTeamLoop + SnapshotManager，614 全绿） | Carbon Code |
+| 2026-08-09 | **V3.0-M4 完成**：T4.1-T4.4 Agent 市场基础（注册表/安装器//agent 命令/promote，680 全绿） | Carbon Code |
+| 2026-08-09 | **V3.0-M5 完成**：T5.1-T5.3 可观测性（TraceStore + AuditLogger + 面板，699 全绿） | Carbon Code |
+| 2026-08-09 | **V3.0-M6 完成**：T6.1-T6.3 集成测试 + 文档 + 收尾（4 E2E / README / 架构文档 / 用户手册 / Agent 开发指南 / ADR-015~020 / CHANGELOG / 测试报告，699 全绿） | Carbon Code |
 
 ---
 

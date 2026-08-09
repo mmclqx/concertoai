@@ -1,6 +1,6 @@
 # Lumen 用户手册
 
-> 面向使用 Lumen 完成日常编码辅助的个人开发者。版本：v2.1。
+> 面向使用 Lumen 完成日常编码辅助的个人开发者。版本：v3.0。
 
 ## 1. 安装与升级
 
@@ -56,6 +56,13 @@ npm update -g @lumen/cli
 - **依赖检测**：自动分析步骤间依赖关系，按拓扑顺序调度，循环依赖提前报错；
 - **进度跟踪**：TUI 实时展示每步状态（⏳ 进行中 / ✅ 已完成 / ❌ 失败），失败步骤可跳过或重试；
 - **文件回滚**：编辑前自动快照，步骤失败时可回滚已完成的文件变更。
+
+### `lumen snapshot` —— 多文件事务快照管理（v3.0）
+
+| 选项 | 说明 |
+| --- | --- |
+| `lumen snapshot` / `lumen snapshot list` | 列出全部残留快照（失败/取消任务的 taskId 列表） |
+| `lumen snapshot clean` | 清理全部残留快照（多 Agent 任务失败/超限后遗留） |
 
 ## 3. 交互细节
 
@@ -146,7 +153,76 @@ Lumen 支持通过 [MCP（Model Context Protocol）](https://modelcontextprotoco
 - MCP 工具与内置工具共存——MCP 服务不可用时自动降级，不影响内置工具；
 - 模型在对话中可直接调用 MCP 工具（如 `filesystem_read_file`），调用结果回填上下文。
 
-## 6. 跨会话记忆
+## 6. 多 Agent 协作团队（v3.0）
+
+v3.0 引入「多 Agent 团队」工作流（Orchestrator 模式）：Orchestrator 接收需求 → 拆解为结构化任务（含依赖与负责人）→ 按 DAG 拓扑调度（无依赖任务并行）→ 聚合结果交付。
+
+### 6.1 四个专业 Agent
+
+| Agent | 职责 | 权限（fail-closed） |
+|-------|------|---------------------|
+| `architect` | 接收需求 → 输出结构化设计 spec（接口定义 + 文件结构 + 约束条件） | 只读工具 |
+| `coder` | 按 spec 实现代码 + 接收审查反馈自动修复（审批后写盘） | `edit_file` |
+| `reviewer` | 9 维审查代码，输出 `ReviewResult`（approve / reject 打回） | 只读工具 |
+| `qa` | 子代理沙箱执行 `npm run verify`，输出结构化测试报告 | `run_command npm run verify` |
+
+### 6.2 对抗性闭环
+
+`Coder 实现 → Reviewer 审查 → reject 则打回修复 → approve 则 QA 验证 → 失败则继续修复`，循环 ≤ 5 次。
+
+- **终止条件**：Reviewer approve 且 QA 全绿；
+- **超限退出**：超过 5 次自动退出，保留中间结果（代码/审查/测试报告）供人工检查，并触发多文件事务回滚（恢复所有涉及文件到任务前状态）；
+- **审批流**：Coder 的写盘操作仍走审批（fail-closed），Agent 不会未经确认修改代码。
+
+### 6.3 多文件事务回滚
+
+每个 Agent 任务开始前创建 `.lumen/snapshots/<taskId>/` 快照，回滚时原子恢复全部涉及文件：
+
+- 快照时存在的文件 → 恢复原始内容；
+- 任务新增的文件 → 删除；
+- **外部修改检测**：任务未登记或内容不符的文件拒绝覆盖（避免误伤人工改动）；
+- 成功后自动清理快照；失败/取消后保留，可用 `lumen snapshot clean` 手动清理。
+
+## 7. Agent 市场（v3.0）
+
+升级自技能市场——从「技能复用」到「Agent 复用」。复用 `registry.json` 注册表格式与安装器架构（下载 → sha256 校验 → 写入），通过 `type: "skill" | "agent"` 区分条目。
+
+### 对话内命令
+
+| 命令 | 说明 |
+|------|------|
+| `/agent list` | 列出 Agent 团队：内置 4 个（architect/coder/reviewer/qa）+ 已安装外部 Agent（含权限摘要与安装时间） |
+| `/agent install <name>` | 从市场安装 Agent：fetch 注册表 → 匹配条目 → 下载 → sha256 校验 → 接口合规检查 → 写入 `~/.lumen/agents/<name>/` → 刷新注册表 |
+| `/agent remove <name>` | 卸载已安装外部 Agent（内置 Agent 随 Lumen 分发，拒绝卸载） |
+| `/agent promote <skill>` | 将技能一键升级为 Agent：读取 SKILL.md → 生成脚手架（AgentDef 接口声明 + 实现骨架 + 权限声明，默认继承技能所需最小权限）→ 注册；原技能保留 |
+
+### 安全保证
+
+- **sha256 校验**：包内容与注册表声明不一致 → 拒绝安装；
+- **接口合规检查**：安装前校验 `AgentDef.interfaces`（input/output Schema）与 `permissions` 完整，不符合拒绝安装；
+- **权限 fail-closed**：未在 `AgentDef.permissions` 声明的工具一律拒绝（对齐 ADR-004），外部 Agent 无法越权。
+
+### 安装位置
+
+外部 Agent 安装在 `~/.lumen/agents/<name>/`；内置 Agent 随 Lumen 分发（`BUILTIN_AGENT_ITEMS`）。`/agent list` 同时展示两者。
+
+## 8. 可观测性（v3.0）
+
+多 Agent 协作的每一步决策都可追溯、可审计。
+
+### 调用链追踪
+
+每条 Agent 消息记录输入/输出/决策/耗时，按 taskId 查询完整父子任务树（内存 LRU，上限 5000 条）；任务状态机状态变更自动记录为决策跨度（含 reason）。
+
+### 审计日志
+
+所有 Agent 交互（消息 / 状态变更 / 审批 / 回滚）JSONL 追加写入 `~/.lumen/audit/<时间戳>.jsonl`，异步不阻塞主流程，单条写入 < 10ms；`AuditLogger.exportJson()` 可导出为 JSON。
+
+### 可观测性面板
+
+对话中可展开 Agent 协作流程树面板：节点 = 任务/Agent，展示实时状态、耗时与消息数；输入 → 决策 → 输出摘要逐条可见；可展开/收起，不阻塞主对话流。
+
+## 9. 跨会话记忆
 
 Lumen 支持项目级跨会话记忆，帮助模型在多次对话中「记住」项目上下文。
 
@@ -168,23 +244,24 @@ Lumen 支持项目级跨会话记忆，帮助模型在多次对话中「记住�
 
 > **与 MCP memory 的关系**：本地记忆（`.lumen-memory/`）是零依赖的轻量方案，MCP memory 服务提供知识图谱能力。两者可同时启用，记忆合并注入上下文。
 
-## 7. 会话管理
+## 10. 会话管理
 
 - 每轮对话结束自动追加到 `~/.lumen/sessions/<id>.jsonl`；
 - `lumen chat -r` 列出全部会话（时间/消息数/首条摘要），↑/↓ + Enter 选择；
 - 会话文件为 JSONL：每行一条消息，可手动编辑（损坏行会被跳过并计数）；
 - 并发写入有保护：同一会话内串行、原子落盘；跨进程冲突会提示。
 
-## 8. 安全模型
+## 11. 安全模型
 
-- 审批门控：编辑与命令一律审批（fail-closed），无 yolo 模式；
+- 审批门控：编辑与命令一律审批（fail-closed），无 yolo 模式；多 Agent 的 Coder 写盘同样走审批；
+- Agent 权限 fail-closed：外部 Agent 只能使用 `AgentDef.permissions` 声明过的工具；
 - 路径沙箱：工具只能访问项目目录内；
 - 白名单：命令前缀词边界匹配（`npm test` 命中 `npm test --x`，不命中 `npm testx`）；
 - 截断：文件 50k 字符、搜索结果 100 条、工具回填 20k、命令输出 20k、项目规则 8k；
-- 上下文：超模型 80% 预算自动裁剪（保留 system + 最近轮），记录日志；
-- 防失控：工具循环上限 50 轮；可修复失败累计超 2 次终止；审批拒绝/越界不进入重试管线。
+- 上下文：超模型 80% 预算自动裁剪（保留 system + 最近轮），记录日志；Agent 显式上下文 ≤ 64KB；
+- 防失控：工具循环上限 50 轮；可修复失败累计超 2 次终止；审批拒绝/越界不进入重试管线；对抗性闭环 ≤ 5 次。
 
-## 9. 故障排查
+## 12. 故障排查
 
 | 现象 | 处理 |
 | --- | --- |
@@ -195,7 +272,7 @@ Lumen 支持项目级跨会话记忆，帮助模型在多次对话中「记住�
 | 命令全部被拒绝 | run 模式需 `--auto-approve`；chat 模式确认审批框按 y |
 | 想要英文界面 | `--lang en` 或配置 `locale` |
 
-## 10. 从 v0.1 迁移
+## 13. 从 v0.1 迁移
 
 v1.0 从 v0.1 的变更：
 
@@ -224,3 +301,10 @@ v2.1 新增：
 - **Reviewer Agent**：`/review` 9 维审查聚合 5 个并行子代理 + 自动测试 `npm run verify`，输出按文件去重 + 严重程度排序的审查报告（auto / 指定路径 / `--pr` 三种模式）；
 - **技能市场与嵌套**：`@skill` / `@agent` 引用递归展开（≤3 层 + 循环检测），`/skill install <name>` / `search <关键词>` / `update` 市场命令；
 - **子代理 MCP 工具**：explore → filesystem、research → filesystem/github，服务不可用时静默降级。
+
+v3.0 新增：
+
+- **多 Agent 协作团队**：Orchestrator 拆解需求 → DAG 拓扑调度（并行）→ 4 个专业 Agent（architect/coder/reviewer/qa）各司其职 → 对抗性闭环（Coder→Reviewer→QA，≤ 5 次）；
+- **多文件事务回滚**：任务级快照 `.lumen/snapshots/<taskId>/`，原子恢复 + 外部修改检测 + `lumen snapshot clean`；
+- **Agent 市场**：`/agent list` / `install <name>` / `remove <name>` / `promote <skill>`，外部 Agent sha256 校验 + 接口合规检查 + 权限 fail-closed；
+- **可观测性**：调用链追踪（TraceStore LRU）、审计日志（`~/.lumen/audit/`，JSON 可导出）、Agent 协作流程树面板。

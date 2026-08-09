@@ -1,8 +1,8 @@
 # Lumen 架构文档
 
-> 版本：v2.1 · 2026-08-08
+> 版本：v3.0 · 2026-08-09
 > 本文档基于当前代码实现编写，作为后续维护与扩展的技术参考。
-> 配套文档：[v2.0 开发任务](../03-开发计划与任务/v2.0-dev-tasks.md)、[任务看板](../03-开发计划与任务/TASKS.md)
+> 配套文档：[v3.0 开发任务](../03-开发计划与任务/v3.0-dev-tasks.md)、[任务看板](../03-开发计划与任务/TASKS.md)
 
 ---
 
@@ -12,7 +12,7 @@ Lumen 是一款**中文优先**的终端编码助手 CLI（DeepSeek 驱动）。
 
 - **技术栈**：TypeScript (strict) + Node ≥22 + ESM，Ink 7 (React 19) 渲染 TUI，commander 解析 CLI，zod 做工具参数校验，vitest 测试，Biome 检查，tsup 打包
 - **运行时依赖**：`ink` / `react` / `commander` / `zod` / `cli-highlight` / `chalk`
-- **测试现状**：42 个测试文件、409 个用例，`npm run verify` 全绿，`npm audit` 0 漏洞；已用真实 `DEEPSEEK_API_KEY` 完成端到端冒烟
+- **测试现状**：63 个测试文件、699 个用例，`npm run verify` 全绿，`npm audit` 0 漏洞；已用真实 `DEEPSEEK_API_KEY` 完成端到端冒烟
 - **安全基线**：编辑与命令一律审批（fail-closed）、路径沙箱、结果截断、白名单免审批——无 yolo 模式
 
 ## 2. 架构全景图
@@ -20,10 +20,13 @@ Lumen 是一款**中文优先**的终端编码助手 CLI（DeepSeek 驱动）。
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │ cli/  commander 入口（src/cli/）                              │
-│   index.ts   lumen / lumen chat / lumen run "任务" / lumen plan
+│   index.ts   lumen / lumen chat / lumen run "任务" / lumen plan│
+│              lumen snapshot [list|clean]（v3.0 快照清理）      │
 │   chat.tsx   chat 装配：TUI + loop + store（含 TTY 检查）      │
 │   run.ts     run 一次性执行：loop + stdout 流式 + 存档          │
 │   plan.ts    plan 计划-批准-执行三段式（readline y/n）          │
+│   snapshot.ts 快照命令（SnapshotManager，T3.6）                │
+│   slash/     /agent /skill /mcp /memory /review 斜杠命令       │
 └──────────────────────┬──────────────────────────────────────┘
                        │ render(<App …>) / runLoop(...)
 ┌──────────────────────▼──────────────────────────────────────┐
@@ -33,6 +36,7 @@ Lumen 是一款**中文优先**的终端编码助手 CLI（DeepSeek 驱动）。
 │   StreamingView    markdown→ANSI 渲染（markdown.tsx + 高亮）   │
 │   modals.tsx       EditConfirm / ShellConfirm / PlanConfirm   │
 │   SessionPicker    -r 无 ID 时的会话列表选择                   │
+│   ObservabilityPanel  Agent 协作流程树（v3.0，可展开收起）      │
 │   Spinner          Braille 进度指示（思考中/工具执行）          │
 │   StatusBar        模型名 + 真实 usage/估算 + 成本             │
 └──────────────────────┬──────────────────────────────────────┘
@@ -70,6 +74,30 @@ Lumen 是一款**中文优先**的终端编码助手 CLI（DeepSeek 驱动）。
 │  builtin-servers.ts 预配置      │                              │
 │  index.ts       barrel          │                              │
 └─────────────────────────────────┴───────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│ orchestrator/ 多 Agent 编排（v3.0 M1-M3）                     │
+│   types.ts         AgentMessage / AgentContext / AgentDef     │
+│   context.ts       显式上下文（序列化/子集提取/合并，≤64KB）   │
+│   state-machine.ts 任务状态机（pending→…→completed/failed）   │
+│   scheduler.ts     DAG 调度（拓扑排序 + 并行 + 重试 + 冲突）   │
+│   loop.ts          对抗性闭环（Coder→Reviewer→QA ≤5 次）      │
+│   transaction.ts   SnapshotManager 多文件事务回滚（T3.6）     │
+└───────────────────────────┬─────────────────────────────────┘
+┌───────────────────────────▼─────────────────────────────────┐
+│ agents/ 专业 Agent（v3.0 M3） market/ Agent 市场（v3.0 M4）   │
+│   orchestrator.ts Orchestrator 拆解  types.ts     注册表类型  │
+│   architect.ts    架构师→spec        registry.ts  读写       │
+│   coder.ts        编码+修复          installer.ts 安装器      │
+│   reviewer.ts     Team Reviewer      promote.ts   技能升级    │
+│   qa.ts           QA（verify 沙箱）  download.ts  共享下载    │
+│   protocol.ts     Agent 接口契约（T1.2）                      │
+│   registry.ts     AgentRegistry（T1.2）                       │
+└───────────────────────────┬─────────────────────────────────┘
+┌───────────────────────────▼─────────────────────────────────┐
+│ observable/ 可观测性（v3.0 M5）                               │
+│   trace.ts   TraceStore 调用链追踪（LRU 5000）                │
+│   audit.ts   AuditLogger JSONL 审计日志（单条 <10ms）         │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 **依赖方向**（上层依赖下层，无反向）：
@@ -78,6 +106,16 @@ Lumen 是一款**中文优先**的终端编码助手 CLI（DeepSeek 驱动）。
 cli → ui → loop → model / tools → store / i18n / mcp / planner
              ↘        ↘          ↘
           loop/types   i18n     mcp（工具注入 loop）
+```
+
+**v3.0 多 Agent 层**（独立于主循环，由 cli/chat 装配，消费同一 ModelClient 抽象）：
+
+```
+orchestrator/（协议/调度/闭环/事务） ──► agents/（4 专业 Agent）
+      │  types/state-machine               │  AgentRegistry（agents/registry.ts）
+      ▼                                    ▼
+ observable/（追踪/审计）            market/（注册表/安装/promote）
+      ▲ 消费 orchestrator types            ▲ 消费 agents/registry + orchestrator types
 ```
 
 ## 3. 核心数据流
@@ -197,6 +235,12 @@ MCP 服务故障
 | D30 | **技能嵌套与市场**（v2.1）：@skill 递归展开（≤3 层 + 循环检测）+ @agent 引用 + /skill install/search/update | 技能可组合复用；市场命令异步网络操作 | `skill/loader.ts` + `cli/slash/skill.ts` |
 | D31 | **Reviewer Agent**（v2.1）：9 维审查聚合为 5 个并行子代理 + 自动测试（npm run verify） | 多视角交叉验证；结果按 (file,title) 去重 + 严重程度排序 | `reviewer/engine.ts` + `reviewer/dimensions.ts` |
 | D32 | **系统性性能优化**（v2.1）：O_APPEND 追加 / chunk 一次 join / 工具定义缓存 / 关系邻接表 / 懒加载 / 流式节流 | 大会话与长回复不再 O(n²) 退化 | session/loop/tools/knowledge/ui 各模块 |
+| D33 | **Orchestrator 中介模式**（v3.0 / ADR-015）：Agent 间通信一律经 Orchestrator 转发，不做点对点 | 降低耦合；所有消息可追踪；v3.1 再评估点对点 | `agents/orchestrator.ts` |
+| D34 | **Agent 接口标准化**（v3.0 / ADR-016）：AgentMessage/AgentContext/Artifact + AgentDef（interfaces 用 zod Schema）| 接口即契约；第三方 Agent 可插拔；M1 修正项落实（discriminated union / zod schema / 运行时状态拆分） | `orchestrator/types.ts` + `agents/protocol.ts` |
+| D35 | **对抗性闭环循环上限 ≤ 5**（v3.0 / ADR-017）：MAX_LOOP_ATTEMPTS=5，超限退出并保留中间结果 + 触发 onRollback | 防止 Coder↔Reviewer 无限拉锯；5 次覆盖绝大多数修复场景 | `orchestrator/loop.ts` |
+| D36 | **Agent 市场复用技能市场架构**（v3.0 / ADR-018）：registry.json + 安装器 + sha256 校验，`type: skill|agent` 区分 | 避免重复建设；共享下载/校验/写入底层；Agent 本质是特殊技能 | `market/` + `skill/` |
+| D37 | **可观测性结构化调用链 + 审计日志**（v3.0 / ADR-019）：TraceStore LRU + AuditLogger JSONL，非外部 APM | 零外部依赖；CLI 自包含；JSON 导出即可满足审计 | `observable/` |
+| D38 | **v3.0 不做沙箱容器隔离**（v3.0 / ADR-020）：进程级隔离（子代理）足够 | Docker/K8s 复杂度高，v3.1 评估 | `agent/spawner.ts` |
 
 ## 5. 目录结构说明
 
@@ -229,12 +273,14 @@ lumen/
 │   │       ├── research.ts 研究型子代理（多角度对比分析，结论 ≤500 字）
 │   │       └── index.ts    registerBuiltinSubagents
 │   ├── cli/
-│   │   ├── index.ts      commander 入口：lumen（默认 chat）/ chat / run / plan；DEEPSEEK_API_KEY 检查
+│   │   ├── index.ts      commander 入口：lumen（默认 chat）/ chat / run / plan / snapshot；DEEPSEEK_API_KEY 检查
 │   │   ├── chat.tsx      chat 装配：TTY 检查、配置加载、注册表、规则加载、MCP 启动、resume、render(App)
 │   │   ├── run.ts        run 装配：非交互、stdout 流式、--auto-approve 显式开启、存档
 │   │   ├── plan.ts       plan 装配：计划轮 → 终端 y/n → 执行轮（含依赖检测/进度/回滚）
+│   │   ├── snapshot.ts   lumen snapshot [list|clean]：快照残留列出/清理（v3.0 M3）
 │   │   ├── common.ts     CLI 共享：白名单 / 注册表构建 / OS 提示（轻量加载，v2.1）
 │   │   └── slash/        斜杠命令处理器
+│   │       ├── agent.ts  /agent list / install / remove / promote（v3.0 M4）
 │   │       ├── memory.ts /remember /forget /memories
 │   │       ├── mcp.ts    /mcp status / connect / disconnect（v2.0）
 │   │       ├── skill.ts  /skill list / use / install / search / update（v2.0/v2.1）
@@ -246,6 +292,7 @@ lumen/
 │   │   ├── markdown.tsx   markdown 解析 + cli-highlight 高亮（纯 ANSI 字符串）
 │   │   ├── modals.tsx    ApprovalModal + EditConfirm/ShellConfirm/PlanConfirm
 │   │   ├── SessionPicker.tsx 会话列表交互选择（-r 无 ID）
+│   │   ├── ObservabilityPanel.tsx Agent 协作流程树面板（v3.0 M5，可展开/收起）
 │   │   ├── Spinner.tsx   Braille 进度指示
 │   │   └── StatusBar.tsx 模型名/token（真实 usage/估算）/成本（costFor 实时计算）
 │   ├── loop/
@@ -292,6 +339,34 @@ lumen/
 │   │   ├── loader.ts     SKILL.md 加载 + @skill 递归展开（≤3 层）/ @agent 引用
 │   │   ├── types.ts      SkillDef / SkillFrontmatter / AgentRef 类型
 │   │   └── index.ts      barrel
+│   ├── orchestrator/     多 Agent 编排核心（v3.0 M1-M3，详见 §4 D33/D35）
+│   │   ├── types.ts      AgentMessage / AgentContext / AgentDef / AgentState / Artifact（T1.1）
+│   │   ├── context.ts    显式上下文：serialize/deserialize/extractSubset/mergeContexts（≤64KB，T1.3）
+│   │   ├── state-machine.ts 任务状态机：转换守卫 + onTransition 事件（T2.1）
+│   │   ├── scheduler.ts  DAG 调度：拓扑排序 + 并发池（默认 3）+ 重试 + 冲突检测（T2.2）
+│   │   ├── loop.ts       对抗性闭环编排：runTeamLoop（Coder→Reviewer→QA ≤5 次，T3.5）
+│   │   ├── transaction.ts SnapshotManager 多文件事务快照/回滚/提交（T3.6）
+│   │   └── index.ts      barrel
+│   ├── agents/           专业 Agent（v3.0 M3，详见 §4 D33/D34）
+│   │   ├── protocol.ts   Agent 接口契约：execute/send/receive + AgentDef schema（T1.2）
+│   │   ├── registry.ts   InMemoryAgentRegistry：register/get/list/unregister/permissionsOf（T1.2）
+│   │   ├── orchestrator.ts Orchestrator：需求拆解 Task[] + 按调度器分配 + 聚合（T2.3）
+│   │   ├── architect.ts  架构师：需求 → ArchitectSpec（T3.1）
+│   │   ├── coder.ts      编码 Agent：spec 实现 + 反馈修复 + 事务登记（T3.2）
+│   │   ├── reviewer.ts   Team Reviewer：ReviewResult（approve/reject 打回，T3.3）
+│   │   ├── qa.ts         QA：子代理沙箱执行 npm run verify + 结构化报告（T3.4）
+│   │   └── index.ts      barrel
+│   ├── market/           Agent 市场（v3.0 M4，详见 §4 D36）
+│   │   ├── types.ts      MarketRegistry / AgentRegistryItem（复用技能 schema + type 区分）
+│   │   ├── registry.ts   市场注册表读写 + 内置 4 Agent 条目（T4.1）
+│   │   ├── installer.ts  AgentInstaller：下载 → sha256 → 接口合规 → 注册（T4.2）
+│   │   ├── promote.ts    技能 → Agent 脚手架生成器（T4.4）
+│   │   ├── download.ts   共享下载函数（fetchVerifiedContent，T4.2 抽取）
+│   │   └── index.ts      barrel
+│   ├── observable/       可观测性（v3.0 M5，详见 §4 D37）
+│   │   ├── trace.ts      TraceStore 调用链追踪（LRU 5000 + 状态机订阅，T5.1）
+│   │   ├── audit.ts      AuditLogger JSONL 审计日志（异步追加，T5.2）
+│   │   └── index.ts      barrel
 │   ├── store/
 │   │   ├── session.ts    SessionStore：create/append/appendAll/read/list；锁 + 原子写 + 冲突检测
 │   │   ├── project-rules.ts  loadProjectRules：AGENTS→CARBON 优先级、8k 截断
@@ -301,7 +376,7 @@ lumen/
 │       ├── zh.ts         中文字典 + fmt()
 │       ├── en.ts         英文字典（键与 zh 同构）
 │       └── index.ts      resolveLocale / setLocale / t() / DICTS
-└── tests/                镜像 src 结构（42 个文件 / 409 用例），含 tests/mcp/、tests/planner/、tests/knowledge/、tests/reviewer/、tests/skill/、tests/agent/ 等
+└── tests/                镜像 src 结构（63 个文件 / 699 用例），含 tests/mcp/、tests/planner/、tests/knowledge/、tests/reviewer/、tests/skill/、tests/agent/、tests/orchestrator/、tests/agents/、tests/market/、tests/observable/、tests/e2e/ 等
 ```
 
 ## 6. 5分钟快速体验
@@ -430,10 +505,20 @@ npm run verify     # 验收：build + lint + typecheck + test（--silent）
 | 无自动化代码评审 | ✅ Reviewer Agent（/review）：9 维审查聚合 5 并行子代理 → 聚合排序 → 自动测试 | `reviewer/` + `cli/slash/review.ts` + `ui/ReviewReport.tsx` |
 | 长会话/长回复性能退化 | ✅ 系统性 O(n²)→O(n) 优化（O_APPEND / chunk join / registry 缓存 / 邻接表 / 懒加载 / 流式节流） | session/loop/tools/knowledge/ui |
 
-### 8.5 规划（v2.2+）
+### 8.5 v3.0 已解决
 
-- **能力**：多 Agent 协作（Orchestrator 模式）、插件市场、DAG 工作流引擎、Reviewer autoFix 落地（自动修正回滚）
-- **工程**：TypeScript 7（原生）评估；依赖持续升级
+| 问题 | 状态 | 位置 |
+| --- | --- | --- |
+| 单 Agent 无法胜任复杂任务 | ✅ 多 Agent 团队：Orchestrator 拆解 + DAG 调度（拓扑排序/并行/重试/冲突检测）+ 聚合交付 | `orchestrator/` + `agents/orchestrator.ts` |
+| Coder↔Reviewer 无闭环 | ✅ 对抗性闭环：Coder 实现 → Reviewer 审查（approve/reject）→ QA 验证 → 修复循环 ≤ 5 次，超限回滚 | `orchestrator/loop.ts` |
+| 多文件修改无法原子回滚 | ✅ 任务级事务快照（SnapshotManager）+ `lumen snapshot clean` + 外部修改检测 | `orchestrator/transaction.ts` + `cli/snapshot.ts` |
+| 无可复用的 Agent 分发机制 | ✅ Agent 市场：/agent install/remove/list + 技能 promote（sha256 + 接口合规检查，复用技能市场架构） | `market/` + `cli/slash/agent.ts` |
+| 多 Agent 协作不可观测 | ✅ 调用链追踪（TraceStore LRU）+ 审计日志（AuditLogger JSONL <10ms）+ 流程树面板 | `observable/` + `ui/ObservabilityPanel.tsx` |
+
+### 8.6 规划（v3.1+）
+
+- **能力**：Reviewer autoFix 落地（自动修正回滚）、Agent 间点对点通信评估、插件市场、DAG 工作流可视化编辑
+- **工程**：TypeScript 7（原生）评估；沙箱容器隔离（Docker/K8s）评估；依赖持续升级
 
 ---
 

@@ -2,7 +2,37 @@
 
 ## 维护约定
 
-- 每个未发布变更先追加到 `## [Unreleased]
+- 每个未发布变更先追加到 `## [Unreleased]`，发布时移动到对应版本小节；
+- 条目按类型分组：`Added`（新增）/ `Changed`（变更）/ `Fixed`（修复）/ `Removed`（移除）；
+- 版本号由 `npm version <patch|minor|major>` 管理（自动 bump + 同步 `src/index.ts` 的 VERSION + git tag）。
+
+## [Unreleased]
+
+## [3.0.0] — 2026-08-09
+
+### Added — v3.0
+
+- **多 Agent 协作团队（Orchestrator 模式）**：`src/orchestrator/` + `src/agents/`；需求拆解为 Task[]（含依赖）→ DAG 拓扑调度（并行/重试/冲突检测）→ 聚合交付
+- **4 个专业 Agent**：`architect`（需求→设计 spec）/ `coder`（实现+修复）/ `reviewer`（9 维审查 approve/reject 打回）/ `qa`（沙箱执行 npm run verify）
+- **对抗性闭环**：Coder → Reviewer → QA 修复循环（≤ 5 次，`MAX_LOOP_ATTEMPTS`），超限退出保留中间结果并触发事务回滚
+- **多文件事务回滚**：`SnapshotManager` 任务级快照（`.lumen/snapshots/<taskId>/`）+ 原子回滚 + 外部修改检测 + `lumen snapshot [list|clean]` 命令
+- **Agent 市场**：`src/market/`；`/agent list / install <name> / remove <name> / promote <skill>`；复用技能市场 registry.json 架构 + sha256 校验 + 接口合规检查
+- **可观测性**：`src/observable/`；TraceStore 调用链追踪（LRU 5000）+ AuditLogger JSONL 审计日志（<10ms）+ ObservabilityPanel 流程树 TUI
+- **显式上下文管理器**：AgentContext 序列化/子集提取/合并（≤64KB）+ 来源追踪（ADR-016 修正项落实）
+- **任务状态机 + 调度器**：转换守卫 + onTransition 事件；拓扑排序 + 并发池 + 循环依赖检测 + 指数退避重试
+- **ADR-015~020 回填**：DECISIONS.md 补齐 v3.0 全部架构决策记录
+- **Agent 开发指南**：`docs/05-用户与开发指南/agent-dev-guide.md`（接口契约 + 脚手架 + 打包发布 + 发布清单）
+
+### Changed — v3.0
+
+- `src/agent/`（v2.1 子代理）与 `src/agents/`（v3.0 专业 Agent）并存；子代理保持 explore/research 隔离执行
+- `src/cli/slash/agent.ts` 命令层接口化（`AgentManager` 窄接口，根治测试绑定具体类）
+- 上下文管理：Agent 侧显式上下文（64KB）与主循环裁剪（80% 预算）双轨
+
+### Fixed — v3.0
+
+- 多 Agent 写盘无原子性 → 任务级事务回滚兜底（含已审批部分文件）
+- 外部 Agent 越权风险 → 权限声明 fail-closed + 接口合规检查 + sha256 校验三重防护
 
 ## [2.1.0] — 2026-08-08
 
@@ -22,16 +52,6 @@
 
 ### Fixed
 - `maskSecrets()` / `.env` 文件读取拒绝 / `search_content` 跳过 `.env`（安全加固）
-
-## [Unreleased]`，发布时移动到对应版本小节；
-- 条目按类型分组：`Added`（新增）/ `Changed`（变更）/ `Fixed`（修复）/ `Removed`（移除）；
-- 版本号由 `npm version <patch|minor|major>` 管理（自动 bump + 同步 `src/index.ts` 的 VERSION + git tag）。
-
-## [Unreleased]
-
-### Fixed
-- **Windows MCP 连接失败**：`McpClient` 在 Windows 上 spawn `npx` 报 `ENOENT`（npm 全局命令为 `.cmd` 批处理包装器，spawn 默认不执行）；现与 MCP 官方 TS SDK 一致，Windows 平台经 shell 启动子进程
-- **真实 MCP 冒烟脚本**：新增 `scripts/smoke-mcp.ts`，读取 `~/.lumen/config.json` 连接真实 MCP 服务，验证连接/工具发现/只读探针调用/断开（filesystem 14 工具、memory 9 工具实测通过）
 
 ## [2.0.0] - 2026-08-08
 

@@ -4,7 +4,8 @@ Lumen —— 面向个人开发者的**中文优先**终端编码助手 CLI（De
 
 在项目目录里启动：读取代码 → 提出 diff 方案 → 征求命令许可 → 跑验证 → 留下可续接的会话记录。
 
-> 状态：v2.1.0 已发布（`npm run verify` 全绿，409 用例 / 42 测试文件；`npm audit` 0 漏洞）。
+> 状态：v3.0.0 开发完成（`npm run verify` 全绿，699 用例 / 63 测试文件；`npm audit` 0 漏洞）。
+> v3.0 新增：多 Agent 协作（Orchestrator + 对抗性闭环）/ Agent 市场 / 可观测性面板 / 多文件事务回滚。
 > v2.1 新增：知识图谱 / Reviewer Agent / 技能市场与嵌套 / 子代理 MCP 工具。
 
 ## 环境要求
@@ -58,6 +59,8 @@ lumen plan "重构这个模块"
 | `lumen run "任务"` | 一次性执行（`--auto-approve` 谨慎使用 / `-m` / `--lang`） |
 | `lumen plan "任务"` | 计划-批准-执行三段式（`--auto-approve` 跳过确认） |
 | `lumen chat -l` | 仅打印历史会话列表 |
+| `lumen snapshot` / `lumen snapshot list` | 列出多文件事务残留快照（taskId 列表） |
+| `lumen snapshot clean` | 清理全部残留快照（失败/取消后的遗留） |
 
 ## MCP 服务接入
 
@@ -93,6 +96,48 @@ Lumen 提供了三种常用 MCP 服务的推荐配置（`src/mcp/builtin-servers
 ### 工具命名
 
 MCP 服务的工具以 `服务名_工具名` 格式注册（如 `filesystem_read_file`），与内置工具（`read_file`）并存，避免命名冲突。MCP 服务不可用时自动降级，不影响内置工具正常工作。
+
+## v3.0 新增功能
+
+### 多 Agent 协作团队（Orchestrator 模式）
+
+v3.0 引入「多 Agent 团队」工作流：Orchestrator 接收用户需求 → 拆解为结构化任务（含依赖）→ 按 DAG 拓扑调度并行执行 → 聚合结果交付。
+
+4 个专业 Agent 各司其职：
+
+| Agent | 职责 | 权限（fail-closed） |
+|-------|------|---------------------|
+| `architect` | 接收需求 → 输出结构化设计 spec（接口定义 + 文件结构 + 约束条件） | 只读工具 |
+| `coder` | 按 spec 实现代码 + 接收审查反馈自动修复（审批后写盘） | `edit_file` |
+| `reviewer` | 9 维审查，输出 `ReviewResult`（approve / reject 打回） | 只读工具 |
+| `qa` | 子代理沙箱执行 `npm run verify`，输出结构化测试报告 | `run_command npm run verify` |
+
+**对抗性闭环**：Coder 实现 → Reviewer 审查 → reject 则打回修复 → approve 则 QA 验证 → 失败则继续修复，循环 ≤ 5 次；超限自动退出并触发事务回滚（保留中间结果供人工检查）。
+
+**调度器特性**：依赖分析 + 拓扑排序、无依赖任务并行（默认并发 3）、循环依赖检测、单任务失败级联跳过、最多 2 次指数退避重试、文件级冲突检测。
+
+### Agent 市场
+
+升级自技能市场——从「技能复用」到「Agent 复用」，复用 registry.json 格式与安装器架构：
+
+| 命令 | 说明 |
+|------|------|
+| `/agent list` | 列出 Agent 团队（内置 4 个 + 已安装外部 Agent，含权限摘要） |
+| `/agent install <name>` | 从市场安装（下载 → sha256 校验 → 接口合规检查 → 注册） |
+| `/agent remove <name>` | 卸载已安装外部 Agent（内置 Agent 不可卸载） |
+| `/agent promote <skill>` | 将技能一键升级为 Agent（脚手架 + 接口声明，原技能保留） |
+
+外部 Agent 权限 fail-closed：未在 `AgentDef.permissions` 声明工具一律拒绝。
+
+### 多文件事务回滚
+
+任务级多文件原子回滚：任务开始前创建 `.lumen/snapshots/<taskId>/` 快照，失败/超限时恢复所有涉及文件（含已通过审批的部分文件）；外部修改检测拒绝静默覆盖；成功后自动清理快照，`lumen snapshot clean` 手动清理残留。
+
+### 可观测性面板
+
+- **调用链追踪**：记录每个 Agent 的输入/输出/决策/耗时，按 taskId 查询完整父子任务树（LRU 上限 5000 条）；
+- **审计日志**：所有 Agent 交互（消息/状态变更/审批/回滚）JSONL 追加写入 `~/.lumen/audit/`，可导出 JSON，单条写入 < 10ms；
+- **面板 TUI**：对话中按快捷键展开 Agent 协作流程树（实时状态/耗时/消息数），不阻塞主对话流。
 
 ## v2.1 新增功能
 
@@ -266,6 +311,7 @@ Lumen 支持项目级跨会话记忆，存储位置为项目根目录的 `.lumen
 ## 文档
 
 - [用户手册](docs/05-用户与开发指南/user-guide.md) —— 详细使用说明
+- [Agent 开发指南](docs/05-用户与开发指南/agent-dev-guide.md) —— 开发与发布第三方 Agent
 - [架构文档](docs/02-架构设计/ARCHITECTURE.md) —— 技术设计
 - [发布流程](docs/04-发布流程.md) —— 版本与发布
 - [贡献指南](CONTRIBUTING.md) —— 参与开发
