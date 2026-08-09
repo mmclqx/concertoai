@@ -77,9 +77,8 @@ export async function runTask(options: RunTaskOptions): Promise<void> {
       registry,
       ctx,
       systemPrompt:
-        [buildOsHint(), rules.text !== '' ? rules.text : undefined]
-          .filter(Boolean)
-          .join('\n\n') || undefined,
+        [buildOsHint(), rules.text !== '' ? rules.text : undefined].filter(Boolean).join('\n\n') ||
+        undefined,
       contextWindow: getModel(model)?.contextWindow,
       onEvent: (event) => {
         if (event.type === 'chunk') {

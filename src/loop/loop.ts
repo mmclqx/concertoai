@@ -123,11 +123,7 @@ interface RepairState {
  * 与普通 Error 的区别：message 已包含完整诊断信息，调用方可直接展示。
  */
 class ToolRepairError extends Error {
-  constructor(
-    state: RepairState,
-    maxRepairs: number,
-    userInput: string,
-  ) {
+  constructor(state: RepairState, maxRepairs: number, userInput: string) {
     const failures = state.failures;
     const uniqueTools = [...new Set(failures.map((f) => f.toolName))];
     const lastTurn = failures[failures.length - 1]?.turn ?? 0;

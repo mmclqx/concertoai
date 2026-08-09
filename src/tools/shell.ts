@@ -85,8 +85,7 @@ function runShellCommand(command: string, cwd: string, timeoutMs: number): Promi
       exitCode,
       stdout: stdout.slice(0, MAX_SHELL_OUTPUT_CHARS),
       stderr: stderr.slice(0, MAX_SHELL_OUTPUT_CHARS),
-      truncated:
-        stdout.length > MAX_SHELL_OUTPUT_CHARS || stderr.length > MAX_SHELL_OUTPUT_CHARS,
+      truncated: stdout.length > MAX_SHELL_OUTPUT_CHARS || stderr.length > MAX_SHELL_OUTPUT_CHARS,
       command,
       cwd,
     });
@@ -118,9 +117,10 @@ function runShellCommand(command: string, cwd: string, timeoutMs: number): Promi
       stderr += chunk.toString();
     });
     child.on('error', (error) => {
-      const hint = (error as NodeJS.ErrnoException).code === 'ENOENT'
-        ? `\n💡 命令不存在或无法启动，请检查命令名是否正确（Windows cmd 不支持 pwd/ls/cat 等 UNIX 命令，请用 node -e / dir / type 替代）`
-        : '';
+      const hint =
+        (error as NodeJS.ErrnoException).code === 'ENOENT'
+          ? `\n💡 命令不存在或无法启动，请检查命令名是否正确（Windows cmd 不支持 pwd/ls/cat 等 UNIX 命令，请用 node -e / dir / type 替代）`
+          : '';
       finish({
         ok: false,
         error: `命令启动失败: ${error.message}\n  命令: ${command}\n  目录: ${cwd}${hint}`,
@@ -147,7 +147,9 @@ function runShellCommand(command: string, cwd: string, timeoutMs: number): Promi
         if (exitCode === 255 || exitCode === 127) {
           lines.push('  💡 退出码 255/127 通常表示命令不存在。');
         } else if (isNoResults) {
-          lines.push('  💡 Windows 下 findstr/dir 退出码 1 且无 stderr = 没找到匹配。这不计入可修复失败。');
+          lines.push(
+            '  💡 Windows 下 findstr/dir 退出码 1 且无 stderr = 没找到匹配。这不计入可修复失败。',
+          );
         } else if (exitCode === 1) {
           lines.push('  💡 退出码 1 = 命令执行出错（参数错误或运行时错误）。');
         }

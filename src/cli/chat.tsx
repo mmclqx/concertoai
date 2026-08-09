@@ -192,9 +192,8 @@ export async function runChat(options: RunChatOptions): Promise<void> {
       ctx={ctx}
       model={model}
       systemPrompt={
-        [buildOsHint(), rules.text !== '' ? rules.text : undefined]
-          .filter(Boolean)
-          .join('\n\n') || undefined
+        [buildOsHint(), rules.text !== '' ? rules.text : undefined].filter(Boolean).join('\n\n') ||
+        undefined
       }
       store={store}
       sessionId={sessionId}
