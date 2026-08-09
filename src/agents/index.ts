@@ -13,6 +13,22 @@ export {
   parseArchitectSpec,
 } from './architect';
 export {
+  CoderAgent,
+  type CoderAgentOptions,
+  type CoderApproval,
+  type CoderFile,
+  type CoderFileWriter,
+  type CoderInput,
+  type CoderOutput,
+  coderInputSchema,
+  coderOutputSchema,
+  DiskFileWriter,
+  diffForWrite,
+  generateFix,
+  generateImplementation,
+  parseCoderOutput,
+} from './coder';
+export {
   artifactTypeForAgent,
   decomposeRequirement,
   Orchestrator,
