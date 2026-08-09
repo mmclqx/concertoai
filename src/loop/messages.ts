@@ -4,6 +4,7 @@
 
 import type { ApiMessage } from '../model/client';
 import type { ToolResult } from '../tools/registry';
+import { maskSecrets } from '../tools/read';
 import type { ChatMessage, ToolCall } from './types';
 
 export function systemMessage(content: string): ChatMessage {
@@ -53,7 +54,9 @@ export function formatToolResult(result: ToolResult, toolName: string): string {
   if (!result.ok) {
     return `工具 ${toolName} 执行失败: ${result.error ?? '未知错误'}`;
   }
-  const text = JSON.stringify(result.data);
+  const raw = JSON.stringify(result.data);
+  // 全局密钥遮蔽：匹配 sk- 开头长字符串 → sk-****
+  const text = maskSecrets(raw);
   if (text.length > MAX_TOOL_RESULT_CHARS) {
     return `${text.slice(0, MAX_TOOL_RESULT_CHARS)}\n…（结果已截断，共 ${text.length} 字符）`;
   }

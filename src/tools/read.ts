@@ -49,6 +49,22 @@ const SKIP_DIRS = new Set([
   '.reasonix',
 ]);
 
+/** 敏感文件名：一律跳过内容读取/search，仅在 list_directory 中显示条目（标记为 sensitive）。 */
+const SENSITIVE_FILES = new Set([
+  '.env',
+  '.env.local',
+  '.env.production',
+  '.env.development',
+  '.env.staging',
+  '.env.test',
+]);
+
+/** API Key 遮蔽：匹配 sk- 开头且长度 ≥ 16 的密钥字符串，替换为 ****。 */
+const SECRET_PATTERN = /\bsk-[a-zA-Z0-9_-]{16,}\b/g;
+
+/** 判断文件名是否为 .env 类敏感文件。 */
+const isDotEnv = (name: string): boolean => SENSITIVE_FILES.has(name);
+
 /** 路径沙箱：把相对 ctx.cwd 的路径解析为绝对路径，越界即抛错。 */
 export function resolveSafe(cwd: string, p: string): string {
   if (p === '') {
@@ -60,6 +76,11 @@ export function resolveSafe(cwd: string, p: string): string {
     throw new Error(`路径越界（仅允许访问项目目录内）: ${p}`);
   }
   return resolved;
+}
+
+/** 遮蔽文本中的 API Key 模式（sk-...），返回安全文本。 */
+export function maskSecrets(text: string): string {
+  return text.replace(SECRET_PATTERN, 'sk-****');
 }
 
 const readFileSchema = z.object({ path: z.string().min(1) });
@@ -75,6 +96,10 @@ export const readFileTool: ToolSpec = {
   parallelSafe: true,
   execute: async (rawArgs, ctx): Promise<ToolResult> => {
     const { path: p } = rawArgs as ReadFileArgs;
+    const basename = path.basename(p);
+    if (isDotEnv(basename)) {
+      return { ok: false, error: `敏感文件，拒绝读取: ${p}（API Key 等凭据不应在对话中传输）`, repairable: false };
+    }
     const resolved = resolveSafe(ctx.cwd, p);
     const stat = await fs.stat(resolved);
     if (stat.isDirectory()) {
@@ -124,6 +149,7 @@ export const listDirectoryTool: ToolSpec = {
           name: entry.name,
           type: entry.isDirectory() ? 'dir' : 'file',
           size,
+          ...(isDotEnv(entry.name) ? { sensitive: true } : {}),
         };
       }),
     );
@@ -173,6 +199,10 @@ export const searchContentTool: ToolSpec = {
         const full = path.join(dir, entry.name);
         if (entry.isDirectory()) {
           if (SKIP_DIRS.has(entry.name)) {
+            continue;
+          }
+          // 跳过 .env 类敏感文件
+          if (entry.isFile() && isDotEnv(entry.name)) {
             continue;
           }
           await walk(full);
