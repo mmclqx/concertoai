@@ -60,6 +60,12 @@ export {
   TRANSITIONS,
   TransitionGuardError,
 } from './state-machine';
+export {
+  type RollbackResult,
+  SNAPSHOT_ROOT,
+  SnapshotManager,
+  type TransactionSnapshot,
+} from './transaction';
 export type {
   AgentContext,
   AgentDef,

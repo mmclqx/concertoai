@@ -93,4 +93,14 @@ program
     },
   );
 
+program
+  .command('snapshot')
+  .description('管理多文件事务快照（T3.6）')
+  .argument('[action]', 'list | clean（默认 list）')
+  .option('--lang <zh|en>', '界面语言')
+  .action(async (action?: string) => {
+    const { runSnapshotCommand } = await import('./snapshot');
+    await runSnapshotCommand({ cwd: process.cwd(), action });
+  });
+
 program.parse();
