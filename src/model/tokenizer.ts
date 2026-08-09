@@ -61,6 +61,34 @@ export function countTokens(text: string): number {
 /** 每条消息的固定 token 开销（角色名、结构标记等）。 */
 const MESSAGE_OVERHEAD = 4;
 
+// ── 计数缓存（v2.1 性能优化）───────────────────────────────────
+
+/**
+ * 长文本 token 缓存：编码结果按文本缓存，避免会话内对同一大块文本
+ * （系统提示、工具结果、长消息）反复 BPE 编码。
+ * 短文本（< 64 字符）编码开销极小（微秒级），缓存收益低且增加 Map 负担，不缓存。
+ */
+const TEXT_CACHE_MIN_LEN = 64;
+const TEXT_CACHE_MAX_ENTRIES = 512;
+const textTokenCache = new Map<string, number>();
+
+function countTokensCached(text: string): number {
+  if (text.length < TEXT_CACHE_MIN_LEN) {
+    return countTokens(text);
+  }
+  const hit = textTokenCache.get(text);
+  if (hit !== undefined) {
+    return hit;
+  }
+  const tokens = countTokens(text);
+  // 简单淘汰：满时清空（长会话中热点文本会重新填充，偶发全量重编码可接受）
+  if (textTokenCache.size >= TEXT_CACHE_MAX_ENTRIES) {
+    textTokenCache.clear();
+  }
+  textTokenCache.set(text, tokens);
+  return tokens;
+}
+
 /** 满足 countMessageTokens 入参的最小结构类型。 */
 export interface CountableMessage {
   role: string;
@@ -68,10 +96,23 @@ export interface CountableMessage {
 }
 
 /**
+ * 消息级 token 缓存：同一消息对象（引用稳定、内容不可变）只编码一次。
+ * 会话内消息对象由工厂函数创建后不再修改；WeakMap 键随对象回收，无内存泄漏。
+ */
+const messageTokenCache = new WeakMap<CountableMessage, number>();
+
+/**
  * 精确计算单条消息的 token 数：base overhead + content token。
+ * 结果按消息对象缓存（同一对象重复调用不重新编码）。
  */
 export function countMessageTokens(msg: CountableMessage): number {
-  return MESSAGE_OVERHEAD + countTokens(msg.content ?? '');
+  const cached = messageTokenCache.get(msg);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const total = MESSAGE_OVERHEAD + countTokensCached(msg.content ?? '');
+  messageTokenCache.set(msg, total);
+  return total;
 }
 
 /**
