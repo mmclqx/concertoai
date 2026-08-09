@@ -16,6 +16,24 @@ export {
   serialize,
 } from './context';
 export type {
+  FileConflict,
+  ScheduleResult,
+  SchedulerOptions,
+  SchedulerTask,
+  TaskRunResult,
+  TopoSortResult,
+} from './scheduler';
+export {
+  CyclicDependencyError,
+  DEFAULT_CONCURRENCY,
+  DEFAULT_MAX_RETRIES,
+  DEFAULT_RETRY_BASE_DELAY_MS,
+  detectFileConflicts,
+  hasDependencyPath,
+  TaskScheduler,
+  topologicalSort,
+} from './scheduler';
+export type {
   InvalidTransitionRecord,
   TaskStateChange,
   TaskStateMachineOptions,
