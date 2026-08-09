@@ -242,7 +242,9 @@ async function streamAssistantReply(
   options: LoopOptions,
   messages: ChatMessage[],
 ): Promise<ChatMessage> {
-  let content = '';
+  // v2.1 性能优化：chunk 文本先收集为数组，结束时一次 join，
+  // 避免超长回复（数千 chunk）下 content += text 反复分配大字符串的 O(n²) 复制。
+  const contentParts: string[] = [];
   const toolCallAcc = new Map<number, { id: string; name: string; args: string }>();
   /** 最后一个带 usage 的 chunk（DeepSeek 在流末尾 chunk 返回用量统计）。 */
   let lastUsage: Usage | undefined;
@@ -277,7 +279,7 @@ async function streamAssistantReply(
         const delta = choice.delta;
         const text = delta.content ?? '';
         if (text !== '') {
-          content += text;
+          contentParts.push(text);
           options.onEvent?.({ type: 'chunk', text });
         }
         for (const piece of delta.tool_calls ?? []) {
@@ -299,9 +301,9 @@ async function streamAssistantReply(
     // 断流/中断：保留已生成内容回填会话，错误经 error 事件上报，不自动重连；
     // 尚无任何内容时原样上抛，由调用方展示。
     const err = error instanceof Error ? error : new Error(String(error));
-    if (content !== '') {
+    if (contentParts.length > 0) {
       options.onEvent?.({ type: 'error', error: err });
-      return assistantMessage(content);
+      return assistantMessage(contentParts.join(''));
     }
     throw err;
   }
@@ -315,5 +317,6 @@ async function streamAssistantReply(
     .filter(([, acc]) => acc.name !== '')
     .map(([, acc]) => ({ id: acc.id, name: acc.name, arguments: acc.args }));
 
+  const content = contentParts.join('');
   return assistantMessage(content, toolCalls.length > 0 ? toolCalls : undefined);
 }

@@ -59,6 +59,31 @@ describe('trimContext', () => {
     expect(result.messages[0]?.content).toBe(huge);
   });
 
+  it('裁剪后保留消息的相对顺序完全保持（v2.1 push+reverse 优化不破坏顺序）', () => {
+    // 8 轮长对话（每条约 200 token，总 ~3200 token），预算 1500 只够保留最近几轮
+    const messages: ChatMessage[] = [systemMessage('规则')];
+    for (let i = 0; i < 8; i += 1) {
+      messages.push(longMsg('user', `问题${i}`));
+      messages.push(longMsg('assistant', `回答${i}`));
+    }
+    const result = trimContext(messages, 1_500, vi.fn());
+    expect(result.trimmed).toBeGreaterThan(0);
+    // 第一个仍是 system
+    expect(result.messages[0]?.content).toBe('规则');
+    // 剩余消息的相对顺序必须与原始一致（用索引序列校验）
+    const contents = result.messages.map((m) => m.content);
+    const original = messages.map((m) => m.content);
+    // 对每个保留内容，其在原始数组中的位置必须是严格递增的
+    let prevIdx = -1;
+    for (const c of contents) {
+      const idx = original.indexOf(c);
+      expect(idx).toBeGreaterThan(prevIdx);
+      prevIdx = idx;
+    }
+    // 且末尾是最新消息（longMsg 内容以 回答7 开头）
+    expect(contents.at(-1)).toMatch(/^回答7/);
+  });
+
   it('裁剪前记录日志（含丢弃数与 token 变化）', () => {
     const messages = Array.from({ length: 8 }, (_, i) => longMsg('user', `问题${i}`));
     const log = vi.fn();

@@ -14,7 +14,7 @@
  */
 
 import type { ModelClient } from '../model/client';
-import { countMessageListTokens, countTokens } from '../model/tokenizer';
+import { countMessageListTokens, countMessageTokens, countTokens } from '../model/tokenizer';
 import { summaryMessage, systemMessage, toApiMessages, userMessage } from './messages';
 import type { ChatMessage } from './types';
 
@@ -73,23 +73,30 @@ export function trimContext(
   const system = messages.filter((m) => m.role === 'system');
   const rest = messages.filter((m) => m.role !== 'system');
 
+  // v2.1 性能优化：
+  // - 倒序遍历时用 push（O(1) 尾插）收集组，组收尾时一次 reverse 恢复正序，
+  //   替代逐条 unshift（每轮 O(组长度)，长组累计 O(n²)）；
+  // - 组 token 增量累加（groupTokens += countMessageTokens(m)），
+  //   替代每轮对整组 countMessageListTokens(group)（组增长时同样 O(n²)）。
   const keptGroups: ChatMessage[][] = [];
   let group: ChatMessage[] = [];
+  let groupTokens = 0;
   let keptTokens = 0;
   for (let i = rest.length - 1; i >= 0; i -= 1) {
     const m = rest[i];
     if (m === undefined) {
       continue;
     }
-    group.unshift(m);
+    group.push(m);
+    groupTokens += countMessageTokens(m);
     if (m.role === 'user' || i === 0) {
-      const groupTokens = countMessageListTokens(group);
       const forceKeep = keptGroups.length === 0;
       if (forceKeep || keptTokens + groupTokens <= budget) {
-        keptGroups.push(group);
+        keptGroups.push(group.reverse());
         keptTokens += groupTokens;
       }
       group = [];
+      groupTokens = 0;
       if (keptGroups.length > 0 && keptTokens >= budget) {
         break;
       }
