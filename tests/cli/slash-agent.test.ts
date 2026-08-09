@@ -1,88 +1,82 @@
 /**
- * /agent 斜杠命令测试（v3.0 M4 / T4.3）。
+ * /agent 斜杠命令测试（v3.0 M4 / T4.3，接口化 + stub 风格）。
  *
  * 覆盖验收标准：
  * - /agent list：列出内置 Agent（名称/版本/权限）+ 已安装外部 Agent；
- * - /agent install <name>：调用 T4.2 安装器（成功/注册表不可达/未找到）；
+ * - /agent install <name>：调用 AgentManager.install（成功 / 各失败码中文提示）；
  * - /agent remove <name>：卸载外部 Agent 并注销 AgentRegistry；内置拒绝卸载；
- * - 网络/磁盘错误 → 中文友好提示（与技能市场文案风格一致）。
+ * - /agent promote <skill>：技能升级为 Agent（T4.4；命令层文案 + 注册表，磁盘由 market 测试覆盖）；
+ * - 命令层不依赖具体类内部细节（registry/fetch*），installer 用 vi.fn stub 精确控制，
+ *   根治「测试绑定 AgentInstaller 内部注入」的反复失败。
  */
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { InMemoryAgentRegistry } from '../../src/agents';
 import {
   type AgentCommandDeps,
+  type AgentManager,
   executeAgentCommand,
   executeAgentMarketCommand,
   formatAgentList,
   parseAgentCommand,
 } from '../../src/cli/slash/agent';
-import { AgentInstaller, type MarketRegistry, parseMarketRegistry } from '../../src/market';
-import { SkillLoader } from '../../src/skill/loader';
+import type { InstalledAgent, InstallResult } from '../../src/market';
+import type { SkillLoader } from '../../src/skill/loader';
 
-let tmp: string;
-
+// promote 命令层会真实落盘（promoteSkill 内部 mkdirSync），仅该组用例使用临时目录。
+let promoteTmp: string;
 beforeEach(() => {
-  tmp = mkdtempSync(path.join(os.tmpdir(), 'lumen-slash-agent-'));
+  promoteTmp = mkdtempSync(path.join(os.tmpdir(), 'lumen-promote-'));
 });
-
 afterEach(() => {
-  rmSync(tmp, { recursive: true, force: true });
+  rmSync(promoteTmp, { recursive: true, force: true });
 });
 
-// ── 测试辅助 ──────────────────────────────────────────────────
+// ── 测试辅助（stub installer，不触碰磁盘/网络）───────────────
 
-/** 构造合法 Agent 包内容（JSON，def.name 可覆盖）。 */
-function makePackage(name = 'my-agent'): string {
-  return JSON.stringify({
+/** 构造一个已安装 Agent 元数据（listInstalled stub 返回值）。 */
+function makeInstalled(name = 'my-agent', version = '1.0.0'): InstalledAgent {
+  return {
+    name,
+    version,
     def: {
       name,
-      version: '1.0.0',
-      interfaces: { input: { shape: 'object' }, output: { shape: 'object' }, version: '1.0.0' },
+      version,
+      interfaces: { input: {}, output: {}, version: '1.0.0' },
       permissions: [{ tool: 'read_file' }],
     },
-    entry: 'module.exports = { execute: async () => ({ ok: true }) };',
-  });
+    installedAt: 1_739_000_000_000,
+  };
 }
 
-/** 构造含单个 Agent 条目的注册表（经 parseMarketRegistry 校验，类型安全；runtime 可覆盖）。 */
-function makeRegistry(
-  name = 'my-agent',
-  runtime: 'builtin' | 'external' = 'external',
-): MarketRegistry {
-  return parseMarketRegistry(
-    JSON.stringify({
-      registry: 'https://example.com/registry.json',
-      skills: [],
-      agents: [
-        {
-          type: 'agent',
-          name,
-          version: '1.0.0',
-          description: '测试 Agent',
-          author: 'tester',
-          url: 'https://example.com/agents/my-agent.json',
-          sha256: 'abc123',
-          interfaces: { input: { shape: 'object' }, output: { shape: 'object' }, version: '1.0.0' },
-          permissions: [{ tool: 'read_file' }],
-          runtime,
-        },
-      ],
-    }),
-  );
-}
-
-/** 构造命令依赖（真实 AgentInstaller + 注入注册表下载，避免真实网络 + 内存注册表）。 */
-function makeDeps(overrides: Partial<AgentCommandDeps> = {}): AgentCommandDeps {
-  const installer = new AgentInstaller({
-    installDir: tmp,
-    fetchRegistry: async () => makeRegistry(),
-  });
+/** 构造命令依赖：installer 为 vi.fn stub（命令层不依赖 AgentInstaller 内部细节）。 */
+function makeDeps(
+  overrides: Partial<AgentCommandDeps> = {},
+): AgentCommandDeps & { installer: AgentManager } {
+  const installer: AgentManager = {
+    install: vi.fn(),
+    remove: vi.fn(),
+    listInstalled: vi.fn(),
+  };
   return { installer, registry: new InMemoryAgentRegistry(), ...overrides };
+}
+
+/** 便捷访问 stub installer 的 mock（断言调用/控制返回值）。 */
+function installerMock(deps: AgentCommandDeps) {
+  return {
+    install: vi.mocked(deps.installer.install),
+    remove: vi.mocked(deps.installer.remove),
+    listInstalled: vi.mocked(deps.installer.listInstalled),
+  };
+}
+
+/** 构造 InstallResult 成功值。 */
+function installOk(name = 'my-agent'): InstallResult {
+  return { ok: true, name, version: '1.0.0', action: 'install', dir: '/tmp/agents' };
 }
 
 // ── parseAgentCommand ─────────────────────────────────────────
@@ -153,6 +147,7 @@ describe('parseAgentCommand', () => {
 describe('executeAgentCommand（/agent list）', () => {
   it('无已安装 Agent 时列出内置 4 个', () => {
     const deps = makeDeps();
+    installerMock(deps).listInstalled.mockReturnValue([]);
     const result = executeAgentCommand({ type: 'list' }, deps);
     expect(result.handled).toBe(true);
     const content = result.message?.content ?? '';
@@ -166,17 +161,9 @@ describe('executeAgentCommand（/agent list）', () => {
     expect(content).toContain('已安装外部 Agent：无');
   });
 
-  it('有已安装 Agent 时同时展示内置 + 已安装', async () => {
+  it('有已安装 Agent 时同时展示内置 + 已安装', () => {
     const deps = makeDeps();
-    // 先安装一个外部 Agent（真实安装器 + 注入下载）
-    const installerWithFetch = new AgentInstaller({
-      installDir: tmp,
-      fetchPackage: async () => makePackage('my-agent'),
-    });
-    const result = await installerWithFetch.install('my-agent', makeRegistry('my-agent'));
-    expect(result.ok).toBe(true);
-    deps.installer = installerWithFetch;
-
+    installerMock(deps).listInstalled.mockReturnValue([makeInstalled('my-agent')]);
     const content = formatAgentList(deps);
     expect(content).toContain('内置 4 个');
     expect(content).toContain('已安装外部 Agent（1 个）');
@@ -195,99 +182,90 @@ describe('executeAgentCommand（/agent list）', () => {
 // ── executeAgentMarketCommand（install / remove）──────────────
 
 describe('executeAgentMarketCommand（/agent install）', () => {
-  it('安装成功 → ✅ 提示', async () => {
-    const registry = new InMemoryAgentRegistry();
-    const installer = new AgentInstaller({
-      installDir: tmp,
-      registry,
-      fetchRegistry: async () => makeRegistry('my-agent'),
-      fetchPackage: async () => makePackage('my-agent'),
-    });
-    const result = await executeAgentMarketCommand(
-      { type: 'install', name: 'my-agent' },
-      { installer, registry },
-    );
+  it('安装成功 → ✅ 提示，installer.install 被调用', async () => {
+    const deps = makeDeps();
+    installerMock(deps).install.mockResolvedValue(installOk('my-agent'));
+    const result = await executeAgentMarketCommand({ type: 'install', name: 'my-agent' }, deps);
     expect(result.handled).toBe(true);
     expect(result.message?.content).toContain('✅');
     expect(result.message?.content).toContain('my-agent');
-    // AgentRegistry 已刷新
-    expect(registry.has('my-agent')).toBe(true);
+    expect(installerMock(deps).install).toHaveBeenCalledWith('my-agent');
   });
 
   it('注册表不可达 → 中文友好提示', async () => {
-    const installer = new AgentInstaller({
-      installDir: tmp,
-      fetchRegistry: async () => null,
+    const deps = makeDeps();
+    installerMock(deps).install.mockResolvedValue({
+      ok: false,
+      code: 'REGISTRY_UNREACHABLE',
+      message: '无法访问 Agent 注册表，请检查网络连接。',
     });
-    const result = await executeAgentMarketCommand(
-      { type: 'install', name: 'my-agent' },
-      { installer, registry: new InMemoryAgentRegistry() },
-    );
+    const result = await executeAgentMarketCommand({ type: 'install', name: 'my-agent' }, deps);
     expect(result.handled).toBe(true);
     expect(result.message?.content).toContain('❌');
     expect(result.message?.content).toContain('无法访问');
   });
 
   it('注册表未找到 → 提示可用 Agent', async () => {
-    const installer = new AgentInstaller({
-      installDir: tmp,
-      fetchRegistry: async () => makeRegistry(),
+    const deps = makeDeps();
+    installerMock(deps).install.mockResolvedValue({
+      ok: false,
+      code: 'NOT_FOUND',
+      message: '注册表中未找到 Agent: ghost。\n\n可用 Agent: my-agent',
     });
-    const result = await executeAgentMarketCommand(
-      { type: 'install', name: 'ghost' },
-      { installer, registry: new InMemoryAgentRegistry() },
-    );
+    const result = await executeAgentMarketCommand({ type: 'install', name: 'ghost' }, deps);
     expect(result.handled).toBe(true);
     expect(result.message?.content).toContain('❌');
     expect(result.message?.content).toContain('ghost');
   });
 
-  it('内置 Agent → 提示无需安装', async () => {
-    const installer = new AgentInstaller({
-      installDir: tmp,
-      fetchRegistry: async () => makeRegistry('architect', 'builtin'),
+  it('内置 Agent → 提示无需安装（BUILTIN 失败码）', async () => {
+    const deps = makeDeps();
+    installerMock(deps).install.mockResolvedValue({
+      ok: false,
+      code: 'BUILTIN',
+      message: 'architect 是内置 Agent，已随 Lumen 分发，无需安装（可用 /agent list 查看）。',
     });
-    const result = await executeAgentMarketCommand(
-      { type: 'install', name: 'architect' },
-      { installer, registry: new InMemoryAgentRegistry() },
-    );
+    const result = await executeAgentMarketCommand({ type: 'install', name: 'architect' }, deps);
     expect(result.handled).toBe(true);
     expect(result.message?.content).toContain('内置');
   });
 });
 
 describe('executeAgentMarketCommand（/agent remove）', () => {
-  it('卸载成功 → 🗑️ 提示 + 注销 AgentRegistry', async () => {
-    const registry = new InMemoryAgentRegistry();
-    const installer = new AgentInstaller({
-      installDir: tmp,
-      registry,
-      fetchPackage: async () => makePackage('my-agent'),
-    });
-    // 先安装（installer 注入 registry → 安装成功后自动刷新）
-    const installed = await installer.install('my-agent', makeRegistry('my-agent'));
-    expect(installed.ok).toBe(true);
-    expect(registry.has('my-agent')).toBe(true);
+  it('卸载成功 → 🗑️ 提示 + 注销 AgentRegistry，remove 被调用', async () => {
+    const deps = makeDeps();
+    // 先注册到 registry（模拟此前 install 成功），再卸载
+    deps.registry.register({
+      name: 'my-agent',
+      version: '1.0.0',
+      interfaces: {
+        input: { safeParse: () => ({ success: true }) },
+        output: { safeParse: () => ({ success: true }) },
+        version: '1.0.0',
+      },
+      permissions: [{ tool: 'read_file' }],
+    } as never);
+    installerMock(deps).remove.mockReturnValue(true);
 
-    const result = await executeAgentMarketCommand(
-      { type: 'remove', name: 'my-agent' },
-      { installer, registry },
-    );
+    const result = await executeAgentMarketCommand({ type: 'remove', name: 'my-agent' }, deps);
     expect(result.handled).toBe(true);
     expect(result.message?.content).toContain('🗑️');
-    expect(registry.has('my-agent')).toBe(false);
+    expect(installerMock(deps).remove).toHaveBeenCalledWith('my-agent');
+    expect(deps.registry.has('my-agent')).toBe(false);
   });
 
-  it('内置 Agent → 拒绝卸载', async () => {
+  it('内置 Agent → 拒绝卸载，remove 不被调用', async () => {
     const deps = makeDeps();
     const result = await executeAgentMarketCommand({ type: 'remove', name: 'coder' }, deps);
     expect(result.handled).toBe(true);
     expect(result.message?.content).toContain('内置');
     expect(result.message?.content).toContain('不可卸载');
+    expect(installerMock(deps).remove).not.toHaveBeenCalled();
   });
 
-  it('未安装 → 提示未安装', async () => {
+  it('未安装 → 提示未安装，registry 不注销', async () => {
     const deps = makeDeps();
+    installerMock(deps).remove.mockReturnValue(false);
     const result = await executeAgentMarketCommand({ type: 'remove', name: 'no-such' }, deps);
     expect(result.handled).toBe(true);
     expect(result.message?.content).toContain('未安装');
@@ -297,65 +275,56 @@ describe('executeAgentMarketCommand（/agent remove）', () => {
 // ── executeAgentMarketCommand（/agent promote，T4.4）──────────
 
 describe('executeAgentMarketCommand（/agent promote）', () => {
-  /** 写入一个项目级技能（临时 cwd）。 */
-  function writeSkill(cwd: string, name: string, body: string): void {
-    const dir = path.join(cwd, '.lumen', 'skills', name);
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(
-      path.join(dir, 'SKILL.md'),
-      `---
-name: ${name}
-description: ${name} 描述
-version: 1.0.0
----
-
-${body}`,
-      'utf8',
+  it('promote 无 loader → 提示加载器不可用（命令层守卫）', async () => {
+    const deps = makeDeps();
+    const result = await executeAgentMarketCommand(
+      { type: 'promote', skillName: 'code-review' },
+      deps,
     );
-  }
+    expect(result.handled).toBe(true);
+    expect(result.message?.content).toContain('技能加载器不可用');
+  });
 
-  it('promote 成功 → ✅ 提示 + 注册 AgentRegistry + agent.json 落盘', async () => {
-    writeSkill(tmp, 'code-review', '## 审查\n输出 ReviewResult。');
-    const loader = new SkillLoader();
-    loader.loadAll(tmp);
-    const registry = new InMemoryAgentRegistry();
-    const installer = new AgentInstaller({ installDir: path.join(tmp, 'agents') });
+  it('promote 成功 → ✅ 提示 + 注册 AgentRegistry', async () => {
+    // promote 依赖 loader.get 返回技能 def：stub loader，不触碰磁盘
+    // （脚手架落盘细节由 tests/market/promote.test.ts 覆盖）
+    const stubLoader = {
+      loadAll: () => {},
+      get: () => ({
+        name: 'code-review',
+        description: '审查',
+        version: '1.0.0',
+        tools: ['read_file', 'search_content', 'list_directory'],
+        body: '## 审查\n输出 ReviewResult。',
+        sourcePath: '/tmp/skills/code-review/SKILL.md',
+      }),
+    } as unknown as SkillLoader;
+    const deps = makeDeps();
+    deps.loader = stubLoader;
+    deps.installDir = promoteTmp;
 
     const result = await executeAgentMarketCommand(
       { type: 'promote', skillName: 'code-review' },
-      { installer, registry, loader, installDir: path.join(tmp, 'agents') },
+      deps,
     );
     expect(result.handled).toBe(true);
     expect(result.message?.content).toContain('✅');
     expect(result.message?.content).toContain('code-review');
-    expect(registry.has('code-review')).toBe(true);
-    // agent.json 落盘（/agent list 数据源可识别）
-    const installer2 = new AgentInstaller({ installDir: path.join(tmp, 'agents') });
-    expect(installer2.listInstalled().map((a) => a.name)).toEqual(['code-review']);
+    expect(deps.registry.has('code-review')).toBe(true);
   });
 
-  it('promote 技能不存在 → SKILL_NOT_FOUND 提示', async () => {
-    const loader = new SkillLoader();
-    loader.loadAll(tmp);
-    const result = await executeAgentMarketCommand(
-      { type: 'promote', skillName: 'no-such' },
-      {
-        installer: new AgentInstaller({ installDir: tmp }),
-        registry: new InMemoryAgentRegistry(),
-        loader,
-      },
-    );
+  it('promote 技能不存在 → ❌ 提示 SKILL_NOT_FOUND', async () => {
+    const stubLoader = {
+      loadAll: () => {},
+      get: () => undefined,
+    } as unknown as SkillLoader;
+    const deps = makeDeps();
+    deps.loader = stubLoader;
+    deps.installDir = promoteTmp;
+
+    const result = await executeAgentMarketCommand({ type: 'promote', skillName: 'no-such' }, deps);
     expect(result.handled).toBe(true);
     expect(result.message?.content).toContain('❌');
     expect(result.message?.content).toContain('技能不存在');
-  });
-
-  it('promote 无 loader → 提示加载器不可用', async () => {
-    const result = await executeAgentMarketCommand(
-      { type: 'promote', skillName: 'code-review' },
-      { installer: new AgentInstaller({ installDir: tmp }), registry: new InMemoryAgentRegistry() },
-    );
-    expect(result.handled).toBe(true);
-    expect(result.message?.content).toContain('技能加载器不可用');
   });
 });

@@ -17,10 +17,10 @@
 import type { AgentRegistry } from '../../agents';
 import type { ChatMessage } from '../../loop/types';
 import {
-  type AgentInstaller,
   type AgentRegistryItem,
   BUILTIN_AGENT_ITEMS,
   type InstalledAgent,
+  type InstallResult,
   promoteSkill,
 } from '../../market';
 import type { SkillLoader } from '../../skill/loader';
@@ -82,9 +82,26 @@ export function parseAgentCommand(input: string): SlashAgentCommand | null {
 
 // ── 命令执行依赖 ──
 
+/**
+ * 命令层依赖的窄接口（接口优先 §3.1，根治「测试绑定具体类」反复失败）。
+ *
+ * 只暴露 /agent 命令需要的方法；AgentInstaller（T4.2）结构兼容本接口
+ * （install(name) 可选第二参数不影响），chat.tsx 无需改动即可注入。
+ * 命令层不依赖具体类的内部注入细节（registry/fetch*），测试用 stub
+ * 精确控制返回值，聚焦命令逻辑本身（T4.3 测试重写为 stub 风格）。
+ */
+export interface AgentManager {
+  /** 安装 Agent（返回 InstallResult：ok=true 成功 / ok=false 失败码 + 中文消息）。 */
+  install(name: string): Promise<InstallResult>;
+  /** 卸载已安装 Agent（返回是否成功；内置 Agent 由命令层拒绝，不触达此处）。 */
+  remove(name: string): boolean;
+  /** 列出已安装外部 Agent（按名称字典序）。 */
+  listInstalled(): InstalledAgent[];
+}
+
 export interface AgentCommandDeps {
-  /** Agent 安装器（install/remove/listInstalled）。 */
-  installer: AgentInstaller;
+  /** Agent 管理器（install/remove/listInstalled；AgentInstaller 结构兼容）。 */
+  installer: AgentManager;
   /** Agent 注册表（install 成功后刷新 / remove 时注销，T4.4 promote 复用）。 */
   registry: AgentRegistry;
   /** 内置 Agent 市场条目（可注入；默认 BUILTIN_AGENT_ITEMS，测试可 mock）。 */
