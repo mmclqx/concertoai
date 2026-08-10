@@ -12,8 +12,8 @@
 |------|------|
 | 总任务数 | 123（v1.0: 20 ✅ + v1.1: 12 ✅ + v2.0: 15 ✅ + v2.1: 25 ✅ + v3.0: 24 ✅ + v3.1: 27 🔵） |
 | P0 任务 | 37（v1.1: 6 ✅ + v2.0: 5 ✅ + v2.1: 5 ✅ + v3.0: 14 ✅ + v3.1: 7 ✅） |
-| P1 任务 | 44（v1.1: 6 ✅ + v2.0: 10 ✅ + v2.1: 4 ✅ + v3.0: 10 ✅ + v3.1: 5 ✅ + 9 🔵） |
-| P2 任务 | 14（v2.1: 8 ✅ + v3.1: 4 ✅ + 2 🔵） |
+| P1 任务 | 44（v1.1: 6 ✅ + v2.0: 10 ✅ + v2.1: 4 ✅ + v3.0: 10 ✅ + v3.1: 7 ✅ + 7 🔵） |
+| P2 任务 | 14（v2.1: 8 ✅ + v3.1: 6 ✅） |
 | 待开始 | 15 |
 | 进行中 | 0 |
 | 已完成 | 107 |
@@ -55,7 +55,7 @@
 | **V3.1-M1 AI 自我修复闭环** | **P0** | **5** | 🟢 已完成 |
 | **V3.1-M2 多项目管理** | **P1** | **5** | 🟢 已完成 |
 | **V3.1-M3 多租户登录** | **P2** | **4** | 🟢 已完成 |
-| **V3.1-M4 结构化错误增强** | **P2** | **2** | ⬜ 待开始 |
+| **V3.1-M4 结构化错误增强** | **P2** | **2** | 🟢 已完成 |
 | **V3.1-M5 Orchestrator CLI 入口 + 运维命令补全** | **P1** | **5** | ⬜ 待开始 |
 | **V3.1-M6 集成测试与文档** | **P1** | **4** | ⬜ 待开始 |
 
@@ -864,15 +864,17 @@
 
 ### V3.1-M4：结构化错误增强（P2，约 1h）
 
-- [ ] **T4.1** 统一错误结构 + 补齐建议
+- [x] **T4.1** 统一错误结构 + 补齐建议
   - 涉及文件：`src/tools/registry.ts`（修改）、`src/tools/read.ts`（修改）、`src/tools/edit.ts`（修改）、`src/tools/shell.ts`（修改）、`src/loop/loop.ts`（修改）
   - 预估：0.5h
   - 依赖：T1.2
+  - ✅ 2026-08-11 完成：新增 `src/tools/error-codes.ts`（ToolErrorCode 15 码 + TOOL_ERROR_SUGGESTIONS 中文建议 + toolError 构造器 + SandboxError + inferErrorCode 兜底）；ToolResult 扩展 `code?`/`suggestion?`（可选，向后兼容）；read（PATH_OUTSIDE_SANDBOX/FILE_NOT_FOUND/DIR_NOT_FOUND/SENSITIVE_FILE）、edit（SEARCH_NOT_FOUND/SEARCH_NOT_UNIQUE/FILE_ALREADY_EXISTS/WRITE_FAILED/EDIT_REJECTED）、shell（SHELL_REJECTED/TIMEOUT/COMMAND_NOT_FOUND/EXIT_N）、knowledge（ENTITY_NOT_FOUND/STORE_UNAVAILABLE）全带 code+suggestion；registry.run 未知工具 UNKNOWN_TOOL + 异常兜底 inferErrorCode；loop.ts ToolRepairError 失败详情行渲染 6 空格缩进 💡 suggestion（无则保持旧格式）
 
-- [ ] **T4.2** M4 单元测试
+- [x] **T4.2** M4 单元测试
   - 涉及文件：`tests/loop/error-reporting.test.ts`（新增）
   - 预估：0.5h
   - 依赖：T4.1
+  - ✅ 2026-08-11 完成：`tests/loop/error-reporting.test.ts`（新增 15 用例）：read/edit/shell/knowledge 各错误分类断言（code + suggestion 非空）+ ToolRepairError 渲染兼容（含 suggestion 渲染 💡 / 旧结构不渲染 / registry 兜底 UNKNOWN_TOOL）；同步校准 read.test.ts 两处过时断言（v3.0 ENOENT/不是文件 → M4 中文错误码消息 + code 断言）；清理 ~/.concertoai/skills 72 个 install-test/skip-test 测试残留（SkillLoader 扫全局目录导致计数不稳定）；`npm run verify` **77 文件 / 874 用例全绿**
 
 ### V3.1-M5：Orchestrator CLI 入口 + 运维命令补全（P1，约 4h）
 
@@ -987,6 +989,7 @@
 | 2026-08-09 | **V3.0-M5 完成**：T5.1-T5.3 可观测性（TraceStore + AuditLogger + 面板，699 全绿 → T0.1 校准 750） | Carbon Code |
 | 2026-08-09 | **V3.0-M6 完成**：T6.1-T6.3 集成测试 + 文档 + 收尾（4 E2E / README / 架构文档 / 用户手册 / Agent 开发指南 / ADR-015~020 / CHANGELOG / 测试报告，699 全绿 → T0.1 校准 750） | Carbon Code |
 | 2026-08-09 | **V3.0 手工测试报告**：新增 `docs/07.3-手工测试报告-v3.0.md`（六大核心功能 18 项 + v2.1 回归 12 项 + 参考脚本 + 已知问题 5 条） | Carbon Code |
+| 2026-08-11 | **V3.1-M4 完成**：T4.1-T4.2 结构化错误增强（error-codes 15 码 + read/edit/shell/knowledge code+suggestion + ToolRepairError 渲染兼容；77 文件/874 用例全绿） | Carbon Code |
 | 2026-08-11 | **V3.1-M3 完成**：T3.1-T3.4 多租户登录（accounts 存储 + login/logout/whoami/account 命令 + API Key 解析链 + doctor 账号标注；76 文件/858 用例全绿） | Carbon Code |
 | 2026-08-10 | **V3.1-M0 启动（T0.1 完成）**：版本归位决策落盘（v2.2 + v3.1 随 v3.1.0 一并发布，不补发 v2.2.0）+ 全项目基线校准（69 文件 / 750 用例）+ v3.1 任务看板建立（27 任务 / 7 里程碑） | Carbon Code |
 | 2026-08-10 | **V3.1-M0 完成（T0.2 完成）**：审查遗留复核（S3 已在 7f477a5 修复；S1/S2/S4 处置与计划 §7 一致；src/core/ 与 ARCHITECTURE D41 核对一致）→ M0 两任务全绿，v3.1 进入 M1 | Carbon Code |
