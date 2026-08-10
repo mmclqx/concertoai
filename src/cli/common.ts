@@ -8,6 +8,7 @@
 
 import os from 'node:os';
 import { getDefaultModel, getModel, listModels } from '../model/models';
+import { getActiveAccount, getApiKeyFor } from '../store/accounts';
 import type { MCPServerEntry } from '../store/config';
 import { ProjectRegistry } from '../store/projects';
 import { editFileTool } from '../tools/edit';
@@ -46,6 +47,73 @@ export function resolveModel(modelId: string | undefined): string {
     process.exit(1);
   }
   return profile.id;
+}
+
+// ═══ v3.1 M3 T3.3：API Key 解析链（CLI > 环境变量 > active account > config.json）═══
+
+/** Key 来源。 */
+export type ApiKeySource = 'cli' | 'env' | 'account' | 'config' | 'none';
+
+/** 解析后的 Key 与来源说明。 */
+export interface ResolvedApiKey {
+  /** 最终生效的 Key；无任何来源时为 undefined（调用方报错/跳过）。 */
+  key: string | undefined;
+  /** 来源。 */
+  source: ApiKeySource;
+  /** source=account 时的账号名。 */
+  accountName?: string;
+}
+
+/** resolveApiKey 选项。 */
+export interface ResolveApiKeyOptions {
+  /** CLI 显式注入的 Key（--api-key，预留；优先级最高）。 */
+  cliKey?: string;
+  /** 环境变量值（测试注入；默认 process.env.DEEPSEEK_API_KEY）。 */
+  envKey?: string;
+  /** accounts 根目录（测试注入；默认 ~/.concertoai/accounts）。 */
+  accountsRoot?: string;
+  /** config.json 中的 Key（当前版本无此字段，预留）。 */
+  configKey?: string;
+}
+
+/**
+ * 解析 API Key：CLI > 环境变量 `DEEPSEEK_API_KEY` > active account > config.json。
+ * 不抛错：无任何来源时返回 { key: undefined, source: 'none' }。
+ */
+export async function resolveApiKey(options: ResolveApiKeyOptions = {}): Promise<ResolvedApiKey> {
+  const cliKey = options.cliKey;
+  if (cliKey !== undefined && cliKey !== '') {
+    return { key: cliKey, source: 'cli' };
+  }
+  const envKey = options.envKey !== undefined ? options.envKey : process.env.DEEPSEEK_API_KEY;
+  if (envKey !== undefined && envKey !== '') {
+    return { key: envKey, source: 'env' };
+  }
+  const active = await getActiveAccount(options.accountsRoot);
+  if (active !== undefined) {
+    try {
+      const key = await getApiKeyFor(active, options.accountsRoot);
+      return { key, source: 'account', accountName: active };
+    } catch {
+      // 指针指向不存在的账号 → 继续回退
+    }
+  }
+  const configKey = options.configKey;
+  if (configKey !== undefined && configKey !== '') {
+    return { key: configKey, source: 'config' };
+  }
+  return { key: undefined, source: 'none' };
+}
+
+/** 打码 API Key：`sk-****abcd`（仅显示后 4 位；短 Key 全部掩码）。 */
+export function maskApiKey(key: string): string {
+  const trimmed = key.trim();
+  if (trimmed.length <= 4) {
+    return '****';
+  }
+  const last4 = trimmed.slice(-4);
+  const prefix = /^sk-[A-Za-z0-9]+$/i.test(trimmed) ? 'sk-' : '';
+  return `${prefix}****${last4}`;
 }
 
 /** 项目上下文（T2.3）：按 cwd 精确匹配已注册项目。 */

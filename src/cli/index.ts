@@ -7,6 +7,7 @@ import { Command } from 'commander';
 import { t } from '../i18n';
 import { crashLogPath, migrateLegacyHome } from '../store/paths';
 import { VERSION } from '../version';
+import { resolveApiKey } from './common';
 import { installCrashHandlers } from './crash-handler';
 
 // ═══ 最早阶段：安装全局崩溃处理器（v3.1 M3 诊断） ═══
@@ -18,13 +19,17 @@ installCrashHandlers();
 // 幂等：~/.lumen 不存在或 ~/.concertoai 已存在时无操作。
 migrateLegacyHome((message) => console.error(message));
 
-function getApiKey(): string {
-  const key = process.env.DEEPSEEK_API_KEY;
-  if (key === undefined || key === '') {
+/**
+ * 解析 API Key（v3.1 M3 T3.3）：CLI > 环境变量 > active account > config.json。
+ * 无任何来源 → 报错退出（fail-closed，与现状一致）。
+ */
+async function getApiKey(): Promise<string> {
+  const resolved = await resolveApiKey();
+  if (resolved.key === undefined) {
     console.error(t().errors.noApiKey);
     process.exit(1);
   }
-  return key;
+  return resolved.key;
 }
 
 /**
@@ -92,7 +97,7 @@ program.action(
     const model = await resolveStartupModel();
     await runChat({
       cwd: process.cwd(),
-      apiKey: getApiKey(),
+      apiKey: await getApiKey(),
       model,
     });
   }),
@@ -112,7 +117,7 @@ program
         options.list === true ? options.model : await resolveStartupModel(options.model);
       await runChat({
         cwd: process.cwd(),
-        apiKey: getApiKey(),
+        apiKey: await getApiKey(),
         resume: options.resume,
         model,
         listOnly: options.list,
@@ -132,7 +137,7 @@ program
       const { runTask } = await import('./run');
       await runTask({
         cwd: process.cwd(),
-        apiKey: getApiKey(),
+        apiKey: await getApiKey(),
         task,
         model: options.model,
         autoApprove: options.autoApprove ?? false,
@@ -152,7 +157,7 @@ program
       const { runPlan } = await import('./plan');
       await runPlan({
         cwd: process.cwd(),
-        apiKey: getApiKey(),
+        apiKey: await getApiKey(),
         task,
         model: options.model,
         autoApprove: options.autoApprove ?? false,
@@ -179,7 +184,7 @@ program
     const { runProjectCommand } = await import('./project');
     await runProjectCommand({
       cwd: process.cwd(),
-      action: action as 'add' | 'list' | 'remove' | 'info',
+      action: action as 'add' | 'list' | 'remove' | 'info' | 'switch',
       name,
       path: p,
     });
@@ -195,7 +200,7 @@ program
     const { runSelfHealCommand } = await import('./self-heal');
     await runSelfHealCommand({
       cwd: process.cwd(),
-      apiKey: getApiKey(),
+      apiKey: await getApiKey(),
       model: options.model,
       autoApprove: options.autoApprove ?? false,
       lang: options.lang,
@@ -207,7 +212,7 @@ program
   .description(t().cli.balance.description)
   .action(async () => {
     const { runBalanceCommand } = await import('./balance');
-    const code = await runBalanceCommand({ apiKey: getApiKey() });
+    const code = await runBalanceCommand({ apiKey: await getApiKey() });
     if (code !== 0) {
       process.exitCode = code;
     }
@@ -218,10 +223,59 @@ program
   .description(t().cli.doctor.description)
   .action(async () => {
     const { runDoctorCommand } = await import('./doctor');
-    const code = await runDoctorCommand({ apiKey: process.env.DEEPSEEK_API_KEY });
+    // v3.1 M3 T3.3：余额项按解析链（环境变量 > active account）标注账号
+    const resolved = await resolveApiKey();
+    const code = await runDoctorCommand({
+      apiKey: resolved.key,
+      keySource: resolved.source,
+      keyAccountName: resolved.accountName,
+    });
     if (code !== 0) {
       process.exitCode = code;
     }
+  });
+
+program
+  .command('login <name>')
+  .description('登录账号（v3.1 M3）：交互输入 API Key 不回显；--key 非交互注入')
+  .option('--key <key>', '非交互注入 API Key（CI 场景）')
+  .action(async (name: string, options: { key?: string }) => {
+    const { runLoginCommand } = await import('./account');
+    await runLoginCommand({ name, key: options.key });
+  });
+
+program
+  .command('logout <name>')
+  .description('登出账号（v3.1 M3）：清除 active 指针；--purge 删除账号文件')
+  .option('--purge', '同时删除账号目录（含 Key 配置）')
+  .action(async (name: string, options: { purge?: boolean }) => {
+    const { runLogoutCommand } = await import('./account');
+    await runLogoutCommand({ name, purge: options.purge });
+  });
+
+program
+  .command('whoami')
+  .description('显示当前账号（v3.1 M3）：账号名 + Key 后 4 位（打码）')
+  .action(async () => {
+    const { runWhoamiCommand } = await import('./account');
+    await runWhoamiCommand({});
+  });
+
+program
+  .command('account <action> [name]')
+  .description('账号管理（v3.1 M3）：account list / switch <name>')
+  .action(async (action: string, name?: string) => {
+    const { runAccountListCommand, runAccountSwitchCommand } = await import('./account');
+    if (action === 'list') {
+      await runAccountListCommand({});
+      return;
+    }
+    if (action === 'switch') {
+      await runAccountSwitchCommand({ name });
+      return;
+    }
+    console.error(`未知 account 子命令: ${action}（支持 list / switch <name>）`);
+    process.exitCode = 1;
   });
 
 program.parse();

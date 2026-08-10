@@ -19,11 +19,16 @@ import { fetchBalance } from '../balance';
 import { fmt, t } from '../i18n';
 import { listModels } from '../model/models';
 import { configPath, sessionsDir } from '../store/paths';
+import { type ApiKeySource, maskApiKey } from './common';
 
 /** doctor 命令选项。 */
 export interface DoctorCommandOptions {
   /** DeepSeek API Key；undefined = 未设置（余额项标记跳过）。 */
   apiKey?: string;
+  /** Key 来源（v3.1 M3）：env / account 等；余额行标注账号。 */
+  keySource?: ApiKeySource;
+  /** source=account 时的账号名。 */
+  keyAccountName?: string;
   /** API 基础地址（测试注入）。 */
   baseUrl?: string;
   /** fetch 实现（测试注入）。 */
@@ -39,12 +44,23 @@ interface Diagnostic {
   lines: string[];
 }
 
-function diagnoseApiKey(apiKey: string | undefined): Diagnostic {
+function diagnoseApiKey(
+  apiKey: string | undefined,
+  source: ApiKeySource | undefined,
+  accountName: string | undefined,
+): Diagnostic {
   const dict = t().doctor;
   if (apiKey === undefined || apiKey === '') {
     return { ok: false, lines: [`${dict.fail} ${dict.apiKeyLabel}: ${dict.apiKeyMissing}`] };
   }
-  return { ok: true, lines: [`${dict.ok} ${dict.apiKeyLabel}: ${dict.apiKeySet}`] };
+  // v3.1 M3 T3.3：标注 Key 来源（环境变量优先 / 账号），不泄露完整 Key
+  let note = '';
+  if (source === 'env') {
+    note = '（环境变量优先）';
+  } else if (source === 'account' && accountName !== undefined) {
+    note = `（账号: ${accountName} ${maskApiKey(apiKey)}）`;
+  }
+  return { ok: true, lines: [`${dict.ok} ${dict.apiKeyLabel}: ${dict.apiKeySet}${note}`] };
 }
 
 async function diagnoseConfig(cfgPath: string): Promise<Diagnostic> {
@@ -135,7 +151,14 @@ async function diagnoseBalance(options: DoctorCommandOptions): Promise<Diagnosti
       fetchImpl: options.fetchImpl,
     });
     const status = balance.is_available ? dict.balanceAvailable : dict.balanceUnavailable;
-    const lines = [`${dict.money} ${dict.balanceLabel}: ${status}`];
+    // v3.1 M3 T3.3：余额行标注使用的账号（如 账号: work (sk-****abcd)）
+    const accountNote =
+      options.keySource === 'account' && options.keyAccountName !== undefined
+        ? `（账号: ${options.keyAccountName} ${maskApiKey(options.apiKey)}）`
+        : options.keySource === 'env'
+          ? '（环境变量优先）'
+          : '';
+    const lines = [`${dict.money} ${dict.balanceLabel}: ${status}${accountNote}`];
     for (const info of balance.balance_infos) {
       lines.push(
         `${dict.money}   ${fmt(dict.balanceEntry, {
@@ -171,7 +194,7 @@ export async function runDoctorCommand(options: DoctorCommandOptions): Promise<n
       ok: true,
       lines: [`${t().doctor.ok} ${t().doctor.platformLabel}: ${process.platform}`],
     },
-    diagnoseApiKey(options.apiKey),
+    diagnoseApiKey(options.apiKey, options.keySource, options.keyAccountName),
     await diagnoseConfig(options.configPath ?? configPath()),
     await diagnoseSessionDir(options.sessionDir ?? sessionsDir()),
     diagnoseModels(),

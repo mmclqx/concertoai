@@ -68,6 +68,21 @@ export function projectsPath(): string {
   return path.join(globalDir(), 'projects.json');
 }
 
+/** 多账号目录：~/.concertoai/accounts/（v3.1 M3；每账号一个子目录）。 */
+export function accountsDir(): string {
+  return path.join(globalDir(), 'accounts');
+}
+
+/** 某账号配置文件：~/.concertoai/accounts/<name>/config.json。 */
+export function accountConfigPath(name: string): string {
+  return path.join(accountsDir(), name, 'config.json');
+}
+
+/** active 账号指针：~/.concertoai/accounts/active-account（v3.1 M3）。 */
+export function activeAccountPath(): string {
+  return path.join(accountsDir(), 'active-account');
+}
+
 /** 全局技能目录：~/.concertoai/skills/。 */
 export function globalSkillsDir(): string {
   return path.join(globalDir(), 'skills');
