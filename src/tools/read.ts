@@ -13,6 +13,7 @@ import path from 'node:path';
 
 import { z } from 'zod';
 
+import { SandboxError, ToolErrorCode, toolError } from './error-codes';
 import type { ToolResult, ToolSpec } from './registry';
 
 /** read_file 单次读取的最大字符数。 */
@@ -68,7 +69,7 @@ const SECRET_PATTERN = /\bsk-[a-zA-Z0-9_-]{16,}\b/g;
 /** 判断文件名是否为 .env 类敏感文件。 */
 const isDotEnv = (name: string): boolean => SENSITIVE_FILES.has(name);
 
-/** 路径沙箱：把相对 ctx.cwd 的路径解析为绝对路径，越界即抛错。 */
+/** 路径沙箱：把相对 ctx.cwd 的路径解析为绝对路径，越界即抛 SandboxError。 */
 export function resolveSafe(cwd: string, p: string): string {
   if (p === '') {
     throw new Error('路径不能为空');
@@ -76,7 +77,7 @@ export function resolveSafe(cwd: string, p: string): string {
   const resolved = path.resolve(cwd, p);
   const rel = path.relative(cwd, resolved);
   if (rel.startsWith('..') || path.isAbsolute(rel)) {
-    throw new Error(`路径越界（仅允许访问项目目录内）: ${p}`);
+    throw new SandboxError(`路径越界（仅允许访问项目目录内）: ${p}`);
   }
   return resolved;
 }
@@ -101,16 +102,30 @@ export const readFileTool: ToolSpec = {
     const { path: p } = rawArgs as ReadFileArgs;
     const basename = path.basename(p);
     if (isDotEnv(basename)) {
-      return {
-        ok: false,
-        error: `敏感文件，拒绝读取: ${p}（API Key 等凭据不应在对话中传输）`,
-        repairable: false,
-      };
+      return toolError(
+        ToolErrorCode.SENSITIVE_FILE,
+        `敏感文件，拒绝读取: ${p}（API Key 等凭据不应在对话中传输）`,
+        { repairable: false },
+      );
     }
-    const resolved = resolveSafe(ctx.cwd, p);
-    const stat = await fs.stat(resolved);
+    let resolved: string;
+    try {
+      resolved = resolveSafe(ctx.cwd, p);
+    } catch (error) {
+      return toolError(
+        ToolErrorCode.PATH_OUTSIDE_SANDBOX,
+        error instanceof Error ? error.message : String(error),
+        { repairable: false },
+      );
+    }
+    let stat: Awaited<ReturnType<typeof fs.stat>>;
+    try {
+      stat = await fs.stat(resolved);
+    } catch {
+      return toolError(ToolErrorCode.FILE_NOT_FOUND, `文件不存在: ${p}`);
+    }
     if (stat.isDirectory()) {
-      return { ok: false, error: `不是文件而是目录: ${p}` };
+      return toolError(ToolErrorCode.DIR_NOT_FOUND, `路径是目录而非文件: ${p}`);
     }
     const content = stripBom(await fs.readFile(resolved, 'utf8'));
     const truncated = content.length > MAX_READ_CHARS;
@@ -140,8 +155,22 @@ export const listDirectoryTool: ToolSpec = {
   parallelSafe: true,
   execute: async (rawArgs, ctx): Promise<ToolResult> => {
     const { path: p } = rawArgs as ListDirectoryArgs;
-    const resolved = resolveSafe(ctx.cwd, p);
-    const entries = await fs.readdir(resolved, { withFileTypes: true });
+    let resolved: string;
+    try {
+      resolved = resolveSafe(ctx.cwd, p);
+    } catch (error) {
+      return toolError(
+        ToolErrorCode.PATH_OUTSIDE_SANDBOX,
+        error instanceof Error ? error.message : String(error),
+        { repairable: false },
+      );
+    }
+    let entries: Dirent[];
+    try {
+      entries = await fs.readdir(resolved, { withFileTypes: true });
+    } catch {
+      return toolError(ToolErrorCode.DIR_NOT_FOUND, `目录不存在: ${p}`);
+    }
     const items = await Promise.all(
       entries.map(async (entry) => {
         let size: number | undefined;
@@ -184,7 +213,16 @@ export const searchContentTool: ToolSpec = {
   parallelSafe: true,
   execute: async (rawArgs, ctx): Promise<ToolResult> => {
     const args = rawArgs as SearchContentArgs;
-    const root = resolveSafe(ctx.cwd, args.path ?? '.');
+    let root: string;
+    try {
+      root = resolveSafe(ctx.cwd, args.path ?? '.');
+    } catch (error) {
+      return toolError(
+        ToolErrorCode.PATH_OUTSIDE_SANDBOX,
+        error instanceof Error ? error.message : String(error),
+        { repairable: false },
+      );
+    }
     const needle = args.caseSensitive === true ? args.pattern : args.pattern.toLowerCase();
     const hits: Array<{ file: string; line: number; text: string }> = [];
     let skippedBinary = 0;

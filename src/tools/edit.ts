@@ -17,6 +17,7 @@ import { promises as fs } from 'node:fs';
 
 import { z } from 'zod';
 
+import { ToolErrorCode, toolError } from './error-codes';
 import { resolveSafe } from './read';
 import type { ToolResult, ToolSpec } from './registry';
 import { requestApproval } from './registry';
@@ -36,6 +37,20 @@ interface EditFileArgs {
 interface EditPlan {
   newContent: string;
   diff: string;
+}
+
+/** 编辑计划错误：携带机器可读错误码（v3.1 M4）。 */
+export class EditPlanError extends Error {
+  constructor(
+    public readonly code: (typeof ToolErrorCode)[
+      | 'SEARCH_NOT_FOUND'
+      | 'SEARCH_NOT_UNIQUE'
+      | 'FILE_ALREADY_EXISTS'],
+    message: string,
+  ) {
+    super(message);
+    this.name = 'EditPlanError';
+  }
 }
 
 function isEnoent(error: unknown): boolean {
@@ -87,7 +102,10 @@ function convertEol(text: string, eol: string): string {
 export function planEdit(original: string, search: string, replace: string): EditPlan {
   if (search === '') {
     if (original !== '') {
-      throw new Error('search 为空表示创建新文件，但文件已存在');
+      throw new EditPlanError(
+        ToolErrorCode.FILE_ALREADY_EXISTS,
+        'search 为空表示创建新文件，但文件已存在',
+      );
     }
     return { newContent: replace, diff: diffForCreation(replace) };
   }
@@ -97,11 +115,14 @@ export function planEdit(original: string, search: string, replace: string): Edi
   const normSearch = normalizeNewlines(search);
   const first = normOriginal.indexOf(normSearch);
   if (first === -1) {
-    throw new Error('SEARCH 内容未在文件中找到');
+    throw new EditPlanError(ToolErrorCode.SEARCH_NOT_FOUND, 'SEARCH 内容未在文件中找到');
   }
   const second = normOriginal.indexOf(normSearch, first + 1);
   if (second !== -1) {
-    throw new Error('SEARCH 内容在文件中出现多次，请提供更精确的匹配块');
+    throw new EditPlanError(
+      ToolErrorCode.SEARCH_NOT_UNIQUE,
+      'SEARCH 内容在文件中出现多次，请提供更精确的匹配块',
+    );
   }
   // 规范化偏移映射回原文本偏移，切片保留原文件的换行风格；replace 转为原风格
   const origStart = mapOffset(original, first);
@@ -148,7 +169,16 @@ export const editFileTool: ToolSpec = {
   parallelSafe: false,
   execute: async (rawArgs, ctx): Promise<ToolResult> => {
     const args = rawArgs as EditFileArgs;
-    const resolved = resolveSafe(ctx.cwd, args.path);
+    let resolved: string;
+    try {
+      resolved = resolveSafe(ctx.cwd, args.path);
+    } catch (error) {
+      return toolError(
+        ToolErrorCode.PATH_OUTSIDE_SANDBOX,
+        error instanceof Error ? error.message : String(error),
+        { repairable: false },
+      );
+    }
 
     let original: string;
     try {
@@ -157,20 +187,30 @@ export const editFileTool: ToolSpec = {
       if (isEnoent(error) && args.search === '') {
         original = '';
       } else if (isEnoent(error)) {
-        return { ok: false, error: `文件不存在: ${args.path}` };
+        return toolError(ToolErrorCode.FILE_NOT_FOUND, `文件不存在: ${args.path}`);
       } else {
         throw error;
       }
     }
 
-    const plan = planEdit(original, args.search, args.replace);
+    let plan: EditPlan;
+    try {
+      plan = planEdit(original, args.search, args.replace);
+    } catch (error) {
+      if (error instanceof EditPlanError) {
+        return toolError(error.code, error.message);
+      }
+      throw error;
+    }
     const approved = await requestApproval(ctx, {
       kind: 'edit',
       summary: `编辑文件 ${args.path}`,
       detail: plan.diff,
     });
     if (!approved) {
-      return { ok: false, error: '编辑被拒绝，文件未修改', repairable: false };
+      return toolError(ToolErrorCode.EDIT_REJECTED, '编辑被拒绝，文件未修改', {
+        repairable: false,
+      });
     }
 
     // 落盘前快照原文件（v1.1 计划回滚）
@@ -178,7 +218,14 @@ export const editFileTool: ToolSpec = {
       await ctx.snapshotStore.snapshot(args.path, ctx.cwd);
     }
 
-    await fs.writeFile(resolved, plan.newContent, 'utf8');
+    try {
+      await fs.writeFile(resolved, plan.newContent, 'utf8');
+    } catch (error) {
+      return toolError(
+        ToolErrorCode.WRITE_FAILED,
+        `写入失败: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
     return { ok: true, data: { path: args.path, diff: plan.diff } };
   },
 };

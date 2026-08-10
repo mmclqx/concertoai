@@ -115,7 +115,13 @@ export async function runLoop(
 interface RepairState {
   count: number;
   /** 失败详情（供爆雷时输出上下文）。 */
-  failures: Array<{ toolName: string; error: string; turn: number }>;
+  failures: Array<{
+    toolName: string;
+    error: string;
+    turn: number;
+    /** 结构化修复建议（v3.1 M4；可选，缺省不展示）。 */
+    suggestion?: string;
+  }>;
 }
 
 /**
@@ -141,6 +147,10 @@ class ToolRepairError extends Error {
 
     for (const f of failures) {
       lines.push(`  ${f.turn + 1}. ${f.toolName} → ${f.error}`);
+      // v3.1 M4：错误带结构化修复建议时展示（无则保持旧格式，向后兼容）
+      if (f.suggestion !== undefined && f.suggestion !== '') {
+        lines.push(`       💡 ${f.suggestion}`);
+      }
     }
 
     lines.push(
@@ -218,6 +228,7 @@ async function executeGroup(
         toolName: call.name,
         error: result.error ?? '未知错误',
         turn,
+        ...(result.suggestion !== undefined ? { suggestion: result.suggestion } : {}),
       });
       const maxRepairs = options.maxRepairs ?? MAX_REPAIRS;
       if (repairState.count > maxRepairs) {

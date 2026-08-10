@@ -10,6 +10,8 @@
 
 import { type ChildProcess, spawn } from 'node:child_process';
 import { z } from 'zod';
+
+import { TOOL_ERROR_SUGGESTIONS, ToolErrorCode, toolError } from './error-codes';
 import type { ToolResult, ToolSpec } from './registry';
 import { requestApproval } from './registry';
 
@@ -103,11 +105,11 @@ function runShellCommand(command: string, cwd: string, timeoutMs: number): Promi
 
     timer = setTimeout(() => {
       killTree(child);
-      finish({
-        ok: false,
-        error: `命令执行超时（${timeoutMs}ms），已终止:\n  ${command}`,
-        data: buildData(-1),
-      });
+      finish(
+        toolError(ToolErrorCode.TIMEOUT, `命令执行超时（${timeoutMs}ms），已终止:\n  ${command}`, {
+          data: buildData(-1),
+        }),
+      );
     }, timeoutMs);
 
     child.stdout?.on('data', (chunk: Buffer) => {
@@ -121,11 +123,15 @@ function runShellCommand(command: string, cwd: string, timeoutMs: number): Promi
         (error as NodeJS.ErrnoException).code === 'ENOENT'
           ? `\n💡 命令不存在或无法启动，请检查命令名是否正确（Windows 已自动适配 npx.cmd/cat→type/tail→Get-Content/grep→findstr 等，若仍失败请用 node -e / dir / type 替代）`
           : '';
-      finish({
-        ok: false,
-        error: `命令启动失败: ${error.message}\n  命令: ${command}\n  目录: ${cwd}${hint}`,
-        data: buildData(-1),
-      });
+      finish(
+        toolError(
+          (error as NodeJS.ErrnoException).code === 'ENOENT'
+            ? ToolErrorCode.COMMAND_NOT_FOUND
+            : ToolErrorCode.EXIT_CODE,
+          `命令启动失败: ${error.message}\n  命令: ${command}\n  目录: ${cwd}${hint}`,
+          { data: buildData(-1) },
+        ),
+      );
     });
     child.on('close', (code) => {
       const exitCode = code ?? -1;
@@ -158,6 +164,8 @@ function runShellCommand(command: string, cwd: string, timeoutMs: number): Promi
           ok: false,
           error: lines.join('\n'),
           data,
+          code: `EXIT_${exitCode}`,
+          suggestion: TOOL_ERROR_SUGGESTIONS[ToolErrorCode.EXIT_CODE],
           // Windows "无结果"不算可修复失败（findstr/dir 找不到是正常结果）
           repairable: isNoResults ? false : undefined,
         });
@@ -291,7 +299,9 @@ export const shellTool: ToolSpec = {
         detail: args.command,
       });
       if (!approved) {
-        return { ok: false, error: '命令执行被拒绝', repairable: false };
+        return toolError(ToolErrorCode.SHELL_REJECTED, '命令执行被拒绝', {
+          repairable: false,
+        });
       }
     }
 

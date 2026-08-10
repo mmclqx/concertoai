@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { DeepSeekApiTool } from '../model/client';
 
 import type { SnapshotStore } from '../planner/rollback';
+import { inferErrorCode, TOOL_ERROR_SUGGESTIONS } from './error-codes';
 
 export interface ToolContext {
   /** 项目根目录（沙箱根），所有工具路径以此为基准解析。 */
@@ -51,6 +52,10 @@ export interface ToolResult {
    * 不进入修复计数、不会触发修复终止。
    */
   repairable?: boolean;
+  /** 机器可读错误码（v3.1 M4 结构化错误增强；可选，向后兼容）。 */
+  code?: string;
+  /** 中文修复建议（v3.1 M4 结构化错误增强；可选，向后兼容）。 */
+  suggestion?: string;
 }
 
 export interface ToolSpec {
@@ -106,7 +111,13 @@ export class ToolRegistry {
   async run(name: string, args: unknown, ctx: ToolContext): Promise<ToolResult> {
     const spec = this.tools.get(name);
     if (spec === undefined) {
-      return { ok: false, error: `未知工具: ${name}`, repairable: false };
+      return {
+        ok: false,
+        error: `未知工具: ${name}`,
+        code: 'UNKNOWN_TOOL',
+        suggestion: `工具 ${name} 不存在：请使用注册表可用工具（如 read_file / list_directory / edit_file / run_command）`,
+        repairable: false,
+      };
     }
     const parsed = spec.parameters.safeParse(args);
     if (!parsed.success) {
@@ -116,8 +127,15 @@ export class ToolRegistry {
       return await spec.execute(parsed.data, ctx);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      // 兜底：工具未显式分类的异常，按错误特征补 code/suggestion（v3.1 M4）
+      const code = inferErrorCode(error);
       // 路径越界属不可修复错误（模型侧幻觉路径），其余异常视为可修复
-      return { ok: false, error: message, repairable: !message.includes('越界') };
+      return {
+        ok: false,
+        error: message,
+        repairable: !message.includes('越界'),
+        ...(code !== undefined ? { code, suggestion: TOOL_ERROR_SUGGESTIONS[code] } : {}),
+      };
     }
   }
 }

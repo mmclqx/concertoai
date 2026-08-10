@@ -70,17 +70,20 @@ describe('read_file', () => {
     expect(result.ok).toBe(true);
   });
 
-  it('文件不存在返回 ok:false', async () => {
+  it('文件不存在返回 ok:false（M4 结构化错误：FILE_NOT_FOUND + 中文消息 + suggestion）', async () => {
     const result = await runTool(readFileTool, { path: 'missing.txt' });
     expect(result.ok).toBe(false);
-    expect(String(result.error)).toMatch(/ENOENT/);
+    expect(String(result.error)).toContain('文件不存在');
+    expect(result.code).toBe('FILE_NOT_FOUND');
+    expect(result.suggestion?.length).toBeGreaterThan(0);
   });
 
-  it('读取目录返回 ok:false', async () => {
+  it('读取目录返回 ok:false（M4 结构化错误：DIR_NOT_FOUND）', async () => {
     mkdirSync(path.join(tmp, 'adir'));
     const result = await runTool(readFileTool, { path: 'adir' });
     expect(result.ok).toBe(false);
-    expect(String(result.error)).toContain('不是文件');
+    expect(String(result.error)).toContain('目录而非文件');
+    expect(result.code).toBe('DIR_NOT_FOUND');
   });
 
   it('路径越界（.. 逃逸与绝对路径）被拒绝', async () => {
