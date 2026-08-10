@@ -7,6 +7,9 @@
  * - 修复策略执行器（T1.2）：按错误分类执行确定性修复——
  *   lint → `npm run lint:fix`（白名单免审批）；type 简单错误 → 模型生成修复（走审批）；
  *   build/test/type 复杂错误 → 结构化反馈不自动修。
+ * - 快照与回滚（T1.3）：模型修复落盘前用 `SnapshotManager` 登记快照（begin + recordWrite），
+ *   修复后强制 verify + diff 审查（变更文件 + 变更行数）；目标错误未消失或引入新错误 →
+ *   rollback 恢复原状；修复有效 → commit 清理快照；回滚失败（外部修改）→ 报错保留快照。
  *
  * 设计（分类器）：
  * - 复用 `src/agents/qa.ts` 的 `parseVerifyOutput` 解析 vitest（test）段；
@@ -28,6 +31,7 @@ import { z } from 'zod';
 
 import { ChildProcessQaRunner, DEFAULT_VERIFY_TIMEOUT_MS, parseVerifyOutput } from '../agents/qa';
 import type { ModelClient } from '../model/client';
+import type { SnapshotManager } from '../orchestrator/transaction';
 import { planEdit } from '../tools/edit';
 import type { ApprovalRequest } from '../tools/registry';
 import { shellTool } from '../tools/shell';
@@ -302,6 +306,25 @@ export function parseVerifyReport(stdout: string, stderr: string): VerifyReport 
 // T1.2 修复策略执行器
 // ══════════════════════════════════════════════════════════════
 
+/** 变更行数统计（SEARCH/REPLACE 行数近似 diff stat）。 */
+export interface DiffLineStat {
+  /** 新增行数。 */
+  added: number;
+  /** 删除行数。 */
+  removed: number;
+}
+
+/** 计算 SEARCH/REPLACE 的变更行数（可读 diff 摘要；空串按 0 行处理）。 */
+export function diffLineStat(search: string, replace: string): DiffLineStat {
+  const countLines = (s: string): number => (s === '' ? 0 : s.split('\n').length);
+  return { added: countLines(replace), removed: countLines(search) };
+}
+
+/** 错误指纹：`file:code`（忽略行号——修复后行号会漂移，仅凭 file+code 判定错误是否新增/消失）。 */
+function errorFingerprint(error: VerifyError): string {
+  return `${error.file ?? '<unknown>'}:${error.code ?? error.message}`;
+}
+
 /** 自我修复最大尝试次数（超限转人工）。 */
 export const MAX_SELF_HEAL_ATTEMPTS = 2;
 
@@ -478,6 +501,10 @@ export interface SelfHealAttempt {
   appliedFixes: Array<{ file: string; diff: string }>;
   /** 结构化反馈（未自动修的错误：code + suggestion）。 */
   feedback: Array<{ code?: string; suggestion: string }>;
+  /** 模型修复是否被回滚（T1.3：修复后 verify 失败或引入新错误 → rollback 恢复原状）。 */
+  rolledBack?: boolean;
+  /** 回滚原因 / 回滚失败详情（rolledBack=true 或回滚失败时）。 */
+  rollbackReason?: string;
 }
 
 /** 修复执行器选项。 */
@@ -494,6 +521,10 @@ export interface RepairVerifyOptions {
   model?: string;
   /** 审批回调（模型修复前逐项确认，fail-closed；缺省拒绝）。 */
   requestApproval?: (request: ApprovalRequest) => Promise<boolean> | boolean;
+  /** 快照管理器（T1.3）：模型修复落盘前登记快照，失败/引入新错误自动回滚；缺省不启用快照保护。 */
+  snapshots?: SnapshotManager;
+  /** 快照 taskId 前缀（默认 `self-heal`，快照目录 `.concertoai/snapshots/<prefix>-<ts>/`）。 */
+  snapshotPrefix?: string;
   /** 日志输出。 */
   log?: (message: string) => void;
 }
@@ -614,30 +645,104 @@ export async function repairVerifyReport(
         });
         break;
       }
-      // 审批通过 → 落盘（T1.3 将在落盘前登记快照）
+      // 审批通过 → 落盘（T1.3：落盘前登记快照，修复失败/引入新错误自动回滚）
       const absolute = path.resolve(options.cwd, plan.file);
+      // taskId 加随机后缀：连续两轮修复可能落在同一毫秒，避免快照目录冲突
+      const taskId = `${options.snapshotPrefix ?? 'self-heal'}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const snapshots = options.snapshots;
+      let txStarted = false;
+      if (snapshots !== undefined) {
+        try {
+          await snapshots.begin(taskId, [plan.file]);
+          await snapshots.recordWrite(taskId, plan.file, plan.newContent);
+          txStarted = true;
+        } catch (err) {
+          // 快照登记失败 → 放弃回滚保护，与 T1.2 行为一致继续写盘
+          await snapshots.commit(taskId).catch(() => {});
+          log(
+            `[self-heal] 快照登记失败，跳过回滚保护: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
+      // 修复前错误指纹（回滚判定基准：目标错误是否消失 / 是否引入新错误）
+      const beforeFingerprints = new Set(report.errors.map(errorFingerprint));
       try {
         await fs.writeFile(absolute, plan.newContent, 'utf8');
       } catch (err) {
         log(`[self-heal] 写盘失败: ${err instanceof Error ? err.message : String(err)}`);
-        attempts.push({
-          attempt,
-          action: 'none',
-          report,
-          appliedFixes: [],
-          feedback: [{ code: simpleType.code, suggestion: '修复写盘失败，请手动处理' }],
-        });
+        if (txStarted && snapshots !== undefined) {
+          const rb = await snapshots.rollback(taskId);
+          log(
+            `[self-heal] 写盘失败，快照${rb.ok ? '已回滚清理' : `回滚失败（${rb.failed.map((f) => f.error).join('; ')}，快照保留）`}`,
+          );
+          attempts.push({
+            attempt,
+            action: 'none',
+            report,
+            appliedFixes: [],
+            feedback: [{ code: simpleType.code, suggestion: '修复写盘失败，已回滚，请手动处理' }],
+            rolledBack: true,
+            rollbackReason: `写盘失败${rb.ok ? '' : `（回滚失败: ${rb.failed.map((f) => f.error).join('; ')}）`}`,
+          });
+        } else {
+          attempts.push({
+            attempt,
+            action: 'none',
+            report,
+            appliedFixes: [],
+            feedback: [{ code: simpleType.code, suggestion: '修复写盘失败，请手动处理' }],
+          });
+        }
         break;
       }
       const fresh = await runVerifyAndParse(options);
+      // diff 审查：变更文件 + 每文件变更行数（可读摘要）
+      const stat = diffLineStat(plan.search, plan.replace);
+      log(`[self-heal] diff 审查: ${plan.file}（+${stat.added} -${stat.removed}）`);
+      // 回滚判定：目标类型错误未消失（修复无效）或引入了新错误 → rollback 恢复原状
+      const targetGone = !fresh.errors.some(
+        (e) => errorFingerprint(e) === errorFingerprint(simpleType),
+      );
+      const newErrors = fresh.errors.filter((e) => !beforeFingerprints.has(errorFingerprint(e)));
+      const regressed = !targetGone || newErrors.length > 0;
+      let rolledBack = false;
+      let rollbackReason: string | undefined;
+      if (regressed) {
+        const reason = !targetGone
+          ? `目标类型错误 ${simpleType.code ?? 'TS'} 未修复`
+          : `引入新错误: ${newErrors
+              .map((e) => e.code ?? e.message)
+              .slice(0, 3)
+              .join(', ')}`;
+        if (txStarted) {
+          const rb = await options.snapshots!.rollback(taskId);
+          rolledBack = rb.ok;
+          rollbackReason = rb.ok
+            ? reason
+            : `${reason}；回滚失败（${rb.failed.map((f) => f.error).join('; ')}），快照保留待人工检查`;
+          log(`[self-heal] 修复${rb.ok ? '已回滚' : '回滚失败，快照保留'}: ${reason}`);
+        } else {
+          rollbackReason = `${reason}（未启用快照，未回滚）`;
+          log(`[self-heal] 修复疑似无效: ${reason}（无快照，请人工检查 ${plan.file}）`);
+        }
+      } else {
+        if (txStarted) {
+          await options.snapshots!.commit(taskId);
+        }
+        log(`[self-heal] 修复有效，已${txStarted ? '提交快照' : '保留变更'}`);
+      }
       attempts.push({
         attempt,
         action: 'model-fix',
         report: fresh,
         appliedFixes: [{ file: plan.file, diff: plan.diff }],
         feedback: [],
+        // 回滚成功 → rolledBack=true；回滚失败/未启用快照 → 仅保留 rollbackReason（含失败详情）
+        ...(rolledBack ? { rolledBack: true } : {}),
+        ...(rollbackReason !== undefined ? { rollbackReason } : {}),
       });
-      report = fresh;
+      // 回滚成功 → 磁盘已恢复原状，report 维持修复前（下一轮重新处理）；否则磁盘为修复后状态
+      report = rolledBack ? report : fresh;
       continue;
     }
 

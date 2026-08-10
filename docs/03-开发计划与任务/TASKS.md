@@ -1,7 +1,7 @@
 # ConcertoAI 开发任务看板
 
 > 最后更新：2026-08-10
-> 当前里程碑：**🔵 v3.1 进行中**（4/27 任务 ✅ · 基线 69 文件 / 750 用例）（v1.0: 20/20 ✅ · v1.1: 12/12 ✅ · v2.0: 15/15 ✅ · v2.1: 25/25 ✅ · v3.0: 24/24 ✅ · v3.1: 4/27 🔵）
+> 当前里程碑：**🔵 v3.1 进行中**（5/27 任务 ✅ · 基线 69 文件 / 750 用例）（v1.0: 20/20 ✅ · v1.1: 12/12 ✅ · v2.0: 15/15 ✅ · v2.1: 25/25 ✅ · v3.0: 24/24 ✅ · v3.1: 5/27 🔵）
 > 基于：[v3.1 开发计划](./v3.1-dev-plan-ai.md) · [v3.1 详细任务](./v3.1-dev-tasks.md) · 历史：[v3.0 开发计划](./v3.0-dev-plan.md)
 
 ---
@@ -52,7 +52,7 @@
 | **V3.0-M5 可观测性面板** | **P1** | **3** | ✅ 已完成 |
 | **V3.0-M6 集成测试与文档** | **P1** | **3** | ✅ 已完成 |
 | **V3.1-M0 启动前置（版本归位 + 基线校准）** | **P0** | **2** | ✅ 已完成 |
-| **V3.1-M1 AI 自我修复闭环** | **P0** | **5** | 🟡 进行中（T1.1 ✅） |
+| **V3.1-M1 AI 自我修复闭环** | **P0** | **5** | 🟡 进行中（T1.1/T1.2/T1.3 ✅） |
 | **V3.1-M2 多项目管理** | **P1** | **5** | ⬜ 待开始 |
 | **V3.1-M3 多租户登录** | **P2** | **4** | ⬜ 待开始 |
 | **V3.1-M4 结构化错误增强** | **P2** | **2** | ⬜ 待开始 |
@@ -786,10 +786,11 @@
   - 依赖：T1.1
   - ✅ 2026-08-10 完成：`MAX_SELF_HEAL_ATTEMPTS=2` + `repairVerifyReport(report, options)` 主流程：lint → 确定性 `npm run lint:fix`（走 shell 工具 + 白名单免审批）；type 简单错误（`Cannot find name/module` / `implicitly has an 'any' type` / `Property 'x' has no initializer`）→ 模型生成修复（每次 1 个，审批 fail-closed，拒绝跳过）；type 复杂（TS2322 等）/ build / test → 不自动修，`suggestionFor` 结构化反馈；模型修复输出 zod 校验（`parseModelFixOutput`）+ `planEdit` 唯一性校验；生产辅助 `runVerifyCommand`（复用 ChildProcessQaRunner）/ `runLintFixCommand`（shell 白名单）
 
-- [ ] **T1.3** 快照与回滚
+- [x] **T1.3** 快照与回滚
   - 涉及文件：`src/loop/self-heal.ts`（修改）、`src/orchestrator/transaction.ts`（复用）
   - 预估：1h
   - 依赖：T1.1、T1.2
+  - ✅ 2026-08-10 完成：模型修复落盘前 `SnapshotManager.begin(taskId, [file])` + `recordWrite` 登记快照（taskId 加随机后缀防同毫秒冲突；登记失败降级跳过回滚保护）；修复后强制 verify + `diffLineStat` diff 审查（变更文件 + 每文件变更行数）；回滚判定基于错误指纹（`file:code` 忽略行号——修复后行号漂移）：目标错误未消失或引入新错误（与修复前指纹集合比较）→ `rollback()` 恢复原状；修复有效 → `commit()` 清理快照；写盘失败 / 回滚失败（外部修改检测）→ 明确报错并保留快照；`SelfHealAttempt` 新增 `rolledBack` / `rollbackReason` 字段；未启用快照时修复无效保留变更并提示人工检查；新增 12 测试（T1.1 分类器 3 + 工具 2 + T1.2 执行器 2 + T1.3 快照回滚 5），`npm run verify` 70 文件 / 762 用例全绿
 
 - [ ] **T1.4** 触发入口（/self-heal + CLI）
   - 涉及文件：`src/cli/slash/self-heal.ts`（新增）、`src/cli/index.ts`（修改）、`src/ui/App.tsx`（修改）、`src/loop/self-heal.ts`（修改）
