@@ -1,8 +1,8 @@
 # ConcertoAI 架构文档
 
-> 版本：v3.0 · 2026-08-09
+> 版本：v3.0（含 v2.2 / v3.1 预留已交付功能）· 2026-08-10
 > 本文档基于当前代码实现编写，作为后续维护与扩展的技术参考。
-> 配套文档：[v3.0 开发任务](../03-开发计划与任务/v3.0-dev-tasks.md)、[任务看板](../03-开发计划与任务/TASKS.md)
+> 配套文档：[v3.0 开发任务](../03-开发计划与任务/v3.0-dev-tasks.md)、[v3.1 开发计划](../03-开发计划与任务/v3.1-dev-plan-ai.md)、[任务看板](../03-开发计划与任务/TASKS.md)
 
 ---
 
@@ -14,6 +14,7 @@ ConcertoAI 是一款**中文优先**的终端编码助手 CLI（DeepSeek 驱动�
 - **运行时依赖**：`ink` / `react` / `commander` / `zod` / `cli-highlight` / `chalk`
 - **测试现状**：69 个测试文件、750 个用例，`npm run verify` 全绿，`npm audit` 0 漏洞；已用真实 `DEEPSEEK_API_KEY` 完成端到端冒烟
 - **安全基线**：编辑与命令一律审批（fail-closed）、路径沙箱、结果截断、白名单免审批——无 yolo 模式
+- **v3.1 预留功能（已交付）**：`concertoai balance`（余额查询）/ `concertoai doctor`（环境诊断）、配置目录迁移 `~/.lumen → ~/.concertoai`（`src/store/paths.ts` 单一来源 + 幂等迁移）；**v2.2 智能成本控制**（高峰时段模型自动切换，见 §4 D41）
 
 ## 2. 架构全景图
 
@@ -40,6 +41,7 @@ ConcertoAI 是一款**中文优先**的终端编码助手 CLI（DeepSeek 驱动�
 │   modals.tsx       EditConfirm / ShellConfirm / PlanConfirm   │
 │   SessionPicker    -r 无 ID 时的会话列表选择                   │
 │   ObservabilityPanel  Agent 协作流程树（v3.0，可展开收起）      │
+│   ReviewReport    /review 审查报告渲染（v2.1，按严重程度着色）  │
 │   Spinner          Braille 进度指示（思考中/工具执行）          │
 │   StatusBar        模型名 + 真实 usage/估算 + 成本             │
 └──────────────────────┬──────────────────────────────────────┘
@@ -58,6 +60,8 @@ ConcertoAI 是一款**中文优先**的终端编码助手 CLI（DeepSeek 驱动�
 │  models.ts  模型表  │          │  read.ts   3 个只读工具       │
 │  tokenizer.ts 估算 │          │  edit.ts   SEARCH/REPLACE     │
 └─────────┬──────────┘          │  shell.ts  白名单+审批+超时   │
+          │                     │  knowledge.ts knowledge_* 5 工具│
+          │                     │  spawn.ts  spawn_subagent     │
           │                     └──────────┬───────────────────┘
 ┌─────────▼─────────────────────────────────▼─────────────────┐
 │ balance/ 余额查询（src/balance/，v3.1）                       │
@@ -315,6 +319,7 @@ concertoai/
 │   │   ├── modals.tsx    ApprovalModal + EditConfirm/ShellConfirm/PlanConfirm
 │   │   ├── SessionPicker.tsx 会话列表交互选择（-r 无 ID）
 │   │   ├── ObservabilityPanel.tsx Agent 协作流程树面板（v3.0 M5，可展开/收起）
+│   │   ├── ReviewReport.tsx /review 审查报告组件（v2.1，问题分级渲染）
 │   │   ├── Spinner.tsx   Braille 进度指示
 │   │   └── StatusBar.tsx 模型名/token（真实 usage/估算）/成本（costFor 实时计算）
 │   ├── loop/
@@ -339,6 +344,7 @@ concertoai/
 │   │   ├── read.ts       read_file/search_content/list_directory + resolveSafe（BOM 剥离）
 │   │   ├── edit.ts       edit_file：SEARCH 规范化匹配（CRLF）、保留换行风格、审批后落盘、快照（v1.1）
 │   │   ├── shell.ts      run_command：白名单免审、每次审批、超时杀进程树、输出截断
+│   │   ├── knowledge.ts knowledge_* 5 工具（知识图谱，v2.1 详见 §4 D28）
 │   │   └── spawn.ts      spawn_subagent 工具工厂（子代理调用，v2.0）
 │   ├── mcp/              MCP 协议客户端（v1.1 新增，详见 §4 D20）
 │   │   ├── client.ts     stdio transport（握手/请求/响应/超时）
@@ -405,7 +411,7 @@ concertoai/
 │       ├── zh.ts         中文字典 + fmt()
 │       ├── en.ts         英文字典（键与 zh 同构）
 │       └── index.ts      resolveLocale / setLocale / t() / DICTS
-└── tests/                镜像 src 结构（63 个文件 / 699 用例），含 tests/mcp/、tests/planner/、tests/knowledge/、tests/reviewer/、tests/skill/、tests/agent/、tests/orchestrator/、tests/agents/、tests/market/、tests/observable/、tests/e2e/ 等
+└── tests/                镜像 src 结构（69 个文件 / 750 用例），含 tests/agent/、tests/agents/、tests/balance/、tests/cli/、tests/core/、tests/e2e/、tests/i18n/、tests/knowledge/、tests/loop/、tests/market/、tests/mcp/、tests/model/、tests/observable/、tests/orchestrator/、tests/planner/、tests/reviewer/、tests/skill/、tests/store/、tests/tools/、tests/ui/ 等
 ```
 
 ## 6. 5分钟快速体验
@@ -545,14 +551,20 @@ npm run verify     # 验收：build + lint + typecheck + test（--silent）
 | 多 Agent 协作不可观测 | ✅ 调用链追踪（TraceStore LRU）+ 审计日志（AuditLogger JSONL <10ms）+ 流程树面板 | `observable/` + `ui/ObservabilityPanel.tsx` |
 
 ### 8.6 v2.2 已解决
+
 | 问题 | 状态 | 位置 |
 | --- | --- | --- |
 | 高峰时段 API 成本高且无法干预 | ✅ 高峰时段检测（工作日 9-12 / 14-18）+ 模型自动切换：peakTimeStrategy=ask/switch/ignore，可切到本地 ollama 模型（成本按 0 展示） | `core/` + `store/config.ts` + `cli/index.ts` + `cli/chat.tsx` + `ui/App.tsx` |
 
-### 8.7 规划（v3.1+）
+### 8.7 规划（v3.1+，详见 [v3.1-dev-plan-ai.md](../03-开发计划与任务/v3.1-dev-plan-ai.md)）
 
-- **能力**：Reviewer autoFix 落地（自动修正回滚）、Agent 间点对点通信评估、插件市场、DAG 工作流可视化编辑
-- **工程**：TypeScript 7（原生）评估；沙箱容器隔离（Docker/K8s）评估；依赖持续升级
+- **P0 AI 自我修复闭环（M1）**：`src/loop/self-heal.ts` —— verify 四段（build/lint/typecheck/test）统一分类（复用 `agents/qa.ts` `parseVerifyOutput`）→ lint 确定性 `lint:fix` / 简单类型错误模型修复（审批）→ SnapshotManager 快照 + 修复后 verify + 失败回滚 → `/self-heal` + `concertoai self-heal`
+- **P1 多项目管理（M2）**：`concertoai project add/switch/list/remove/info` + 隔离矩阵（会话目录 / 审批白名单 / MCP 服务按项目隔离，全局配置/技能/Agent 共享）
+- **P1 Orchestrator CLI 入口（M5）**：`concertoai team "<任务>"`（--dry-run 拆解预览）+ `/orchestrate` + `concertoai audit export` + `/agent update` + `/review --severity`
+- **P2 多租户登录（M3）**：`~/.concertoai/accounts/<name>/config.json`（多 API Key，git credential 模式）+ `login/logout/whoami/account switch`
+- **P2 结构化错误增强（M4）**：各工具错误带 `code` + `suggestion`（复用 M1 分类器）
+- **评估项（E1~E4）**：点对点通信 / Docker 沙箱 / 评分系统 → 否决（维持 ADR-015/020）；TS7 → 延后 v3.2；S1（外部 Agent zod→JSON Schema）→ v3.2 可选
+- **工程**：S4 trace 查询索引优化（parentTaskId → 子任务索引，消除 O(n²)）；版本归位（v2.2 + v3.1 预留功能随 v3.1.0 一并发布）
 
 ---
 
@@ -571,6 +583,9 @@ npm run verify     # 验收：build + lint + typecheck + test（--silent）
 | hunk | diff 中一个连续变更块，形如 `@@ -a,b +c,d @@`（编辑工具的审批详情即 hunk 列表） |
 | 白名单 | 用户提前授权的命令前缀（如 npm test），命中（词边界匹配）可免审批执行 |
 | parallelSafe | ToolSpec 上的字段位，标记工具可否并行执行（T3.1 起由 loop 调度消费：组内并行、审批类串行） |
+| active account | 当前生效的 API Key 账号指针（`~/.concertoai/accounts/active-account`），`whoami` 读取展示（v3.1） |
+| 项目隔离 | 多项目管理下会话/审批白名单/MCP 服务按项目分目录存储，全局配置/技能/Agent 共享（v3.1） |
+| self-heal | AI 自我修复闭环：`npm run verify` 失败 → 分类（lint/type）→ 自动修复 → 验证 → 回滚（v3.1） |
 
 ---
 

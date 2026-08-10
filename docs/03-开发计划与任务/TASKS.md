@@ -1,8 +1,8 @@
 # ConcertoAI 开发任务看板
 
-> 最后更新：2026-08-09
-> 当前里程碑：**✅ v3.0 全部完成**（24/24 任务 ✅）（v1.0: 20/20 ✅ · v1.1: 12/12 ✅ · v2.0: 15/15 ✅ · v2.1: 25/25 ✅ · v3.0: 24/24 ✅）
-> 基于：[v3.0 开发计划](./v3.0-dev-plan.md) · [v3.0 详细任务](./v3.0-dev-tasks.md)
+> 最后更新：2026-08-10
+> 当前里程碑：**🔵 v3.1 进行中**（1/27 任务 ✅ · 基线 69 文件 / 750 用例）（v1.0: 20/20 ✅ · v1.1: 12/12 ✅ · v2.0: 15/15 ✅ · v2.1: 25/25 ✅ · v3.0: 24/24 ✅ · v3.1: 1/27 🔵）
+> 基于：[v3.1 开发计划](./v3.1-dev-plan-ai.md) · [v3.1 详细任务](./v3.1-dev-tasks.md) · 历史：[v3.0 开发计划](./v3.0-dev-plan.md)
 
 ---
 
@@ -10,13 +10,13 @@
 
 | 指标 | 数值 |
 |------|------|
-| 总任务数 | 96（v1.0: 20 ✅ + v1.1: 12 ✅ + v2.0: 15 ✅ + v2.1: 25 ✅ + v3.0: 24 ✅） |
-| P0 任务 | 30（v1.1: 6 ✅ + v2.0: 5 ✅ + v2.1: 5 ✅ + v3.0: 14 ✅） |
-| P1 任务 | 30（v1.1: 6 ✅ + v2.0: 10 ✅ + v2.1: 4 ✅ + v3.0: 10 ✅） |
-| P2 任务 | 8（v2.1: 8 ✅） |
-| 待开始 | 0 |
+| 总任务数 | 123（v1.0: 20 ✅ + v1.1: 12 ✅ + v2.0: 15 ✅ + v2.1: 25 ✅ + v3.0: 24 ✅ + v3.1: 27 🔵） |
+| P0 任务 | 37（v1.1: 6 ✅ + v2.0: 5 ✅ + v2.1: 5 ✅ + v3.0: 14 ✅ + v3.1: 7 🔵） |
+| P1 任务 | 44（v1.1: 6 ✅ + v2.0: 10 ✅ + v2.1: 4 ✅ + v3.0: 10 ✅ + v3.1: 14 🔵） |
+| P2 任务 | 14（v2.1: 8 ✅ + v3.1: 6 🔵） |
+| 待开始 | 26 |
 | 进行中 | 0 |
-| 已完成 | 96 |
+| 已完成 | 97 |
 | 已阻塞 | 0 |
 
 ---
@@ -51,6 +51,13 @@
 | **V3.0-M4 Agent 市场基础** | **P1** | **4** | ✅ 已完成 |
 | **V3.0-M5 可观测性面板** | **P1** | **3** | ✅ 已完成 |
 | **V3.0-M6 集成测试与文档** | **P1** | **3** | ✅ 已完成 |
+| **V3.1-M0 启动前置（版本归位 + 基线校准）** | **P0** | **2** | 🟡 进行中（T0.1 ✅） |
+| **V3.1-M1 AI 自我修复闭环** | **P0** | **5** | ⬜ 待开始 |
+| **V3.1-M2 多项目管理** | **P1** | **5** | ⬜ 待开始 |
+| **V3.1-M3 多租户登录** | **P2** | **4** | ⬜ 待开始 |
+| **V3.1-M4 结构化错误增强** | **P2** | **2** | ⬜ 待开始 |
+| **V3.1-M5 Orchestrator CLI 入口 + 运维命令补全** | **P1** | **5** | ⬜ 待开始 |
+| **V3.1-M6 集成测试与文档** | **P1** | **4** | ⬜ 待开始 |
 
 ---
 
@@ -735,7 +742,7 @@
   - 涉及文件：`tests/e2e/orchestrator.test.ts`（新增）、`tests/e2e/team-loop.test.ts`（新增）、`tests/orchestrator/transaction.test.ts`（新增）、`tests/market/installer.test.ts`（新增）、`tests/observable/trace.test.ts`（新增）
   - 预估：1.5h | 实际：约 1h
   - 依赖：M1-M5 全部完成
-  - ✅ 2026-08-09 完成：E2E-1 FakeModel→Orchestrator 拆解 5 子任务→拓扑调度正确 + 并行组并发峰值 ≥2 + 聚合 5 工件；E2E-2 需求→拆解→Architect 设计 spec→闭环（approve + QA 通过）→上下文 artifacts；E2E-3 闭环超 5 次→onRollback→SnapshotManager 回滚→文件恢复任务前状态 + 快照清理；E2E-4 市场 install + promote→/agent list 识别全链路；4 个 e2e 用例 + 全量 699 用例全绿（≥440 验收通过）
+  - ✅ 2026-08-09 完成：E2E-1 FakeModel→Orchestrator 拆解 5 子任务→拓扑调度正确 + 并行组并发峰值 ≥2 + 聚合 5 工件；E2E-2 需求→拆解→Architect 设计 spec→闭环（approve + QA 通过）→上下文 artifacts；E2E-3 闭环超 5 次→onRollback→SnapshotManager 回滚→文件恢复任务前状态 + 快照清理；E2E-4 市场 install + promote→/agent list 识别全链路；4 个 e2e 用例 + 全量 750 用例全绿（v3.0 完成时 699，T0.1 基线校准；≥440 验收通过）
 
 - [x] **T6.2** 文档更新
   - 涉及文件：`README.md`（修改）、`docs/02-架构设计/ARCHITECTURE.md`（修改）、`docs/05-用户与开发指南/user-guide.md`（修改）、`docs/05-用户与开发指南/agent-dev-guide.md`（新增）、`docs/06-会议与决策记录/DECISIONS.md`（修改 — ADR-015/017~020 回填）
@@ -747,7 +754,159 @@
   - 涉及文件：`CHANGELOG.md`（修改）、`docs/03-开发计划与任务/TASKS.md`（修改）、`docs/07-测试报告.md`（修改）
   - 预估：1h | 实际：约 1h
   - 依赖：T6.2
-  - ✅ 2026-08-09 完成：CHANGELOG v3.0.0 条目（Added/Changed/Fixed，M0-M6 全部变更 + 修复原 Unreleased 格式错位）；TASKS 看板 24 个任务全部标记完成（M0-M6 全绿）；测试报告更新为 63 文件/699 用例 + v3.0 模块分层统计 + 关键场景 + 手动用例 M-23~26 + 覆盖缺口；v3.0.0 tag 待发布时打
+  - ✅ 2026-08-09 完成：CHANGELOG v3.0.0 条目（Added/Changed/Fixed，M0-M6 全部变更 + 修复原 Unreleased 格式错位）；TASKS 看板 24 个任务全部标记完成（M0-M6 全绿）；测试报告更新为 69 文件/750 用例（v3.0 完成时 63/699，T0.1 基线校准）+ v3.0 模块分层统计 + 关键场景 + 手动用例 M-23~26 + 覆盖缺口；v3.0.0 tag 待发布时打
+
+---
+
+### V3.1-M0：启动前置（P0，约 1h）
+
+- [x] **T0.1** 版本归位决策落盘 + 基线校准
+  - 涉及文件：`CHANGELOG.md`（修改 — `[Unreleased]` 标注「v2.2 + v3.1 功能随 v3.1.0 发布」）、`docs/03-开发计划与任务/TASKS.md`（修改 — 基线 750/69 校准 + v3.1 看板）、`docs/02-架构设计/ARCHITECTURE.md`（修改 — 版本基线核对）
+  - 预估：0.5h
+  - 依赖：无
+  - ✅ 2026-08-10 完成：CHANGELOG `[Unreleased]` 标注「v2.2（peak-time/model-switcher/ADR-023）+ v3.1（balance/doctor）随 v3.1.0 一并发布（不补发 v2.2.0）」；全项目基线校准为 69 文件/750 用例（AGENTS.md / 07-测试报告 / 07.3 同步，ARCHITECTURE 已一致）；版本号三处一致 3.0.0；实测 `npm test -- --silent` 69 文件/750 用例全绿
+
+- [ ] **T0.2** 审查遗留复核（S1/S2/S3/S4）
+  - 涉及文件：`docs/08-审查记录/v3.0-dev-review.md`（参考）、`src/core/peak-time.ts`（核对）、`src/core/model-switcher.ts`（核对）
+  - 预估：0.5h
+  - 依赖：T0.1
+
+### V3.1-M1：AI 自我修复闭环（P0，约 7h）
+
+- [ ] **T1.1** Verify 分类器（四段统一解析）
+  - 涉及文件：`src/loop/self-heal.ts`（新增）、`src/agents/qa.ts`（修改）
+  - 预估：1.5h
+  - 依赖：T0.2
+
+- [ ] **T1.2** 修复策略执行器
+  - 涉及文件：`src/loop/self-heal.ts`（修改）
+  - 预估：2.5h
+  - 依赖：T1.1
+
+- [ ] **T1.3** 快照与回滚
+  - 涉及文件：`src/loop/self-heal.ts`（修改）、`src/orchestrator/transaction.ts`（复用）
+  - 预估：1h
+  - 依赖：T1.1、T1.2
+
+- [ ] **T1.4** 触发入口（/self-heal + CLI）
+  - 涉及文件：`src/cli/slash/self-heal.ts`（新增）、`src/cli/index.ts`（修改）、`src/ui/App.tsx`（修改）、`src/loop/self-heal.ts`（修改）
+  - 预估：1h
+  - 依赖：T1.2、T1.3
+
+- [ ] **T1.5** M1 单元测试
+  - 涉及文件：`tests/loop/self-heal.test.ts`（新增）
+  - 预估：1h
+  - 依赖：T1.1~T1.4
+
+### V3.1-M2：多项目管理（P1，约 6h）
+
+- [ ] **T2.1** 项目注册表
+  - 涉及文件：`src/store/projects.ts`（新增）、`src/store/paths.ts`（修改）
+  - 预估：1.5h
+  - 依赖：T0.2
+
+- [ ] **T2.2** project 命令
+  - 涉及文件：`src/cli/project.ts`（新增）、`src/cli/index.ts`（修改）
+  - 预估：1.5h
+  - 依赖：T2.1
+
+- [ ] **T2.3** 项目切换（switch + -p）
+  - 涉及文件：`src/cli/project.ts`（修改）、`src/cli/index.ts`（修改）、`src/cli/chat.tsx`（修改）
+  - 预估：1.5h
+  - 依赖：T2.1、T2.2
+
+- [ ] **T2.4** 隔离矩阵落地
+  - 涉及文件：`src/store/paths.ts`（修改）、`src/store/session.ts`（修改）、`src/tools/shell.ts`（修改）、`src/mcp/manager.ts`（修改）
+  - 预估：1h
+  - 依赖：T2.1、T2.3
+
+- [ ] **T2.5** M2 单元测试
+  - 涉及文件：`tests/store/projects.test.ts`（新增）、`tests/cli/project.test.ts`（新增）、`tests/store/session.test.ts`（修改）、`tests/tools/shell.test.ts`（修改）
+  - 预估：0.5h
+  - 依赖：T2.1~T2.4
+
+### V3.1-M3：多租户登录（P2，约 4h）
+
+- [ ] **T3.1** accounts 存储
+  - 涉及文件：`src/store/accounts.ts`（新增）、`src/store/paths.ts`（修改）
+  - 预估：1.5h
+  - 依赖：T0.2
+
+- [ ] **T3.2** account 命令
+  - 涉及文件：`src/cli/account.ts`（新增）、`src/cli/index.ts`（修改）
+  - 预估：1.5h
+  - 依赖：T3.1
+
+- [ ] **T3.3** API Key 解析接入
+  - 涉及文件：`src/cli/index.ts`（修改）、`src/cli/common.ts`（修改）、`src/cli/doctor.ts`（修改）
+  - 预估：0.5h
+  - 依赖：T3.1、T3.2
+
+- [ ] **T3.4** M3 单元测试
+  - 涉及文件：`tests/store/accounts.test.ts`（新增）、`tests/cli/account.test.ts`（新增）
+  - 预估：0.5h
+  - 依赖：T3.1~T3.3
+
+### V3.1-M4：结构化错误增强（P2，约 1h）
+
+- [ ] **T4.1** 统一错误结构 + 补齐建议
+  - 涉及文件：`src/tools/registry.ts`（修改）、`src/tools/read.ts`（修改）、`src/tools/edit.ts`（修改）、`src/tools/shell.ts`（修改）、`src/loop/loop.ts`（修改）
+  - 预估：0.5h
+  - 依赖：T1.2
+
+- [ ] **T4.2** M4 单元测试
+  - 涉及文件：`tests/loop/error-reporting.test.ts`（新增）
+  - 预估：0.5h
+  - 依赖：T4.1
+
+### V3.1-M5：Orchestrator CLI 入口 + 运维命令补全（P1，约 4h）
+
+- [ ] **T5.1** concertoai team 命令
+  - 涉及文件：`src/cli/team.ts`（新增）、`src/cli/index.ts`（修改）、`src/agents/orchestrator.ts`（复用）、`src/orchestrator/loop.ts`（复用）、`src/orchestrator/transaction.ts`（复用）
+  - 预估：1.5h
+  - 依赖：T0.2
+
+- [ ] **T5.2** /orchestrate 斜杠命令
+  - 涉及文件：`src/cli/slash/orchestrate.ts`（新增）、`src/ui/App.tsx`（修改）
+  - 预估：1h
+  - 依赖：T5.1
+
+- [ ] **T5.3** concertoai audit export
+  - 涉及文件：`src/cli/audit.ts`（新增）、`src/cli/index.ts`（修改）、`src/observable/audit.ts`（复用）
+  - 预估：0.5h
+  - 依赖：T0.2
+
+- [ ] **T5.4** /agent update + /review --severity
+  - 涉及文件：`src/cli/slash/agent.ts`（修改）、`src/cli/slash/review.ts`（修改）、`src/reviewer/engine.ts`（修改）
+  - 预估：0.5h
+  - 依赖：T0.2
+
+- [ ] **T5.5** M5 单元测试
+  - 涉及文件：`tests/cli/team.test.ts`（新增）、`tests/cli/audit.test.ts`（新增）、`tests/cli/slash/orchestrate.test.ts`（新增）、`tests/cli/slash/agent.test.ts`（修改）、`tests/cli/slash/review.test.ts`（修改）
+  - 预估：0.5h
+  - 依赖：T5.1~T5.4
+
+### V3.1-M6：集成测试与文档（P1，约 4h）
+
+- [ ] **T6.1** E2E 集成测试
+  - 涉及文件：`tests/e2e/team-cli.test.ts`（新增）、`tests/e2e/self-heal.test.ts`（新增）、`tests/e2e/project-isolation.test.ts`（新增）
+  - 预估：1h
+  - 依赖：M1-M5 全部完成
+
+- [ ] **T6.2** 文档更新
+  - 涉及文件：`README.md`（修改）、`docs/05-用户与开发指南/user-guide.md`（修改）、`docs/02-架构设计/ARCHITECTURE.md`（修改）、`CHANGELOG.md`（修改）
+  - 预估：1.5h
+  - 依赖：T6.1
+
+- [ ] **T6.3** 收尾：S4 优化 + 预留功能条目 + ADR 记录
+  - 涉及文件：`src/observable/trace.ts`（修改）、`docs/05-用户与开发指南/user-guide.md`（修改）、`docs/06-会议与决策记录/DECISIONS.md`（修改 — ADR-024~028）
+  - 预估：1h
+  - 依赖：T6.2
+
+- [ ] **T6.4** 测试报告落盘
+  - 涉及文件：`docs/07.4-手工测试报告-v3.1.md`（新增）
+  - 预估：0.5h
+  - 依赖：T6.3
 
 ---
 
@@ -810,9 +969,10 @@
 | 2026-08-09 | **V3.0-M2 完成**：T2.1-T2.3 状态机 + 调度器 + Orchestrator 核心（27/26/13 测试，591 全绿） | Carbon Code |
 | 2026-08-09 | **V3.0-M3 完成**：T3.1-T3.6 多角色 Agent 团队 + 事务回滚（architect/coder/reviewer/qa + runTeamLoop + SnapshotManager，614 全绿） | Carbon Code |
 | 2026-08-09 | **V3.0-M4 完成**：T4.1-T4.4 Agent 市场基础（注册表/安装器//agent 命令/promote，680 全绿） | Carbon Code |
-| 2026-08-09 | **V3.0-M5 完成**：T5.1-T5.3 可观测性（TraceStore + AuditLogger + 面板，699 全绿） | Carbon Code |
-| 2026-08-09 | **V3.0-M6 完成**：T6.1-T6.3 集成测试 + 文档 + 收尾（4 E2E / README / 架构文档 / 用户手册 / Agent 开发指南 / ADR-015~020 / CHANGELOG / 测试报告，699 全绿） | Carbon Code |
+| 2026-08-09 | **V3.0-M5 完成**：T5.1-T5.3 可观测性（TraceStore + AuditLogger + 面板，699 全绿 → T0.1 校准 750） | Carbon Code |
+| 2026-08-09 | **V3.0-M6 完成**：T6.1-T6.3 集成测试 + 文档 + 收尾（4 E2E / README / 架构文档 / 用户手册 / Agent 开发指南 / ADR-015~020 / CHANGELOG / 测试报告，699 全绿 → T0.1 校准 750） | Carbon Code |
 | 2026-08-09 | **V3.0 手工测试报告**：新增 `docs/07.3-手工测试报告-v3.0.md`（六大核心功能 18 项 + v2.1 回归 12 项 + 参考脚本 + 已知问题 5 条） | Carbon Code |
+| 2026-08-10 | **V3.1-M0 启动（T0.1 完成）**：版本归位决策落盘（v2.2 + v3.1 随 v3.1.0 一并发布，不补发 v2.2.0）+ 全项目基线校准（69 文件 / 750 用例）+ v3.1 任务看板建立（27 任务 / 7 里程碑） | Carbon Code |
 
 ---
 

@@ -178,7 +178,7 @@ v3.0.0 已完成（多 Agent 协作 / Orchestrator）：
 - ✅ Orchestrator 中介模式 + 显式上下文（ADR-015/016 / AgentMessage / AgentDef / AgentRegistry / AgentContext）
 - ✅ 4 角色 Agent 团队（Architect/Coder/Reviewer/QA）+ 对抗性闭环（MAX_LOOP_ATTEMPTS=5）
 - ✅ 多文件事务回滚（SnapshotManager）+ Agent 市场（/agent）+ 可观测性（TraceStore/AuditLogger）
-- ✅ 全量 24 任务落地 · 63 文件 706 用例全绿 · v3.0.0 tag 已打（7f477a5）
+- ✅ 全量 24 任务落地 · 69 文件 750 用例全绿（v2.2/v3.1 预留功能已并入基线）· v3.0.0 tag 已打（7f477a5）
 
 ## 发布门检查清单
 2.0.0 发布前已全部通过：
@@ -194,7 +194,7 @@ v3.0.0 已完成（多 Agent 协作 / Orchestrator）：
 
 v3.0.0 发布门检查（当前）：
 
-☑ npm run verify 全绿（706 用例 / 63 测试文件）
+☑ npm run verify 全绿（750 用例 / 69 测试文件，v3.0 基线校准 T0.1）
 ☑ 版本号一致性核对（package.json / src/version.ts / tests/smoke.test.ts = 3.0.0）
 ☑ 踩坑记录已归档（docs/09-踩坑记录/：I1 版本号不同步、I2 Reviewer 上下文丢失）
 ☑ v3.0.0 tag 已打（7f477a5）

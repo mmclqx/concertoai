@@ -8,6 +8,8 @@
 
 ## [Unreleased]
 
+> **版本归位（2026-08-10 · T0.1）**：本区块同时包含 v2.2（peak-time / model-switcher / ADR-023，智能成本控制）与 v3.1（balance / doctor 等预留功能）两组未发布变更，均**随 v3.1.0 一并发布**（不补发 v2.2.0，理由见 `docs/03-开发计划与任务/v3.1-dev-plan-ai.md` §9——避免两套 Unreleased 并存；两主题同为「成本控制 + 日常体验」）。发布时整块移入 `## [3.1.0]` 条目。
+
 ### Added — v3.1
 
 - **`concertoai balance` 命令**：查询 DeepSeek 账户余额（官方 `GET /user/balance`），按币种输出总额/赠送/充值；新模块 `src/balance/`（`fetchBalance` + `BalanceError` + 15s 超时）
