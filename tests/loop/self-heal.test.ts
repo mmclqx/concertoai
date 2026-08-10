@@ -21,6 +21,7 @@ import {
   parseVerifyReport,
   type RepairVerifyOptions,
   repairVerifyReport,
+  runSelfHeal,
 } from '../../src/loop/self-heal';
 import type { ModelClient } from '../../src/model/client';
 import { SnapshotManager } from '../../src/orchestrator/transaction';
@@ -68,6 +69,30 @@ const AFTER_INTRO = verifyOutput([
   ['lint', 'All checks passed.'],
   ['typecheck', "src/foo.ts(5,3): error TS2322: Type 'number' is not assignable to type 'string'."],
   ['test', 'Test Files  1 passed (1)'],
+]);
+
+/** build 失败（tsup）：无 file/line，仅 message。 */
+const BUILD_FAIL = verifyOutput([
+  ['build', 'CLI Build Error: RollupError: Could not resolve "./missing" from src/index.ts'],
+  ['lint', 'All checks passed.'],
+  ['typecheck', ''],
+  ['test', 'Test Files  1 passed (1)'],
+]);
+
+/** test 失败（vitest FAIL 段）：FAIL 文件行 + ✗ 用例名 + AssertionError。 */
+const TEST_FAIL = verifyOutput([
+  ['build', 'Build success.'],
+  ['lint', 'All checks passed.'],
+  ['typecheck', ''],
+  [
+    'test',
+    [
+      'Test Files  1 failed (1)',
+      '  FAIL src/foo.test.ts',
+      '  ✗ 加法应该正确',
+      'AssertionError: expected 1 to be 2',
+    ].join('\n'),
+  ],
 ]);
 
 // ── 工具 ──────────────────────────────────────────────────────
@@ -141,6 +166,28 @@ describe('self-heal 分类器（T1.1）', () => {
       line: 1,
       code: 'lint/suspicious/noExplicitAny',
     });
+  });
+
+  it('build 段 tsup 失败 → stage=build（file/line 为空）', () => {
+    const r = parseVerifyReport(BUILD_FAIL.stdout, BUILD_FAIL.stderr);
+    expect(r.passed).toBe(false);
+    expect(r.errors).toHaveLength(1);
+    expect(r.errors[0]).toMatchObject({ stage: 'build' });
+    expect(r.errors[0]?.file).toBeUndefined();
+    expect(r.errors[0]?.line).toBeUndefined();
+    expect(r.errors[0]?.message).toContain('RollupError');
+  });
+
+  it('test 段 vitest FAIL → stage=test + TEST_FAIL code', () => {
+    const r = parseVerifyReport(TEST_FAIL.stdout, TEST_FAIL.stderr);
+    expect(r.passed).toBe(false);
+    expect(r.errors).toHaveLength(1);
+    expect(r.errors[0]).toMatchObject({
+      stage: 'test',
+      file: 'src/foo.test.ts',
+      code: 'TEST_FAIL',
+    });
+    expect(r.errors[0]?.message).toContain('加法应该正确');
   });
 });
 
@@ -344,5 +391,86 @@ describe('self-heal 快照与回滚（T1.3）', () => {
     const first = result.attempts[0];
     expect(first?.rolledBack).toBeUndefined();
     expect(first?.rollbackReason).toContain('未启用快照');
+  });
+
+  it('修复超限：连续失败达上限 → exceeded=true + 结构化反馈转人工', async () => {
+    const original = `import { foo } from './foo';\n${FIX.search}\n`;
+    const { cwd, fooPath } = await makeWorkspace(original);
+    const snapshots = new SnapshotManager(cwd);
+    const options: RepairVerifyOptions = {
+      cwd,
+      client: fakeClient(FIX.json),
+      model: 'deepseek-test',
+      requestApproval: () => true,
+      snapshots,
+      // 模型修复后 verify 始终报同一个错误（修复永远无效）
+      runVerify: async () => TYPE_MISSING_IMPORT,
+      runLintFix: async () => ({ ok: true }),
+      log: () => {},
+    };
+    const initial = parseVerifyReport(TYPE_MISSING_IMPORT.stdout, TYPE_MISSING_IMPORT.stderr);
+    const result = await repairVerifyReport(initial, options);
+    expect(result.passed).toBe(false);
+    expect(result.exceeded).toBe(true);
+    // 尝试次数达到上限，每轮都是 model-fix 并回滚
+    expect(result.attempts).toHaveLength(2);
+    expect(result.attempts.every((a) => a.action === 'model-fix')).toBe(true);
+    expect(result.attempts.every((a) => a.rolledBack === true)).toBe(true);
+    // 文件最终恢复到原状（每次回滚都成功）
+    expect(await readFile(fooPath, 'utf8')).toBe(original);
+    // 快照全部清理
+    expect(await snapshots.list()).toEqual([]);
+  });
+});
+
+// ── T1.4 触发入口 runSelfHeal ─────────────────────────────────
+
+describe('self-heal 触发入口（T1.4）', () => {
+  it('verify 通过 → passed=true、无尝试、报告含「无需修复」', async () => {
+    const cwd = await mkdtemp(path.join(os.tmpdir(), 'selfheal-'));
+    const result = await runSelfHeal({
+      cwd,
+      runVerify: async () => VERIFY_PASS,
+      runLintFix: async () => ({ ok: true }),
+      log: () => {},
+    });
+    expect(result.passed).toBe(true);
+    expect(result.attempts).toHaveLength(0);
+    expect(result.report.summary).toContain('无需修复');
+  });
+
+  it('verify 失败（lint）→ 自动 lint:fix → verify 通过', async () => {
+    const cwd = await mkdtemp(path.join(os.tmpdir(), 'selfheal-'));
+    let lintFixed = false;
+    const result = await runSelfHeal({
+      cwd,
+      runVerify: async () => (lintFixed ? VERIFY_PASS : LINT_FAIL),
+      runLintFix: async () => {
+        lintFixed = true;
+        return { ok: true };
+      },
+      log: () => {},
+    });
+    expect(result.passed).toBe(true);
+    expect(result.attempts).toHaveLength(1);
+    expect(result.attempts[0]?.action).toBe('lint-fix');
+    expect(lintFixed).toBe(true);
+  });
+
+  it('无 client/model 时 type 简单错误 → 结构化反馈转人工（不崩溃）', async () => {
+    const cwd = await mkdtemp(path.join(os.tmpdir(), 'selfheal-'));
+    const result = await runSelfHeal({
+      cwd,
+      // 不传 client/model → 模型修复不可用
+      runVerify: async () => TYPE_MISSING_IMPORT,
+      runLintFix: async () => ({ ok: true }),
+      log: () => {},
+    });
+    expect(result.passed).toBe(false);
+    expect(result.exceeded).toBe(false);
+    expect(result.attempts.length).toBeGreaterThan(0);
+    // 结构化反馈包含「请手动」类建议
+    const last = result.attempts.at(-1);
+    expect(last?.feedback.some((f) => f.suggestion.includes('手动'))).toBe(true);
   });
 });

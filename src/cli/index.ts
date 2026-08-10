@@ -128,6 +128,23 @@ program
   });
 
 program
+  .command('self-heal')
+  .description('AI 自我修复闭环（v3.1 M1）：执行 npm run verify，失败自动分类→修复→验证→回滚')
+  .option('-m, --model <id>', t().cli.model.description)
+  .option('--auto-approve', '自动批准模型修复（谨慎使用；默认全部拒绝）')
+  .option('--lang <zh|en>', '界面语言')
+  .action(async (options: { model?: string; autoApprove?: boolean; lang?: string }) => {
+    const { runSelfHealCommand } = await import('./self-heal');
+    await runSelfHealCommand({
+      cwd: process.cwd(),
+      apiKey: getApiKey(),
+      model: options.model,
+      autoApprove: options.autoApprove ?? false,
+      lang: options.lang,
+    });
+  });
+
+program
   .command('balance')
   .description(t().cli.balance.description)
   .action(async () => {

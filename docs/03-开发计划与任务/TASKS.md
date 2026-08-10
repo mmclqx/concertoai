@@ -1,7 +1,7 @@
 # ConcertoAI 开发任务看板
 
 > 最后更新：2026-08-10
-> 当前里程碑：**🔵 v3.1 进行中**（5/27 任务 ✅ · 基线 69 文件 / 750 用例）（v1.0: 20/20 ✅ · v1.1: 12/12 ✅ · v2.0: 15/15 ✅ · v2.1: 25/25 ✅ · v3.0: 24/24 ✅ · v3.1: 5/27 🔵）
+> 当前里程碑：**🔵 v3.1 进行中**（7/27 任务 ✅ · 基线 69 文件 / 750 用例）（v1.0: 20/20 ✅ · v1.1: 12/12 ✅ · v2.0: 15/15 ✅ · v2.1: 25/25 ✅ · v3.0: 24/24 ✅ · v3.1: 7/27 🔵）
 > 基于：[v3.1 开发计划](./v3.1-dev-plan-ai.md) · [v3.1 详细任务](./v3.1-dev-tasks.md) · 历史：[v3.0 开发计划](./v3.0-dev-plan.md)
 
 ---
@@ -11,12 +11,12 @@
 | 指标 | 数值 |
 |------|------|
 | 总任务数 | 123（v1.0: 20 ✅ + v1.1: 12 ✅ + v2.0: 15 ✅ + v2.1: 25 ✅ + v3.0: 24 ✅ + v3.1: 27 🔵） |
-| P0 任务 | 37（v1.1: 6 ✅ + v2.0: 5 ✅ + v2.1: 5 ✅ + v3.0: 14 ✅ + v3.1: 7 🔵） |
+| P0 任务 | 37（v1.1: 6 ✅ + v2.0: 5 ✅ + v2.1: 5 ✅ + v3.0: 14 ✅ + v3.1: 7 ✅） |
 | P1 任务 | 44（v1.1: 6 ✅ + v2.0: 10 ✅ + v2.1: 4 ✅ + v3.0: 10 ✅ + v3.1: 14 🔵） |
 | P2 任务 | 14（v2.1: 8 ✅ + v3.1: 6 🔵） |
-| 待开始 | 23 |
+| 待开始 | 21 |
 | 进行中 | 0 |
-| 已完成 | 100 |
+| 已完成 | 102 |
 | 已阻塞 | 0 |
 
 ---
@@ -52,7 +52,7 @@
 | **V3.0-M5 可观测性面板** | **P1** | **3** | ✅ 已完成 |
 | **V3.0-M6 集成测试与文档** | **P1** | **3** | ✅ 已完成 |
 | **V3.1-M0 启动前置（版本归位 + 基线校准）** | **P0** | **2** | ✅ 已完成 |
-| **V3.1-M1 AI 自我修复闭环** | **P0** | **5** | 🟡 进行中（T1.1/T1.2/T1.3 ✅） |
+| **V3.1-M1 AI 自我修复闭环** | **P0** | **5** | 🟢 已完成 |
 | **V3.1-M2 多项目管理** | **P1** | **5** | ⬜ 待开始 |
 | **V3.1-M3 多租户登录** | **P2** | **4** | ⬜ 待开始 |
 | **V3.1-M4 结构化错误增强** | **P2** | **2** | ⬜ 待开始 |
@@ -792,15 +792,17 @@
   - 依赖：T1.1、T1.2
   - ✅ 2026-08-10 完成：模型修复落盘前 `SnapshotManager.begin(taskId, [file])` + `recordWrite` 登记快照（taskId 加随机后缀防同毫秒冲突；登记失败降级跳过回滚保护）；修复后强制 verify + `diffLineStat` diff 审查（变更文件 + 每文件变更行数）；回滚判定基于错误指纹（`file:code` 忽略行号——修复后行号漂移）：目标错误未消失或引入新错误（与修复前指纹集合比较）→ `rollback()` 恢复原状；修复有效 → `commit()` 清理快照；写盘失败 / 回滚失败（外部修改检测）→ 明确报错并保留快照；`SelfHealAttempt` 新增 `rolledBack` / `rollbackReason` 字段；未启用快照时修复无效保留变更并提示人工检查；新增 12 测试（T1.1 分类器 3 + 工具 2 + T1.2 执行器 2 + T1.3 快照回滚 5），`npm run verify` 70 文件 / 762 用例全绿
 
-- [ ] **T1.4** 触发入口（/self-heal + CLI）
+- [x] **T1.4** 触发入口（/self-heal + CLI）
   - 涉及文件：`src/cli/slash/self-heal.ts`（新增）、`src/cli/index.ts`（修改）、`src/ui/App.tsx`（修改）、`src/loop/self-heal.ts`（修改）
   - 预估：1h
   - 依赖：T1.2、T1.3
+  - ✅ 2026-08-10 完成：`runSelfHeal` 主流程导出（RunSelfHealOptions 增加可注入 runVerify/runLintFix 供测试与两入口共用）；chat 内 `/self-heal` 拦截（App.tsx send 前置分支：置 streaming 阶段 + busy，修复期间状态条可见，完成后回写 assistant 消息并落盘会话）；`concertoai self-heal` CLI 子命令（src/cli/self-heal.ts 新增，非交互：`--auto-approve` 才放行模型修复，默认 fail-closed，无 TTY 可跑 lint 直修 + 结构化反馈）；同时修复历史 BUG：审批/计划审批阶段 Esc 与 Ctrl+C 不再退出应用而是拒绝当前操作（fail-closed），流式生成中 Esc 与 Ctrl+C 一致为中断生成不退出，仅 idle 态 Esc 退出（src/ui/App.tsx useInput，配套 4 个 UI 测试）
 
-- [ ] **T1.5** M1 单元测试
-  - 涉及文件：`tests/loop/self-heal.test.ts`（新增）
+- [x] **T1.5** M1 单元测试
+  - 涉及文件：`tests/loop/self-heal.test.ts`（新增）、`tests/cli/slash-self-heal.test.ts`（新增）、`tests/ui/app.test.tsx`（修改）
   - 预估：1h
   - 依赖：T1.1~T1.4
+  - ✅ 2026-08-10 完成：新增 build 段（tsup 失败）+ test 段（vitest FAIL + ✗ 用例名）分类器样本；修复超限（连续失败 2 次 → exceeded=true + 每轮 model-fix 回滚 + 文件复原 + 快照清理）；runSelfHeal 触发入口 3 用例（verify 通过 / lint 直修闭环 / 无 client 时结构化反馈不崩溃）；slash-self-heal 9 用例（parse 识别 + execute 注入 runVerify/runLintFix + formatSelfHealReport 三类报告）；App 审批 Esc/Ctrl+C 行为 4 用例；`npm run verify` 71 文件 / 781 用例全绿
 
 ### V3.1-M2：多项目管理（P1，约 6h）
 

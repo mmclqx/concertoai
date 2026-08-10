@@ -10,6 +10,8 @@
  * - 快照与回滚（T1.3）：模型修复落盘前用 `SnapshotManager` 登记快照（begin + recordWrite），
  *   修复后强制 verify + diff 审查（变更文件 + 变更行数）；目标错误未消失或引入新错误 →
  *   rollback 恢复原状；修复有效 → commit 清理快照；回滚失败（外部修改）→ 报错保留快照。
+ * - 触发入口（T1.4）：`runSelfHeal` 主流程（执行 verify → 失败走 M1 闭环）供两入口共用——
+ *   chat 内 `/self-heal` 斜杠命令（App.tsx 拦截）与 `concertoai self-heal` CLI（非交互）。
  *
  * 设计（分类器）：
  * - 复用 `src/agents/qa.ts` 的 `parseVerifyOutput` 解析 vitest（test）段；
@@ -31,7 +33,7 @@ import { z } from 'zod';
 
 import { ChildProcessQaRunner, DEFAULT_VERIFY_TIMEOUT_MS, parseVerifyOutput } from '../agents/qa';
 import type { ModelClient } from '../model/client';
-import type { SnapshotManager } from '../orchestrator/transaction';
+import { SnapshotManager } from '../orchestrator/transaction';
 import { planEdit } from '../tools/edit';
 import type { ApprovalRequest } from '../tools/registry';
 import { shellTool } from '../tools/shell';
@@ -787,4 +789,65 @@ export async function runLintFixCommand(cwd: string): Promise<{ ok: boolean }> {
     { cwd, allowlistedPrefixes: ['npm run lint:fix'] },
   );
   return { ok: result.ok };
+}
+
+// ══════════════════════════════════════════════════════════════
+// T1.4 触发入口：runSelfHeal 主流程（/self-heal 与 CLI 共用）
+// ══════════════════════════════════════════════════════════════
+
+/** runSelfHeal 选项。 */
+export interface RunSelfHealOptions {
+  /** 工作目录（沙箱根）。 */
+  cwd: string;
+  /** 模型客户端（type 简单错误修复；未提供则仅 lint 直修 + 结构化反馈）。 */
+  client?: ModelClient;
+  /** 模型 ID（client 存在时必须）。 */
+  model?: string;
+  /** 审批回调（模型修复前逐项确认，fail-closed；缺省拒绝）。 */
+  requestApproval?: (request: ApprovalRequest) => Promise<boolean> | boolean;
+  /** 日志输出。 */
+  log?: (message: string) => void;
+  /** 测试注入：执行 verify（缺省跑真实 `npm run verify`）。 */
+  runVerify?: () => Promise<{ stdout: string; stderr: string }>;
+  /** 测试注入：执行 lint:fix（缺省走 shell 白名单 `npm run lint:fix`）。 */
+  runLintFix?: () => Promise<{ ok: boolean }>;
+}
+
+/**
+ * 触发入口主流程（T1.4）：执行 `npm run verify` → 通过则直接返回；
+ * 失败则自动走 M1 闭环（分类 → 修复 → 验证 → 回滚），全程启用快照保护。
+ *
+ * 供两入口共用：
+ * - chat 内 `/self-heal` 斜杠命令（App.tsx 拦截 → executeSelfHealCommand）；
+ * - `concertoai self-heal` CLI（非交互，src/cli/self-heal.ts）。
+ */
+export async function runSelfHeal(options: RunSelfHealOptions): Promise<RepairVerifyResult> {
+  const log = options.log ?? (() => {});
+  // 测试注入优先；缺省走生产实现（spawn npm run verify / shell 白名单 lint:fix）
+  const runVerify =
+    options.runVerify ??
+    ((): Promise<{ stdout: string; stderr: string }> => runVerifyCommand(options.cwd));
+  const runLintFix =
+    options.runLintFix ?? ((): Promise<{ ok: boolean }> => runLintFixCommand(options.cwd));
+
+  log('[self-heal] 执行 npm run verify …');
+  const initial = await runVerifyAndParse({ cwd: options.cwd, runVerify, runLintFix, log });
+  if (initial.passed) {
+    log(initial.summary);
+    return { passed: true, report: initial, attempts: [], exceeded: false };
+  }
+
+  log(`[self-heal] ${initial.summary}`);
+  const snapshots = new SnapshotManager(options.cwd);
+  const result = await repairVerifyReport(initial, {
+    cwd: options.cwd,
+    runVerify,
+    runLintFix,
+    client: options.client,
+    model: options.model,
+    requestApproval: options.requestApproval,
+    snapshots,
+    log,
+  });
+  return result;
 }

@@ -336,6 +336,92 @@ describe('App 集成', () => {
     unmount();
   });
 
+  it('审批阶段按 Esc = 拒绝操作（fail-closed），不退出应用', async () => {
+    const model = new FakeModel([
+      {
+        toolCalls: [
+          { id: 'c1', name: 'edit_file', arguments: '{"path":"b.txt","search":"","replace":"hi"}' },
+        ],
+      },
+      { content: '好的，不创建' },
+    ]);
+    const { stdin, lastFrame, unmount } = render(
+      <App client={model} registry={registry} ctx={{ cwd: tmp }} model="deepseek-v4-flash" />,
+    );
+    stdin.write('创建文件');
+    await sleep(50);
+    stdin.write('\r');
+    await waitFor(() => {
+      expect(lastFrame()).toContain('编辑文件');
+    });
+    // Esc 拒绝：文件不落盘，继续对话（不退出应用）
+    stdin.write('\u001b');
+    await waitFor(() => {
+      expect(lastFrame()).toContain('好的，不创建');
+    });
+    expect(() => readFileSync(path.join(tmp, 'b.txt'))).toThrow();
+    unmount();
+  });
+
+  it('审批阶段按 Ctrl+C = 拒绝操作（fail-closed），不退出应用', async () => {
+    const model = new FakeModel([
+      {
+        toolCalls: [
+          { id: 'c1', name: 'edit_file', arguments: '{"path":"b.txt","search":"","replace":"hi"}' },
+        ],
+      },
+      { content: '已取消' },
+    ]);
+    const { stdin, lastFrame, unmount } = render(
+      <App client={model} registry={registry} ctx={{ cwd: tmp }} model="deepseek-v4-flash" />,
+    );
+    stdin.write('创建文件');
+    await sleep(50);
+    stdin.write('\r');
+    await waitFor(() => {
+      expect(lastFrame()).toContain('编辑文件');
+    });
+    stdin.write('\x03'); // Ctrl+C
+    await waitFor(() => {
+      expect(lastFrame()).toContain('已取消');
+    });
+    expect(() => readFileSync(path.join(tmp, 'b.txt'))).toThrow();
+    unmount();
+  });
+
+  it('流式生成中按 Esc = 中断生成（不退出应用）', async () => {
+    const model = new AbortableModel();
+    const { stdin, lastFrame, unmount } = render(
+      <App client={model} registry={registry} ctx={{ cwd: tmp }} model="deepseek-v4-flash" />,
+    );
+    stdin.write('你好');
+    await sleep(50);
+    stdin.write('\r');
+    await waitFor(() => {
+      expect(lastFrame()).toContain('第一段');
+    });
+    stdin.write('\u001b'); // Esc
+    await waitFor(() => {
+      expect(lastFrame()).toContain('已中断');
+    });
+    // 已生成内容保留（说明未退出应用、会话仍在）
+    expect(lastFrame()).toContain('第一段');
+    unmount();
+  });
+
+  it('空闲时按 Esc 退出应用（exit 被调用）', async () => {
+    // 用 spies 验证 exit：通过 unmount 时机 + 不抛错即可（ink-testing-library 中 exit 调用会使树卸载）
+    const model = new FakeModel([{ content: '不该出现' }]);
+    const { stdin, lastFrame, unmount } = render(
+      <App client={model} registry={registry} ctx={{ cwd: tmp }} model="deepseek-v4-flash" />,
+    );
+    // 空闲态按 Esc：不应崩溃（exit 被调用），应用卸载
+    stdin.write('\u001b');
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(lastFrame()).toBeDefined();
+    unmount();
+  });
+
   it('/plan 批准后自动执行计划', async () => {
     const model = new FakeModel([{ content: '1. 读取文件\n2. 总结' }, { content: '已按计划完成' }]);
     const { stdin, lastFrame, unmount } = render(

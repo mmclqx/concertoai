@@ -10,6 +10,7 @@ import {
 import { executeMcpCommand, parseMcpCommand } from '../cli/slash/mcp';
 import { executeMemoryCommand, parseMemoryCommand } from '../cli/slash/memory';
 import { executeReviewCommand, parseReviewCommand } from '../cli/slash/review';
+import { executeSelfHealCommand, parseSelfHealCommand } from '../cli/slash/self-heal';
 import {
   executeSkillCommand,
   executeSkillMarketCommand,
@@ -827,6 +828,41 @@ export function App({
         }
       }
 
+      // v3.1 M1 T1.4：/self-heal 命令 → 执行 npm run verify → 失败自动走 M1 闭环
+      // （分类 → 修复 → 验证 → 回滚）。修复期间置 streaming 阶段，状态条可见，不阻塞主对话流。
+      if (parseSelfHealCommand(trimmed)) {
+        setInput('');
+        setTokens((t) => ({ ...t, input: t.input + estimateTokens(text) }));
+        setMessages((prev) => [...prev, { role: 'user', content: text }]);
+        busy.current = true;
+        setError(null);
+        setStreamed('');
+        setPhase('streaming');
+        setActiveTool({ id: 'self-heal', name: 'self-heal', arguments: '{}' });
+        try {
+          const result = await executeSelfHealCommand(ctxWithApproval, {
+            client,
+            model,
+            requestApproval,
+          });
+          const msg: ChatMessage = { role: 'assistant', content: result.message };
+          setMessages((prev) => [...prev, msg]);
+          setTokens((t) => ({ ...t, output: t.output + estimateTokens(result.message) }));
+          if (store !== undefined && sessionId !== undefined) {
+            store.append(sessionId, msg).catch(() => {});
+          }
+        } catch (err) {
+          setError(err instanceof Error ? err.message : String(err));
+        } finally {
+          abortRef.current = null;
+          setActiveTool(null);
+          setStreamed('');
+          setPhase('idle');
+          busy.current = false;
+        }
+        return;
+      }
+
       if (trimmed.startsWith('/plan')) {
         await sendPlan(trimmed.slice('/plan'.length).trim());
         return;
@@ -928,6 +964,7 @@ export function App({
       agentRegistry,
       traceStore,
       auditLogger,
+      requestApproval,
     ],
   );
 
@@ -939,7 +976,8 @@ export function App({
         setPlan(null);
         setPhase('idle');
         void executePlan(task, planText);
-      } else if (input === 'n') {
+      } else if (input === 'n' || key.escape || (input === 'c' && key.ctrl)) {
+        // v3.1 BUG 修复：计划审批阶段 Esc / Ctrl+C = 拒绝计划（fail-closed），不退出应用
         setPlan(null);
         setPhase('idle');
         setError(t().plan.rejected);
@@ -952,7 +990,8 @@ export function App({
         approvalResolver.current = null;
         setPending(null);
         setPhase('idle');
-      } else if (input === 'n') {
+      } else if (input === 'n' || key.escape || (input === 'c' && key.ctrl)) {
+        // v3.1 BUG 修复：审批阶段 Esc / Ctrl+C = 拒绝该操作（fail-closed），不退出应用
         approvalResolver.current?.(false);
         approvalResolver.current = null;
         setPending(null);
@@ -974,7 +1013,13 @@ export function App({
       return;
     }
     if (key.escape) {
-      exit();
+      // v3.1 BUG 修复：生成/工具执行期间 Esc 与 Ctrl+C 一致 = 中断当前生成，不退出应用；
+      // 仅空闲（idle）时按 Esc 才退出（与提示文案「Esc 退出」一致）。
+      if (phase === 'streaming') {
+        abortRef.current?.abort();
+      } else {
+        exit();
+      }
     }
   });
 
