@@ -56,6 +56,58 @@ describe('TraceStore 基础记录 / 查询', () => {
   });
 });
 
+describe('TraceStore 子任务索引（v3.1 M6 / T6.3 S4 优化）', () => {
+  it('深链（3 层）子树查询完整，且跨任务不串', () => {
+    const store = new TraceStore();
+    store.record(makeSpan({ id: 'r1', taskId: 't0' }));
+    store.record(makeSpan({ id: 'c1', taskId: 't1', parentTaskId: 't0' }));
+    store.record(makeSpan({ id: 'g1', taskId: 't2', parentTaskId: 't1' }));
+    store.record(makeSpan({ id: 'g2', taskId: 't3', parentTaskId: 't1' }));
+    store.record(makeSpan({ id: 'x1', taskId: 't9', parentTaskId: 'other' }));
+
+    const chain = store.queryByTaskId('t0');
+    expect(chain.map((s) => s.id).sort()).toEqual(['c1', 'g1', 'g2', 'r1']);
+    // 不相关的 t9 不出现
+    expect(chain.some((s) => s.taskId === 't9')).toBe(false);
+  });
+
+  it('id 覆盖且父子关系变化 → 索引同步更新（旧子树不再命中）', () => {
+    const store = new TraceStore();
+    store.record(makeSpan({ id: 'm1', taskId: 't1', parentTaskId: 't0' }));
+    store.record(makeSpan({ id: 'm1', taskId: 't1', parentTaskId: 't9' })); // 改挂到 t9 下
+    expect(store.queryByTaskId('t0')).toHaveLength(0);
+    expect(store.queryByTaskId('t9').map((s) => s.id)).toEqual(['m1']);
+  });
+
+  it('LRU 淘汰时索引同步移除（被淘汰的子任务不再命中子树查询）', () => {
+    const store = new TraceStore(2);
+    store.record(makeSpan({ id: 'p', taskId: 't0' }));
+    store.record(makeSpan({ id: 'c', taskId: 't1', parentTaskId: 't0' }));
+    store.record(makeSpan({ id: 'x', taskId: 't9' })); // 淘汰 p（最旧）
+    // p 被淘汰，但 c 仍以 t0 为 parentTaskId（c 自身仍被记录）
+    const chain = store.queryByTaskId('t0');
+    expect(chain.map((s) => s.id)).toEqual(['c']);
+  });
+
+  it('大量父子记录（5000 条）子树查询结果完整（O(n) 语义冒烟）', () => {
+    const store = new TraceStore(10_000);
+    for (let i = 0; i < 5_000; i++) {
+      const parent = i === 0 ? 'root' : `t${i - 1}`;
+      store.record(
+        makeSpan({
+          id: `m${i}`,
+          taskId: `t${i}`,
+          parentTaskId: parent === 'root' ? undefined : parent,
+        }),
+      );
+    }
+    const chain = store.queryByTaskId('t0'); // t0 → t1 → … → t4999
+    expect(chain.length).toBe(5_000);
+    expect(chain[0]?.taskId).toBe('t0');
+    expect(chain.at(-1)?.taskId).toBe('t4999');
+  });
+});
+
 describe('TraceStore LRU 上限', () => {
   it('超上限淘汰最旧记录', () => {
     const store = new TraceStore(3);
