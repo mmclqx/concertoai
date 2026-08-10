@@ -89,11 +89,13 @@ export async function saveAccount(
   // 原子写：临时文件 + rename（避免半写状态泄露 Key）
   const tmp = `${file}.${process.pid}.tmp`;
   await writeFile(tmp, `${JSON.stringify({ apiKey } satisfies AccountConfig, null, 2)}\n`, 'utf8');
-  try {
-    // POSIX 0600；Windows 忽略 chmod 错误（尽力而为）
-    await chmod(tmp, 0o600);
-  } catch {
-    // Windows / 不支持权限位时跳过
+  // POSIX 0600：仅非 Windows 平台执行（Windows 权限模型无 0600 语义，避免无意义调用）
+  if (process.platform !== 'win32') {
+    try {
+      await chmod(tmp, 0o600);
+    } catch {
+      // 文件系统不支持权限位（如部分网络盘）时跳过，不阻塞保存
+    }
   }
   await import('node:fs/promises').then(({ rename }) => rename(tmp, file));
   return existed ? 'overwritten' : 'created';

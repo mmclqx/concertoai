@@ -77,7 +77,7 @@ interface StageParseResult {
 
 // ── 段切分 ────────────────────────────────────────────────────
 
-/** npm 段标记：`> @concertoai/cli@3.0.0 build`（verify 内嵌各脚本）。 */
+/** npm 段标记：`> @concertoai/cli@3.1.0 build`（verify 内嵌各脚本）。 */
 const STAGE_MARKER_RE = /^>\s+@concertoai\/cli@[\d.]+\s+(build|lint|typecheck|test)\s*$/;
 
 const ALL_STAGES: readonly VerifyStage[] = ['build', 'lint', 'type', 'test'];
@@ -645,6 +645,8 @@ export async function repairVerifyReport(
           appliedFixes: [],
           feedback: [{ code: simpleType.code, suggestion: '用户拒绝了自动修复，请手动处理' }],
         });
+        // fail-closed：审批拒绝后停止所有模型修复（不再尝试其他 type 错误），
+        // 保留完整报告转人工——避免用户已表达不信任后继续自动改码。
         break;
       }
       // 审批通过 → 落盘（T1.3：落盘前登记快照，修复失败/引入新错误自动回滚）

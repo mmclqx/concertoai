@@ -20,7 +20,7 @@ import { runLoop } from '../../src/loop/loop';
 import type { ToolCall } from '../../src/loop/types';
 import type { ChatCompletionChunk, ModelClient, StreamChatParams } from '../../src/model/client';
 import { editFileTool } from '../../src/tools/edit';
-import { ToolErrorCode } from '../../src/tools/error-codes';
+import { inferErrorCode, SandboxError, ToolErrorCode } from '../../src/tools/error-codes';
 import { createKnowledgeTools } from '../../src/tools/knowledge';
 import { readFileTool } from '../../src/tools/read';
 import type { ToolContext, ToolResult, ToolSpec } from '../../src/tools/registry';
@@ -283,5 +283,25 @@ describe('ToolRepairError 渲染兼容（T4.2）', () => {
     expect(result.code).toBe('UNKNOWN_TOOL');
     expect(result.repairable).toBe(false);
     expect(result.suggestion).toContain('read_file');
+  });
+
+  it('inferErrorCode：SandboxError / ENOENT / 中文 / 英文关键词均能推断', () => {
+    // 实例识别（中文路径越界）
+    expect(inferErrorCode(new SandboxError('路径越界：../x'))).toBe('PATH_OUTSIDE_SANDBOX');
+    // ENOENT → FILE_NOT_FOUND
+    expect(inferErrorCode({ code: 'ENOENT', message: 'no such file' })).toBe('FILE_NOT_FOUND');
+    // 中文关键词
+    expect(inferErrorCode(new Error('路径越界：请使用项目目录内路径'))).toBe(
+      'PATH_OUTSIDE_SANDBOX',
+    );
+    expect(inferErrorCode(new Error('命令不存在：xx'))).toBe('COMMAND_NOT_FOUND');
+    expect(inferErrorCode(new Error('无法启动进程'))).toBe('COMMAND_NOT_FOUND');
+    // 英文关键词（en locale / 系统错误）
+    expect(inferErrorCode(new Error('path is outside sandbox'))).toBe('PATH_OUTSIDE_SANDBOX');
+    expect(inferErrorCode(new Error('outside the sandbox: ../'))).toBe('PATH_OUTSIDE_SANDBOX');
+    expect(inferErrorCode(new Error('command not found: npx'))).toBe('COMMAND_NOT_FOUND');
+    expect(inferErrorCode(new Error('spawn npx ENOENT'))).toBe('COMMAND_NOT_FOUND');
+    // 无法识别 → undefined
+    expect(inferErrorCode(new Error('unknown error'))).toBeUndefined();
   });
 });

@@ -87,10 +87,21 @@ export function inferErrorCode(error: unknown): ToolErrorCodeValue | undefined {
     return ToolErrorCode.FILE_NOT_FOUND;
   }
   if (typeof err?.message === 'string') {
-    if (err.message.includes('越界')) {
+    // 中文优先，但兼容英文关键词（en locale / 系统错误信息），避免错误码推断失效
+    const msg = err.message;
+    if (
+      msg.includes('越界') ||
+      msg.includes('outside sandbox') ||
+      msg.includes('outside the sandbox')
+    ) {
       return ToolErrorCode.PATH_OUTSIDE_SANDBOX;
     }
-    if (err.message.includes('命令不存在') || err.message.includes('无法启动')) {
+    if (
+      msg.includes('命令不存在') ||
+      msg.includes('无法启动') ||
+      msg.includes('command not found') ||
+      (msg.includes('spawn ') && msg.includes('ENOENT'))
+    ) {
       return ToolErrorCode.COMMAND_NOT_FOUND;
     }
   }
