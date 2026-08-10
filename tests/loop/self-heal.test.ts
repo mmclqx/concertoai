@@ -147,7 +147,11 @@ describe('self-heal 分类器（T1.1）', () => {
       line: 1,
       code: 'TS2304',
     });
-    expect(isSimpleTypeError(r.errors[0]!)).toBe(true);
+    const firstError = r.errors[0];
+    expect(firstError).toBeDefined();
+    if (firstError !== undefined) {
+      expect(isSimpleTypeError(firstError)).toBe(true);
+    }
   });
 
   it('全部通过输出 → passed=true 且无错误', () => {

@@ -21,7 +21,7 @@ import {
   isNested,
   normalizeProjectPath,
   ProjectRegistry,
-  ProjectRegistryError,
+  type ProjectRegistryError,
 } from '../../src/store/projects';
 
 let tmp: string;

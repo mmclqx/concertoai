@@ -30,7 +30,12 @@ export interface ProjectEntry {
   /** 项目级审批白名单（T2.4：与全局白名单合并生效）。 */
   whitelist?: string[];
   /** 项目级 MCP 服务声明（T2.4：按项目启动；缺省用全局 config.json）。 */
-  mcpServers?: Array<{ name: string; command: string; args?: string[]; env?: Record<string, string> }>;
+  mcpServers?: Array<{
+    name: string;
+    command: string;
+    args?: string[];
+    env?: Record<string, string>;
+  }>;
 }
 
 /** 注册表磁盘结构。 */
@@ -124,7 +129,9 @@ export class ProjectRegistry {
       const raw = await readFile(file, 'utf8');
       const parsed = JSON.parse(raw) as Partial<ProjectRegistryData>;
       if (parsed.schemaVersion !== PROJECTS_SCHEMA_VERSION) {
-        warnings.push(`项目注册表 schema 版本不匹配（期望 ${PROJECTS_SCHEMA_VERSION}），已重置为空注册表`);
+        warnings.push(
+          `项目注册表 schema 版本不匹配（期望 ${PROJECTS_SCHEMA_VERSION}），已重置为空注册表`,
+        );
         return new ProjectRegistry(file, emptyRegistry(), warnings);
       }
       const projects = parsed.projects ?? {};
@@ -133,7 +140,9 @@ export class ProjectRegistry {
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code;
       if (code !== 'ENOENT') {
-        warnings.push(`项目注册表读取失败，已重置为空注册表: ${err instanceof Error ? err.message : String(err)}`);
+        warnings.push(
+          `项目注册表读取失败，已重置为空注册表: ${err instanceof Error ? err.message : String(err)}`,
+        );
       }
       return new ProjectRegistry(file, emptyRegistry(), warnings);
     }
@@ -182,6 +191,27 @@ export class ProjectRegistry {
       return false;
     }
     delete this.data.projects[name];
+    return true;
+  }
+
+  /** 项目级配置更新（T2.4）：whitelist / mcpServers；项目不存在返回 false。 */
+  updateConfig(
+    name: string,
+    patch: {
+      whitelist?: string[];
+      mcpServers?: ProjectEntry['mcpServers'];
+    },
+  ): boolean {
+    const entry = this.data.projects[name];
+    if (entry === undefined) {
+      return false;
+    }
+    if (patch.whitelist !== undefined) {
+      entry.whitelist = patch.whitelist;
+    }
+    if (patch.mcpServers !== undefined) {
+      entry.mcpServers = patch.mcpServers;
+    }
     return true;
   }
 

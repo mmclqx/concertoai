@@ -1,7 +1,7 @@
 # ConcertoAI 开发任务看板
 
 > 最后更新：2026-08-10
-> 当前里程碑：**🔵 v3.1 进行中**（7/27 任务 ✅ · 基线 69 文件 / 750 用例）（v1.0: 20/20 ✅ · v1.1: 12/12 ✅ · v2.0: 15/15 ✅ · v2.1: 25/25 ✅ · v3.0: 24/24 ✅ · v3.1: 7/27 🔵）
+> 当前里程碑：**🔵 v3.1 进行中**（12/27 任务 ✅ · 基线 74 文件 / 828 用例）（v1.0: 20/20 ✅ · v1.1: 12/12 ✅ · v2.0: 15/15 ✅ · v2.1: 25/25 ✅ · v3.0: 24/24 ✅ · v3.1: 12/27 🔵）
 > 基于：[v3.1 开发计划](./v3.1-dev-plan-ai.md) · [v3.1 详细任务](./v3.1-dev-tasks.md) · 历史：[v3.0 开发计划](./v3.0-dev-plan.md)
 
 ---
@@ -14,9 +14,9 @@
 | P0 任务 | 37（v1.1: 6 ✅ + v2.0: 5 ✅ + v2.1: 5 ✅ + v3.0: 14 ✅ + v3.1: 7 ✅） |
 | P1 任务 | 44（v1.1: 6 ✅ + v2.0: 10 ✅ + v2.1: 4 ✅ + v3.0: 10 ✅ + v3.1: 14 🔵） |
 | P2 任务 | 14（v2.1: 8 ✅ + v3.1: 6 🔵） |
-| 待开始 | 21 |
+| 待开始 | 15 |
 | 进行中 | 0 |
-| 已完成 | 102 |
+| 已完成 | 107 |
 | 已阻塞 | 0 |
 
 ---
@@ -53,7 +53,7 @@
 | **V3.0-M6 集成测试与文档** | **P1** | **3** | ✅ 已完成 |
 | **V3.1-M0 启动前置（版本归位 + 基线校准）** | **P0** | **2** | ✅ 已完成 |
 | **V3.1-M1 AI 自我修复闭环** | **P0** | **5** | 🟢 已完成 |
-| **V3.1-M2 多项目管理** | **P1** | **5** | ⬜ 待开始 |
+| **V3.1-M2 多项目管理** | **P1** | **5** | 🟢 已完成 |
 | **V3.1-M3 多租户登录** | **P2** | **4** | ⬜ 待开始 |
 | **V3.1-M4 结构化错误增强** | **P2** | **2** | ⬜ 待开始 |
 | **V3.1-M5 Orchestrator CLI 入口 + 运维命令补全** | **P1** | **5** | ⬜ 待开始 |
@@ -806,30 +806,35 @@
 
 ### V3.1-M2：多项目管理（P1，约 6h）
 
-- [ ] **T2.1** 项目注册表
+- [x] **T2.1** 项目注册表
   - 涉及文件：`src/store/projects.ts`（新增）、`src/store/paths.ts`（修改）
   - 预估：1.5h
   - 依赖：T0.2
+  - ✅ 2026-08-10 完成：`ProjectRegistry`（load/save/add/remove/get/list/has + findByPath + updateConfig）读写 `~/.concertoai/projects.json`；重名抛 `PROJECT_ALREADY_EXISTS`；路径规范化（Windows 反斜杠→正斜杠，盘符大小写不敏感）；嵌套注册拒绝 `PROJECT_NESTED`（分隔符边界比较，`/foo/bar2` 不误判）；损坏 JSON / 版本不匹配 → 空注册表 + 警告（宽松读取）；原子写（临时文件 + rename）；`paths.ts` 新增 `projectsPath()`
 
-- [ ] **T2.2** project 命令
+- [x] **T2.2** project 命令
   - 涉及文件：`src/cli/project.ts`（新增）、`src/cli/index.ts`（修改）
   - 预估：1.5h
   - 依赖：T2.1
+  - ✅ 2026-08-10 完成：`concertoai project add <name> [path]`（path 缺省 cwd；重名/嵌套输出明确错误）/ `list`（表格 name/path/addedAt）/ `remove`（🗑️ 卸载不删目录）/ `info`（path/whitelist/mcpServers）；命令无副作用（add 不创建目录）；`registryFile` 可注入供测试
 
-- [ ] **T2.3** 项目切换（switch + -p）
-  - 涉及文件：`src/cli/project.ts`（修改）、`src/cli/index.ts`（修改）、`src/cli/chat.tsx`（修改）
+- [x] **T2.3** 项目切换（switch + -p）
+  - 涉及文件：`src/cli/project.ts`（修改）、`src/cli/index.ts`（修改）、`src/cli/chat.tsx`（修改）、`src/cli/common.ts`（修改 — resolveProjectForCwd / mergeAllowlist）
   - 预估：1.5h
   - 依赖：T2.1、T2.2
+  - ✅ 2026-08-10 完成：`concertoai project switch <name>` 校验存在并提示 `-p`/cd 启动；全局 `-p, --project <name>`（commander preAction hook：校验项目存在 → chdir 到项目路径 → 后续 chat/run/plan 以项目路径为 cwd 装配）；未指定 `-p` 时 `resolveProjectForCwd(cwd)` 按 cwd 精确匹配已注册项目（未匹配 → 全局默认）；`mergeAllowlist` 全局白名单 + 项目级去重合并（全局前缀 + 项目追加）；会话目录按项目隔离（`~/.concertoai/sessions/<projectKey>/`，resume/-l 天然按项目过滤）；路径统一 `path.join`/`path.resolve` 跨平台一致
 
-- [ ] **T2.4** 隔离矩阵落地
-  - 涉及文件：`src/store/paths.ts`（修改）、`src/store/session.ts`（修改）、`src/tools/shell.ts`（修改）、`src/mcp/manager.ts`（修改）
+- [x] **T2.4** 隔离矩阵落地
+  - 涉及文件：`src/store/paths.ts`（修改 — projectKeyFor / projectSessionsDir）、`src/cli/chat.tsx`（修改 — 会话目录/MCP 按项目）、`src/cli/common.ts`（修改 — 白名单合并）、`src/store/projects.ts`（修改 — updateConfig）
   - 预估：1h
   - 依赖：T2.1、T2.3
+  - ✅ 2026-08-10 完成：会话按项目分目录 `~/.concertoai/sessions/<projectKey>/`（`projectKeyFor` 项目名安全化防路径穿越：空格/中文→`_`、`.`/`..` 前缀 `p_`）；resume 列表按项目过滤；审批白名单项目级 `whitelist[]` 与全局合并生效（`mergeAllowlist` 去重，词边界匹配规则不变）；MCP 服务按项目 `mcpServers[]` 启动（`project?.mcpServers ?? resolved.mcpServers`，未配置回退全局）；无项目时行为与 v3.0 完全一致
 
-- [ ] **T2.5** M2 单元测试
-  - 涉及文件：`tests/store/projects.test.ts`（新增）、`tests/cli/project.test.ts`（新增）、`tests/store/session.test.ts`（修改）、`tests/tools/shell.test.ts`（修改）
+- [x] **T2.5** M2 单元测试
+  - 涉及文件：`tests/store/projects.test.ts`（新增）、`tests/cli/project.test.ts`（新增）、`tests/store/paths.test.ts`（修改 — projectKeyFor/projectSessionsDir）、`tests/cli/project-isolation.test.ts`（新增 — 隔离矩阵）
   - 预估：0.5h
   - 依赖：T2.1~T2.4
+  - ✅ 2026-08-10 完成：注册表 CRUD/重名/嵌套/路径规范化/宽松读取（14 用例）；命令 add/list/remove/info/switch 正常与异常路径（12 用例）；隔离矩阵项目 A/B 会话目录/白名单/MCP 互不串 + 默认模式兼容（11 用例）；`projectKeyFor`/`projectSessionsDir`（5 用例）；`npm run verify` 74 文件 / 828 用例全绿（新增 18 用例，含 M1 lint 修复后基线）
 
 ### V3.1-M3：多租户登录（P2，约 4h）
 

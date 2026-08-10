@@ -42,6 +42,27 @@ export function sessionsDir(): string {
   return path.join(globalDir(), 'sessions');
 }
 
+/**
+ * 项目会话目录 key：项目名安全化（防路径穿越，目录名只允许 [A-Za-z0-9._-]）。
+ * - 空格 / 中文 / 其他字符 → `_`；`.` / `..` 保留但前缀 `p_` 防隐藏目录；
+ * - 空名 → `unnamed`（调用方已校验非空，此处兜底）。
+ */
+export function projectKeyFor(name: string): string {
+  const safe = name.replace(/[^A-Za-z0-9._-]/g, '_');
+  if (safe === '') {
+    return 'unnamed';
+  }
+  if (safe === '.' || safe === '..') {
+    return `p_${safe}`;
+  }
+  return safe;
+}
+
+/** 项目级会话目录：~/.concertoai/sessions/<projectKey>/（T2.4 隔离矩阵）。 */
+export function projectSessionsDir(projectKey: string): string {
+  return path.join(sessionsDir(), projectKey);
+}
+
 /** 项目注册表文件：~/.concertoai/projects.json（v3.1 M2）。 */
 export function projectsPath(): string {
   return path.join(globalDir(), 'projects.json');
@@ -65,6 +86,11 @@ export function auditDir(): string {
 /** 全局 Agent 安装目录：~/.concertoai/agents/。 */
 export function globalAgentsDir(): string {
   return path.join(globalDir(), 'agents');
+}
+
+/** 崩溃日志文件：~/.concertoai/crash.log（v3.1 M3 诊断用）。 */
+export function crashLogPath(): string {
+  return path.join(globalDir(), 'crash.log');
 }
 
 /** Reviewer 全局知识库目录：~/.concertoai/reviewer/knowledge/。 */

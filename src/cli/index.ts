@@ -4,10 +4,15 @@
  */
 
 import { Command } from 'commander';
-
 import { t } from '../i18n';
-import { migrateLegacyHome } from '../store/paths';
+import { crashLogPath, migrateLegacyHome } from '../store/paths';
 import { VERSION } from '../version';
+import { installCrashHandlers } from './crash-handler';
+
+// ═══ 最早阶段：安装全局崩溃处理器（v3.1 M3 诊断） ═══
+// 必须在任何异步操作前安装，确保 uncaughtException / unhandledRejection
+// 都能被捕获并写入 ~/.concertoai/crash.log，防止"静默退出"。
+installCrashHandlers();
 
 // 启动时自动迁移旧配置目录（~/.lumen → ~/.concertoai，v3.1 起）。
 // 幂等：~/.lumen 不存在或 ~/.concertoai 已存在时无操作。
@@ -40,19 +45,58 @@ const program = new Command();
 
 program.name('concertoai').description(t().cli.description).version(VERSION);
 
+// v3.1 M2 T2.3：全局 `-p, --project <name>` —— 启动前校验项目存在并 chdir 到项目路径
+// （等价 cd 后启动）。preAction hook 在任意子命令 action 前执行，保证 chat/run/plan 等
+// 都以项目路径为 cwd 装配。未注册项目 → 报错退出（fail-closed）。
+program.option('-p, --project <name>', '按已注册项目启动（等价 cd 到项目目录）');
+program.hook('preAction', async () => {
+  const projectName = program.opts().project as string | undefined;
+  if (projectName === undefined) {
+    return;
+  }
+  const { ProjectRegistry } = await import('../store/projects');
+  const registry = await ProjectRegistry.load();
+  const entry = registry.get(projectName);
+  if (entry === undefined) {
+    console.error(
+      `❌ 项目 ${projectName} 未注册。请先运行 \`concertoai project add ${projectName} <path>\` 注册。`,
+    );
+    process.exit(1);
+  }
+  process.chdir(entry.path);
+  console.log(`✅ 已切换到项目 ${projectName}（${entry.path}）`);
+});
+
+/** 包装异步 action，捕获异常并输出到 stderr + crash.log。 */
+function safeAction(fn: () => Promise<void>): () => void {
+  return () => {
+    fn().catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      const stack = err instanceof Error ? err.stack : undefined;
+      process.stderr.write(`\n[ConcertoAI] 命令执行失败: ${msg}\n`);
+      if (stack !== undefined) {
+        process.stderr.write(`${stack}\n`);
+      }
+      process.stderr.write(`详情见 ${crashLogPath()}\n`);
+      process.exit(1);
+    });
+  };
+}
+
 // 无子命令时默认进入 chat（产品定位：cd 项目 && concertoai）
-program.action(() => {
-  // 动态导入（v2.1 性能优化）：启动阶段只加载 commander + i18n，
-  // TUI 依赖树（ink/react/ui/mcp/skill）在用户真正进入交互后才加载。
-  void import('./chat').then(async ({ runChat }) => {
+program.action(
+  safeAction(async () => {
+    // 动态导入（v2.1 性能优化）：启动阶段只加载 commander + i18n，
+    // TUI 依赖树（ink/react/ui/mcp/skill）在用户真正进入交互后才加载。
+    const { runChat } = await import('./chat');
     const model = await resolveStartupModel();
-    void runChat({
+    await runChat({
       cwd: process.cwd(),
       apiKey: getApiKey(),
       model,
     });
-  });
-});
+  }),
+);
 
 program
   .command('chat')

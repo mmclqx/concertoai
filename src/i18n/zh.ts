@@ -56,8 +56,8 @@ export const zh = {
     shellTitle: '执行命令',
     summaryEdit: '编辑文件 {path}',
     summaryShell: '执行命令: {command}',
-    confirm: '批准 (y)',
-    reject: '拒绝 (n)',
+    confirm: '批准 (y / Enter)',
+    reject: '拒绝 (n / Esc)',
   },
   prompt: {
     placeholder: '输入你的需求…（Enter 发送 / Shift+Enter 换行 / Esc 退出）',
@@ -81,7 +81,7 @@ export const zh = {
   },
   plan: {
     title: '执行计划',
-    hint: '批准计划 (y) / 拒绝 (n)',
+    hint: '批准 (y / Enter) / 拒绝 (n / Esc)',
     approved: '计划已批准，开始执行',
     rejected: '计划已拒绝，未执行',
   },

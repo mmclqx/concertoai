@@ -716,8 +716,8 @@ export async function repairVerifyReport(
               .map((e) => e.code ?? e.message)
               .slice(0, 3)
               .join(', ')}`;
-        if (txStarted) {
-          const rb = await options.snapshots!.rollback(taskId);
+        if (txStarted && snapshots !== undefined) {
+          const rb = await snapshots.rollback(taskId);
           rolledBack = rb.ok;
           rollbackReason = rb.ok
             ? reason
@@ -728,8 +728,8 @@ export async function repairVerifyReport(
           log(`[self-heal] 修复疑似无效: ${reason}（无快照，请人工检查 ${plan.file}）`);
         }
       } else {
-        if (txStarted) {
-          await options.snapshots!.commit(taskId);
+        if (txStarted && snapshots !== undefined) {
+          await snapshots.commit(taskId);
         }
         log(`[self-heal] 修复有效，已${txStarted ? '提交快照' : '保留变更'}`);
       }

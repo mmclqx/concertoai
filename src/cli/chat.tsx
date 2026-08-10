@@ -21,6 +21,7 @@ import { AuditLogger, TraceStore } from '../observable';
 import { SkillLoader } from '../skill/loader';
 import { loadConfig, resolveConfig } from '../store/config';
 import { MemoryStore } from '../store/memory-store';
+import { projectKeyFor, projectSessionsDir } from '../store/paths';
 import { loadProjectRules } from '../store/project-rules';
 import { SessionStore } from '../store/session';
 import { createKnowledgeTools } from '../tools/knowledge';
@@ -28,7 +29,14 @@ import type { ToolContext } from '../tools/registry';
 import { createSpawnSubagentTool } from '../tools/spawn';
 import { App } from '../ui/App';
 import { formatSessionTime, SessionPicker } from '../ui/SessionPicker';
-import { buildOsHint, buildRegistry, DEFAULT_ALLOWLIST, resolveModel } from './common';
+import {
+  buildOsHint,
+  buildRegistry,
+  DEFAULT_ALLOWLIST,
+  mergeAllowlist,
+  resolveModel,
+  resolveProjectForCwd,
+} from './common';
 
 // 保持 ./chat 的公共 API 不变（run/plan 现从 ./common 导入，此处 re-export 兼容旧引用）
 export { buildOsHint, buildRegistry, DEFAULT_ALLOWLIST, resolveModel } from './common';
@@ -50,7 +58,19 @@ export async function runChat(options: RunChatOptions): Promise<void> {
   const config = await loadConfig();
   const resolved = resolveConfig(config, options.model, options.lang);
   setLocale(resolveLocale(resolved.locale));
-  const store = new SessionStore(resolved.sessionDir);
+  // v3.1 M2 T2.3：按 cwd 精确探测已注册项目（-p 已在 index.ts preAction 中 chdir）。
+  // 命中 → 项目级白名单与全局合并、项目级 MCP 优先；未命中 → 用全局配置。
+  const project = await resolveProjectForCwd(options.cwd);
+  const allowlistedPrefixes = mergeAllowlist(
+    resolved.allowlist ?? DEFAULT_ALLOWLIST,
+    project?.whitelist,
+  );
+  const mcpServers = project?.mcpServers ?? resolved.mcpServers;
+  // v3.1 M2 T2.4：会话目录按项目隔离——项目模式写 ~/.concertoai/sessions/<projectKey>/，
+  // resume/-l 天然按项目过滤；未命中项目 → 全局（配置/默认）会话目录。
+  const sessionDir =
+    project !== undefined ? projectSessionsDir(projectKeyFor(project.name)) : resolved.sessionDir;
+  const store = new SessionStore(sessionDir);
   // -l 仅列列表：无需 TTY 与模型配置
   if (options.listOnly === true) {
     await printSessionList(store);
@@ -73,8 +93,8 @@ export async function runChat(options: RunChatOptions): Promise<void> {
   // v2.1 性能优化：MCP 服务改为后台启动，不阻塞首帧渲染（冷启动 3-5s → ~1.2s）。
   // 工具就绪后动态注册进 registry，模型下一轮调用自动可见；连接状态经 /mcp status 查看。
   let mcpManager: McpManager | undefined;
-  if (resolved.mcpServers.length > 0) {
-    const configs: MCPServerConfig[] = resolved.mcpServers.map(toMcpServerConfig);
+  if (mcpServers.length > 0) {
+    const configs: MCPServerConfig[] = mcpServers.map(toMcpServerConfig);
     mcpManager = new McpManager(configs);
   }
 
@@ -124,7 +144,7 @@ export async function runChat(options: RunChatOptions): Promise<void> {
   const rules = await loadProjectRules(options.cwd);
   const ctx: ToolContext = {
     cwd: options.cwd,
-    allowlistedPrefixes: resolved.allowlist ?? DEFAULT_ALLOWLIST,
+    allowlistedPrefixes,
   };
 
   let sessionId: string;

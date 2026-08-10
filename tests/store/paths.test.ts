@@ -22,6 +22,8 @@ import {
   knowledgeDir,
   legacyGlobalDir,
   migrateLegacyHome,
+  projectKeyFor,
+  projectSessionsDir,
   reviewerKnowledgeDir,
   sessionsDir,
 } from '../../src/store/paths';
@@ -52,6 +54,40 @@ describe('全局路径（~/.concertoai/）', () => {
     expect(reviewerKnowledgeDir()).toBe(
       path.join(os.homedir(), '.concertoai', 'reviewer', 'knowledge'),
     );
+  });
+});
+
+describe('项目会话目录（T2.4 隔离矩阵）', () => {
+  it('projectKeyFor：普通名保持不变', () => {
+    expect(projectKeyFor('demo')).toBe('demo');
+    expect(projectKeyFor('my-app')).toBe('my-app');
+    expect(projectKeyFor('a.b_c')).toBe('a.b_c');
+  });
+
+  it('projectKeyFor：空格/中文/其他字符转 _，空名兜底 unnamed', () => {
+    expect(projectKeyFor('my app')).toBe('my_app');
+    expect(projectKeyFor('项目 demo')).toBe('___demo');
+    expect(projectKeyFor('a/b')).toBe('a_b');
+    expect(projectKeyFor('')).toBe('unnamed');
+  });
+
+  it('projectKeyFor：. 与 .. 加前缀防隐藏目录', () => {
+    expect(projectKeyFor('.')).toBe('p_.');
+    expect(projectKeyFor('..')).toBe('p_..');
+  });
+
+  it('projectSessionsDir 基于 sessionsDir 拼接项目 key', () => {
+    expect(projectSessionsDir('demo')).toBe(path.join(sessionsDir(), 'demo'));
+    expect(projectSessionsDir('my_app')).toBe(path.join(sessionsDir(), 'my_app'));
+  });
+
+  it('隔离：不同项目 key 指向不同目录，且非项目默认目录互不串', () => {
+    const a = projectSessionsDir('projA');
+    const b = projectSessionsDir('projB');
+    expect(a).not.toBe(b);
+    expect(a).not.toBe(sessionsDir());
+    expect(b).not.toBe(sessionsDir());
+    expect(a.startsWith(sessionsDir() + path.sep)).toBe(true);
   });
 });
 

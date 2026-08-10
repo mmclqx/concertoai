@@ -970,7 +970,7 @@ export function App({
 
   useInput((input, key) => {
     if (phase === 'plan-approval') {
-      if (input === 'y') {
+      if (input === 'y' || key.return) {
         const planText = plan ?? '';
         const task = lastPlanTaskRef.current;
         setPlan(null);
@@ -985,7 +985,7 @@ export function App({
       return;
     }
     if (phase === 'approval') {
-      if (input === 'y') {
+      if (input === 'y' || key.return) {
         approvalResolver.current?.(true);
         approvalResolver.current = null;
         setPending(null);

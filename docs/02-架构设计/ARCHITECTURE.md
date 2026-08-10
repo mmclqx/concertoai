@@ -175,7 +175,7 @@ cli/index.ts（无子命令或 chat）
 工具执行（edit_file / run_command）
   → 白名单命中（词边界匹配）→ 免审批直跑
   → 否则 requestApproval(ctx, {kind, summary, detail})
-      TUI：App 挂起流程（phase=approval），弹审批框，y/n 决议
+      TUI：App 挂起流程（phase=approval），弹审批框，y/Enter 批准、n/Esc 拒绝
       测试：注入 stub；run 模式：默认拒绝（fail-closed）
   → 通过才 fs.writeFile / spawn；拒绝返回 ok:false，不产生副作用
 ```
@@ -449,7 +449,7 @@ npm run dev -- run "列出这个项目的文件结构"
 npm run dev
 #    → 输入「读一下 package.json 并总结」+ Enter
 #    → 输入「运行 npm run test 看看结果」→ npm test 命中白名单，免审批直跑
-#    → 尝试编辑类指令 → 弹出审批框，按 y 批准 / n 拒绝
+#    → 尝试编辑类指令 → 弹出审批框，y / Enter 批准，n / Esc 拒绝
 #    → Esc 退出，会话自动保存到 ~/.concertoai/sessions/
 ```
 

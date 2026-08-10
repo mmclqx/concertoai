@@ -7,8 +7,9 @@
  */
 
 import os from 'node:os';
-
 import { getDefaultModel, getModel, listModels } from '../model/models';
+import type { MCPServerEntry } from '../store/config';
+import { ProjectRegistry } from '../store/projects';
 import { editFileTool } from '../tools/edit';
 import { listDirectoryTool, readFileTool, searchContentTool } from '../tools/read';
 import type { ToolSpec } from '../tools/registry';
@@ -45,6 +46,56 @@ export function resolveModel(modelId: string | undefined): string {
     process.exit(1);
   }
   return profile.id;
+}
+
+/** 项目上下文（T2.3）：按 cwd 精确匹配已注册项目。 */
+export interface ResolvedProject {
+  name: string;
+  path: string;
+  whitelist: string[] | undefined;
+  mcpServers: MCPServerEntry[] | undefined;
+}
+
+/**
+ * 按 cwd 精确探测已注册项目（T2.3/T2.4 隔离矩阵基础）。
+ * 未匹配返回 undefined（使用默认全局配置）。注册表损坏时宽松降级为 undefined。
+ * @param cwd 当前工作目录（已含 -p chdir 后的项目路径）
+ * @param registryFile 注册表文件路径（测试注入；缺省 ~/.concertoai/projects.json）
+ */
+export async function resolveProjectForCwd(
+  cwd: string,
+  registryFile?: string,
+): Promise<ResolvedProject | undefined> {
+  const registry = await ProjectRegistry.load(registryFile);
+  const hit = registry.findByPath(cwd);
+  if (hit === undefined) {
+    return undefined;
+  }
+  return {
+    name: hit.name,
+    path: hit.entry.path,
+    whitelist: hit.entry.whitelist,
+    mcpServers: hit.entry.mcpServers,
+  };
+}
+
+/**
+ * 合并全局白名单与项目级白名单（T2.3）。
+ * 去重合并：项目白名单追加到全局后面，保持全局前缀 + 项目追加的顺序。
+ */
+export function mergeAllowlist(
+  globalAllowlist: string[] | undefined,
+  projectWhitelist: string[] | undefined,
+): string[] {
+  const merged = [...(globalAllowlist ?? [])];
+  if (projectWhitelist !== undefined) {
+    for (const prefix of projectWhitelist) {
+      if (!merged.includes(prefix)) {
+        merged.push(prefix);
+      }
+    }
+  }
+  return merged;
 }
 
 export function buildRegistry(

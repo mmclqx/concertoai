@@ -484,7 +484,7 @@ describe('App 集成', () => {
       expect(lastFrame()).toContain('命令未执行');
     });
     // 全程未弹审批框
-    expect(lastFrame()).not.toContain('批准 (y)');
+    expect(lastFrame()).not.toContain('批准 (y / Enter)');
     unmount();
   });
 });

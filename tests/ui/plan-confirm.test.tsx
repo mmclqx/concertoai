@@ -12,7 +12,7 @@ describe('PlanConfirm', () => {
     expect(frame).toContain('执行计划');
     expect(frame).toContain('1. 读取文件');
     expect(frame).toContain('3. 运行测试');
-    expect(frame).toContain('批准计划 (y) / 拒绝 (n)');
+    expect(frame).toContain('批准 (y / Enter) / 拒绝 (n / Esc)');
     unmount();
   });
 

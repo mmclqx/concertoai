@@ -57,8 +57,8 @@ export const en = {
     shellTitle: 'Run command',
     summaryEdit: 'Edit file {path}',
     summaryShell: 'Run command: {command}',
-    confirm: 'Approve (y)',
-    reject: 'Reject (n)',
+    confirm: 'Approve (y / Enter)',
+    reject: 'Reject (n / Esc)',
   },
   prompt: {
     placeholder: 'Type your request… (Enter to send / Shift+Enter for newline / Esc to quit)',
@@ -82,7 +82,7 @@ export const en = {
   },
   plan: {
     title: 'Execution Plan',
-    hint: 'Approve plan (y) / Reject (n)',
+    hint: 'Approve (y / Enter) / Reject (n / Esc)',
     approved: 'Plan approved; starting execution',
     rejected: 'Plan rejected; nothing was executed',
   },
