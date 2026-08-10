@@ -1,7 +1,7 @@
 # ConcertoAI 开发任务看板
 
 > 最后更新：2026-08-10
-> 当前里程碑：**🔵 v3.1 进行中**（12/27 任务 ✅ · 基线 74 文件 / 828 用例）（v1.0: 20/20 ✅ · v1.1: 12/12 ✅ · v2.0: 15/15 ✅ · v2.1: 25/25 ✅ · v3.0: 24/24 ✅ · v3.1: 12/27 🔵）
+> 当前里程碑：**🔵 v3.1 进行中**（23/27 任务 ✅ · 基线 81 文件 / 912 用例）（v1.0: 20/20 ✅ · v1.1: 12/12 ✅ · v2.0: 15/15 ✅ · v2.1: 25/25 ✅ · v3.0: 24/24 ✅ · v3.1: 23/27 🔵）
 > 基于：[v3.1 开发计划](./v3.1-dev-plan-ai.md) · [v3.1 详细任务](./v3.1-dev-tasks.md) · 历史：[v3.0 开发计划](./v3.0-dev-plan.md)
 
 ---
@@ -12,11 +12,11 @@
 |------|------|
 | 总任务数 | 123（v1.0: 20 ✅ + v1.1: 12 ✅ + v2.0: 15 ✅ + v2.1: 25 ✅ + v3.0: 24 ✅ + v3.1: 27 🔵） |
 | P0 任务 | 37（v1.1: 6 ✅ + v2.0: 5 ✅ + v2.1: 5 ✅ + v3.0: 14 ✅ + v3.1: 7 ✅） |
-| P1 任务 | 44（v1.1: 6 ✅ + v2.0: 10 ✅ + v2.1: 4 ✅ + v3.0: 10 ✅ + v3.1: 7 ✅ + 7 🔵） |
+| P1 任务 | 44（v1.1: 6 ✅ + v2.0: 10 ✅ + v2.1: 4 ✅ + v3.0: 10 ✅ + v3.1: 10 ✅ + 4 🔵） |
 | P2 任务 | 14（v2.1: 8 ✅ + v3.1: 6 ✅） |
-| 待开始 | 15 |
+| 待开始 | 4 |
 | 进行中 | 0 |
-| 已完成 | 107 |
+| 已完成 | 119 |
 | 已阻塞 | 0 |
 
 ---
@@ -56,7 +56,7 @@
 | **V3.1-M2 多项目管理** | **P1** | **5** | 🟢 已完成 |
 | **V3.1-M3 多租户登录** | **P2** | **4** | 🟢 已完成 |
 | **V3.1-M4 结构化错误增强** | **P2** | **2** | 🟢 已完成 |
-| **V3.1-M5 Orchestrator CLI 入口 + 运维命令补全** | **P1** | **5** | ⬜ 待开始 |
+| **V3.1-M5 Orchestrator CLI 入口 + 运维命令补全** | **P1** | **5** | 🟢 已完成 |
 | **V3.1-M6 集成测试与文档** | **P1** | **4** | ⬜ 待开始 |
 
 ---
@@ -535,6 +535,7 @@
   - 涉及文件：`src/reviewer/knowledge.ts`（新增）
   - 预估：1h
   - 依赖：T5.1
+  - ✅ 2026-08-11 完成：src/cli/slash/orchestrate.ts（新增）+ App.tsx 拦截：/orchestrate <任务> 解析 → 包装 runTeamCommand 执行（chat 内用户已显式授权拆解/写盘，confirm 自动放行）→ 结果转聊天消息（✅/❌ 摘要）；无任务提示用法；可观测性：runTeamCommand 透传 traceStore，拆解/闭环 spans 经 o 键面板可见；审计日志记录 /orchestrate 操作
   - ✅ 2026-08-08 完成：三级优先级加载 + 字符数截断 + formatKnowledgeContext
 
 - [x] **T5.3** 9 维审查子代理定义（5 个子代理）
@@ -618,6 +619,9 @@
   - 涉及文件：`src/orchestrator/types.ts`（新增）、`src/orchestrator/index.ts`（新增）
   - 预估：2h
   - 依赖：T0.2
+  - ✅ 2026-08-11 完成：/agent update [name]（slash/agent.ts + App.tsx）：指定名称复用 installer.install update 语义（版本落后覆盖 / ALREADY_INSTALLED 提示已最新）；无参数 fetch 注册表 + listInstalled + compareVersion 列出可更新项；/review --severity <strict|normal|lenient>：reviewer/types.ts 新增 ReviewSeverity/REVIEW_SEVERITIES + determineReviewAction(issues,{severity,testPassed}) 三档（strict=medium 必拒 / normal=critical 必拒+medium 结合 QA 失败可拒 / lenient=仅 critical 拒）；ReviewOptions/TeamReviewerOptions/ReviewEngineLike 透传 severity；slash/review.ts 解析 + 非法值报错列出合法值；App.tsx 短路非法值 + 透传 severity
+  - ✅ 2026-08-11 完成：src/cli/audit.ts（新增）+ index.ts 注册 concertoai audit export [--out <file>]：遍历 ~/.concertoai/audit/*.jsonl，复用 AuditLogger.exportJson() 读回（损坏行跳过）→ 按 seq 保序合并输出 JSON 数组；默认 stdout / --out 写文件（目录自动创建）；无审计文件 → 「暂无审计日志」退出码 0
+  - ✅ 2026-08-11 完成：src/cli/team.ts（新增）+ index.ts 注册 concertoai team <task>：decomposeRequirement 拆解 → 展示清单 + 终端确认（非 TTY 报错，--auto-approve 跳过）→ 装配 4 角色（CoderAgent+DiskFileWriter / TeamReviewerAgent+ReviewerEngine+SubagentSpawner / QaAgent+ChildProcessQaRunner）→ runTeamLoop 对抗性闭环（MAX_LOOP_ATTEMPTS=5）→ SnapshotManager 事务回滚兜底（onRollback，成功 commit）→ 聚合输出工件引用（code/review-result/test-report）+ 中文 summary；--dry-run 仅输出拆解清单不执行 Agent；formatTaskList 可读清单；拆解失败给中文错误不静默
   - ✅ 2026-08-09 完成：AgentMessage 泛型 + 判别联合 + 类型守卫、AgentContext/Artifact、AgentDef（zod schema）、AgentState/AgentRuntimeState 分离，落实 ADR-016 全部 5 项修正项；15 测试（424 全绿）
 
 - [x] **T1.2** 定义 Agent 注册表接口 + 标准 Agent 接口
@@ -878,30 +882,35 @@
 
 ### V3.1-M5：Orchestrator CLI 入口 + 运维命令补全（P1，约 4h）
 
-- [ ] **T5.1** concertoai team 命令
+- [x] **T5.1** concertoai team 命令
   - 涉及文件：`src/cli/team.ts`（新增）、`src/cli/index.ts`（修改）、`src/agents/orchestrator.ts`（复用）、`src/orchestrator/loop.ts`（复用）、`src/orchestrator/transaction.ts`（复用）
   - 预估：1.5h
   - 依赖：T0.2
+  - ✅ 2026-08-11 完成：`src/cli/team.ts`（新增）+ index.ts 注册 `concertoai team <task>`：`decomposeRequirement` 拆解 → 展示清单 + 终端确认（非 TTY 报错，--auto-approve 跳过）→ 装配 4 角色（CoderAgent+DiskFileWriter / TeamReviewerAgent+ReviewerEngine+SubagentSpawner / QaAgent+ChildProcessQaRunner）→ `runTeamLoop` 对抗性闭环（MAX_LOOP_ATTEMPTS=5）→ SnapshotManager 事务回滚兜底（onRollback，成功 commit）→ 聚合输出工件引用（code/review-result/test-report）+ 中文 summary；`--dry-run` 仅输出拆解清单不执行 Agent；`formatTaskList` 可读清单；拆解失败给中文错误不静默
 
-- [ ] **T5.2** /orchestrate 斜杠命令
+- [x] **T5.2** /orchestrate 斜杠命令
   - 涉及文件：`src/cli/slash/orchestrate.ts`（新增）、`src/ui/App.tsx`（修改）
   - 预估：1h
   - 依赖：T5.1
+  - ✅ 2026-08-11 完成：`src/cli/slash/orchestrate.ts`（新增）+ App.tsx 拦截：`/orchestrate <任务>` 解析 → 包装 runTeamCommand 执行（chat 内用户已显式授权拆解/写盘，confirm 自动放行）→ 结果转聊天消息（✅/❌ 摘要）；无任务提示用法；可观测性：runTeamCommand 透传 traceStore，拆解/闭环 spans 经 `o` 键面板可见；审计日志记录 /orchestrate 操作
 
-- [ ] **T5.3** concertoai audit export
+- [x] **T5.3** concertoai audit export
   - 涉及文件：`src/cli/audit.ts`（新增）、`src/cli/index.ts`（修改）、`src/observable/audit.ts`（复用）
   - 预估：0.5h
   - 依赖：T0.2
+  - ✅ 2026-08-11 完成：`src/cli/audit.ts`（新增）+ index.ts 注册 `concertoai audit export [--out <file>]`：遍历 ~/.concertoai/audit/*.jsonl，复用 `AuditLogger.exportJson()` 读回（损坏行跳过）→ 按 seq 保序合并输出 JSON 数组；默认 stdout / --out 写文件（目录自动创建）；无审计文件 → 「暂无审计日志」退出码 0
 
-- [ ] **T5.4** /agent update + /review --severity
+- [x] **T5.4** /agent update + /review --severity
   - 涉及文件：`src/cli/slash/agent.ts`（修改）、`src/cli/slash/review.ts`（修改）、`src/reviewer/engine.ts`（修改）
   - 预估：0.5h
   - 依赖：T0.2
+  - ✅ 2026-08-11 完成：`/agent update [name]`（slash/agent.ts + App.tsx）：指定名称复用 `installer.install` update 语义（版本落后覆盖 / ALREADY_INSTALLED 提示已最新）；无参数 fetch 注册表 + listInstalled + compareVersion 列出可更新项；`/review --severity <strict|normal|lenient>`：reviewer/types.ts 新增 `ReviewSeverity`/`REVIEW_SEVERITIES` + `determineReviewAction(issues,{severity,testPassed})` 三档（strict=medium 必拒 / normal=critical 必拒+medium 结合 QA 失败可拒 / lenient=仅 critical 拒）；ReviewOptions/TeamReviewerOptions/ReviewEngineLike 透传 severity；slash/review.ts 解析 + 非法值报错列出合法值；App.tsx 短路非法值 + 透传 severity
 
-- [ ] **T5.5** M5 单元测试
+- [x] **T5.5** M5 单元测试
   - 涉及文件：`tests/cli/team.test.ts`（新增）、`tests/cli/audit.test.ts`（新增）、`tests/cli/slash/orchestrate.test.ts`（新增）、`tests/cli/slash/agent.test.ts`（修改）、`tests/cli/slash/review.test.ts`（修改）
   - 预估：0.5h
   - 依赖：T5.1~T5.4
+  - ✅ 2026-08-11 完成：tests/cli/team.test.ts（7 用例：dry-run 不执行/审批拒绝不写盘/闭环成功聚合工件/超限回滚/拆解失败）/ tests/cli/audit.test.ts（4 用例：无文件/保序合并/--out/损坏行）/ tests/cli/slash-orchestrate.test.ts（7 用例）/ tests/cli/slash-review.test.ts（12 用例：三档阈值差异）/ tests/cli/slash-agent.test.ts（+5 update 用例）；校准 tests/agents/reviewer.test.ts medium 语义（normal 下结合 testPassed）；npm run verify **81 文件 / 912 用例全绿**
 
 ### V3.1-M6：集成测试与文档（P1，约 4h）
 
@@ -990,6 +999,7 @@
 | 2026-08-09 | **V3.0-M6 完成**：T6.1-T6.3 集成测试 + 文档 + 收尾（4 E2E / README / 架构文档 / 用户手册 / Agent 开发指南 / ADR-015~020 / CHANGELOG / 测试报告，699 全绿 → T0.1 校准 750） | Carbon Code |
 | 2026-08-09 | **V3.0 手工测试报告**：新增 `docs/07.3-手工测试报告-v3.0.md`（六大核心功能 18 项 + v2.1 回归 12 项 + 参考脚本 + 已知问题 5 条） | Carbon Code |
 | 2026-08-11 | **V3.1-M4 完成**：T4.1-T4.2 结构化错误增强（error-codes 15 码 + read/edit/shell/knowledge code+suggestion + ToolRepairError 渲染兼容；77 文件/874 用例全绿） | Carbon Code |
+| 2026-08-11 | **V3.1-M5 完成**：T5.1-T5.5 Orchestrator CLI 入口 + 运维命令补全（team 命令 / /orchestrate / audit export / /agent update / /review --severity；81 文件/912 用例全绿） | Carbon Code |
 | 2026-08-11 | **V3.1-M3 完成**：T3.1-T3.4 多租户登录（accounts 存储 + login/logout/whoami/account 命令 + API Key 解析链 + doctor 账号标注；76 文件/858 用例全绿） | Carbon Code |
 | 2026-08-10 | **V3.1-M0 启动（T0.1 完成）**：版本归位决策落盘（v2.2 + v3.1 随 v3.1.0 一并发布，不补发 v2.2.0）+ 全项目基线校准（69 文件 / 750 用例）+ v3.1 任务看板建立（27 任务 / 7 里程碑） | Carbon Code |
 | 2026-08-10 | **V3.1-M0 完成（T0.2 完成）**：审查遗留复核（S3 已在 7f477a5 修复；S1/S2/S4 处置与计划 §7 一致；src/core/ 与 ARCHITECTURE D41 核对一致）→ M0 两任务全绿，v3.1 进入 M1 | Carbon Code |
