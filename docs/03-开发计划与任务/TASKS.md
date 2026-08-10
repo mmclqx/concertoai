@@ -12,8 +12,8 @@
 |------|------|
 | 总任务数 | 123（v1.0: 20 ✅ + v1.1: 12 ✅ + v2.0: 15 ✅ + v2.1: 25 ✅ + v3.0: 24 ✅ + v3.1: 27 🔵） |
 | P0 任务 | 37（v1.1: 6 ✅ + v2.0: 5 ✅ + v2.1: 5 ✅ + v3.0: 14 ✅ + v3.1: 7 ✅） |
-| P1 任务 | 44（v1.1: 6 ✅ + v2.0: 10 ✅ + v2.1: 4 ✅ + v3.0: 10 ✅ + v3.1: 14 🔵） |
-| P2 任务 | 14（v2.1: 8 ✅ + v3.1: 6 🔵） |
+| P1 任务 | 44（v1.1: 6 ✅ + v2.0: 10 ✅ + v2.1: 4 ✅ + v3.0: 10 ✅ + v3.1: 5 ✅ + 9 🔵） |
+| P2 任务 | 14（v2.1: 8 ✅ + v3.1: 4 ✅ + 2 🔵） |
 | 待开始 | 15 |
 | 进行中 | 0 |
 | 已完成 | 107 |
@@ -54,7 +54,7 @@
 | **V3.1-M0 启动前置（版本归位 + 基线校准）** | **P0** | **2** | ✅ 已完成 |
 | **V3.1-M1 AI 自我修复闭环** | **P0** | **5** | 🟢 已完成 |
 | **V3.1-M2 多项目管理** | **P1** | **5** | 🟢 已完成 |
-| **V3.1-M3 多租户登录** | **P2** | **4** | ⬜ 待开始 |
+| **V3.1-M3 多租户登录** | **P2** | **4** | 🟢 已完成 |
 | **V3.1-M4 结构化错误增强** | **P2** | **2** | ⬜ 待开始 |
 | **V3.1-M5 Orchestrator CLI 入口 + 运维命令补全** | **P1** | **5** | ⬜ 待开始 |
 | **V3.1-M6 集成测试与文档** | **P1** | **4** | ⬜ 待开始 |
@@ -838,25 +838,29 @@
 
 ### V3.1-M3：多租户登录（P2，约 4h）
 
-- [ ] **T3.1** accounts 存储
+- [x] **T3.1** accounts 存储
   - 涉及文件：`src/store/accounts.ts`（新增）、`src/store/paths.ts`（修改）
   - 预估：1.5h
   - 依赖：T0.2
+  - ✅ 2026-08-11 完成：AccountStore（saveAccount / getApiKeyFor / setActiveAccount / getActiveAccount / listAccounts / removeAccount）读写 `~/.concertoai/accounts/<name>/config.json` + `active-account` 指针；saveAccount 原子写（临时文件 + rename）+ chmod 0600（POSIX；Windows 尽力而为跳过不报错）；重名默认返回 `exists`（overwrite=true 才覆盖）；listAccounts 只返回账号名不含 Key；removeAccount purge 语义（purge=false 仅清 active 指针 / purge=true 删账号目录）；Key 值不写日志不进入审计输出；修复 `readdir(withFileTypes)` 返回 `Dirent[]` 的类型标注（原误标 `string[]`）
 
-- [ ] **T3.2** account 命令
+- [x] **T3.2** account 命令
   - 涉及文件：`src/cli/account.ts`（新增）、`src/cli/index.ts`（修改）
   - 预估：1.5h
   - 依赖：T3.1
+  - ✅ 2026-08-11 完成：`src/cli/account.ts`（新增）+ `account-types.ts`（新增）+ index.ts 注册 `login`/`logout`/`whoami`/`account list|switch`；login 交互输入 Key 不回显（promptSecret 掩码拦截 readline 输出，非 TTY 提示用 `--key`）+ `--key` 非交互注入（CI 场景）；重名覆盖前交互确认（fail-closed）；logout 清除 active 指针（提示不删文件，`--purge` 才删）；whoami 显示账号名 + `maskApiKey` 打码（`sk-****abcd`，短 Key 全掩码）；account list 表格 + active 标记；任意命令输出不包含完整 Key；修复 `readline.Interface` 实例无 `output` 属性（类型定义核实）→ 改用创建 rl 时传入的 `process.stdout`（行为等价）
 
-- [ ] **T3.3** API Key 解析接入
+- [x] **T3.3** API Key 解析接入
   - 涉及文件：`src/cli/index.ts`（修改）、`src/cli/common.ts`（修改）、`src/cli/doctor.ts`（修改）
   - 预估：0.5h
   - 依赖：T3.1、T3.2
+  - ✅ 2026-08-11 完成：`resolveApiKey` 解析链（CLI `--api-key` 预留 > 环境变量 `DEEPSEEK_API_KEY` > active account > config.json 预留）；无任何来源返回 `{source:none}` 由调用方报错退出（fail-closed）；`maskApiKey` 打码（后 4 位 + sk- 前缀，短 Key 全掩码）；index.ts `getApiKey` 包装 + doctor 传 `keySource`/`keyAccountName`；doctor 余额行标注 `账号: work (sk-****abcd)` / `（环境变量优先）`；环境变量与账号并存时明确显示环境变量优先
 
-- [ ] **T3.4** M3 单元测试
+- [x] **T3.4** M3 单元测试
   - 涉及文件：`tests/store/accounts.test.ts`（新增）、`tests/cli/account.test.ts`（新增）
   - 预估：0.5h
   - 依赖：T3.1~T3.3
+  - ✅ 2026-08-11 完成：`tests/store/accounts.test.ts`（新增）+ `tests/cli/account.test.ts`（新增）；存储 CRUD（save/list/remove/purge/setActive/getActive）+ POSIX 0600 权限（Windows 跳过）+ 重名状态；命令 login/logout/whoami/switch/list 正常与异常路径 + 打码正则断言（任意输出不含完整 Key）；`resolveApiKey` 优先级（env > account > config）+ `maskApiKey` 边界（短 Key/非 sk 前缀）；`npm run verify` **76 文件 / 858 用例全绿**（基线 69/750 校准，门检要求 ≥785/72 已达成）
 
 ### V3.1-M4：结构化错误增强（P2，约 1h）
 
@@ -983,6 +987,7 @@
 | 2026-08-09 | **V3.0-M5 完成**：T5.1-T5.3 可观测性（TraceStore + AuditLogger + 面板，699 全绿 → T0.1 校准 750） | Carbon Code |
 | 2026-08-09 | **V3.0-M6 完成**：T6.1-T6.3 集成测试 + 文档 + 收尾（4 E2E / README / 架构文档 / 用户手册 / Agent 开发指南 / ADR-015~020 / CHANGELOG / 测试报告，699 全绿 → T0.1 校准 750） | Carbon Code |
 | 2026-08-09 | **V3.0 手工测试报告**：新增 `docs/07.3-手工测试报告-v3.0.md`（六大核心功能 18 项 + v2.1 回归 12 项 + 参考脚本 + 已知问题 5 条） | Carbon Code |
+| 2026-08-11 | **V3.1-M3 完成**：T3.1-T3.4 多租户登录（accounts 存储 + login/logout/whoami/account 命令 + API Key 解析链 + doctor 账号标注；76 文件/858 用例全绿） | Carbon Code |
 | 2026-08-10 | **V3.1-M0 启动（T0.1 完成）**：版本归位决策落盘（v2.2 + v3.1 随 v3.1.0 一并发布，不补发 v2.2.0）+ 全项目基线校准（69 文件 / 750 用例）+ v3.1 任务看板建立（27 任务 / 7 里程碑） | Carbon Code |
 | 2026-08-10 | **V3.1-M0 完成（T0.2 完成）**：审查遗留复核（S3 已在 7f477a5 修复；S1/S2/S4 处置与计划 §7 一致；src/core/ 与 ARCHITECTURE D41 核对一致）→ M0 两任务全绿，v3.1 进入 M1 | Carbon Code |
 | 2026-08-10 | **V3.1-M1 启动（T1.1 完成）**：Verify 分类器四段统一解析（src/loop/self-heal.ts 新增；复用 qa.parseVerifyOutput；ANSI 剥离 + 段标记切分 + 尽力而为）→ 真实 verify 输出实测 4 段全解析 | Carbon Code |
