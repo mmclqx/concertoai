@@ -14,6 +14,13 @@ export type {
   ReviewReport,
   ReviewResult,
   ReviewScope,
+  ReviewSeverity,
   Severity,
 } from './types';
-export { ALL_DIMENSIONS, buildReviewResult, determineReviewAction, SEVERITY_ICON } from './types';
+export {
+  ALL_DIMENSIONS,
+  buildReviewResult,
+  determineReviewAction,
+  REVIEW_SEVERITIES,
+  SEVERITY_ICON,
+} from './types';

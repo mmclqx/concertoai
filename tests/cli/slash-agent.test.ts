@@ -127,6 +127,17 @@ describe('parseAgentCommand', () => {
     }
   });
 
+  it('/agent update <name> → update', () => {
+    expect(parseAgentCommand('/agent update my-agent')).toEqual({
+      type: 'update',
+      name: 'my-agent',
+    });
+  });
+
+  it('/agent update（无参数）→ update 全部', () => {
+    expect(parseAgentCommand('/agent update')).toEqual({ type: 'update', name: undefined });
+  });
+
   it('/agent <未知子命令> → unknown', () => {
     const result = parseAgentCommand('/agent foo');
     expect(result).not.toBeNull();
@@ -269,6 +280,118 @@ describe('executeAgentMarketCommand（/agent remove）', () => {
     const result = await executeAgentMarketCommand({ type: 'remove', name: 'no-such' }, deps);
     expect(result.handled).toBe(true);
     expect(result.message?.content).toContain('未安装');
+  });
+});
+
+// ── executeAgentMarketCommand（/agent update，v3.1 M5 / T5.4）──
+
+describe('executeAgentMarketCommand（/agent update）', () => {
+  it('指定名称：更新成功 → ✅ 提示（installer.install 被调用）', async () => {
+    const deps = makeDeps();
+    installerMock(deps).install.mockResolvedValue({
+      ok: true,
+      name: 'my-agent',
+      version: '2.0.0',
+      action: 'update',
+      dir: '/tmp/agents',
+    });
+    const result = await executeAgentMarketCommand({ type: 'update', name: 'my-agent' }, deps);
+    expect(result.handled).toBe(true);
+    expect(result.message?.content).toContain('✅');
+    expect(result.message?.content).toContain('2.0.0');
+    expect(installerMock(deps).install).toHaveBeenCalledWith('my-agent');
+  });
+
+  it('指定名称：已是最新 → ALREADY_INSTALLED 提示无需更新', async () => {
+    const deps = makeDeps();
+    installerMock(deps).install.mockResolvedValue({
+      ok: false,
+      code: 'ALREADY_INSTALLED',
+      message: 'Agent my-agent 已安装（版本 2.0.0），注册表版本 2.0.0 未更新。',
+    });
+    const result = await executeAgentMarketCommand({ type: 'update', name: 'my-agent' }, deps);
+    expect(result.handled).toBe(true);
+    expect(result.message?.content).toContain('已是最新');
+  });
+
+  it('无参数：注册表不可达 → 中文提示', async () => {
+    const deps = makeDeps({ fetchRegistry: async () => null });
+    const result = await executeAgentMarketCommand({ type: 'update' }, deps);
+    expect(result.handled).toBe(true);
+    expect(result.message?.content).toContain('无法访问');
+  });
+
+  it('无参数：列出所有可更新 Agent（版本落后对比）', async () => {
+    const deps = makeDeps({
+      fetchRegistry: async () =>
+        ({
+          registry: 'https://example.com/registry.json',
+          skills: [],
+          agents: [
+            {
+              type: 'agent',
+              name: 'my-agent',
+              version: '2.0.0',
+              description: '',
+              author: '',
+              url: 'https://example.com/a.json',
+              sha256: 'abc',
+              interfaces: { input: {}, output: {}, version: '1.0.0' },
+              permissions: [{ tool: 'read_file' }],
+              runtime: 'external',
+            },
+            {
+              type: 'agent',
+              name: 'new-agent',
+              version: '1.0.0',
+              description: '',
+              author: '',
+              url: 'https://example.com/n.json',
+              sha256: 'def',
+              interfaces: { input: {}, output: {}, version: '1.0.0' },
+              permissions: [{ tool: 'read_file' }],
+              runtime: 'external',
+            },
+          ],
+        }) as never,
+    });
+    // 已安装 my-agent@1.0.0（落后 2.0.0 → 可更新）；new-agent 未安装（不列出）
+    installerMock(deps).listInstalled.mockReturnValue([makeInstalled('my-agent', '1.0.0')]);
+    const result = await executeAgentMarketCommand({ type: 'update' }, deps);
+    expect(result.handled).toBe(true);
+    const content = result.message?.content ?? '';
+    expect(content).toContain('可更新');
+    expect(content).toContain('my-agent');
+    expect(content).toContain('1.0.0 → 2.0.0');
+    expect(content).not.toContain('new-agent');
+  });
+
+  it('无参数：全部最新 → 「所有已安装 Agent 均是最新版本」', async () => {
+    const deps = makeDeps({
+      fetchRegistry: async () =>
+        ({
+          registry: 'https://example.com/registry.json',
+          skills: [],
+          agents: [
+            {
+              type: 'agent',
+              name: 'my-agent',
+              version: '1.0.0',
+              description: '',
+              author: '',
+              url: 'https://example.com/a.json',
+              sha256: 'abc',
+              interfaces: { input: {}, output: {}, version: '1.0.0' },
+              permissions: [{ tool: 'read_file' }],
+              runtime: 'external',
+            },
+          ],
+        }) as never,
+    });
+    installerMock(deps).listInstalled.mockReturnValue([makeInstalled('my-agent', '1.0.0')]);
+    const result = await executeAgentMarketCommand({ type: 'update' }, deps);
+    expect(result.handled).toBe(true);
+    expect(result.message?.content).toContain('均是最新版本');
   });
 });
 

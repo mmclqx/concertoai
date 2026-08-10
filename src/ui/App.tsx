@@ -9,6 +9,7 @@ import {
 } from '../cli/slash/agent';
 import { executeMcpCommand, parseMcpCommand } from '../cli/slash/mcp';
 import { executeMemoryCommand, parseMemoryCommand } from '../cli/slash/memory';
+import { executeOrchestrateCommand, parseOrchestrateCommand } from '../cli/slash/orchestrate';
 import { executeReviewCommand, parseReviewCommand } from '../cli/slash/review';
 import { executeSelfHealCommand, parseSelfHealCommand } from '../cli/slash/self-heal';
 import {
@@ -16,6 +17,7 @@ import {
   executeSkillMarketCommand,
   parseSkillCommand,
 } from '../cli/slash/skill';
+import { runTeamCommand } from '../cli/team';
 import { fmt, t } from '../i18n';
 import { retrieveLocalMemories } from '../loop/local-memory';
 import type { LoopEvent } from '../loop/loop';
@@ -500,6 +502,56 @@ export function App({
       }
       const trimmed = text.trim();
 
+      // v3.1 M5 T5.2：/orchestrate 触发 team 全链路（拆解 → 对抗性闭环 → 回滚兜底）
+      const orchCmd = parseOrchestrateCommand(trimmed);
+      if (orchCmd !== null) {
+        setInput('');
+        setTokens((t) => ({ ...t, input: t.input + estimateTokens(text) }));
+        setMessages((prev) => [...prev, { role: 'user', content: text }]);
+        const orchStartedAt = Date.now();
+        traceStore?.record({
+          id: `orchestrate:${orchStartedAt}`,
+          taskId: 'orchestrate',
+          agentName: 'cli',
+          messageType: 'task',
+          input: { command: trimmed },
+          startedAt: orchStartedAt,
+          durationMs: 0,
+        });
+        void auditLogger?.append({
+          kind: 'message',
+          detail: { command: trimmed, type: 'orchestrate' },
+        });
+        setPhase('streaming');
+        busy.current = true;
+        try {
+          const result = await executeOrchestrateCommand(orchCmd, {
+            // chat 内用户已通过输入 /orchestrate 显式授权；拆解/写盘确认自动放行，
+            // 闭环 spans 经 traceStore 在 `o` 键面板可见
+            runTeam: (task) =>
+              runTeamCommand({
+                cwd: ctx.cwd,
+                apiKey: '',
+                client,
+                model,
+                task,
+                confirm: async () => true,
+                traceStore,
+              }),
+          });
+          if (result.message !== undefined) {
+            setMessages((prev) => [...prev, result.message as ChatMessage]);
+          }
+        } catch (err) {
+          setError(err instanceof Error ? err.message : String(err));
+        } finally {
+          busy.current = false;
+          setPhase('idle');
+          setStreamed('');
+        }
+        return;
+      }
+
       // v2.1 M5：审查命令（/review）→ 启动 Reviewer Agent
       const reviewCmd = parseReviewCommand(trimmed);
       if (reviewCmd !== null && spawner !== undefined) {
@@ -526,6 +578,10 @@ export function App({
           const msg = execResult.message;
           setMessages((prev) => [...prev, msg]);
         }
+        // v3.1 M5 / T5.4：非法 severity 已回显错误 → 不启动审查
+        if (execResult.handled) {
+          return;
+        }
         // 异步运行审查引擎
         setPhase('streaming');
         busy.current = true;
@@ -538,6 +594,8 @@ export function App({
                 : reviewCmd.type === 'pr'
                   ? { type: 'pr', diff: '' }
                   : { type: 'auto' },
+            // v3.1 M5 / T5.4：审查阈值透传（strict/normal/lenient）
+            severity: reviewCmd.type === 'unknown' ? undefined : reviewCmd.severity,
           });
           const reportText = ReviewerEngine.formatReport(report);
           setMessages((prev) => [...prev, { role: 'assistant', content: reportText }]);
@@ -566,7 +624,9 @@ export function App({
                   ? `remove:${agentCmd.name}`
                   : agentCmd.type === 'promote'
                     ? `promote:${agentCmd.skillName}`
-                    : 'list';
+                    : agentCmd.type === 'update'
+                      ? `update:${agentCmd.name ?? 'all'}`
+                      : 'list';
           const startedAt = Date.now();
           traceStore?.record({
             id: `agent:${opName}:${startedAt}`,
@@ -584,7 +644,8 @@ export function App({
           if (
             agentCmd.type === 'install' ||
             agentCmd.type === 'remove' ||
-            agentCmd.type === 'promote'
+            agentCmd.type === 'promote' ||
+            agentCmd.type === 'update'
           ) {
             setInput('');
             setTokens((t) => ({ ...t, input: t.input + estimateTokens(text) }));

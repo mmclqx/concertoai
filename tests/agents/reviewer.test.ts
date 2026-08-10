@@ -104,8 +104,14 @@ describe('determineReviewAction（🔴🟡 必/可 reject，🟢 不阻断）', 
     expect(determineReviewAction([makeIssue('critical')])).toBe('reject');
   });
 
-  it('🟡 medium 存在（无 critical）→ reject（可打回）', () => {
-    expect(determineReviewAction([makeIssue('medium')])).toBe('reject');
+  it('🟡 medium 存在（无 critical）→ normal 下结合 testPassed（QA 失败 → reject；缺省 → approve）', () => {
+    // v3.1 M5 / T5.4：normal 下 medium「可 reject」——QA 失败时 reject，否则不阻断
+    expect(
+      determineReviewAction([makeIssue('medium')], { severity: 'normal', testPassed: false }),
+    ).toBe('reject');
+    expect(determineReviewAction([makeIssue('medium')])).toBe('approve');
+    // strict 下 medium 无条件 reject（与 v3.0 默认不同）
+    expect(determineReviewAction([makeIssue('medium')], { severity: 'strict' })).toBe('reject');
   });
 
   it('仅 🟢 suggestion → approve（不阻断）', () => {

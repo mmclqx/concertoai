@@ -15,7 +15,13 @@
 import { z } from 'zod';
 import type { AgentContext, AgentDef, Artifact } from '../orchestrator';
 import { createAgentRuntimeState } from '../orchestrator';
-import type { ReviewContextArtifact, ReviewReport, ReviewResult, ReviewScope } from '../reviewer';
+import type {
+  ReviewContextArtifact,
+  ReviewReport,
+  ReviewResult,
+  ReviewScope,
+  ReviewSeverity,
+} from '../reviewer';
 import { buildReviewResult } from '../reviewer';
 import type { Agent } from './protocol';
 
@@ -38,6 +44,8 @@ export interface ReviewEngineLike extends Partial<AutoFixLike> {
     scope: ReviewScope;
     /** 显式上下文代码工件（v3.0 I2：Reviewer 直接阅读 Coder 产出，而非只依赖磁盘路径）。 */
     contextArtifacts?: ReviewContextArtifact[];
+    /** 审查严重程度阈值（v3.1 M5 / T5.4）。 */
+    severity?: ReviewSeverity;
   }): Promise<ReviewReport>;
 }
 
@@ -62,6 +70,8 @@ export const reviewResultSchema = z.object({
 export interface TeamReviewerOptions {
   /** 审查引擎（v2.1 ReviewerEngine：9 维并行子代理 + 自动测试 + autoFix）。 */
   engine: ReviewEngineLike;
+  /** 审查严重程度阈值（v3.1 M5 / T5.4：strict / normal / lenient，缺省 normal）。 */
+  severity?: ReviewSeverity;
 }
 
 /** 类型守卫：context.artifacts 中可交给审查引擎的代码工件（code/file）。 */
@@ -115,8 +125,9 @@ export class TeamReviewerAgent implements Agent {
     const report = await this.options.engine.review({
       scope: input.scope,
       contextArtifacts,
+      severity: this.options.severity,
     });
-    return buildReviewResult(report);
+    return buildReviewResult(report, this.options.severity);
   }
 
   /**

@@ -22,6 +22,7 @@ import type {
   ReviewOptions,
   ReviewReport,
   ReviewScope,
+  ReviewSeverity,
   Severity,
 } from './types';
 import { ALL_DIMENSIONS, SEVERITY_ICON } from './types';
@@ -98,11 +99,13 @@ export class ReviewerEngine {
     // Step 6: 汇总
     const summary = this.buildSummary(issues);
     const scopeDesc = this.describeScope(options.scope);
+    const severity: ReviewSeverity = options.severity ?? 'normal';
 
     return {
       scope: scopeDesc,
       timestamp: new Date().toISOString(),
       testPassed,
+      severity,
       issues,
       summary,
       durationMs: Date.now() - startedAt,

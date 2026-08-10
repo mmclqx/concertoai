@@ -19,8 +19,11 @@ import type { ChatMessage } from '../../loop/types';
 import {
   type AgentRegistryItem,
   BUILTIN_AGENT_ITEMS,
+  compareVersion,
+  fetchMarketRegistry,
   type InstalledAgent,
   type InstallResult,
+  type MarketRegistry,
   promoteSkill,
 } from '../../market';
 import type { SkillLoader } from '../../skill/loader';
@@ -32,6 +35,7 @@ export type SlashAgentCommand =
   | { type: 'install'; name: string }
   | { type: 'remove'; name: string }
   | { type: 'promote'; skillName: string }
+  | { type: 'update'; name?: string }
   | { type: 'unknown'; message: string };
 
 /** 解析用户输入，识别 Agent 管理命令。 */
@@ -54,6 +58,12 @@ export function parseAgentCommand(input: string): SlashAgentCommand | null {
     return { type: 'promote', skillName: trimmed.slice('/agent promote '.length).trim() };
   }
 
+  // v3.1 M5 / T5.4：/agent update [name]（复用 installer.install 的 update 语义）
+  if (trimmed.startsWith('/agent update')) {
+    const name = trimmed.slice('/agent update'.length).trim();
+    return { type: 'update', name: name || undefined };
+  }
+
   if (trimmed.startsWith('/agent ')) {
     const rest = trimmed.slice('/agent '.length).trim();
     if (rest === 'install') {
@@ -68,12 +78,18 @@ export function parseAgentCommand(input: string): SlashAgentCommand | null {
         message: '用法: /agent promote <skill> — 将技能升级为 Agent',
       };
     }
+    if (rest === 'update') {
+      return {
+        type: 'unknown',
+        message: '用法: /agent update [name] — 检查并更新已安装 Agent',
+      };
+    }
     if (rest === 'list') {
       return { type: 'list' };
     }
     return {
       type: 'unknown',
-      message: `未知子命令: ${rest}。可用: /agent list | install <name> | remove <name> | promote <skill>`,
+      message: `未知子命令: ${rest}。可用: /agent list | install <name> | remove <name> | promote <skill> | update [name]`,
     };
   }
 
@@ -110,6 +126,8 @@ export interface AgentCommandDeps {
   loader?: SkillLoader;
   /** Agent 安装目录（T4.4 promote 写入；默认 ~/.concertoai/agents/，测试可注入）。 */
   installDir?: string;
+  /** 注册表获取（v3.1 M5 / T5.4 /agent update 无参列出可更新；测试可注入）。 */
+  fetchRegistry?: (url?: string) => Promise<MarketRegistry | null>;
 }
 
 export interface AgentCommandResult {
@@ -204,6 +222,75 @@ export async function executeAgentMarketCommand(
       message: {
         role: 'assistant',
         content: `🗑️ Agent ${cmd.name} 已卸载。`,
+      },
+    };
+  }
+
+  // ── v3.1 M5 / T5.4：/agent update [name] ──
+  if (cmd.type === 'update') {
+    // 指定名称：复用 installer.install 的 update 语义（版本落后覆盖 / 已最新 ALREADY_INSTALLED）
+    if (cmd.name !== undefined) {
+      const result = await deps.installer.install(cmd.name);
+      if (result.ok) {
+        return {
+          handled: true,
+          message: {
+            role: 'assistant',
+            content: `✅ Agent ${result.name} 已更新到 ${result.version}（${result.action}）。`,
+          },
+        };
+      }
+      if (result.code === 'ALREADY_INSTALLED') {
+        return {
+          handled: true,
+          message: {
+            role: 'assistant',
+            content: `✅ Agent ${cmd.name} 已是最新版本，无需更新。`,
+          },
+        };
+      }
+      return {
+        handled: true,
+        message: { role: 'assistant', content: `❌ ${result.message}` },
+      };
+    }
+
+    // 无参数：列出所有可更新 Agent
+    const registry = await (deps.fetchRegistry ?? fetchMarketRegistry)();
+    if (registry === null) {
+      return {
+        handled: true,
+        message: {
+          role: 'assistant',
+          content: '❌ 无法访问 Agent 注册表，请检查网络连接。',
+        },
+      };
+    }
+    const installed = deps.installer.listInstalled();
+    const updatable = installed
+      .map((a) => {
+        const item = registry.agents.find((x) => x.name === a.name);
+        return item !== undefined && compareVersion(item.version, a.version) > 0
+          ? { name: a.name, from: a.version, to: item.version }
+          : undefined;
+      })
+      .filter((x): x is { name: string; from: string; to: string } => x !== undefined);
+
+    if (updatable.length === 0) {
+      return {
+        handled: true,
+        message: {
+          role: 'assistant',
+          content: '✅ 所有已安装 Agent 均是最新版本。',
+        },
+      };
+    }
+    const lines = updatable.map((u) => `- **${u.name}** ${u.from} → ${u.to}`);
+    return {
+      handled: true,
+      message: {
+        role: 'assistant',
+        content: `📦 可更新 Agent（${updatable.length} 个）：\n\n${lines.join('\n')}\n\n使用 /agent update <name> 更新。`,
       },
     };
   }

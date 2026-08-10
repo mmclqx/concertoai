@@ -79,6 +79,8 @@ export interface ReviewReport {
   timestamp: string;
   /** 自动测试是否通过（null = 未运行）。 */
   testPassed: boolean | null;
+  /** 审查严重程度阈值（v3.1 M5 / T5.4；可选，缺省 normal）。 */
+  severity?: ReviewSeverity;
   /** 发现的问题列表。 */
   issues: ReviewIssue[];
   /** 维度汇总。 */
@@ -132,6 +134,8 @@ export interface ReviewOptions {
   contextArtifacts?: ReviewContextArtifact[];
   /** 是否自动修正 🟢 suggestion 级别问题。 */
   autoFix?: boolean;
+  /** 审查严重程度阈值（v3.1 M5 / T5.4：strict / normal / lenient，缺省 normal）。 */
+  severity?: ReviewSeverity;
   /** 各审查子代理超时（默认 60s）。 */
   agentTimeoutMs?: number;
   /** 各审查子代理最大轮数（默认 5）。 */
@@ -142,6 +146,12 @@ export interface ReviewOptions {
 
 /** 审查动作：approve 进入 QA / reject 打回 Coder 修复（T3.3）。 */
 export type ReviewAction = 'approve' | 'reject';
+
+/** 审查严重程度阈值（v3.1 M5 / T5.4，/review --severity）。 */
+export type ReviewSeverity = 'strict' | 'normal' | 'lenient';
+
+/** 合法 severity 值列表（供非法值报错提示）。 */
+export const REVIEW_SEVERITIES: readonly ReviewSeverity[] = ['strict', 'normal', 'lenient'];
 
 /** 对抗性闭环审查结果（T3.3 结构化输出，供 T3.5 闭环消费）。 */
 export interface ReviewResult {
@@ -158,21 +168,44 @@ export interface ReviewResult {
 }
 
 /**
- * 判定审查动作（T3.3 对抗性闭环）：
- * - 🔴 critical 问题存在 → 必 reject（打回 Coder 修复）；
- * - 🟡 medium 问题存在 → 可 reject（打回 Coder 修复）；
- * - 仅 🟢 suggestion 或无问题 → approve（不阻断，进入 QA）。
+ * 判定审查动作（T3.3 对抗性闭环 + v3.1 M5 / T5.4 severity 阈值）。
+ *
+ * severity 三档（缺省 normal 保持 v3.0 语义）：
+ * - strict：🔴 critical 或 🟡 medium → 必 reject（medium 无条件阻断）；
+ * - normal：🔴 critical → 必 reject；🟡 medium → 结合自动测试（testPassed=false 时 reject，
+ *   即「medium 可 reject」）；仅 🟢 / 无问题 → approve；
+ * - lenient：仅 🔴 critical → reject；🟡 medium 不阻断。
  */
-export function determineReviewAction(issues: ReviewIssue[]): ReviewAction {
-  if (issues.some((i) => i.severity === 'critical' || i.severity === 'medium')) {
+export function determineReviewAction(
+  issues: ReviewIssue[],
+  options: { severity?: ReviewSeverity; testPassed?: boolean | null } = {},
+): ReviewAction {
+  const severity = options.severity ?? 'normal';
+  const hasCritical = issues.some((i) => i.severity === 'critical');
+  const hasMedium = issues.some((i) => i.severity === 'medium');
+
+  if (severity === 'lenient') {
+    return hasCritical ? 'reject' : 'approve';
+  }
+  if (severity === 'strict') {
+    return hasCritical || hasMedium ? 'reject' : 'approve';
+  }
+  // normal：critical 必拒；medium 在 QA 失败时拒（可拒），否则不阻断
+  if (hasCritical) {
+    return 'reject';
+  }
+  if (hasMedium && options.testPassed === false) {
     return 'reject';
   }
   return 'approve';
 }
 
 /** 从 v2.1 ReviewReport 构建对抗性闭环 ReviewResult（判定 action + 生成中文摘要）。 */
-export function buildReviewResult(report: ReviewReport): ReviewResult {
-  const action = determineReviewAction(report.issues);
+export function buildReviewResult(report: ReviewReport, severity?: ReviewSeverity): ReviewResult {
+  const action = determineReviewAction(report.issues, {
+    severity,
+    testPassed: report.testPassed,
+  });
   const critical = report.issues.filter((i) => i.severity === 'critical').length;
   const medium = report.issues.filter((i) => i.severity === 'medium').length;
   const suggestion = report.issues.filter((i) => i.severity === 'suggestion').length;

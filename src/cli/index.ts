@@ -191,6 +191,36 @@ program
   });
 
 program
+  .command('team <task>')
+  .description(
+    'Orchestrator 团队执行（v3.1 M5）：拆解需求 → 对抗性闭环（Architect/Coder/Reviewer/QA）→ 事务回滚兜底',
+  )
+  .option('-m, --model <id>', t().cli.model.description)
+  .option('--dry-run', '仅输出拆解清单，不执行任何 Agent')
+  .option('--auto-approve', '自动批准拆解方案与代码写盘（谨慎使用；默认全部审批）')
+  .option('--lang <zh|en>', '界面语言')
+  .action(
+    async (
+      task: string,
+      options: { model?: string; dryRun?: boolean; autoApprove?: boolean; lang?: string },
+    ) => {
+      const { runTeamCommand } = await import('./team');
+      const result = await runTeamCommand({
+        cwd: process.cwd(),
+        apiKey: await getApiKey(),
+        task,
+        model: options.model,
+        dryRun: options.dryRun,
+        autoApprove: options.autoApprove ?? false,
+        lang: options.lang,
+      });
+      if (!result.ok && result.loop === undefined) {
+        process.exitCode = 1;
+      }
+    },
+  );
+
+program
   .command('self-heal')
   .description('AI 自我修复闭环（v3.1 M1）：执行 npm run verify，失败自动分类→修复→验证→回滚')
   .option('-m, --model <id>', t().cli.model.description)
@@ -205,6 +235,23 @@ program
       autoApprove: options.autoApprove ?? false,
       lang: options.lang,
     });
+  });
+
+program
+  .command('audit <action>')
+  .description('审计日志（v3.1 M5）：audit export [--out <file>] 导出保序 JSON')
+  .option('--out <file>', '导出目标文件（缺省打印 stdout）')
+  .action(async (action: string, options: { out?: string }) => {
+    const { runAuditCommand } = await import('./audit');
+    if (action !== 'export') {
+      console.error(`未知 audit 子命令: ${action}（支持 export）`);
+      process.exitCode = 1;
+      return;
+    }
+    const code = await runAuditCommand({ out: options.out });
+    if (code !== 0) {
+      process.exitCode = code;
+    }
   });
 
 program
