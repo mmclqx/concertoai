@@ -88,6 +88,65 @@ CNY: 总额 110.00 ｜ 赠送 10.00 ｜ 充值 100.00
 | 模型表 | 内置模型表是否可加载 |
 | 账户余额 | 有 API Key 时查询 DeepSeek 余额（含总额/赠送/充值） |
 
+### `concertoai self-heal` —— AI 自我修复闭环（v3.1）
+
+执行 `npm run verify`，失败时自动分类 → 修复 → 验证 → 回滚：
+
+| 阶段 | 处理 |
+| --- | --- |
+| build / test | 不自动修，给出结构化反馈（code + 中文建议）转人工 |
+| lint | 确定性执行 `npm run lint:fix`（白名单免审批），成功后重新 verify |
+| type（简单错误：缺 import / 缺类型标注） | 调用模型生成修复，**弹审批框逐项确认**（y/n，fail-closed），每次只修 1 个；修复后 verify 失败或引入新错误 → 快照回滚 |
+
+- 修复上限 `MAX_SELF_HEAL_ATTEMPTS = 2`，超限保留详细报告转人工；
+- 仅修复 ConcertoAI 自身代码，**不自动修用户项目代码**；
+- chat 内也可用 `/self-heal`（修复期间状态条可见）。
+
+### `concertoai project` —— 多项目管理（v3.1）
+
+| 子命令 | 说明 |
+| --- | --- |
+| `project add <name> [path]` | 注册项目（path 缺省用当前目录）；重名/嵌套子目录拒绝 |
+| `project list` | 表格列出 name / path / addedAt |
+| `project remove <name>` | 卸载（不删除项目目录） |
+| `project info <name>` | 显示 path / whitelist / mcpServers |
+| `project switch <name>` | 校验项目存在并提示用 `-p` 或 `cd` 启动 |
+
+隔离矩阵：项目模式下会话写入 `~/.concertoai/sessions/<projectKey>/`、审批白名单按项目合并、MCP 服务按项目声明；启动时用 `-p <name>` 或 `cd` 到项目目录自动匹配，未匹配用全局配置（行为与 v3.0 一致）。
+
+### `concertoai team "<任务>"` —— Orchestrator 团队执行（v3.1）
+
+1. 模型将需求拆解为结构化任务清单（负责人/依赖/文件）；
+2. 展示清单，终端 `y` 批准 / `n` 拒绝（非交互需 `--auto-approve`）；
+3. 对抗性闭环：Coder 实现 → Reviewer 审查 → QA 验证（≤ 5 次），超限/失败自动事务回滚；
+4. 输出各角色工件引用（code / review-result / test-report）+ 中文摘要。
+
+| 选项 | 说明 |
+| --- | --- |
+| `--dry-run` | 仅输出拆解清单，不执行任何 Agent |
+| `--auto-approve` | 自动批准拆解方案与代码写盘（**谨慎**） |
+
+chat 内可用 `/orchestrate <任务>` 触发全链路，`o` 键打开可观测性面板查看 spans。
+
+### `concertoai audit export` —— 审计日志导出（v3.1）
+
+导出 `~/.concertoai/audit/` 全部 JSONL 为**保序 JSON 数组**（按 seq 升序）：
+
+- `concertoai audit export`：打印到 stdout；
+- `concertoai audit export --out <file>`：写入文件（目录自动创建）；
+- 无审计日志时输出「暂无审计日志」，退出码 0（非错误）。
+
+### `concertoai login / logout / whoami / account` —— 多账号管理（v3.1）
+
+| 命令 | 说明 |
+| --- | --- |
+| `login <name> [--key <key>]` | 登录账号（交互输入 API Key 不回显；`--key` 供 CI 非交互注入）；重名覆盖前确认 |
+| `logout <name> [--purge]` | 登出（清除 active 指针；`--purge` 才删除账号文件） |
+| `whoami` | 显示当前账号名 + Key 后 4 位（打码 `sk-****abcd`） |
+| `account switch <name>` / `account list` | 切换 active / 表格列出账号 |
+
+API Key 解析优先级：CLI > 环境变量 `DEEPSEEK_API_KEY` > active account > config.json（回退）。账号 = 一个 API Key 配置文件（`~/.concertoai/accounts/<name>/config.json`，权限 0600），与项目无关；任意命令不输出完整 Key。
+
 ## 3. 交互细节
 
 ### 输入框
@@ -349,3 +408,21 @@ v3.0 新增：
 v2.2 新增（智能成本控制）：
 
 - **高峰时段检测与模型切换**：工作日 9:00-12:00 / 14:00-18:00 判定为高峰时段，启动时按 `peakTimeStrategy`（ask/switch/ignore）决定是否切换到本地 ollama 模型，`concertoai balance` 可随时查看 DeepSeek 账户余额。
+
+v3.1 新增：
+
+- **AI 自我修复**：`concertoai self-heal` / `/self-heal`，verify 失败自动分类（lint 直修 / 简单类型模型修复走审批）→ 快照回滚，仅修自身代码；
+- **多项目管理**：`concertoai project add/list/remove/info/switch` + `-p <name>`，会话 / 审批白名单 / MCP 按项目隔离；
+- **多账号**：`concertoai login/logout/whoami/account`，账号 = API Key 配置文件（0600 + active 指针），Key 打码展示；
+- **Orchestrator CLI**：`concertoai team "<任务>"`（拆解 → 对抗性闭环 → 回滚兜底）+ `/orchestrate` + `audit export`（审计日志保序导出）+ `/agent update` + `/review --severity`；
+- **结构化错误增强**：工具错误统一携带机器可读 `code` + 中文 `suggestion`。
+
+### 配置目录迁移（~/.lumen → ~/.concertoai）
+
+v3.1 起全局目录统一为 `~/.concertoai/`（v3.0 及以前为 `~/.lumen/`）。首次启动（CLI 入口）自动幂等迁移：
+
+1. `~/.lumen` 不存在 → 无操作（新安装直接用新版目录）；
+2. `~/.concertoai` 已存在 → 保留新版，不覆盖旧目录；
+3. `~/.lumen` 存在且 `~/.concertoai` 不存在 → 整目录改名迁移（rename，失败回退复制 + 删除）。
+
+会话 / 配置 / 技能 / 知识图谱 / 审计 / Agent 安装全部随迁移保留。若想手动确认，可查看 `~/.concertoai/config.json` 与 `~/.concertoai/sessions/` 是否已就位。

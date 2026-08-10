@@ -362,6 +362,103 @@ interface AgentDef {
 | **结论** | 采用 ①：新增 `src/core/`（`peak-time.ts` 判定工作日+高峰小时，左闭右开；`model-switcher.ts` 按 `peakTimeStrategy` 决策）。CLI 启动经 `resolveStartupModel` 调用，`ask` 在交互终端确认后切换、非交互跳过不阻塞；`switch` 直接切换；`ignore` 保持主模型。配置项 `ollamaModel` / `ollamaBaseUrl` 默认 `qwen3.6:27b-q4_K_M` / `http://localhost:11434/v1` |
 | **理由** | (a) 高峰时段成本高且可被本地模型替代，收益直接；(b) 非高峰/周末零打扰，符合产品「中文优先、低成本」定位；(c) 策略默认 `ask` 尊重用户选择，`switch`/`ignore` 提供确定性行为；(d) 本地模型不在 DeepSeek 模型表，chat 装配按 `ollamaBaseUrl` 构建客户端、成本按 0 展示，避免 `costFor` 未知模型抛错（该抛错行为有测试锁定） |
 
+## ADR-024：AI 自我修复确定性优先
+
+| 字段 | 内容 |
+|------|------|
+| **状态** | 已采纳（v3.1 M1） |
+| **日期** | 2026-08-10 |
+| **上下文** | v3.0 的 `npm run verify` 失败后只能依赖模型盲目重试或人工介入；错误类型多样（build/lint/type/test），盲目重试成本高且可能引入新问题 |
+| **选项** | ① 建立「诊断 → 修复 → 验证 → 回滚」确定性闭环（lint 机械修复 / 简单类型模型修复 / 复杂反馈人工） ② 保持现状（模型盲目重试 + 人工） ③ 全自动模型修复（无审批） |
+| **结论** | 采用 ①：`src/loop/self-heal.ts` 四段统一解析（VerifyReport）→ lint 确定性 `npm run lint:fix`（白名单免审批）/ type 简单错误模型修复（审批 fail-closed，每次 1 个）/ 复杂错误结构化反馈 → SnapshotManager 快照回滚 → `MAX_SELF_HEAL_ATTEMPTS=2` 超限转人工。**修复范围仅限 ConcertoAI 自身代码**，不自动修用户项目 |
+| **理由** | (a) 确定性优先：lint 机械修复不调模型，成本低且无幻觉；(b) 模型介入仅限可判定的简单类型错误且走审批（fail-closed）；(c) 快照回滚保证修复失败/引入新错误可恢复；(d) 自修用户项目风险高（越权/破坏），明确不做 |
+
+---
+
+## ADR-025：项目隔离矩阵
+
+| 字段 | 内容 |
+|------|------|
+| **状态** | 已采纳（v3.1 M2） |
+| **日期** | 2026-08-10 |
+| **上下文** | v3.0 会话全局混杂、审批白名单全局生效；多项目同时开发时会话/白名单/MCP 互相污染 |
+| **选项** | ① 项目注册表 + 隔离矩阵（会话/白名单/MCP 按项目隔离，全局配置/技能/Agent 共享） ② 保持全局单一 ③ 完全按项目目录隔离所有状态 |
+| **结论** | 采用 ①：`projects.json` 注册表（name → path/whitelist/mcpServers）+ 按 cwd 自动探测 + `-p <name>` 等价 cd；会话 `sessions/<projectKey>/`、白名单项目级合并、MCP 按项目声明；无项目时行为与 v3.0 完全一致 |
+| **理由** | (a) 多项目互不串（会话/白名单/MCP）；(b) 全局配置/技能/Agent 天然共享，避免重复；(c) 默认模式向后兼容 |
+
+---
+
+## ADR-026：多账号 git-credential 模式
+
+| 字段 | 内容 |
+|------|------|
+| **状态** | 已采纳（v3.1 M3） |
+| **日期** | 2026-08-10 |
+| **上下文** | 用户可能持有多个 DeepSeek API Key（工作/个人/多账户），当前仅支持环境变量单 Key |
+| **选项** | ① 账号 = 一个 API Key 配置文件（git credential 模式：`accounts/<name>/config.json` 0600 + active 指针），与项目无关 ② 配置文件存 Key 列表 ③ 仅环境变量（保持现状） |
+| **结论** | 采用 ①：`src/store/accounts.ts` + `login/logout/whoami/account` 命令；Key 解析链 CLI > 环境变量 `DEEPSEEK_API_KEY` > active account > config.json；Key 不落日志不进入审计、打码展示（sk-****abcd） |
+| **理由** | (a) 多账号切换低成本；(b) git credential 模式成熟且语义清晰；(c) 账号与项目解耦（一个 Key 可服务多个项目）；(d) 安全：0600 权限 + 打码 + 不落日志 |
+
+---
+
+## ADR-027：Orchestrator CLI 入口
+
+| 字段 | 内容 |
+|------|------|
+| **状态** | 已采纳（v3.1 M5） |
+| **日期** | 2026-08-11 |
+| **上下文** | v3.0 的 Orchestrator / 对抗性闭环仅库级 API（手工测试报告已知问题 #1），审计日志无导出命令（已知问题 #3）；用户无法从 CLI 直接触发团队协作 |
+| **选项** | ① 补 CLI 入口：`concertoai team "<任务>"` + `/orchestrate` + `audit export` + `/agent update` + `/review --severity` ② 保持库级 API ③ 做独立 GUI |
+| **结论** | 采用 ①：`src/cli/team.ts`（拆解 → 展示确认 → 对抗性闭环 → 事务回滚兜底 → 聚合工件）+ `/orchestrate`（chat 内，traceStore 透传）+ `audit export`（保序 JSON）；复用 v3.0 全部模块（Orchestrator/runTeamLoop/SnapshotManager/AuditLogger） |
+| **理由** | (a) 闭环了 v3.0 开放问题（#1/#3）；(b) 复用现有模块零重写；(c) CLI 形态符合产品定位 |
+
+---
+
+## ADR-028：版本归位 v2.2 + v3.1 随 3.1.0 发布
+
+| 字段 | 内容 |
+|------|------|
+| **状态** | 已采纳（v3.1 M0） |
+| **日期** | 2026-08-10 |
+| **上下文** | CHANGELOG `[Unreleased]` 同时积累 v2.2（peak-time/model-switcher）与 v3.1（balance/doctor）两组未发布变更 |
+| **选项** | ① 不补发 v2.2.0，v2.2 + v3.1 功能随 v3.1.0 一并发布 ② 先发 v2.2.0 再发 v3.1.0 |
+| **结论** | 采用 ①：CHANGELOG 单一 `[3.1.0]` 条目，v2.2 与 v3.1 功能合并记录；避免两套 Unreleased 并存 |
+| **理由** | (a) 避免两个 Unreleased 版本并存的管理混乱；(b) 两主题同为「成本控制 + 日常体验」，发布节奏一致；(c) 减少一次发布门检成本 |
+
+---
+
+## 延后项目评估（v3.1，E1~E4）
+
+> v3.0 承诺「v3.1 评估」的项目逐一给出结论，不留悬空承诺（来源：v3.1-dev-plan-ai.md §7 / E1~E4）。
+
+### E1：Agent 间点对点通信 —— **否决**（维持 Orchestrator 中介模式）
+
+| 字段 | 内容 |
+|------|------|
+| **结论** | 否决（维持 ADR-015 中介模式） |
+| **理由** | (a) 消息可追踪/审计依赖统一路由（TraceStore/AuditLogger 经 Orchestrator 记录）；(b) 个人 CLI 场景无性能瓶颈（单机、任务数有限）；(c) 点对点会破坏「所有决策可追溯」承诺 |
+
+### E2：完整 Docker/K8s 沙箱 —— **否决**
+
+| 字段 | 内容 |
+|------|------|
+| **结论** | 否决（进程级隔离 + 审批流 + 权限声明足够） |
+| **理由** | (a) 子代理已进程级隔离，工具权限 fail-closed 声明；(b) Docker/K8s 复杂度高，与个人开发者 CLI 定位不符；(c) 无收益数据支撑 |
+
+### E3：TypeScript 7（原生）—— **继续延后 v3.2**
+
+| 字段 | 内容 |
+|------|------|
+| **结论** | 延后 v3.2（锁定 TS 5.9 + tsup） |
+| **理由** | (a) 无迁移收益评估数据；(b) 工具链（tsup/vitest/biome）兼容性未验证；(c) 当前 strict 全开已满足类型安全需求 |
+
+### E4：Agent 评分系统 + S1（外部 Agent zod → JSON Schema）—— **评分否决 / S1 延后 v3.2 可选**
+
+| 字段 | 内容 |
+|------|------|
+| **结论** | 评分系统否决（需后端服务，超出 CLI 范围）；S1（外部 Agent zod → JSON Schema）复用 `src/mcp/zod-adapter.ts` 序列化 schema，工作量约 2h，列为 v3.2 可选 |
+| **理由** | (a) 评分/评论需后端存储与社区运营，与本地优先 CLI 冲突；(b) S1 是纯工程改进，无紧急需求，v3.2 有余量再做 |
+
 ---
 
 *当重要决策做出后，请在此追加新条目。*

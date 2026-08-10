@@ -1,7 +1,7 @@
 # ConcertoAI 开发任务看板
 
-> 最后更新：2026-08-10
-> 当前里程碑：**🔵 v3.1 进行中**（23/27 任务 ✅ · 基线 81 文件 / 912 用例）（v1.0: 20/20 ✅ · v1.1: 12/12 ✅ · v2.0: 15/15 ✅ · v2.1: 25/25 ✅ · v3.0: 24/24 ✅ · v3.1: 23/27 🔵）
+> 最后更新：2026-08-11
+> 当前里程碑：**🟢 v3.1 已完成**（27/27 任务 ✅ · 基线 84 文件 / 923 用例）（v1.0: 20/20 ✅ · v1.1: 12/12 ✅ · v2.0: 15/15 ✅ · v2.1: 25/25 ✅ · v3.0: 24/24 ✅ · v3.1: 27/27 ✅）
 > 基于：[v3.1 开发计划](./v3.1-dev-plan-ai.md) · [v3.1 详细任务](./v3.1-dev-tasks.md) · 历史：[v3.0 开发计划](./v3.0-dev-plan.md)
 
 ---
@@ -10,13 +10,13 @@
 
 | 指标 | 数值 |
 |------|------|
-| 总任务数 | 123（v1.0: 20 ✅ + v1.1: 12 ✅ + v2.0: 15 ✅ + v2.1: 25 ✅ + v3.0: 24 ✅ + v3.1: 27 🔵） |
+| 总任务数 | 123（v1.0: 20 ✅ + v1.1: 12 ✅ + v2.0: 15 ✅ + v2.1: 25 ✅ + v3.0: 24 ✅ + v3.1: 27 ✅） |
 | P0 任务 | 37（v1.1: 6 ✅ + v2.0: 5 ✅ + v2.1: 5 ✅ + v3.0: 14 ✅ + v3.1: 7 ✅） |
-| P1 任务 | 44（v1.1: 6 ✅ + v2.0: 10 ✅ + v2.1: 4 ✅ + v3.0: 10 ✅ + v3.1: 10 ✅ + 4 🔵） |
+| P1 任务 | 44（v1.1: 6 ✅ + v2.0: 10 ✅ + v2.1: 4 ✅ + v3.0: 10 ✅ + v3.1: 14 ✅） |
 | P2 任务 | 14（v2.1: 8 ✅ + v3.1: 6 ✅） |
-| 待开始 | 4 |
+| 待开始 | 0 |
 | 进行中 | 0 |
-| 已完成 | 119 |
+| 已完成 | 123 |
 | 已阻塞 | 0 |
 
 ---
@@ -57,7 +57,7 @@
 | **V3.1-M3 多租户登录** | **P2** | **4** | 🟢 已完成 |
 | **V3.1-M4 结构化错误增强** | **P2** | **2** | 🟢 已完成 |
 | **V3.1-M5 Orchestrator CLI 入口 + 运维命令补全** | **P1** | **5** | 🟢 已完成 |
-| **V3.1-M6 集成测试与文档** | **P1** | **4** | ⬜ 待开始 |
+| **V3.1-M6 集成测试与文档** | **P1** | **4** | 🟢 已完成 |
 
 ---
 
@@ -914,25 +914,29 @@
 
 ### V3.1-M6：集成测试与文档（P1，约 4h）
 
-- [ ] **T6.1** E2E 集成测试
+- [x] **T6.1** E2E 集成测试
   - 涉及文件：`tests/e2e/team-cli.test.ts`（新增）、`tests/e2e/self-heal.test.ts`（新增）、`tests/e2e/project-isolation.test.ts`（新增）
   - 预估：1h
   - 依赖：M1-M5 全部完成
+  - ✅ 2026-08-11 完成：`tests/e2e/team-cli.test.ts`（2 用例：FakeModel 拆解 → autoApprove → 对抗性闭环收敛文件落地 + 快照提交清理；QA 连续失败 → onRollback 事务回滚新增文件删除）/ `tests/e2e/self-heal.test.ts`（2 用例：注入 lint 错误 → verify 失败 → 自动 lint:fix → verify 通过闭环收敛；注入 type 简单错误 → 模型修复审批 → 修复后 verify 仍失败 → 快照回滚恢复原状）/ `tests/e2e/project-isolation.test.ts`（3 用例：注册项目 A/B → resolveProjectForCwd 按 cwd 命中 → 会话 JSONL 写各自目录 + list 互不可见；白名单合并去重；项目 MCP 声明互不串 + audit export 保序导出）
 
-- [ ] **T6.2** 文档更新
+- [x] **T6.2** 文档更新
   - 涉及文件：`README.md`（修改）、`docs/05-用户与开发指南/user-guide.md`（修改）、`docs/02-架构设计/ARCHITECTURE.md`（修改）、`CHANGELOG.md`（修改）
   - 预估：1.5h
   - 依赖：T6.1
+  - ✅ 2026-08-11 完成：README 新增 v3.1 功能章节（self-heal / project / account / team+audit / 结构化错误）；user-guide 新增 5 章节（self-heal / project / team / audit export / account）+ v3.1 快速了解 + 配置目录迁移；ARCHITECTURE 新增 D42~D46 决策 + 目录树与实际文件核对（project/self-heal/team/audit/account/error-codes/projects/accounts/crash-handler/orchestrate 全部入树）+ §8.7 v3.1 已解决；CHANGELOG 归位 `[3.1.0]` 条目（v2.2 + v3.1 功能合并，无 `[Unreleased]` 残留）
 
-- [ ] **T6.3** 收尾：S4 优化 + 预留功能条目 + ADR 记录
+- [x] **T6.3** 收尾：S4 优化 + 预留功能条目 + ADR 记录
   - 涉及文件：`src/observable/trace.ts`（修改）、`docs/05-用户与开发指南/user-guide.md`（修改）、`docs/06-会议与决策记录/DECISIONS.md`（修改 — ADR-024~028）
   - 预估：1h
   - 依赖：T6.2
+  - ✅ 2026-08-11 完成：`src/observable/trace.ts` S4 优化（childIndex parentTaskId→子任务索引，record 增删/覆盖/LRU 淘汰同步维护，queryByTaskId BFS 收集子树 + 单次遍历，O(n²)→O(n)）+ `tests/observable/trace.test.ts` 新增 4 用例（深链跨任务/覆盖改挂/LRU 淘汰/5000 条冒烟）；user-guide 补 balance/doctor/目录迁移章节；DECISIONS.md 记录 ADR-024~028（self-heal 确定性 / 项目隔离矩阵 / 多账号 git-credential / Orchestrator CLI 入口 / 版本归位）+ E1~E4 评估结论（点对点否决 / Docker 沙箱否决 / TS7 延后 / 评分否决+S1 延后）
 
-- [ ] **T6.4** 测试报告落盘
+- [x] **T6.4** 测试报告落盘
   - 涉及文件：`docs/07.4-手工测试报告-v3.1.md`（新增）
   - 预估：0.5h
   - 依赖：T6.3
+  - ✅ 2026-08-11 完成：`docs/07.4-手工测试报告-v3.1.md` 新增（发布前模板：四大新能力 12 项 + v3.0 回归 + 已知问题；基线 84 文件 / 923 用例全绿）
 
 ---
 
@@ -946,6 +950,7 @@
 
 | 日期 | 变更内容 | 作者 |
 |------|---------|------|
+| 2026-08-11 | **V3.1-M6 完成（v3.1 全部 27 任务收官）**：T6.1 E2E 集成测试（team 全链路 / self-heal 修复+回滚 / project 隔离 / audit export）+ T6.2 文档更新（README / user-guide / ARCHITECTURE D42~D46 / CHANGELOG v3.1.0 归位）+ T6.3 收尾（trace S4 O(n²)→O(n) + ADR-024~028 + E1~E4 评估）+ T6.4 测试报告落盘（07.4）；**84 文件 / 923 用例全绿**（门检 ≥785/72） | Carbon Code |
 | 2026-08-07 | T1.1 完成：核实 DeepSeek 模型 ID 与定价 | Carbon Code |
 | 2026-08-07 | T1.2 完成：透传真实 API usage | Carbon Code |
 | 2026-08-07 | T1.3 完成：流式取消与断流策略 | Carbon Code |

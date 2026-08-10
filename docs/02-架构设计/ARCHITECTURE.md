@@ -265,6 +265,11 @@ MCP 服务故障
 | D39 | **配置目录迁移 ~/.lumen → ~/.concertoai**（v3.1）：`store/paths.ts` 单一来源 + `migrateLegacyHome` 幂等迁移（rename 失败回退复制，CLI 入口自动调用） | 品牌统一；旧数据无缝迁移；路径定义不散落各模块 | `store/paths.ts` + `cli/index.ts` |
 | D40 | **余额查询独立模块 + CLI 命令**（v3.1）：`balance/fetchBalance` 调用官方 `GET /user/balance`（超时 15s、非 2xx 抛 BalanceError），`concertoai balance` 输出各币种总额/赠送/充值；`concertoai doctor` 环境诊断内嵌余额显示（无 key 标记跳过） | 轻量只读 GET 单次不重试；余额为字符串不做精度转换；doctor 单项失败不中断、汇总退出码 | `balance/` + `cli/balance.ts` + `cli/doctor.ts` |
 | D41 | **高峰时段模型自动切换**（v2.2）：`core/peak-time.ts` 判定工作日+高峰小时（9-12 / 14-18 左闭右开）；`core/model-switcher.ts` 按 `peakTimeStrategy`（ask/switch/ignore）决策，ask 在交互终端确认后切到本地 ollama 模型（`ollamaModel`/`ollamaBaseUrl`）；CLI 启动（`resolveStartupModel`）与 chat 装配消费，本地模型成本按 0 展示 | 高峰时段 API 成本高且可被本地模型替代；非高峰/周末零打扰；策略默认 ask 尊重用户；本地模型不在 DeepSeek 模型表，避免 costFor 抛错 | `core/` + `store/config.ts` + `cli/index.ts` + `cli/chat.tsx` + `ui/App.tsx` |
+| D42 | **AI 自我修复确定性优先**（v3.1 / ADR-024）：verify 失败 → 分类器四段解析（build/lint/type/test）→ lint 确定性 `npm run lint:fix`（白名单免审批）/ type 简单错误（缺 import/标注）模型生成修复（审批 fail-closed，每次 1 个）→ SnapshotManager 快照回滚；仅修 ConcertoAI 自身代码，不自动修用户项目；超限（MAX_SELF_HEAL_ATTEMPTS=2）转人工 | 确定性优先：lint 机械修复不调模型；模型介入仅限可判定的简单类型错误且走审批；回滚保证修复失败/引入新错误可恢复 | `loop/self-heal.ts` + `tools/error-codes.ts` |
+| D43 | **项目隔离矩阵**（v3.1 / ADR-025）：`projects.json` 注册表（name → path/whitelist/mcpServers）+ 按 cwd 自动探测（`-p <name>` 等价 cd）；会话按项目分目录、审批白名单项目级合并、MCP 按项目声明；全局配置/技能/Agent 共享 | 多项目并存互不串（会话/白名单/MCP）；默认模式行为与 v3.0 完全一致 | `store/projects.ts` + `cli/project.ts` + `cli/common.ts` + `cli/chat.tsx` |
+| D44 | **多账号 git-credential 模式**（v3.1 / ADR-026）：账号 = 一个 DeepSeek API Key 配置文件（`~/.concertoai/accounts/<name>/config.json` 0600 + `active-account` 指针），与项目无关；Key 解析链 CLI > env > active account > config.json | 多账号切换低成本；Key 不落日志不进入审计；打码展示（sk-****abcd） | `store/accounts.ts` + `cli/account.ts` + `cli/common.ts`（resolveApiKey） |
+| D45 | **Orchestrator CLI 入口**（v3.1 / ADR-027）：`concertoai team "<任务>"`（拆解 → 对抗性闭环 → 事务回滚兜底 → 聚合工件）+ `/orchestrate`（chat 内）+ `audit export`（保序 JSON 导出）+ `/agent update` + `/review --severity` | v3.0 的 Orchestrator 仅库级 API，补 CLI 入口与运维命令；审计可导出满足合规 | `cli/team.ts` + `cli/audit.ts` + `cli/slash/orchestrate.ts` + `reviewer/types.ts` |
+| D46 | **版本归位 v2.2+v3.1 随 3.1.0 发布**（v3.1 / ADR-028）：CHANGELOG 不补发 v2.2.0，v2.2（peak-time/model-switcher）与 v3.1（balance/doctor/self-heal/project/team/account/audit）功能随 v3.1.0 一并发布 | 避免两套 Unreleased 并存；两主题同为「成本控制 + 日常体验」 | `CHANGELOG.md` |
 
 ## 5. 目录结构说明
 
@@ -297,20 +302,28 @@ concertoai/
 │   │       ├── research.ts 研究型子代理（多角度对比分析，结论 ≤500 字）
 │   │       └── index.ts    registerBuiltinSubagents
 │   ├── cli/
-│   │   ├── index.ts      commander 入口：concertoai（默认 chat）/ chat / run / plan / snapshot / balance / doctor；DEEPSEEK_API_KEY 检查
-│   │   ├── chat.tsx      chat 装配：TTY 检查、配置加载、注册表、规则加载、MCP 启动、resume、render(App)
+│   │   ├── index.ts      commander 入口：concertoai（默认 chat）/ chat / run / plan / snapshot / balance / doctor / project / self-heal / team / audit / login / logout / whoami / account；DEEPSEEK_API_KEY 检查（resolveApiKey 链）
+│   │   ├── chat.tsx      chat 装配：TTY 检查、配置加载、注册表、规则加载、项目探测（resolveProjectForCwd）、MCP 启动、resume、render(App)
 │   │   ├── run.ts        run 装配：非交互、stdout 流式、--auto-approve 显式开启、存档
 │   │   ├── plan.ts       plan 装配：计划轮 → 终端 y/n → 执行轮（含依赖检测/进度/回滚）
 │   │   ├── snapshot.ts   concertoai snapshot [list|clean]：快照残留列出/清理（v3.0 M3）
 │   │   ├── balance.ts    concertoai balance：余额查询（fetchBalance，v3.1）
 │   │   ├── doctor.ts     concertoai doctor：环境诊断（Node/Key/配置/会话/模型/余额，v3.1）
-│   │   ├── common.ts     CLI 共享：白名单 / 注册表构建 / OS 提示（轻量加载，v2.1）
+│   │   ├── project.ts    concertoai project add/list/remove/info/switch（v3.1 M2）
+│   │   ├── self-heal.ts  concertoai self-heal：verify 失败自动分类→修复→验证→回滚（v3.1 M1）
+│   │   ├── team.ts       concertoai team "<任务>"：Orchestrator 全链路（拆解→对抗性闭环→回滚兜底，v3.1 M5）
+│   │   ├── audit.ts      concertoai audit export [--out]：审计日志保序 JSON 导出（v3.1 M5）
+│   │   ├── account.ts    多账号命令 login/logout/whoami/account（v3.1 M3）+ account-types.ts
+│   │   ├── crash-handler.ts 进程级崩溃日志（uncaughtException/unhandledRejection → ~/.concertoai/crash.log，v3.1 M3）
+│   │   ├── common.ts     CLI 共享：白名单 / 注册表构建 / OS 提示 / resolveProjectForCwd / mergeAllowlist / resolveApiKey / maskApiKey（轻量加载）
 │   │   └── slash/        斜杠命令处理器
-│   │       ├── agent.ts  /agent list / install / remove / promote（v3.0 M4）
+│   │       ├── agent.ts  /agent list / install / remove / promote / update（v3.0 M4 + v3.1 M5）
 │   │       ├── memory.ts /remember /forget /memories
 │   │       ├── mcp.ts    /mcp status / connect / disconnect（v2.0）
 │   │       ├── skill.ts  /skill list / use / install / search / update（v2.0/v2.1）
-│   │       └── review.ts /review 审查命令（v2.1）
+│   │       ├── review.ts /review [path|--pr|--severity strict|normal|lenient]（v2.1 + v3.1 M5）
+│   │       ├── self-heal.ts /self-heal 斜杠命令（v3.1 M1）
+│   │       └── orchestrate.ts /orchestrate <任务>：chat 内 team 全链路（v3.1 M5）
 │   ├── ui/
 │   │   ├── App.tsx       状态机组件：send/sendPlan/executePlan/审批挂起/消息渲染/错误显示
 │   │   ├── PromptInput.tsx  光标移动 + 历史浏览 + 多行输入
@@ -324,6 +337,7 @@ concertoai/
 │   │   └── StatusBar.tsx 模型名/token（真实 usage/估算）/成本（costFor 实时计算）
 │   ├── loop/
 │   │   ├── loop.ts       runLoop / MAX_LOOP_TURNS=50 / MAX_REPAIRS=2 / LoopEvent（chunk/tool_call/tool_result/usage/error）
+│   │   ├── self-heal.ts  AI 自我修复闭环（v3.1 M1）：Verify 分类器四段解析 + 修复策略执行器 + 快照回滚 + runSelfHeal 入口（详见 §4 D42）
 │   │   ├── context.ts    上下文窗口管理（trimContext：80% 预算、整轮保留、日志）
 │   │   ├── messages.ts   消息构造 + toApiMessages + formatToolResult（20k 截断）
 │   │   ├── types.ts      ChatMessage / ToolCall / Role
@@ -340,7 +354,8 @@ concertoai/
 │   │   ├── peak-time.ts  工作日/高峰小时判断（isWorkday / isPeakHour / isPeakTime）
 │   │   └── model-switcher.ts 高峰时段模型切换（applyPeakStrategy / maybeSwitchModel，ask/switch/ignore）
 │   ├── tools/
-│   │   ├── registry.ts   ToolSpec/ToolContext/ToolRegistry/ApprovalRequest/ToolResult（repairable/parallelSafe 字段）
+│   │   ├── registry.ts   ToolSpec/ToolContext/ToolRegistry/ApprovalRequest/ToolResult（repairable/parallelSafe/code/suggestion 字段）
+│   │   ├── error-codes.ts 结构化错误码（v3.1 M4）：ToolErrorCode 15 码 + TOOL_ERROR_SUGGESTIONS 中文建议 + toolError 构造器 + SandboxError + inferErrorCode 兜底
 │   │   ├── read.ts       read_file/search_content/list_directory + resolveSafe（BOM 剥离）
 │   │   ├── edit.ts       edit_file：SEARCH 规范化匹配（CRLF）、保留换行风格、审批后落盘、快照（v1.1）
 │   │   ├── shell.ts      run_command：白名单免审、每次审批、超时杀进程树、输出截断
@@ -402,8 +417,10 @@ concertoai/
 │   │   ├── audit.ts      AuditLogger JSONL 审计日志（异步追加，T5.2）
 │   │   └── index.ts      barrel
 │   ├── store/
-│   │   ├── paths.ts      全局路径单一来源（~/.concertoai/）+ migrateLegacyHome 旧目录迁移（v3.1）
+│   │   ├── paths.ts      全局路径单一来源（~/.concertoai/）+ migrateLegacyHome 旧目录迁移 + projectSessionsDir/projectKeyFor/accountsDir（v3.1）
 │   │   ├── session.ts    SessionStore：create/append/appendAll/read/list；锁 + 原子写 + 冲突检测
+│   │   ├── projects.ts   项目注册表（v3.1 M2）：~/.concertoai/projects.json CRUD + 重名/嵌套拒绝 + 路径规范化 + updateConfig（详见 §4 D43）
+│   │   ├── accounts.ts   多账号存储（v3.1 M3）：accounts/<name>/config.json 0600 + active-account 指针（详见 §4 D44）
 │   │   ├── project-rules.ts  loadProjectRules：AGENTS→CARBON 优先级、8k 截断
 │   │   ├── config.ts      loadConfig/writeConfig/resolveConfig（CLI > env > 配置 > 默认；含 mcpServers）
 │   │   └── memory-store.ts   MemoryStore：JSONL CRUD + 标签/关键词检索 + 项目隔离（v1.1）
@@ -411,7 +428,7 @@ concertoai/
 │       ├── zh.ts         中文字典 + fmt()
 │       ├── en.ts         英文字典（键与 zh 同构）
 │       └── index.ts      resolveLocale / setLocale / t() / DICTS
-└── tests/                镜像 src 结构（69 个文件 / 750 用例），含 tests/agent/、tests/agents/、tests/balance/、tests/cli/、tests/core/、tests/e2e/、tests/i18n/、tests/knowledge/、tests/loop/、tests/market/、tests/mcp/、tests/model/、tests/observable/、tests/orchestrator/、tests/planner/、tests/reviewer/、tests/skill/、tests/store/、tests/tools/、tests/ui/ 等
+└── tests/                镜像 src 结构（84 个文件 / 923 用例，v3.1 基线），含 tests/agent/、tests/agents/、tests/balance/、tests/cli/、tests/core/、tests/e2e/（team-cli/self-heal/project-isolation）、tests/i18n/、tests/knowledge/、tests/loop/（self-heal/error-reporting）、tests/market/、tests/mcp/、tests/model/、tests/observable/、tests/orchestrator/、tests/planner/、tests/reviewer/、tests/skill/、tests/store/（projects/accounts）、tests/tools/、tests/ui/ 等
 ```
 
 ## 6. 5分钟快速体验
@@ -556,7 +573,16 @@ npm run verify     # 验收：build + lint + typecheck + test（--silent）
 | --- | --- | --- |
 | 高峰时段 API 成本高且无法干预 | ✅ 高峰时段检测（工作日 9-12 / 14-18）+ 模型自动切换：peakTimeStrategy=ask/switch/ignore，可切到本地 ollama 模型（成本按 0 展示） | `core/` + `store/config.ts` + `cli/index.ts` + `cli/chat.tsx` + `ui/App.tsx` |
 
-### 8.7 规划（v3.1+，详见 [v3.1-dev-plan-ai.md](../03-开发计划与任务/v3.1-dev-plan-ai.md)）
+### 8.7 v3.1 已解决
+
+- AI 自我修复闭环（verify 失败 → 分类 → lint 直修 / 简单类型模型修复 → 快照回滚，仅修自身）
+- 多项目管理（注册表 + 会话/白名单/MCP 隔离矩阵 + `-p` 切换）
+- 多租户登录（多账号 git-credential 模式 + API Key 解析链 + doctor 账号标注）
+- 结构化错误增强（ToolResult code+suggestion + ToolRepairError 渲染兼容）
+- Orchestrator CLI 入口（team / /orchestrate / audit export）+ /agent update + /review --severity
+- trace 查询 O(n²) → O(n)（S4 优化）
+
+### 8.8 规划（v3.1+，详见 [v3.1-dev-plan-ai.md](../03-开发计划与任务/v3.1-dev-plan-ai.md)）
 
 - **P0 AI 自我修复闭环（M1）**：`src/loop/self-heal.ts` —— verify 四段（build/lint/typecheck/test）统一分类（复用 `agents/qa.ts` `parseVerifyOutput`）→ lint 确定性 `lint:fix` / 简单类型错误模型修复（审批）→ SnapshotManager 快照 + 修复后 verify + 失败回滚 → `/self-heal` + `concertoai self-heal`
 - **P1 多项目管理（M2）**：`concertoai project add/switch/list/remove/info` + 隔离矩阵（会话目录 / 审批白名单 / MCP 服务按项目隔离，全局配置/技能/Agent 共享）

@@ -6,25 +6,49 @@
 - 条目按类型分组：`Added`（新增）/ `Changed`（变更）/ `Fixed`（修复）/ `Removed`（移除）；
 - 版本号由 `npm version <patch|minor|major>` 管理（自动 bump + 同步 `src/index.ts` 的 VERSION + git tag）。
 
-## [Unreleased]
+## [3.1.0] — 2026-08-11
 
-> **版本归位（2026-08-10 · T0.1）**：本区块同时包含 v2.2（peak-time / model-switcher / ADR-023，智能成本控制）与 v3.1（balance / doctor 等预留功能）两组未发布变更，均**随 v3.1.0 一并发布**（不补发 v2.2.0，理由见 `docs/03-开发计划与任务/v3.1-dev-plan-ai.md` §9——避免两套 Unreleased 并存；两主题同为「成本控制 + 日常体验」）。发布时整块移入 `## [3.1.0]` 条目。
+> **版本归位（2026-08-10 · T0.1 / ADR-028）**：v2.2（peak-time / model-switcher，智能成本控制）与 v3.1（balance / doctor / self-heal / project / account / team / audit export 等）功能**随 v3.1.0 一并发布**（不补发 v2.2.0，避免两套 Unreleased 并存；两主题同为「成本控制 + 日常体验」）。
 
-### Added — v3.1
+### Added — v3.1（AI 自我修复）
 
-- **`concertoai balance` 命令**：查询 DeepSeek 账户余额（官方 `GET /user/balance`），按币种输出总额/赠送/充值；新模块 `src/balance/`（`fetchBalance` + `BalanceError` + 15s 超时）
-- **`concertoai doctor` 命令**：环境诊断（Node 版本/平台/API Key/配置文件/会话目录/模型表 + 账户余额），单项失败不中断、汇总退出码；无 API Key 时余额项标记跳过
-- **i18n 扩展**：`balance` / `doctor` 两组文案（zh/en 键同构，en.test.ts 断言一致）
-- **测试**：`tests/balance/`（5 用例）+ `tests/cli/balance.test.ts`（4 用例）+ `tests/cli/doctor.test.ts`（5 用例），总计 750 用例全绿
+- **Verify 分类器**（`src/loop/self-heal.ts`）：`npm run verify` 输出四段统一解析（build/lint/type/test），复用 `qa.parseVerifyOutput` + Biome/tsc 段解析，输出统一 `VerifyReport`（passed + errors[]: stage/file/line/code/message + parseFailed）；ANSI 剥离 + 段标记切分 + 尽力而为
+- **修复策略执行器**：lint → 确定性 `npm run lint:fix`（白名单免审批）；type 简单错误（缺 import / 缺类型标注）→ 模型生成修复（审批 fail-closed，每次 1 个）；type 复杂 / build / test → 结构化反馈不自动修；`MAX_SELF_HEAL_ATTEMPTS=2` 超限转人工
+- **快照与回滚**：修复前 `SnapshotManager` 登记快照，修复后强制 verify + diff 审查；目标错误未消失或引入新错误 → rollback 恢复原状；修复有效 → commit 清理
+- **触发入口**：`concertoai self-heal`（非交互）+ chat 内 `/self-heal`（修复期间状态条可见）；仅修复 ConcertoAI 自身代码，不自动修用户项目
 
-### Added — v2.2（智能成本控制）
+### Added — v3.1（多项目管理 + 多租户登录）
 
-- **高峰时段检测**：`src/core/peak-time.ts`（`isWorkday` / `isPeakHour` / `isPeakTime`），工作日（周一至周五）9:00-12:00 / 14:00-18:00 判定为高峰时段（左闭右开）
-- **模型自动切换器**：`src/core/model-switcher.ts`；启动时读取 `~/.concertoai/config.json` 的 `peakTimeStrategy`（`ask` 交互确认 / `switch` 直接切换 / `ignore` 忽略），高峰时段可切到本地 ollama 模型
-- **配置扩展**：`ConcertoAIConfig` 新增 `peakTimeStrategy`（默认 `ask`）/ `ollamaModel`（默认 `qwen3.6:27b-q4_K_M`）/ `ollamaBaseUrl`（默认 `http://localhost:11434/v1`），`resolveConfig` 兜底校验非法值
-- **CLI 集成**：`concertoai` / `concertoai chat` 启动经 `resolveStartupModel` 应用切换；本地模型按 `ollamaBaseUrl` 构建客户端（OpenAI 兼容 /v1）、成本按 0 展示（避免 `costFor` 未知模型抛错）；非交互环境 ask 策略自动跳过不阻塞
-- **i18n 扩展**：`peakTime` 五条文案（askSwitch / switched / declined / ignored / noInteractive）
-- **测试**：`tests/core/peak-time.test.ts`（8 用例）+ `tests/core/model-switcher.test.ts`（16 用例）+ `tests/store/config.test.ts` 新增 3 用例，总计 750 用例全绿
+- **项目注册表**（`src/store/projects.ts`）：`~/.concertoai/projects.json` CRUD + 重名/嵌套拒绝 + 路径规范化（`\` → `/`）+ 宽松读取
+- **project 命令**：`concertoai project add/list/remove/info/switch`；启动 `-p <name>`（等价 cd）或按 cwd 自动探测
+- **隔离矩阵**：会话按项目分目录（`sessions/<projectKey>/`）、审批白名单项目级合并、MCP 按项目声明；全局配置/技能/Agent 共享；无项目时行为与 v3.0 一致
+- **多账号存储**（`src/store/accounts.ts`）：`~/.concertoai/accounts/<name>/config.json`（0600）+ `active-account` 指针；Key 不落日志
+- **account 命令**：`concertoai login/logout/whoami/account switch|list`；login 交互输入 Key 不回显（`--key` 供 CI）；Key 打码 `sk-****abcd`
+- **API Key 解析链**：CLI > 环境变量 `DEEPSEEK_API_KEY` > active account > config.json；doctor 余额行标注账号/环境变量优先
+
+### Added — v3.1（结构化错误 + Orchestrator CLI + 运维）
+
+- **结构化错误增强**（`src/tools/error-codes.ts`）：ToolResult 支持 `code?`/`suggestion?`（可选，向后兼容）；read（PATH_OUTSIDE_SANDBOX/FILE_NOT_FOUND/DIR_NOT_FOUND/SENSITIVE_FILE）、edit（SEARCH_NOT_FOUND/SEARCH_NOT_UNIQUE/FILE_ALREADY_EXISTS/WRITE_FAILED/EDIT_REJECTED）、shell（SHELL_REJECTED/TIMEOUT/COMMAND_NOT_FOUND/EXIT_N）、knowledge（ENTITY_NOT_FOUND/STORE_UNAVAILABLE）全带中文建议；registry 兜底 `inferErrorCode`；ToolRepairError 渲染 💡 建议行
+- **`concertoai team "<任务>"`**（`src/cli/team.ts`）：拆解 → 展示确认 → 4 角色装配（Architect/Coder/Reviewer/QA）→ 对抗性闭环（≤5 次）→ 事务回滚兜底 → 聚合工件；`--dry-run` 仅输出拆解清单
+- **`/orchestrate <任务>`**（`src/cli/slash/orchestrate.ts`）：chat 内触发 team 全链路，traceStore 透传（`o` 键面板可见 spans）+ 审计记录
+- **`concertoai audit export [--out <file>]`**（`src/cli/audit.ts`）：审计日志保序 JSON 导出（复用 `AuditLogger.exportJson`），无文件非错误退出
+- **`/agent update [name]`**：指定名称复用 installer update 语义（版本落后覆盖 / 已最新提示）；无参列出可更新 Agent
+- **`/review --severity <strict|normal|lenient>`**：`determineReviewAction` 三档阈值（strict=medium 必拒 / normal=critical 必拒+medium 结合 QA 失败可拒 / lenient=仅 critical 拒），非法值报错列出合法值
+
+### Added — v2.2 + 预留功能（随 v3.1.0 发布）
+
+- **高峰时段检测与模型切换**：`src/core/peak-time.ts` + `model-switcher.ts`；工作日 9:00-12:00 / 14:00-18:00 高峰，`peakTimeStrategy`（ask/switch/ignore）决定是否切本地 ollama 模型
+- **`concertoai balance` 命令**：查询 DeepSeek 账户余额（官方 `GET /user/balance`），按币种输出总额/赠送/充值
+- **`concertoai doctor` 命令**：环境诊断（Node/平台/API Key/配置/会话/模型/余额），单项失败不中断、汇总退出码；余额行标注账号（v3.1 多账号接入）
+- **配置目录迁移**：`~/.lumen → ~/.concertoai` 幂等迁移（rename 失败回退复制），路径定义单一来源 `store/paths.ts`
+- **进程级崩溃日志**：`src/cli/crash-handler.ts`，uncaughtException / unhandledRejection → `~/.concertoai/crash.log`（同步写盘 + 非零退出）
+- **审批键位优化**：审批框 `y/Enter` 批准、`n/Esc` 拒绝（v3.1 M1 附带）
+- **trace 查询优化**（S4）：`TraceStore.queryByTaskId` 维护 parentTaskId 子任务索引，由 O(n²) 降为 O(n)
+
+### 测试（v3.1）
+
+- 新增 `tests/loop/self-heal.test.ts`、`tests/loop/error-reporting.test.ts`、`tests/store/projects.test.ts`、`tests/store/accounts.test.ts`、`tests/cli/project.test.ts`、`tests/cli/project-isolation.test.ts`、`tests/cli/account.test.ts`、`tests/cli/team.test.ts`、`tests/cli/audit.test.ts`、`tests/cli/slash-orchestrate.test.ts`、`tests/cli/slash-review.test.ts`、`tests/e2e/team-cli.test.ts`、`tests/e2e/self-heal.test.ts`、`tests/e2e/project-isolation.test.ts` 等
+- **基线校准**：84 文件 / 923 用例全绿（`npm run verify`），npm audit 0 漏洞
 
 ## [3.0.0] — 2026-08-09
 

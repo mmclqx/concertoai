@@ -134,6 +134,29 @@ ConcertoAI 提供了三种常用 MCP 服务的推荐配置（`src/mcp/builtin-se
 
 MCP 服务的工具以 `服务名_工具名` 格式注册（如 `filesystem_read_file`），与内置工具（`read_file`）并存，避免命名冲突。MCP 服务不可用时自动降级，不影响内置工具正常工作。
 
+## v3.1 新增功能
+### AI 自我修复闭环（self-heal）
+- `concertoai self-heal` / chat 内 `/self-heal`：`npm run verify` 失败后自动分类 → 修复 → 验证 → 回滚
+- lint 错误确定性 `npm run lint:fix`（免审批）；缺 import / 缺类型标注等简单类型错误由模型修复（弹审批框 fail-closed）
+- 修复前 SnapshotManager 快照登记，修复失败或引入新错误自动回滚；仅修复 ConcertoAI 自身，不碰用户项目代码
+
+### 多项目管理（project）
+- `concertoai project add/list/remove/info/switch` + 启动 `-p <name>`（等价 cd 后启动）
+- 隔离矩阵：会话 / 审批白名单 / MCP 服务按项目隔离；全局配置 / 技能 / Agent 共享
+
+### 多租户登录（account）
+- `concertoai login/logout/whoami/account switch|list`：账号 = 一个 API Key 配置文件（git credential 模式）
+- API Key 解析链：CLI > 环境变量 `DEEPSEEK_API_KEY` > active account > config.json；Key 打码展示
+
+### Orchestrator CLI + 运维命令
+- `concertoai team "<任务>"`：拆解 → 对抗性闭环（Coder→Reviewer→QA）→ 事务回滚兜底；`--dry-run` 仅输出拆解清单
+- `/orchestrate <任务>`：chat 内触发全链路，`o` 键可观测性面板实时查看 spans
+- `concertoai audit export [--out <file>]`：审计日志保序 JSON 导出
+- `/agent update [name]` + `/review --severity <strict|normal|lenient>`
+
+### 结构化错误增强
+- 工具错误统一携带机器可读 `code` + 中文 `suggestion`（read/edit/shell/knowledge/registry 全覆盖）
+
 ## v3.0 新增功能
 
 ### 多 Agent 协作团队（Orchestrator 模式）
