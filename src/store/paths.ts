@@ -42,6 +42,11 @@ export function sessionsDir(): string {
   return path.join(globalDir(), 'sessions');
 }
 
+/** 项目注册表文件：~/.concertoai/projects.json（v3.1 M2）。 */
+export function projectsPath(): string {
+  return path.join(globalDir(), 'projects.json');
+}
+
 /** 全局技能目录：~/.concertoai/skills/。 */
 export function globalSkillsDir(): string {
   return path.join(globalDir(), 'skills');
