@@ -48,7 +48,7 @@
 ### 测试（v3.1）
 
 - 新增 `tests/loop/self-heal.test.ts`、`tests/loop/error-reporting.test.ts`、`tests/store/projects.test.ts`、`tests/store/accounts.test.ts`、`tests/cli/project.test.ts`、`tests/cli/project-isolation.test.ts`、`tests/cli/account.test.ts`、`tests/cli/team.test.ts`、`tests/cli/audit.test.ts`、`tests/cli/slash-orchestrate.test.ts`、`tests/cli/slash-review.test.ts`、`tests/e2e/team-cli.test.ts`、`tests/e2e/self-heal.test.ts`、`tests/e2e/project-isolation.test.ts` 等
-- **基线校准**：84 文件 / 923 用例全绿（`npm run verify`），npm audit 0 漏洞
+- **基线校准**：84 文件 / 924 用例全绿（`npm run verify`），npm audit 0 漏洞
 
 ## [3.0.0] — 2026-08-09
 

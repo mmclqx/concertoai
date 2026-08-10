@@ -1,6 +1,6 @@
 # ConcertoAI 架构文档
 
-> 版本：v3.0（含 v2.2 / v3.1 预留已交付功能）· 2026-08-10
+> 版本：v3.1（含 v2.2 / v3.1 全部已交付功能）· 2026-08-11
 > 本文档基于当前代码实现编写，作为后续维护与扩展的技术参考。
 > 配套文档：[v3.0 开发任务](../03-开发计划与任务/v3.0-dev-tasks.md)、[v3.1 开发计划](../03-开发计划与任务/v3.1-dev-plan-ai.md)、[任务看板](../03-开发计划与任务/TASKS.md)
 
@@ -12,9 +12,9 @@ ConcertoAI 是一款**中文优先**的终端编码助手 CLI（DeepSeek 驱动�
 
 - **技术栈**：TypeScript (strict) + Node ≥22 + ESM，Ink 7 (React 19) 渲染 TUI，commander 解析 CLI，zod 做工具参数校验，vitest 测试，Biome 检查，tsup 打包
 - **运行时依赖**：`ink` / `react` / `commander` / `zod` / `cli-highlight` / `chalk`
-- **测试现状**：69 个测试文件、750 个用例，`npm run verify` 全绿，`npm audit` 0 漏洞；已用真实 `DEEPSEEK_API_KEY` 完成端到端冒烟
+- **测试现状**：84 个测试文件、924 个用例，`npm run verify` 全绿，`npm audit` 0 漏洞；已用真实 `DEEPSEEK_API_KEY` 完成端到端冒烟
 - **安全基线**：编辑与命令一律审批（fail-closed）、路径沙箱、结果截断、白名单免审批——无 yolo 模式
-- **v3.1 预留功能（已交付）**：`concertoai balance`（余额查询）/ `concertoai doctor`（环境诊断）、配置目录迁移 `~/.lumen → ~/.concertoai`（`src/store/paths.ts` 单一来源 + 幂等迁移）；**v2.2 智能成本控制**（高峰时段模型自动切换，见 §4 D41）
+- **v3.1 新增能力**：AI 自我修复闭环（self-heal）/ 多项目管理（project）/ 多租户登录（account）/ Orchestrator CLI（team、/orchestrate、audit export）/ 结构化错误增强（error-codes）；**v3.1 预留功能（已交付）**：`concertoai balance`（余额查询）/ `concertoai doctor`（环境诊断）、配置目录迁移 `~/.lumen → ~/.concertoai`（`src/store/paths.ts` 单一来源 + 幂等迁移）；**v2.2 智能成本控制**（高峰时段模型自动切换，见 §4 D41）
 
 ## 2. 架构全景图
 
@@ -24,13 +24,22 @@ ConcertoAI 是一款**中文优先**的终端编码助手 CLI（DeepSeek 驱动�
 │   index.ts   concertoai / concertoai chat / concertoai run "任务" / concertoai plan│
 │              concertoai snapshot [list|clean]（v3.0 快照清理）      │
 │              concertoai balance（v3.1 余额查询）/ concertoai doctor（v3.1 环境诊断）│
+│              concertoai project（v3.1 项目管理）/ concertoai self-heal（v3.1 自我修复）│
+│              concertoai team（v3.1 团队执行）/ concertoai audit export（v3.1 审计导出）│
+│              concertoai login / logout / whoami / account（v3.1 多账号）│
 │   chat.tsx   chat 装配：TUI + loop + store（含 TTY 检查）      │
 │   run.ts     run 一次性执行：loop + stdout 流式 + 存档          │
 │   plan.ts    plan 计划-批准-执行三段式（readline y/n）          │
 │   snapshot.ts 快照命令（SnapshotManager，T3.6）                │
 │   balance.ts 余额命令（fetchBalance，GET /user/balance）       │
 │   doctor.ts  环境诊断命令（Node/Key/配置/会话/模型/余额）       │
-│   slash/     /agent /skill /mcp /memory /review 斜杠命令       │
+│   project.ts 项目注册表命令 add/list/remove/info/switch（v3.1）│
+│   self-heal.ts verify 失败自动修复（v3.1，非交互）            │
+│   team.ts    Orchestrator 团队执行（v3.1，拆解→闭环→回滚）     │
+│   audit.ts   审计日志导出（v3.1，audit export）               │
+│   account.ts 多账号命令（v3.1，login/logout/whoami/account）   │
+│   crash-handler.ts 进程级崩溃日志（v3.1）                     │
+│   slash/     /agent /skill /mcp /memory /review /self-heal /orchestrate│
 └──────────────────────┬──────────────────────────────────────┘
                        │ render(<App …>) / runLoop(...)
 ┌──────────────────────▼──────────────────────────────────────┐
@@ -52,6 +61,7 @@ ConcertoAI 是一款**中文优先**的终端编码助手 CLI（DeepSeek 驱动�
 │   context.ts  上下文窗口管理（80% 预算裁剪 + 日志）            │
 │   messages.ts ChatMessage⇄ApiMessage 序列化 / 工具结果格式化   │
 │   types.ts    ChatMessage / ToolCall / Role                  │
+│   self-heal.ts AI 自我修复闭环（v3.1：四段解析+修复+回滚）      │
 └─────────┬───────────────────────────────┬───────────────────┘
           │ streamChat（ModelClient 抽象）  │ registry.run(...)
 ┌─────────▼──────────┐          ┌──────────▼───────────────────┐
@@ -62,6 +72,7 @@ ConcertoAI 是一款**中文优先**的终端编码助手 CLI（DeepSeek 驱动�
 └─────────┬──────────┘          │  shell.ts  白名单+审批+超时   │
           │                     │  knowledge.ts knowledge_* 5 工具│
           │                     │  spawn.ts  spawn_subagent     │
+          │                     │  error-codes.ts 结构化错误码+中文建议（v3.1）│
           │                     └──────────┬───────────────────┘
 ┌─────────▼─────────────────────────────────▼─────────────────┐
 │ balance/ 余额查询（src/balance/，v3.1）                       │
@@ -80,6 +91,8 @@ ConcertoAI 是一款**中文优先**的终端编码助手 CLI（DeepSeek 驱动�
 │  project-rules.ts AGENTS.md→CARBON.md 规则加载（≤8000 字符）  │
 │  config.ts        ~/.concertoai/config.json（schema + 优先级解析）│
 │  memory-store.ts  项目级跨会话记忆（.lumen-memory/ JSONL）     │
+│  projects.ts      项目注册表（v3.1：projects.json CRUD）       │
+│  accounts.ts      多账号存储（v3.1：accounts/<name> + active） │
 │  zh.ts / en.ts / index.ts  多语言字典 + locale 解析（t/setLocale）
 └─────────────────────────────────┬───────────────────────────┘
                                   │
@@ -428,7 +441,7 @@ concertoai/
 │       ├── zh.ts         中文字典 + fmt()
 │       ├── en.ts         英文字典（键与 zh 同构）
 │       └── index.ts      resolveLocale / setLocale / t() / DICTS
-└── tests/                镜像 src 结构（84 个文件 / 923 用例，v3.1 基线），含 tests/agent/、tests/agents/、tests/balance/、tests/cli/、tests/core/、tests/e2e/（team-cli/self-heal/project-isolation）、tests/i18n/、tests/knowledge/、tests/loop/（self-heal/error-reporting）、tests/market/、tests/mcp/、tests/model/、tests/observable/、tests/orchestrator/、tests/planner/、tests/reviewer/、tests/skill/、tests/store/（projects/accounts）、tests/tools/、tests/ui/ 等
+└── tests/                镜像 src 结构（84 个文件 / 924 用例，v3.1 基线），含 tests/agent/、tests/agents/、tests/balance/、tests/cli/、tests/core/、tests/e2e/（team-cli/self-heal/project-isolation）、tests/i18n/、tests/knowledge/、tests/loop/（self-heal/error-reporting）、tests/market/、tests/mcp/、tests/model/、tests/observable/、tests/orchestrator/、tests/planner/、tests/reviewer/、tests/skill/、tests/store/（projects/accounts）、tests/tools/、tests/ui/ 等
 ```
 
 ## 6. 5分钟快速体验

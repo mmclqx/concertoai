@@ -4,8 +4,8 @@ ConcertoAI —— 面向个人开发者的**中文优先**终端编码助手 CLI
 
 在项目目录里启动：读取代码 → 提出 diff 方案 → 征求命令许可 → 跑验证 → 留下可续接的会话记录。
 
-> 状态：v3.0.0 开发完成（`npm run verify` 全绿，750 用例 / 69 测试文件；`npm audit` 0 漏洞）。
-> 新特性：智能成本控制（高峰时段自动切换本地 ollama 模型，peakTimeStrategy 可配）、`concertoai balance` 余额查询、`concertoai doctor` 环境诊断。
+> 状态：v3.1.0 开发完成（`npm run verify` 全绿，924 用例 / 84 测试文件；`npm audit` 0 漏洞）。
+> 新特性：AI 自我修复闭环（self-heal）/ 多项目管理（project）/ 多账号（account）/ Orchestrator CLI（team、audit export）/ 结构化错误增强；智能成本控制（高峰时段自动切换本地 ollama 模型，peakTimeStrategy 可配）、`concertoai balance` 余额查询、`concertoai doctor` 环境诊断。
 > v3.0 新增：多 Agent 协作（Orchestrator + 对抗性闭环）/ Agent 市场 / 可观测性面板 / 多文件事务回滚。
 > v2.1 新增：知识图谱 / Reviewer Agent / 技能市场与嵌套 / 子代理 MCP 工具。
 
