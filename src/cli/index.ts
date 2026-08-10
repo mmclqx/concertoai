@@ -128,6 +128,20 @@ program
   });
 
 program
+  .command('project <action> [name] [path]')
+  .description('多项目管理（v3.1 M2）：project add/list/remove/info')
+  .option('--lang <zh|en>', '界面语言')
+  .action(async (action: string, name?: string, p?: string) => {
+    const { runProjectCommand } = await import('./project');
+    await runProjectCommand({
+      cwd: process.cwd(),
+      action: action as 'add' | 'list' | 'remove' | 'info',
+      name,
+      path: p,
+    });
+  });
+
+program
   .command('self-heal')
   .description('AI 自我修复闭环（v3.1 M1）：执行 npm run verify，失败自动分类→修复→验证→回滚')
   .option('-m, --model <id>', t().cli.model.description)
