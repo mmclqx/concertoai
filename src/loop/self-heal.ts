@@ -1,18 +1,36 @@
 /**
  * AI 自我修复闭环（v3.1 M1）。
  *
- * 职责：把 `npm run verify` 输出解析为统一的 VerifyReport（四段：
- * build / lint / typecheck / test），供修复策略执行器（T1.2）决策。
+ * 职责：
+ * - Verify 分类器（T1.1）：把 `npm run verify` 输出解析为统一的 VerifyReport
+ *   （四段：build / lint / typecheck / test），供修复策略执行器决策；
+ * - 修复策略执行器（T1.2）：按错误分类执行确定性修复——
+ *   lint → `npm run lint:fix`（白名单免审批）；type 简单错误 → 模型生成修复（走审批）；
+ *   build/test/type 复杂错误 → 结构化反馈不自动修。
  *
- * 设计：
+ * 设计（分类器）：
  * - 复用 `src/agents/qa.ts` 的 `parseVerifyOutput` 解析 vitest（test）段；
  * - 新增 Biome（lint）段与 tsc（typecheck）段解析；
  * - build 段：tsup 失败标记（无法定位时 file/line 为空）；
  * - 四段均在一次 `npm run verify` 输出中解析（按 npm 段标记 `> @concertoai/cli@x.y.z <script>` 切分）；
  * - 解析是尽力而为：无法解析的段标记 `parseFailed` 而非崩溃。
+ *
+ * 设计（修复执行器）：
+ * - 确定性优先：lint 格式错误机械修复（lint:fix），不调用模型；
+ * - 仅 type 简单错误（缺 import / 缺类型标注）允许模型介入，且必须走审批 + 每次只修 1 个；
+ * - 修复次数上限 `MAX_SELF_HEAL_ATTEMPTS = 2`，超限保留详细报告转人工。
  */
 
-import { parseVerifyOutput } from '../agents/qa';
+import { promises as fs } from 'node:fs';
+import path from 'node:path';
+
+import { z } from 'zod';
+
+import { ChildProcessQaRunner, DEFAULT_VERIFY_TIMEOUT_MS, parseVerifyOutput } from '../agents/qa';
+import type { ModelClient } from '../model/client';
+import { planEdit } from '../tools/edit';
+import type { ApprovalRequest } from '../tools/registry';
+import { shellTool } from '../tools/shell';
 
 // ── 类型定义 ──────────────────────────────────────────────────
 
@@ -278,4 +296,390 @@ export function parseVerifyReport(stdout: string, stderr: string): VerifyReport 
   const passed = seenStage && errors.length === 0;
   const summary = buildVerifySummary(passed, errors, parseFailed);
   return { passed, errors, parseFailed, summary };
+}
+
+// ══════════════════════════════════════════════════════════════
+// T1.2 修复策略执行器
+// ══════════════════════════════════════════════════════════════
+
+/** 自我修复最大尝试次数（超限转人工）。 */
+export const MAX_SELF_HEAL_ATTEMPTS = 2;
+
+/** 每次模型修复仅修 1 个错误（避免连锁引入新错误）。 */
+export const MAX_MODEL_FIXES_PER_ATTEMPT = 1;
+
+/** 简单类型错误特征（缺 import）：`Cannot find name` / `Cannot find module`。 */
+const SIMPLE_TYPE_MISSING_IMPORT_RE = /Cannot find (?:name|module)/;
+/** 简单类型错误特征（缺类型标注）：`implicitly has an 'any' type` / `Property 'x' has no initializer...`（容忍属性名）。 */
+const SIMPLE_TYPE_MISSING_ANNOTATION_RE =
+  /implicitly has an 'any' type|Property .* has no initializer/;
+
+/**
+ * 判断是否为「简单类型错误」（可交给模型生成修复）。
+ * 缺 import / 缺类型标注 属简单；类型不兼容（TS2322 等）属复杂，不自动修。
+ */
+export function isSimpleTypeError(error: VerifyError): boolean {
+  const message = error.message;
+  return (
+    error.stage === 'type' &&
+    (SIMPLE_TYPE_MISSING_IMPORT_RE.test(message) || SIMPLE_TYPE_MISSING_ANNOTATION_RE.test(message))
+  );
+}
+
+/** 模型生成的修复方案（search/replace 唯一匹配，经 planEdit 校验）。 */
+export interface ModelFixPlan {
+  /** 相对 cwd 的文件路径。 */
+  file: string;
+  /** 唯一匹配块（SEARCH）。 */
+  search: string;
+  /** 替换内容（REPLACE）。 */
+  replace: string;
+  /** 统一 diff（供审批框展示）。 */
+  diff: string;
+  /** 修复后的完整内容。 */
+  newContent: string;
+}
+
+/** 模型修复输出 schema（JSON：file / search / replace）。 */
+const modelFixSchema = z.object({
+  file: z.string().min(1),
+  search: z.string(),
+  replace: z.string(),
+});
+
+/** 模型修复系统提示：只输出一个 SEARCH/REPLACE 修复，严禁多修。 */
+const MODEL_FIX_SYSTEM_PROMPT = [
+  '你是 TypeScript 修复专家。针对给定的「文件 + 单条类型错误」，生成最小 SEARCH/REPLACE 修复。',
+  '输出严格为 JSON（不要 markdown 围栏，不要其他文字），格式：',
+  '{"file":"相对路径","search":"文件中唯一出现的原片段","replace":"替换后的新片段"}',
+  '要求：',
+  '- 只修复这一个错误；search 必须在文件中唯一出现（用足够上下文保证唯一）；',
+  '- 不改变无关代码；不新增多余 import（除非错误明确是缺 import）；',
+  '- search/replace 保持原文件换行风格。',
+].join('\n');
+
+/** 解析模型修复输出（容忍 ```json 围栏与前后空白；结构不合法抛中文错误）。 */
+export function parseModelFixOutput(text: string): ModelFixPlanInput {
+  const trimmed = text.trim();
+  const fenceMatch = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/);
+  const candidate = fenceMatch?.[1] ?? trimmed;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(candidate) as unknown;
+  } catch (err) {
+    throw new Error(
+      `模型修复输出不是合法 JSON（${err instanceof Error ? err.message : String(err)}）。原文: ${trimmed.slice(0, 200)}`,
+    );
+  }
+  const result = modelFixSchema.safeParse(parsed);
+  if (!result.success) {
+    const issues = result.error.issues
+      .slice(0, 3)
+      .map((i) => `${i.path.join('.')}: ${i.message}`)
+      .join('; ');
+    throw new Error(`模型修复输出结构不符合协议（${issues}）。原文: ${trimmed.slice(0, 200)}`);
+  }
+  return result.data;
+}
+
+/** 模型修复输出（解析后的 file/search/replace）。 */
+interface ModelFixPlanInput {
+  file: string;
+  search: string;
+  replace: string;
+}
+
+/**
+ * 调用模型为单个 type 简单错误生成修复计划（不落盘）。
+ * 读取错误文件 → 组装 prompt → 模型输出 JSON → planEdit 校验唯一性 → 返回计划。
+ * 模型调用/解析失败返回 undefined（不中断整体修复流程）。
+ */
+export async function generateModelFixPlan(
+  error: VerifyError,
+  options: RepairVerifyOptions,
+): Promise<ModelFixPlan | undefined> {
+  const client = options.client;
+  if (client === undefined || options.model === undefined || error.file === undefined) {
+    return undefined;
+  }
+  const absolute = path.resolve(options.cwd, error.file);
+  let content: string;
+  try {
+    content = await fs.readFile(absolute, 'utf8');
+  } catch {
+    return undefined;
+  }
+  const location = error.line !== undefined ? `${error.file}:${error.line}` : error.file;
+  const userPrompt = [
+    `文件: ${error.file}`,
+    `错误位置: ${location}`,
+    `错误码: ${error.code ?? 'TS'}`,
+    `错误信息: ${error.message}`,
+    '',
+    '===== 文件内容 =====',
+    content.slice(0, 20_000),
+  ].join('\n');
+
+  const parts: string[] = [];
+  try {
+    for await (const chunk of client.streamChat({
+      model: options.model,
+      messages: [
+        { role: 'system', content: MODEL_FIX_SYSTEM_PROMPT },
+        { role: 'user', content: userPrompt },
+      ],
+      temperature: 0.2,
+    })) {
+      for (const choice of chunk.choices) {
+        const text = choice.delta.content ?? '';
+        if (text !== '') {
+          parts.push(text);
+        }
+      }
+    }
+  } catch {
+    return undefined;
+  }
+
+  let input: ModelFixPlanInput;
+  try {
+    input = parseModelFixOutput(parts.join(''));
+  } catch {
+    return undefined;
+  }
+  // 路径规范化：模型可能输出反斜杠（Windows），统一转正斜杠并相对 cwd
+  const normalizedFile = input.file.replace(/\\/g, '/');
+  try {
+    const plan = planEdit(content, input.search, input.replace);
+    return {
+      file: normalizedFile,
+      search: input.search,
+      replace: input.replace,
+      diff: plan.diff,
+      newContent: plan.newContent,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+/** 单个错误的修复动作（lint 直修 / 模型修复 / 跳过）。 */
+export type SelfHealAction = 'lint-fix' | 'model-fix' | 'none';
+
+/** 单次尝试结果。 */
+export interface SelfHealAttempt {
+  /** 尝试序号（1-based）。 */
+  attempt: number;
+  /** 本次执行的修复动作。 */
+  action: SelfHealAction;
+  /** 本次修复后的 verify 报告。 */
+  report: VerifyReport;
+  /** 模型修复应用的文件 diff（action=model-fix 时非空）。 */
+  appliedFixes: Array<{ file: string; diff: string }>;
+  /** 结构化反馈（未自动修的错误：code + suggestion）。 */
+  feedback: Array<{ code?: string; suggestion: string }>;
+}
+
+/** 修复执行器选项。 */
+export interface RepairVerifyOptions {
+  /** 工作目录（沙箱根）。 */
+  cwd: string;
+  /** 执行 verify（返回原始输出；测试注入 fake）。 */
+  runVerify: () => Promise<{ stdout: string; stderr: string }>;
+  /** 执行 `npm run lint:fix`（返回是否成功；生产走 shell 白名单免审批，测试注入 fake）。 */
+  runLintFix: () => Promise<{ ok: boolean }>;
+  /** 模型客户端（type 简单错误修复；未提供则跳过模型修复）。 */
+  client?: ModelClient;
+  /** 模型 ID（client 存在时必须）。 */
+  model?: string;
+  /** 审批回调（模型修复前逐项确认，fail-closed；缺省拒绝）。 */
+  requestApproval?: (request: ApprovalRequest) => Promise<boolean> | boolean;
+  /** 日志输出。 */
+  log?: (message: string) => void;
+}
+
+/** 修复执行结果。 */
+export interface RepairVerifyResult {
+  /** 最终是否全部通过。 */
+  passed: boolean;
+  /** 最终 verify 报告。 */
+  report: VerifyReport;
+  /** 每次尝试记录。 */
+  attempts: SelfHealAttempt[];
+  /** 是否超限转人工（失败且尝试次数达到上限）。 */
+  exceeded: boolean;
+}
+
+/** 解析 verify 输出（生产：跑真实 npm run verify → parseVerifyReport）。 */
+export async function runVerifyAndParse(options: RepairVerifyOptions): Promise<VerifyReport> {
+  const { stdout, stderr } = await options.runVerify();
+  return parseVerifyReport(stdout, stderr);
+}
+
+/** 未自动修错误的修复建议（中文，结构化反馈）。 */
+export function suggestionFor(error: VerifyError): string {
+  switch (error.stage) {
+    case 'build':
+      return '构建失败：请检查 tsup.config.ts 入口、缺失依赖或导出语法';
+    case 'test':
+      return '测试失败：请检查测试断言或被测试模块实现（self-heal 不自动修测试）';
+    case 'type':
+      return `类型错误（${error.code ?? 'TS'}）：请手动补全类型标注或调整类型（self-heal 仅自动修缺 import / 缺标注）`;
+    case 'lint':
+      return '格式错误：请运行 npm run lint:fix 自动修复';
+    default:
+      return '未知错误：请人工检查';
+  }
+}
+
+/**
+ * 修复策略执行器主流程。
+ *
+ * 每轮：
+ * 1. lint 错误 → 确定性执行 lint:fix（免审批）→ 重新 verify；
+ * 2. 首个 type 简单错误 → 模型生成修复 → 审批（fail-closed）→ 应用 → 重新 verify；
+ * 3. 剩余（type 复杂 / build / test）→ 结构化反馈，不自动修。
+ *
+ * 尝试次数上限 MAX_SELF_HEAL_ATTEMPTS = 2，超限保留详细报告转人工。
+ * 每次模型修复仅修 1 个错误。
+ */
+export async function repairVerifyReport(
+  initial: VerifyReport,
+  options: RepairVerifyOptions,
+): Promise<RepairVerifyResult> {
+  const log = options.log ?? (() => {});
+  const attempts: SelfHealAttempt[] = [];
+  let report = initial;
+
+  for (let attempt = 1; attempt <= MAX_SELF_HEAL_ATTEMPTS; attempt += 1) {
+    if (report.passed) {
+      break;
+    }
+
+    // 1) lint 错误 → 确定性 lint:fix
+    const lintErrors = report.errors.filter((e) => e.stage === 'lint');
+    if (lintErrors.length > 0) {
+      log(
+        `[self-heal] 第 ${attempt} 次尝试：执行 npm run lint:fix（${lintErrors.length} 个 lint 错误）`,
+      );
+      const fix = await options.runLintFix();
+      const fresh = await runVerifyAndParse(options);
+      attempts.push({
+        attempt,
+        action: 'lint-fix',
+        report: fresh,
+        appliedFixes: [],
+        feedback: [],
+      });
+      report = fresh;
+      if (!fix.ok) {
+        log('[self-heal] lint:fix 执行失败，转人工');
+        break;
+      }
+      continue;
+    }
+
+    // 2) 首个 type 简单错误 → 模型生成修复（每次 1 个）
+    const simpleType = report.errors.find((e) => isSimpleTypeError(e));
+    if (simpleType !== undefined) {
+      log(
+        `[self-heal] 第 ${attempt} 次尝试：模型修复类型错误 ${simpleType.code ?? 'TS'} @ ${simpleType.file ?? '?'}:${simpleType.line ?? '?'}`,
+      );
+      const plan = await generateModelFixPlan(simpleType, options);
+      if (plan === undefined) {
+        log('[self-heal] 模型无法生成修复计划，跳过该错误');
+        attempts.push({
+          attempt,
+          action: 'none',
+          report,
+          appliedFixes: [],
+          feedback: [{ code: simpleType.code, suggestion: suggestionFor(simpleType) }],
+        });
+        break;
+      }
+      const approved =
+        (await options.requestApproval?.({
+          kind: 'edit',
+          summary: `self-heal 修复类型错误: ${simpleType.code ?? 'TS'} @ ${plan.file}:${simpleType.line ?? '?'}`,
+          detail: plan.diff,
+        })) ?? false;
+      if (!approved) {
+        log('[self-heal] 用户拒绝模型修复，跳过该错误');
+        attempts.push({
+          attempt,
+          action: 'none',
+          report,
+          appliedFixes: [],
+          feedback: [{ code: simpleType.code, suggestion: '用户拒绝了自动修复，请手动处理' }],
+        });
+        break;
+      }
+      // 审批通过 → 落盘（T1.3 将在落盘前登记快照）
+      const absolute = path.resolve(options.cwd, plan.file);
+      try {
+        await fs.writeFile(absolute, plan.newContent, 'utf8');
+      } catch (err) {
+        log(`[self-heal] 写盘失败: ${err instanceof Error ? err.message : String(err)}`);
+        attempts.push({
+          attempt,
+          action: 'none',
+          report,
+          appliedFixes: [],
+          feedback: [{ code: simpleType.code, suggestion: '修复写盘失败，请手动处理' }],
+        });
+        break;
+      }
+      const fresh = await runVerifyAndParse(options);
+      attempts.push({
+        attempt,
+        action: 'model-fix',
+        report: fresh,
+        appliedFixes: [{ file: plan.file, diff: plan.diff }],
+        feedback: [],
+      });
+      report = fresh;
+      continue;
+    }
+
+    // 3) 剩余（type 复杂 / build / test）→ 结构化反馈，不自动修
+    const feedback = report.errors.map((e) => ({
+      code: e.code,
+      suggestion: suggestionFor(e),
+    }));
+    attempts.push({ attempt, action: 'none', report, appliedFixes: [], feedback });
+    log('[self-heal] 剩余错误不可自动修复，转人工');
+    break;
+  }
+
+  const exceeded = !report.passed && attempts.length >= MAX_SELF_HEAL_ATTEMPTS;
+  return { passed: report.passed, report, attempts, exceeded };
+}
+
+// ══════════════════════════════════════════════════════════════
+// 生产辅助：真实执行 npm run verify / npm run lint:fix
+// ══════════════════════════════════════════════════════════════
+
+/**
+ * 生产 verify 执行器：spawn `npm run verify`（复用 ChildProcessQaRunner），
+ * 返回原始输出供 parseVerifyReport 解析。
+ */
+export async function runVerifyCommand(
+  cwd: string,
+  timeoutMs?: number,
+): Promise<{ stdout: string; stderr: string }> {
+  const runner = new ChildProcessQaRunner({ cwd });
+  const result = await runner.run(timeoutMs ?? DEFAULT_VERIFY_TIMEOUT_MS);
+  return { stdout: result.stdout, stderr: result.stderr };
+}
+
+/**
+ * 生产 lint:fix 执行器：走 shell 工具 + 白名单 `npm run lint:fix` 免审批直跑。
+ * 返回是否成功（退出码 0）。
+ */
+export async function runLintFixCommand(cwd: string): Promise<{ ok: boolean }> {
+  const result = await shellTool.execute(
+    { command: 'npm run lint:fix' },
+    { cwd, allowlistedPrefixes: ['npm run lint:fix'] },
+  );
+  return { ok: result.ok };
 }

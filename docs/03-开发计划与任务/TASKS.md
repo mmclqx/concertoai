@@ -1,7 +1,7 @@
 # ConcertoAI 开发任务看板
 
 > 最后更新：2026-08-10
-> 当前里程碑：**🔵 v3.1 进行中**（3/27 任务 ✅ · 基线 69 文件 / 750 用例）（v1.0: 20/20 ✅ · v1.1: 12/12 ✅ · v2.0: 15/15 ✅ · v2.1: 25/25 ✅ · v3.0: 24/24 ✅ · v3.1: 3/27 🔵）
+> 当前里程碑：**🔵 v3.1 进行中**（4/27 任务 ✅ · 基线 69 文件 / 750 用例）（v1.0: 20/20 ✅ · v1.1: 12/12 ✅ · v2.0: 15/15 ✅ · v2.1: 25/25 ✅ · v3.0: 24/24 ✅ · v3.1: 4/27 🔵）
 > 基于：[v3.1 开发计划](./v3.1-dev-plan-ai.md) · [v3.1 详细任务](./v3.1-dev-tasks.md) · 历史：[v3.0 开发计划](./v3.0-dev-plan.md)
 
 ---
@@ -14,9 +14,9 @@
 | P0 任务 | 37（v1.1: 6 ✅ + v2.0: 5 ✅ + v2.1: 5 ✅ + v3.0: 14 ✅ + v3.1: 7 🔵） |
 | P1 任务 | 44（v1.1: 6 ✅ + v2.0: 10 ✅ + v2.1: 4 ✅ + v3.0: 10 ✅ + v3.1: 14 🔵） |
 | P2 任务 | 14（v2.1: 8 ✅ + v3.1: 6 🔵） |
-| 待开始 | 24 |
+| 待开始 | 23 |
 | 进行中 | 0 |
-| 已完成 | 99 |
+| 已完成 | 100 |
 | 已阻塞 | 0 |
 
 ---
@@ -780,10 +780,11 @@
   - 依赖：T0.2
   - ✅ 2026-08-10 完成：`VerifyReport`（passed + errors[]: {stage,file,line,code,message} + parseFailed）四段统一解析；`splitStages` 按 npm 段标记（`> @concertoai/cli@x.y.z <script>`）切分（typecheck→type 归一）；lint 段 Biome（FIXABLE / lint/rule / 文件:行:列）、type 段 tsc（`file(line,col): error TSxxxx` 标准 + pretty 格式）、build 段 tsup 失败标记、test 段复用 `parseVerifyOutput`；入口剥离 ANSI 颜色码；尽力而为解析（无法识别标记 parseFailed 不崩溃）；真实 verify 输出实测 4 段全解析（parseFailed 全 false）
 
-- [ ] **T1.2** 修复策略执行器
-  - 涉及文件：`src/loop/self-heal.ts`（修改）
+- [x] **T1.2** 修复策略执行器
+  - 涉及文件：`src/loop/self-heal.ts`（修改 — repairVerifyReport / isSimpleTypeError / generateModelFixPlan / runLintFixCommand / runVerifyCommand）
   - 预估：2.5h
   - 依赖：T1.1
+  - ✅ 2026-08-10 完成：`MAX_SELF_HEAL_ATTEMPTS=2` + `repairVerifyReport(report, options)` 主流程：lint → 确定性 `npm run lint:fix`（走 shell 工具 + 白名单免审批）；type 简单错误（`Cannot find name/module` / `implicitly has an 'any' type` / `Property 'x' has no initializer`）→ 模型生成修复（每次 1 个，审批 fail-closed，拒绝跳过）；type 复杂（TS2322 等）/ build / test → 不自动修，`suggestionFor` 结构化反馈；模型修复输出 zod 校验（`parseModelFixOutput`）+ `planEdit` 唯一性校验；生产辅助 `runVerifyCommand`（复用 ChildProcessQaRunner）/ `runLintFixCommand`（shell 白名单）
 
 - [ ] **T1.3** 快照与回滚
   - 涉及文件：`src/loop/self-heal.ts`（修改）、`src/orchestrator/transaction.ts`（复用）
@@ -977,6 +978,7 @@
 | 2026-08-10 | **V3.1-M0 启动（T0.1 完成）**：版本归位决策落盘（v2.2 + v3.1 随 v3.1.0 一并发布，不补发 v2.2.0）+ 全项目基线校准（69 文件 / 750 用例）+ v3.1 任务看板建立（27 任务 / 7 里程碑） | Carbon Code |
 | 2026-08-10 | **V3.1-M0 完成（T0.2 完成）**：审查遗留复核（S3 已在 7f477a5 修复；S1/S2/S4 处置与计划 §7 一致；src/core/ 与 ARCHITECTURE D41 核对一致）→ M0 两任务全绿，v3.1 进入 M1 | Carbon Code |
 | 2026-08-10 | **V3.1-M1 启动（T1.1 完成）**：Verify 分类器四段统一解析（src/loop/self-heal.ts 新增；复用 qa.parseVerifyOutput；ANSI 剥离 + 段标记切分 + 尽力而为）→ 真实 verify 输出实测 4 段全解析 | Carbon Code |
+| 2026-08-10 | **V3.1-M1 推进（T1.2 完成）**：修复策略执行器（lint→lint:fix 免审批 / type 简单→模型修复走审批 / 复杂→结构化反馈 / MAX_SELF_HEAL_ATTEMPTS=2）+ 生产辅助 runVerifyCommand/runLintFixCommand | Carbon Code |
 
 ---
 
