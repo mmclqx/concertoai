@@ -60,8 +60,14 @@ export async function runChat(options: RunChatOptions): Promise<void> {
     console.error(t().errors.noTty);
     process.exit(1);
   }
-  const model = resolveModel(resolved.model);
-  const client = new DeepSeekClient({ apiKey: options.apiKey });
+  // v2.2 智能成本控制：高峰时段切换到的本地模型（ollamaModel）不在 DeepSeek
+  // 模型表中，跳过严格校验，并按 ollamaBaseUrl 构建客户端（OpenAI 兼容 /v1）。
+  const isLocalModel = resolved.model === resolved.ollamaModel;
+  const model = isLocalModel ? resolved.ollamaModel : resolveModel(resolved.model);
+  const client = new DeepSeekClient({
+    apiKey: options.apiKey,
+    baseUrl: isLocalModel ? resolved.ollamaBaseUrl : undefined,
+  });
 
   // MCP 服务初始化（v1.1）
   // v2.1 性能优化：MCP 服务改为后台启动，不阻塞首帧渲染（冷启动 3-5s → ~1.2s）。

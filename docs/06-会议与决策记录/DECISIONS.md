@@ -351,4 +351,17 @@ interface AgentDef {
 
 ---
 
+## ADR-023：高峰时段模型自动切换（智能成本控制）
+
+| 字段 | 内容 |
+|------|------|
+| **状态** | 已采纳（v2.2） |
+| **日期** | 2026-08-09 |
+| **上下文** | DeepSeek API 按 token 计费，工作日高峰时段（9:00-12:00 / 14:00-18:00）用户高频使用，成本显著；本地 ollama 模型（如 qwen3.6）可承担日常对话且成本为 0 |
+| **选项** | ① 高峰时段自动切到本地 ollama 模型（策略可配：ask/switch/ignore） ② 始终使用云端模型（不干预） ③ 用户手动改 `-m` 切换 |
+| **结论** | 采用 ①：新增 `src/core/`（`peak-time.ts` 判定工作日+高峰小时，左闭右开；`model-switcher.ts` 按 `peakTimeStrategy` 决策）。CLI 启动经 `resolveStartupModel` 调用，`ask` 在交互终端确认后切换、非交互跳过不阻塞；`switch` 直接切换；`ignore` 保持主模型。配置项 `ollamaModel` / `ollamaBaseUrl` 默认 `qwen3.6:27b-q4_K_M` / `http://localhost:11434/v1` |
+| **理由** | (a) 高峰时段成本高且可被本地模型替代，收益直接；(b) 非高峰/周末零打扰，符合产品「中文优先、低成本」定位；(c) 策略默认 `ask` 尊重用户选择，`switch`/`ignore` 提供确定性行为；(d) 本地模型不在 DeepSeek 模型表，chat 装配按 `ollamaBaseUrl` 构建客户端、成本按 0 展示，避免 `costFor` 未知模型抛错（该抛错行为有测试锁定） |
+
+---
+
 *当重要决策做出后，请在此追加新条目。*

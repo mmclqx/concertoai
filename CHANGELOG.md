@@ -8,6 +8,22 @@
 
 ## [Unreleased]
 
+### Added — v3.1
+
+- **`concertoai balance` 命令**：查询 DeepSeek 账户余额（官方 `GET /user/balance`），按币种输出总额/赠送/充值；新模块 `src/balance/`（`fetchBalance` + `BalanceError` + 15s 超时）
+- **`concertoai doctor` 命令**：环境诊断（Node 版本/平台/API Key/配置文件/会话目录/模型表 + 账户余额），单项失败不中断、汇总退出码；无 API Key 时余额项标记跳过
+- **i18n 扩展**：`balance` / `doctor` 两组文案（zh/en 键同构，en.test.ts 断言一致）
+- **测试**：`tests/balance/`（5 用例）+ `tests/cli/balance.test.ts`（4 用例）+ `tests/cli/doctor.test.ts`（5 用例），总计 750 用例全绿
+
+### Added — v2.2（智能成本控制）
+
+- **高峰时段检测**：`src/core/peak-time.ts`（`isWorkday` / `isPeakHour` / `isPeakTime`），工作日（周一至周五）9:00-12:00 / 14:00-18:00 判定为高峰时段（左闭右开）
+- **模型自动切换器**：`src/core/model-switcher.ts`；启动时读取 `~/.concertoai/config.json` 的 `peakTimeStrategy`（`ask` 交互确认 / `switch` 直接切换 / `ignore` 忽略），高峰时段可切到本地 ollama 模型
+- **配置扩展**：`ConcertoAIConfig` 新增 `peakTimeStrategy`（默认 `ask`）/ `ollamaModel`（默认 `qwen3.6:27b-q4_K_M`）/ `ollamaBaseUrl`（默认 `http://localhost:11434/v1`），`resolveConfig` 兜底校验非法值
+- **CLI 集成**：`concertoai` / `concertoai chat` 启动经 `resolveStartupModel` 应用切换；本地模型按 `ollamaBaseUrl` 构建客户端（OpenAI 兼容 /v1）、成本按 0 展示（避免 `costFor` 未知模型抛错）；非交互环境 ask 策略自动跳过不阻塞
+- **i18n 扩展**：`peakTime` 五条文案（askSwitch / switched / declined / ignored / noInteractive）
+- **测试**：`tests/core/peak-time.test.ts`（8 用例）+ `tests/core/model-switcher.test.ts`（16 用例）+ `tests/store/config.test.ts` 新增 3 用例，总计 750 用例全绿
+
 ## [3.0.0] — 2026-08-09
 
 ### Added — v3.0

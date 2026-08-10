@@ -12,7 +12,7 @@ ConcertoAI 是一款**中文优先**的终端编码助手 CLI（DeepSeek 驱动�
 
 - **技术栈**：TypeScript (strict) + Node ≥22 + ESM，Ink 7 (React 19) 渲染 TUI，commander 解析 CLI，zod 做工具参数校验，vitest 测试，Biome 检查，tsup 打包
 - **运行时依赖**：`ink` / `react` / `commander` / `zod` / `cli-highlight` / `chalk`
-- **测试现状**：63 个测试文件、699 个用例，`npm run verify` 全绿，`npm audit` 0 漏洞；已用真实 `DEEPSEEK_API_KEY` 完成端到端冒烟
+- **测试现状**：69 个测试文件、750 个用例，`npm run verify` 全绿，`npm audit` 0 漏洞；已用真实 `DEEPSEEK_API_KEY` 完成端到端冒烟
 - **安全基线**：编辑与命令一律审批（fail-closed）、路径沙箱、结果截断、白名单免审批——无 yolo 模式
 
 ## 2. 架构全景图
@@ -22,10 +22,13 @@ ConcertoAI 是一款**中文优先**的终端编码助手 CLI（DeepSeek 驱动�
 │ cli/  commander 入口（src/cli/）                              │
 │   index.ts   concertoai / concertoai chat / concertoai run "任务" / concertoai plan│
 │              concertoai snapshot [list|clean]（v3.0 快照清理）      │
+│              concertoai balance（v3.1 余额查询）/ concertoai doctor（v3.1 环境诊断）│
 │   chat.tsx   chat 装配：TUI + loop + store（含 TTY 检查）      │
 │   run.ts     run 一次性执行：loop + stdout 流式 + 存档          │
 │   plan.ts    plan 计划-批准-执行三段式（readline y/n）          │
 │   snapshot.ts 快照命令（SnapshotManager，T3.6）                │
+│   balance.ts 余额命令（fetchBalance，GET /user/balance）       │
+│   doctor.ts  环境诊断命令（Node/Key/配置/会话/模型/余额）       │
 │   slash/     /agent /skill /mcp /memory /review 斜杠命令       │
 └──────────────────────┬──────────────────────────────────────┘
                        │ render(<App …>) / runLoop(...)
@@ -56,6 +59,16 @@ ConcertoAI 是一款**中文优先**的终端编码助手 CLI（DeepSeek 驱动�
 │  tokenizer.ts 估算 │          │  edit.ts   SEARCH/REPLACE     │
 └─────────┬──────────┘          │  shell.ts  白名单+审批+超时   │
           │                     └──────────┬───────────────────┘
+┌─────────▼─────────────────────────────────▼─────────────────┐
+│ balance/ 余额查询（src/balance/，v3.1）                       │
+│  balance.ts  fetchBalance：GET /user/balance + BalanceError   │
+│  index.ts    barrel（fetchBalance / BalanceInfo / 类型）      │
+└──────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│ core/ 智能成本控制（src/core/，v2.2）                         │
+│  peak-time.ts    工作日/高峰小时判断（9-12、14-18 左闭右开）  │
+│  model-switcher.ts 高峰时段模型切换：ask/switch/ignore 策略   │
+└─────────────────────────────────────────────────────────────┘
 ┌─────────▼─────────────────────────────────▼─────────────────┐
 │ store/ 持久化（src/store/）      i18n/ 文案（src/i18n/）       │
 │  paths.ts         全局路径 ~/.concertoai + 迁移（v3.1）        │
@@ -126,11 +139,14 @@ orchestrator/（协议/调度/闭环/事务） ──► agents/（4 专业 Agen
 ```
 cli/index.ts（无子命令或 chat）
   → getApiKey()：DEEPSEEK_API_KEY 缺失则报错退出
+  → resolveStartupModel()（v2.2）：CLI -m 优先 → maybeSwitchModel 读取配置
+      高峰时段（工作日 9-12 / 14-18）按 peakTimeStrategy 决策：
+      ask=交互确认 / switch=直接切本地模型 / ignore=保持主模型；非高峰不打扰
   → chat.tsx：TTY 检查（非交互终端友好报错）
-  → 组装：DeepSeekClient + ToolRegistry(5 工具) + ToolContext{白名单}
+  → 组装：DeepSeekClient（本地模型按 ollamaBaseUrl 构建）+ ToolRegistry(5 工具) + ToolContext{白名单}
   → loadProjectRules(cwd)：AGENTS.md 优先 / CARBON.md 兜底，注入系统提示
   → SessionStore：resume 则读历史，否则 create 新会话
-  → render(<App …/>)
+  → render(<App …/>)（本地模型成本按 0 展示，避免 costFor 未知模型抛错）
 ```
 
 ### 3.2 一轮对话（App.send → runLoop）
@@ -243,6 +259,8 @@ MCP 服务故障
 | D37 | **可观测性结构化调用链 + 审计日志**（v3.0 / ADR-019）：TraceStore LRU + AuditLogger JSONL，非外部 APM | 零外部依赖；CLI 自包含；JSON 导出即可满足审计 | `observable/` |
 | D38 | **v3.0 不做沙箱容器隔离**（v3.0 / ADR-020）：进程级隔离（子代理）足够 | Docker/K8s 复杂度高，v3.1 评估 | `agent/spawner.ts` |
 | D39 | **配置目录迁移 ~/.lumen → ~/.concertoai**（v3.1）：`store/paths.ts` 单一来源 + `migrateLegacyHome` 幂等迁移（rename 失败回退复制，CLI 入口自动调用） | 品牌统一；旧数据无缝迁移；路径定义不散落各模块 | `store/paths.ts` + `cli/index.ts` |
+| D40 | **余额查询独立模块 + CLI 命令**（v3.1）：`balance/fetchBalance` 调用官方 `GET /user/balance`（超时 15s、非 2xx 抛 BalanceError），`concertoai balance` 输出各币种总额/赠送/充值；`concertoai doctor` 环境诊断内嵌余额显示（无 key 标记跳过） | 轻量只读 GET 单次不重试；余额为字符串不做精度转换；doctor 单项失败不中断、汇总退出码 | `balance/` + `cli/balance.ts` + `cli/doctor.ts` |
+| D41 | **高峰时段模型自动切换**（v2.2）：`core/peak-time.ts` 判定工作日+高峰小时（9-12 / 14-18 左闭右开）；`core/model-switcher.ts` 按 `peakTimeStrategy`（ask/switch/ignore）决策，ask 在交互终端确认后切到本地 ollama 模型（`ollamaModel`/`ollamaBaseUrl`）；CLI 启动（`resolveStartupModel`）与 chat 装配消费，本地模型成本按 0 展示 | 高峰时段 API 成本高且可被本地模型替代；非高峰/周末零打扰；策略默认 ask 尊重用户；本地模型不在 DeepSeek 模型表，避免 costFor 抛错 | `core/` + `store/config.ts` + `cli/index.ts` + `cli/chat.tsx` + `ui/App.tsx` |
 
 ## 5. 目录结构说明
 
@@ -275,11 +293,13 @@ concertoai/
 │   │       ├── research.ts 研究型子代理（多角度对比分析，结论 ≤500 字）
 │   │       └── index.ts    registerBuiltinSubagents
 │   ├── cli/
-│   │   ├── index.ts      commander 入口：concertoai（默认 chat）/ chat / run / plan / snapshot；DEEPSEEK_API_KEY 检查
+│   │   ├── index.ts      commander 入口：concertoai（默认 chat）/ chat / run / plan / snapshot / balance / doctor；DEEPSEEK_API_KEY 检查
 │   │   ├── chat.tsx      chat 装配：TTY 检查、配置加载、注册表、规则加载、MCP 启动、resume、render(App)
 │   │   ├── run.ts        run 装配：非交互、stdout 流式、--auto-approve 显式开启、存档
 │   │   ├── plan.ts       plan 装配：计划轮 → 终端 y/n → 执行轮（含依赖检测/进度/回滚）
 │   │   ├── snapshot.ts   concertoai snapshot [list|clean]：快照残留列出/清理（v3.0 M3）
+│   │   ├── balance.ts    concertoai balance：余额查询（fetchBalance，v3.1）
+│   │   ├── doctor.ts     concertoai doctor：环境诊断（Node/Key/配置/会话/模型/余额，v3.1）
 │   │   ├── common.ts     CLI 共享：白名单 / 注册表构建 / OS 提示（轻量加载，v2.1）
 │   │   └── slash/        斜杠命令处理器
 │   │       ├── agent.ts  /agent list / install / remove / promote（v3.0 M4）
@@ -308,6 +328,12 @@ concertoai/
 │   │   ├── client.ts     DeepSeekClient（implements ModelClient）+ readSseEvents + ApiError/TimeoutError + Usage
 │   │   ├── models.ts     MODEL_PROFILES（flash 默认/pro，官方定价 2026-08 核实）+ costFor
 │   │   └── tokenizer.ts  estimateTokens（CJK 加权）/ estimateMessageListTokens
+│   ├── balance/          余额查询（v3.1）
+│   │   ├── balance.ts    fetchBalance（GET /user/balance）+ BalanceError + 超时
+│   │   └── index.ts      barrel（fetchBalance / BalanceInfo / DeepSeekBalance / FetchBalanceOptions）
+│   ├── core/             智能成本控制（v2.2，详见 §4 D41）
+│   │   ├── peak-time.ts  工作日/高峰小时判断（isWorkday / isPeakHour / isPeakTime）
+│   │   └── model-switcher.ts 高峰时段模型切换（applyPeakStrategy / maybeSwitchModel，ask/switch/ignore）
 │   ├── tools/
 │   │   ├── registry.ts   ToolSpec/ToolContext/ToolRegistry/ApprovalRequest/ToolResult（repairable/parallelSafe 字段）
 │   │   ├── read.ts       read_file/search_content/list_directory + resolveSafe（BOM 剥离）
@@ -518,7 +544,12 @@ npm run verify     # 验收：build + lint + typecheck + test（--silent）
 | 无可复用的 Agent 分发机制 | ✅ Agent 市场：/agent install/remove/list + 技能 promote（sha256 + 接口合规检查，复用技能市场架构） | `market/` + `cli/slash/agent.ts` |
 | 多 Agent 协作不可观测 | ✅ 调用链追踪（TraceStore LRU）+ 审计日志（AuditLogger JSONL <10ms）+ 流程树面板 | `observable/` + `ui/ObservabilityPanel.tsx` |
 
-### 8.6 规划（v3.1+）
+### 8.6 v2.2 已解决
+| 问题 | 状态 | 位置 |
+| --- | --- | --- |
+| 高峰时段 API 成本高且无法干预 | ✅ 高峰时段检测（工作日 9-12 / 14-18）+ 模型自动切换：peakTimeStrategy=ask/switch/ignore，可切到本地 ollama 模型（成本按 0 展示） | `core/` + `store/config.ts` + `cli/index.ts` + `cli/chat.tsx` + `ui/App.tsx` |
+
+### 8.7 规划（v3.1+）
 
 - **能力**：Reviewer autoFix 落地（自动修正回滚）、Agent 间点对点通信评估、插件市场、DAG 工作流可视化编辑
 - **工程**：TypeScript 7（原生）评估；沙箱容器隔离（Docker/K8s）评估；依赖持续升级

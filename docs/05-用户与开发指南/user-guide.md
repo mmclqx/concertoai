@@ -64,6 +64,30 @@ npm update -g @concertoai/cli
 | `concertoai snapshot` / `concertoai snapshot list` | 列出全部残留快照（失败/取消任务的 taskId 列表） |
 | `concertoai snapshot clean` | 清理全部残留快照（多 Agent 任务失败/超限后遗留） |
 
+### `concertoai balance` —— 查询 DeepSeek 账户余额
+
+查询 DeepSeek 官方余额接口（`GET /user/balance`），按币种输出账户总额、赠送余额与充值余额；账户不可用或返回空列表时给出明确提示。需要 `DEEPSEEK_API_KEY`；查询失败时以非零退出码结束。
+
+```
+$ concertoai balance
+DeepSeek 账户余额
+账户可用
+CNY: 总额 110.00 ｜ 赠送 10.00 ｜ 充值 100.00
+```
+
+### `concertoai doctor` —— 环境诊断
+
+逐项检查运行环境并汇总退出码（存在任一失败项返回 1，全部正常返回 0）：
+
+| 检查项 | 说明 |
+| --- | --- |
+| Node.js / 平台 | 版本与操作系统 |
+| API Key | `DEEPSEEK_API_KEY` 是否设置（不泄露内容） |
+| 配置文件 | `~/.concertoai/config.json` 可读性（区分不存在/损坏） |
+| 会话目录 | 可写性探测（创建临时文件后删除） |
+| 模型表 | 内置模型表是否可加载 |
+| 账户余额 | 有 API Key 时查询 DeepSeek 余额（含总额/赠送/充值） |
+
 ## 3. 交互细节
 
 ### 输入框
@@ -102,8 +126,21 @@ npm update -g @concertoai/cli
 | `sessionDir` | string | `~/.concertoai/sessions` | 会话存储目录 |
 | `locale` | `"zh" \| "en"` | zh | 界面语言 |
 | `mcpServers` | `MCPServerEntry[]` | `[]` | MCP 服务连接配置（v1.1 新增），每项含 `name`/`command`/`args`/`env` |
+| `peakTimeStrategy` | `"ask" \| "switch" \| "ignore"` | ask | 高峰时段模型切换策略（v2.2）：`ask`=交互确认 / `switch`=直接切换 / `ignore`=忽略 |
+| `ollamaModel` | string | `qwen3.6:27b-q4_K_M` | 高峰时段切换到的本地模型 ID（v2.2） |
+| `ollamaBaseUrl` | string | `http://localhost:11434/v1` | 本地模型 OpenAI 兼容端点（Ollama /v1，v2.2） |
 
 优先级：**CLI 参数 > 环境变量 > 配置文件 > 默认值**。
+
+### 智能成本控制（高峰时段切换）
+
+工作日（周一至周五）9:00-12:00 / 14:00-18:00 为高峰时段，此时 API 调用成本较高，可切换到本地 ollama 模型（成本为 0）。启动时按 `peakTimeStrategy` 决策：
+
+- `ask`（默认）：交互终端弹出确认提示，输入 `y` 切换到本地模型、`n` 保持主模型；非交互环境（如 `concertoai run`）自动跳过切换不阻塞；
+- `switch`：高峰时段直接切换到本地模型；
+- `ignore`：忽略切换，始终使用主模型。
+
+非高峰时段或周末不触发任何切换与提示（零打扰）。切换到的本地模型不在 DeepSeek 模型表中，客户端按 `ollamaBaseUrl` 构建（OpenAI 兼容 /v1），状态条成本按 0 展示。
 
 环境变量：`LUMEN_MODEL` / `LUMEN_ALLOWLIST`（逗号分隔）/ `LUMEN_APPROVAL` / `LUMEN_SESSION_DIR` / `LUMEN_LOCALE`；语言还会参考系统 `LANG`（zh/en 前缀）。
 
@@ -308,3 +345,7 @@ v3.0 新增：
 - **多文件事务回滚**：任务级快照 `.concertoai/snapshots/<taskId>/`，原子恢复 + 外部修改检测 + `concertoai snapshot clean`；
 - **Agent 市场**：`/agent list` / `install <name>` / `remove <name>` / `promote <skill>`，外部 Agent sha256 校验 + 接口合规检查 + 权限 fail-closed；
 - **可观测性**：调用链追踪（TraceStore LRU）、审计日志（`~/.concertoai/audit/`，JSON 可导出）、Agent 协作流程树面板。
+
+v2.2 新增（智能成本控制）：
+
+- **高峰时段检测与模型切换**：工作日 9:00-12:00 / 14:00-18:00 判定为高峰时段，启动时按 `peakTimeStrategy`（ask/switch/ignore）决定是否切换到本地 ollama 模型，`concertoai balance` 可随时查看 DeepSeek 账户余额。

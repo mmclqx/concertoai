@@ -22,6 +22,20 @@ function getApiKey(): string {
   return key;
 }
 
+/**
+ * 解析启动模型（v2.2 智能成本控制）：CLI -m 优先，随后应用高峰时段
+ * 切换策略（ask 交互确认 / switch 直接切换 / ignore 保持主模型）。
+ * 返回最终生效的模型 ID（可能为本地 ollama 模型）。
+ */
+async function resolveStartupModel(cliModel?: string): Promise<string> {
+  const { maybeSwitchModel } = await import('../core/model-switcher');
+  const { model } = await maybeSwitchModel({
+    cliModel,
+    interactive: process.stdin.isTTY === true,
+  });
+  return model;
+}
+
 const program = new Command();
 
 program.name('concertoai').description(t().cli.description).version(VERSION);
@@ -30,10 +44,12 @@ program.name('concertoai').description(t().cli.description).version(VERSION);
 program.action(() => {
   // 动态导入（v2.1 性能优化）：启动阶段只加载 commander + i18n，
   // TUI 依赖树（ink/react/ui/mcp/skill）在用户真正进入交互后才加载。
-  void import('./chat').then(({ runChat }) => {
+  void import('./chat').then(async ({ runChat }) => {
+    const model = await resolveStartupModel();
     void runChat({
       cwd: process.cwd(),
       apiKey: getApiKey(),
+      model,
     });
   });
 });
@@ -47,11 +63,14 @@ program
   .action(
     async (options: { resume?: string | true; model?: string; list?: boolean; lang?: string }) => {
       const { runChat } = await import('./chat');
+      // -l 仅列会话：不需要模型，跳过高峰切换（避免 ask 策略阻塞）
+      const model =
+        options.list === true ? options.model : await resolveStartupModel(options.model);
       await runChat({
         cwd: process.cwd(),
         apiKey: getApiKey(),
         resume: options.resume,
-        model: options.model,
+        model,
         listOnly: options.list,
         lang: options.lang,
       });
@@ -106,6 +125,28 @@ program
   .action(async (action?: string) => {
     const { runSnapshotCommand } = await import('./snapshot');
     await runSnapshotCommand({ cwd: process.cwd(), action });
+  });
+
+program
+  .command('balance')
+  .description(t().cli.balance.description)
+  .action(async () => {
+    const { runBalanceCommand } = await import('./balance');
+    const code = await runBalanceCommand({ apiKey: getApiKey() });
+    if (code !== 0) {
+      process.exitCode = code;
+    }
+  });
+
+program
+  .command('doctor')
+  .description(t().cli.doctor.description)
+  .action(async () => {
+    const { runDoctorCommand } = await import('./doctor');
+    const code = await runDoctorCommand({ apiKey: process.env.DEEPSEEK_API_KEY });
+    if (code !== 0) {
+      process.exitCode = code;
+    }
   });
 
 program.parse();

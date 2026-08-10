@@ -28,6 +28,12 @@ export const en = {
     model: {
       description: 'Model ID (default: deepseek-v4-flash)',
     },
+    balance: {
+      description: 'Query DeepSeek account balance',
+    },
+    doctor: {
+      description: 'Environment diagnostics (includes DeepSeek account balance)',
+    },
   },
   errors: {
     noApiKey: 'DEEPSEEK_API_KEY not found. Set it first, then start again.',
@@ -79,6 +85,48 @@ export const en = {
     hint: 'Approve plan (y) / Reject (n)',
     approved: 'Plan approved; starting execution',
     rejected: 'Plan rejected; nothing was executed',
+  },
+  balance: {
+    available: 'Account available',
+    unavailable: 'Account unavailable',
+    empty: 'No balance info',
+    line: '💰 Balance: {symbol}{total}',
+  },
+  peakTime: {
+    askSwitch:
+      'It is currently peak time (workdays 9-12 / 14-18). Switch to local model {model} ({baseUrl}) to save API costs?',
+    switched: 'Switched to local model {model} ({baseUrl})',
+    declined: 'Keeping primary model {model}',
+    ignored: 'Peak-time switching is configured as ignore; keeping primary model {model}',
+    noInteractive:
+      'Non-interactive environment; skipping peak-time switch, keeping primary model {model}',
+  },
+  doctor: {
+    title: 'ConcertoAI environment diagnostics',
+    ok: '✅',
+    fail: '❌',
+    money: '💰',
+    nodeLabel: 'Node.js',
+    platformLabel: 'Platform',
+    apiKeyLabel: 'API Key',
+    apiKeySet: 'set',
+    apiKeyMissing: 'not set (cannot query balance)',
+    configLabel: 'Config file',
+    configOk: '{path} (readable, schema v{version})',
+    configMissing: '{path} (missing, using defaults)',
+    configBroken: '{path} (read failed: {message})',
+    sessionDirLabel: 'Session dir',
+    sessionWritable: '{path} (writable)',
+    sessionNotWritable: '{path} (not writable: {message})',
+    modelsLabel: 'Model table',
+    modelsCount: '{count} models ({ids})',
+    modelsEmpty: 'Model table is empty',
+    balanceLabel: 'Account balance',
+    balanceAvailable: 'Account available',
+    balanceUnavailable: 'Account unavailable',
+    balanceSkipped: 'not queried (missing DEEPSEEK_API_KEY)',
+    balanceFailed: 'query failed: {message}',
+    balanceEntry: '{currency}: total {total} | granted {granted} | topped-up {toppedUp}',
   },
   ui: {
     thinking: 'Thinking',

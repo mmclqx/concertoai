@@ -7,6 +7,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   CONFIG_SCHEMA_VERSION,
   DEFAULT_CONFIG_PATH,
+  DEFAULT_OLLAMA_BASE_URL,
+  DEFAULT_OLLAMA_MODEL,
+  DEFAULT_PEAK_TIME_STRATEGY,
   emptyConfig,
   loadConfig,
   resolveConfig,
@@ -77,6 +80,13 @@ describe('resolveConfig 优先级（CLI > 环境变量 > 配置文件 > 默认�
     expect(r.approvalPolicy).toBe('ask');
     expect(r.sessionDir).toBe(DEFAULT_SESSION_DIR);
     expect(r.locale).toBe('zh');
+    // v2.2 智能成本控制：高峰策略与本地模型默认值
+    expect(r.peakTimeStrategy).toBe(DEFAULT_PEAK_TIME_STRATEGY);
+    expect(r.peakTimeStrategy).toBe('ask');
+    expect(r.ollamaModel).toBe(DEFAULT_OLLAMA_MODEL);
+    expect(r.ollamaModel).toBe('qwen3.6:27b-q4_K_M');
+    expect(r.ollamaBaseUrl).toBe(DEFAULT_OLLAMA_BASE_URL);
+    expect(r.ollamaBaseUrl).toBe('http://localhost:11434/v1');
   });
 
   it('配置文件生效', () => {
@@ -87,12 +97,18 @@ describe('resolveConfig 优先级（CLI > 环境变量 > 配置文件 > 默认�
       approvalPolicy: 'allowlist-only',
       sessionDir: '/custom/sessions',
       locale: 'en',
+      peakTimeStrategy: 'switch',
+      ollamaModel: 'llama3:8b',
+      ollamaBaseUrl: 'http://127.0.0.1:11434/v1',
     });
     expect(r.model).toBe('deepseek-v4-pro');
     expect(r.allowlist).toEqual(['npm test', 'git status']);
     expect(r.approvalPolicy).toBe('allowlist-only');
     expect(r.sessionDir).toBe('/custom/sessions');
     expect(r.locale).toBe('en');
+    expect(r.peakTimeStrategy).toBe('switch');
+    expect(r.ollamaModel).toBe('llama3:8b');
+    expect(r.ollamaBaseUrl).toBe('http://127.0.0.1:11434/v1');
   });
 
   it('环境变量覆盖配置文件', () => {
@@ -131,6 +147,16 @@ describe('resolveConfig 优先级（CLI > 环境变量 > 配置文件 > 默认�
   it('非法审批策略回退 ask', () => {
     vi.stubEnv('LUMEN_APPROVAL', 'whatever');
     expect(resolveConfig(emptyConfig()).approvalPolicy).toBe('ask');
+  });
+
+  it('非法 peakTimeStrategy 回退 ask（默认）', () => {
+    const r = resolveConfig({
+      schemaVersion: 1,
+      peakTimeStrategy: 'whatever' as 'ask',
+    });
+    expect(r.peakTimeStrategy).toBe('ask');
+    expect(r.ollamaModel).toBe(DEFAULT_OLLAMA_MODEL);
+    expect(r.ollamaBaseUrl).toBe(DEFAULT_OLLAMA_BASE_URL);
   });
 
   it('locale 优先级：CLI --lang > LUMEN_LOCALE > LANG > 配置文件 > zh', () => {

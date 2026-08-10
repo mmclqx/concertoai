@@ -2,7 +2,9 @@
  * 配置文件：~/.concertoai/config.json（带 schema 版本字段）。
  *
  * 支持字段：defaultModel（默认模型）、allowlist（命令白名单）、
- * approvalPolicy（ask / allowlist-only）、sessionDir（会话目录）、locale。
+ * approvalPolicy（ask / allowlist-only）、sessionDir（会话目录）、locale、
+ * peakTimeStrategy（高峰时段模型切换策略）、ollamaModel / ollamaBaseUrl
+ * （本地模型接入，v2.2 智能成本控制）。
  *
  * 优先级：CLI 参数 > 环境变量（LUMEN_*）> 配置文件 > 默认值。
  * 文件不存在 / JSON 损坏 / schema 版本不匹配 → 返回空配置（不抛错）。
@@ -20,6 +22,21 @@ export const CONFIG_SCHEMA_VERSION = 1;
 export const DEFAULT_CONFIG_PATH = configPath();
 
 export type ApprovalPolicy = 'ask' | 'allowlist-only';
+
+/**
+ * 高峰时段模型切换策略（v2.2 智能成本控制）：
+ * - `ask`：高峰时段提示用户确认是否切换到本地模型（默认）；
+ * - `switch`：高峰时段直接切换到本地模型；
+ * - `ignore`：忽略切换，始终使用主模型。
+ */
+export type PeakTimeStrategy = 'ask' | 'switch' | 'ignore';
+
+/** 高峰时段切换策略默认值：ask（询问用户）。 */
+export const DEFAULT_PEAK_TIME_STRATEGY: PeakTimeStrategy = 'ask';
+/** 本地模型默认 ID（Ollama，v2.2 智能成本控制）。 */
+export const DEFAULT_OLLAMA_MODEL = 'qwen3.6:27b-q4_K_M';
+/** 本地模型默认 OpenAI 兼容端点（Ollama /v1）。 */
+export const DEFAULT_OLLAMA_BASE_URL = 'http://localhost:11434/v1';
 
 /** MCP 服务连接配置（配置文件中的条目）。 */
 export interface MCPServerEntry {
@@ -47,6 +64,12 @@ export interface ConcertoAIConfig {
   locale?: string;
   /** MCP 服务配置列表（v1.1）。 */
   mcpServers?: MCPServerEntry[];
+  /** 高峰时段模型切换策略（v2.2）：ask / switch / ignore，默认 ask。 */
+  peakTimeStrategy?: PeakTimeStrategy;
+  /** 高峰时段切换到的本地模型 ID（Ollama，v2.2）。 */
+  ollamaModel?: string;
+  /** 本地模型 OpenAI 兼容端点（Ollama /v1，v2.2）。 */
+  ollamaBaseUrl?: string;
 }
 
 export interface ResolvedConfig {
@@ -59,6 +82,12 @@ export interface ResolvedConfig {
   locale: string;
   /** MCP 服务配置（v1.1）。 */
   mcpServers: MCPServerEntry[];
+  /** 高峰时段模型切换策略（v2.2）：ask / switch / ignore，默认 ask。 */
+  peakTimeStrategy: PeakTimeStrategy;
+  /** 本地模型 ID（Ollama，v2.2）。 */
+  ollamaModel: string;
+  /** 本地模型 OpenAI 兼容端点（Ollama /v1，v2.2）。 */
+  ollamaBaseUrl: string;
 }
 
 /** 空配置（默认值由解析层兜底）。 */
@@ -128,6 +157,14 @@ export function resolveConfig(
   const langMatch = langEnv !== undefined && /^(zh|en)/i.test(langEnv) ? langEnv : undefined;
   const locale = cliLocale ?? env('LUMEN_LOCALE') ?? langMatch ?? file.locale ?? 'zh';
 
+  // v2.2 智能成本控制：高峰时段策略与本地模型配置（仅配置文件，不支持环境变量）
+  const peakTimeStrategy: PeakTimeStrategy =
+    file.peakTimeStrategy === 'switch' || file.peakTimeStrategy === 'ignore'
+      ? file.peakTimeStrategy
+      : DEFAULT_PEAK_TIME_STRATEGY;
+  const ollamaModel = file.ollamaModel ?? DEFAULT_OLLAMA_MODEL;
+  const ollamaBaseUrl = file.ollamaBaseUrl ?? DEFAULT_OLLAMA_BASE_URL;
+
   return {
     model,
     allowlist,
@@ -135,5 +172,8 @@ export function resolveConfig(
     sessionDir,
     locale,
     mcpServers: file.mcpServers ?? [],
+    peakTimeStrategy,
+    ollamaModel,
+    ollamaBaseUrl,
   };
 }

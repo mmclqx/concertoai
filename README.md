@@ -4,7 +4,8 @@ ConcertoAI —— 面向个人开发者的**中文优先**终端编码助手 CLI
 
 在项目目录里启动：读取代码 → 提出 diff 方案 → 征求命令许可 → 跑验证 → 留下可续接的会话记录。
 
-> 状态：v3.0.0 开发完成（`npm run verify` 全绿，699 用例 / 63 测试文件；`npm audit` 0 漏洞）。
+> 状态：v3.0.0 开发完成（`npm run verify` 全绿，750 用例 / 69 测试文件；`npm audit` 0 漏洞）。
+> 新特性：智能成本控制（高峰时段自动切换本地 ollama 模型，peakTimeStrategy 可配）、`concertoai balance` 余额查询、`concertoai doctor` 环境诊断。
 > v3.0 新增：多 Agent 协作（Orchestrator + 对抗性闭环）/ Agent 市场 / 可观测性面板 / 多文件事务回滚。
 > v2.1 新增：知识图谱 / Reviewer Agent / 技能市场与嵌套 / 子代理 MCP 工具。
 
@@ -61,6 +62,42 @@ concertoai plan "重构这个模块"
 | `concertoai chat -l` | 仅打印历史会话列表 |
 | `concertoai snapshot` / `concertoai snapshot list` | 列出多文件事务残留快照（taskId 列表） |
 | `concertoai snapshot clean` | 清理全部残留快照（失败/取消后的遗留） |
+| `concertoai balance` | 查询 DeepSeek 账户余额（总额/赠送/充值，按币种） |
+| `concertoai doctor` | 环境诊断：Node/平台/API Key/配置/会话目录/模型表 + 账户余额 |
+
+## 智能成本控制
+
+智能成本控制包含两大能力：**余额查询**（随时掌握 DeepSeek 账户余额）与**高峰时段切换**（成本高峰期自动切换到本地 ollama 模型）。
+
+### 余额查询（`concertoai balance`）
+
+```bash
+$ concertoai balance
+💰 余额：¥110.00
+```
+
+调用 DeepSeek 官方余额接口（`GET /user/balance`），按币种输出账户总额/赠送/充值；账户不可用或查询失败时输出明确提示并以非零退出码结束。需要设置 `DEEPSEEK_API_KEY`。
+
+### 高峰时段切换
+
+高峰时段（工作日 9:00-12:00 / 14:00-18:00）DeepSeek API 调用成本较高，ConcertoAI 可在此时自动切换到本地 ollama 模型（本地调用成本为 0）。在 `~/.concertoai/config.json` 中配置：
+
+```json
+{
+  "schemaVersion": 1,
+  "peakTimeStrategy": "ask",
+  "ollamaModel": "qwen3.6:27b-q4_K_M",
+  "ollamaBaseUrl": "http://localhost:11434/v1"
+}
+```
+
+| 配置项 | 说明 | 默认值 |
+| --- | --- | --- |
+| `peakTimeStrategy` | `ask` = 高峰时段交互确认后切换；`switch` = 直接切换；`ignore` = 忽略（保持主模型） | `ask` |
+| `ollamaModel` | 高峰时段切换到的本地模型 ID | `qwen3.6:27b-q4_K_M` |
+| `ollamaBaseUrl` | 本地模型 OpenAI 兼容端点（Ollama /v1） | `http://localhost:11434/v1` |
+
+非高峰时段或周末不打扰；非交互环境（如 `concertoai run`）下 `ask` 策略自动跳过切换，保持主模型。切换到的本地模型不在 DeepSeek 模型表中，客户端按 `ollamaBaseUrl` 构建（OpenAI 兼容 /v1），状态条成本按 0 展示。
 
 ## MCP 服务接入
 

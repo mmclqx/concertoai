@@ -981,8 +981,10 @@ export function App({
   const showReal = realUsage.input + realUsage.output > 0;
   const display = phase === 'streaming' || !showReal ? tokens : realUsage;
   const displayCacheHit = showReal ? realUsage.cacheHit : 0;
-  const cost = costFor(model, display.input, display.output, displayCacheHit);
-  const hitCost = cacheHitCostFor(model, displayCacheHit);
+  // v2.2 智能成本控制：本地模型（ollamaModel）不在 DeepSeek 模型表中，成本按 0 展示
+  const isLocalModel = getModel(model) === undefined;
+  const cost = isLocalModel ? 0 : costFor(model, display.input, display.output, displayCacheHit);
+  const hitCost = isLocalModel ? 0 : cacheHitCostFor(model, displayCacheHit);
 
   // MCP 状态摘要
   const mcpSummary = mcpManager

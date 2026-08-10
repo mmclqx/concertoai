@@ -4,6 +4,16 @@
 
 // v2.0 子代理系统
 export type { SubagentDef, SubagentResult, SubagentTask, SubagentToolName } from './agent';
+export type { BalanceInfo, DeepSeekBalance, FetchBalanceOptions } from './balance';
+export { BalanceError, fetchBalance } from './balance';
+export type {
+  MaybeSwitchModelOptions,
+  PeakSwitchOptions,
+  PeakSwitchResult,
+} from './core/model-switcher';
+export { applyPeakStrategy, maybeSwitchModel } from './core/model-switcher';
+// v2.2 智能成本控制：高峰时段检测 + 模型自动切换
+export { isPeakHour, isPeakTime, isWorkday, PEAK_TIME_RANGES } from './core/peak-time';
 export type { ZhDict } from './i18n/zh';
 export { fmt, zh } from './i18n/zh';
 export type { LoopEvent, LoopOptions, RunLoopResult } from './loop/loop';
