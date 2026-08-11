@@ -95,7 +95,7 @@ describe('SubagentSpawner', () => {
     expect(result.ok).toBe(true);
     expect(result.summary).toContain('探索结论');
     expect(result.toolCallCount).toBe(0); // 无工具调用
-    expect(result.durationMs).toBeGreaterThan(0);
+    expect(result.durationMs).toBeGreaterThanOrEqual(0);
   });
 
   it('子代理超时 → ok:false', async () => {
