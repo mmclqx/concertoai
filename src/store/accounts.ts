@@ -12,7 +12,18 @@
  */
 
 import type { Dirent } from 'node:fs';
-import { chmod, mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  copyFile,
+  mkdir,
+  readdir,
+  readFile,
+  rename,
+  rm,
+  stat,
+  unlink,
+  writeFile,
+} from 'node:fs/promises';
 import path from 'node:path';
 
 import { accountConfigPath, activeAccountPath } from './paths';
@@ -60,6 +71,26 @@ export function assertValidAccountName(name: string): void {
 }
 
 /**
+ * 原子替换：临时文件 → 目标。
+ * - 优先 rename（同文件系统内原子）；
+ * - rename 跨文件系统抛 EXDEV 时回退 copyFile + unlink（对齐 paths.ts migrateLegacyHome
+ *   的 rename → cpSync 回退模式；Windows 下 tmp 与目标分属不同盘符时触发）。
+ * 回退非原子（copy 中断目标可能半写），但 tmp 保留完整内容，调用方可重试。
+ */
+export async function atomicReplace(tmp: string, target: string): Promise<void> {
+  try {
+    await rename(tmp, target);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'EXDEV') {
+      await copyFile(tmp, target);
+      await unlink(tmp);
+      return;
+    }
+    throw err;
+  }
+}
+
+/**
  * 保存账号：写入 ~/.concertoai/accounts/<name>/config.json。
  * - POSIX 下设置文件权限 0600（仅所有者读写）；Windows 尽力而为跳过不报错；
  * - 重名时按 overwrite 决定：false（默认）→ 返回 'exists'；true → 覆盖并返回 'overwritten'；
@@ -97,7 +128,7 @@ export async function saveAccount(
       // 文件系统不支持权限位（如部分网络盘）时跳过，不阻塞保存
     }
   }
-  await import('node:fs/promises').then(({ rename }) => rename(tmp, file));
+  await atomicReplace(tmp, file);
   return existed ? 'overwritten' : 'created';
 }
 
@@ -124,7 +155,7 @@ export async function setActiveAccount(name: string, accountsRoot?: string): Pro
   await mkdir(path.dirname(file), { recursive: true });
   const tmp = `${file}.${process.pid}.tmp`;
   await writeFile(tmp, `${name}\n`, 'utf8');
-  await import('node:fs/promises').then(({ rename }) => rename(tmp, file));
+  await atomicReplace(tmp, file);
 }
 
 /** 读取 active 账号名；无 active / 指针损坏 → undefined。 */

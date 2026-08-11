@@ -150,6 +150,26 @@ describe('run_command 执行行为', () => {
   it('parallelSafe 为 false（shell 不可并行）', () => {
     expect(shellTool.parallelSafe).toBe(false);
   });
+
+  // v3.2 M1 / T1.2：spawn ENOENT 回归——未知命令必须给出可排查诊断（COMMAND_NOT_FOUND 或退出码提示）
+  it('未知命令 → ok:false 且诊断可排查（ENOENT / 退出码兜底）', async () => {
+    const result = await run('definitely-not-exist-xyz-12345');
+    expect(result.ok).toBe(false);
+    const errText = String(result.error);
+    // Linux/macOS（shell:true → spawn ENOENT）走 COMMAND_NOT_FOUND 建议；
+    // Windows（cmd.exe 找不到命令）退出码 1 + 「不是内部或外部命令」。
+    // 两条路径都必须给出可排查信息，禁止静默成功。
+    expect(errText).toMatch(/命令|COMMAND|退出码/);
+    expect(result.code).toBeDefined();
+  });
+
+  it('未知命令错误带数据（exitCode=-1，stdout/stderr 可查）', async () => {
+    const result = await run('definitely-not-exist-xyz-12345');
+    expect(result.ok).toBe(false);
+    const data = result.data as { exitCode: number; command: string };
+    expect(typeof data.exitCode).toBe('number');
+    expect(data.command).toContain('definitely-not-exist-xyz-12345');
+  });
 });
 
 // ── 跨平台命令兼容体系（v3.0 §3.4）──────────────────────────

@@ -1,4 +1,4 @@
-# CI：push/PR 自动全量验证；真实 API 冒烟手动触发（key 走 repository secrets）。
+# CI：push/PR 自动全量验证（三平台矩阵，v3.2 M1 / T1.1）；真实 API 冒烟手动触发（key 走 repository secrets）。
 name: CI
 
 on:
@@ -8,9 +8,11 @@ on:
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
         node-version: [22]
     steps:
       - uses: actions/checkout@v4

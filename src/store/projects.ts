@@ -68,10 +68,24 @@ export function emptyRegistry(): ProjectRegistryData {
  * 路径规范化：`C:\foo\bar` → `C:/foo/bar`（Windows 反斜杠转正斜杠）。
  * - Windows 盘符绝对路径（`^[a-zA-Z]:[\\/]`）：跨平台统一转为 `C:/...`（不依赖当前平台
  *   path.resolve 的盘符语义——POSIX 下 `C:\foo` 会被误当相对路径）；
+ * - UNC 网络共享路径（`\\server\share\...`，Windows 专有）：统一转为 `//server/share/...`
+ *   （保留双斜杠前缀，path.posix.normalize 按 POSIX 约定保留 leading double slash）；
  * - 其余路径：path.resolve 转绝对 + 归一化 `..`，再统一分隔符为正斜杠。
  * 纯字符串转换不依赖真实文件系统（POSIX 下同样处理反斜杠，保证跨平台一致性）。
  */
 export function normalizeProjectPath(p: string): string {
+  // UNC 路径：\\server\share\...（至少两个组件；server/share 不含斜杠）
+  const unc = /^\\\\[^\\/]+\\[^\\/]+(?:\\|$)/.exec(p);
+  if (unc !== null) {
+    const posix = p.replace(/\\/g, '/');
+    // path.posix.normalize 会把前导双斜杠压缩为单斜杠（`//server` → `/server`），
+    // UNC 需保留 `//server/share` 前缀：前缀不动，仅归一化其后路径（.. 等）。
+    const m = /^(\/\/[^/]+\/[^/]+)(.*)$/.exec(posix);
+    if (m !== null) {
+      return `${m[1]}${path.posix.normalize(m[2] ?? '')}`;
+    }
+    return posix;
+  }
   const winAbs = /^([a-zA-Z]):[\\/](.*)$/.exec(p);
   if (winAbs !== null) {
     const drive = (winAbs[1] ?? 'A').toUpperCase();
@@ -94,9 +108,10 @@ export function isNested(newPath: string, existingPaths: readonly string[]): boo
     if (a === b) {
       continue;
     }
-    // Windows 盘符大小写不敏感：统一小写比较前缀（仅当都像盘符路径）
-    const ka = /^[a-zA-Z]:/.test(a) ? a.toLowerCase() : a;
-    const kb = /^[a-zA-Z]:/.test(b) ? b.toLowerCase() : b;
+    // Windows 盘符 / UNC 大小写不敏感：统一小写比较前缀（仅当都像 Windows 路径）
+    const isWinPath = (s: string): boolean => /^[a-zA-Z]:/.test(s) || s.startsWith('//');
+    const ka = isWinPath(a) ? a.toLowerCase() : a;
+    const kb = isWinPath(b) ? b.toLowerCase() : b;
     if (ka.startsWith(`${kb}${sep}`) || kb.startsWith(`${ka}${sep}`)) {
       return true;
     }

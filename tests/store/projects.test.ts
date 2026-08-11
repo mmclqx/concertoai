@@ -23,6 +23,13 @@ import {
   ProjectRegistry,
   type ProjectRegistryError,
 } from '../../src/store/projects';
+import {
+  POSIX_ABS_PATH,
+  UNC_ABS_PATH,
+  UNC_POSIX_PATH,
+  WIN_ABS_PATH,
+  WIN_POSIX_PATH,
+} from '../fixtures/platform-samples';
 
 let tmp: string;
 
@@ -71,6 +78,64 @@ describe('isNested（嵌套判定）', () => {
 
   it('Windows 盘符大小写不敏感', () => {
     expect(isNested('C:/work/demo/src', ['c:/work/demo'])).toBe(true);
+  });
+});
+
+describe('normalizeProjectPath / isNested（UNC 网络共享，v3.2 M1 / T1.3）', () => {
+  it('UNC 反斜杠路径 → 正斜杠（保留 //server/share 双斜杠前缀）', () => {
+    expect(normalizeProjectPath(UNC_ABS_PATH)).toBe(UNC_POSIX_PATH);
+  });
+
+  it('UNC 路径 .. 归一化', () => {
+    expect(normalizeProjectPath('\\\\server\\share\\demo\\..\\src')).toBe('//server/share/src');
+  });
+
+  it('UNC 单组件（\\server）→ 不当作 UNC，走 path.resolve（保持原行为）', () => {
+    // 只有 server 一个组件不是合法 UNC（需 \\server\share 两级），回退普通路径处理
+    const result = normalizeProjectPath('\\\\server');
+    expect(result.includes('\\\\')).toBe(false);
+  });
+
+  it('UNC 嵌套判定：共享内子目录 → true', () => {
+    expect(isNested('//server/share/demo/src', ['//server/share/demo'])).toBe(true);
+    expect(isNested('//server/share/demo', ['//server/share/demo/src'])).toBe(true);
+  });
+
+  it('UNC 同前缀非子目录 → false（分隔符边界）', () => {
+    expect(isNested('//server/share/demo2', ['//server/share/demo'])).toBe(false);
+  });
+
+  it('UNC 大小写不敏感（服务器名/共享名）', () => {
+    expect(isNested('//SERVER/Share/demo/src', ['//server/share/demo'])).toBe(true);
+  });
+
+  it('UNC 与 POSIX 路径不互判嵌套', () => {
+    expect(isNested('//server/share/demo', [POSIX_ABS_PATH])).toBe(false);
+    expect(isNested(POSIX_ABS_PATH, ['//server/share/demo'])).toBe(false);
+  });
+
+  it('注册表 add 支持 UNC 路径并规范化', async () => {
+    const reg = await ProjectRegistry.load(regFile());
+    reg.add('share', UNC_ABS_PATH);
+    expect(reg.get('share')?.path).toBe(UNC_POSIX_PATH);
+    // 反斜杠/正斜杠形态可互相 findByPath
+    expect(reg.findByPath(UNC_POSIX_PATH)?.name).toBe('share');
+  });
+
+  it('UNC 嵌套注册拒绝（PROJECT_NESTED）', async () => {
+    const reg = await ProjectRegistry.load(regFile());
+    reg.add('parent', '\\\\server\\share\\demo');
+    let caught: ProjectRegistryError | undefined;
+    try {
+      reg.add('child', '\\\\server\\share\\demo\\sub');
+    } catch (err) {
+      caught = err as ProjectRegistryError;
+    }
+    expect(caught?.code).toBe('PROJECT_NESTED');
+  });
+
+  it('盘符路径样本回归（引用样本库 WIN_ABS_PATH）', () => {
+    expect(normalizeProjectPath(WIN_ABS_PATH)).toBe(WIN_POSIX_PATH);
   });
 });
 

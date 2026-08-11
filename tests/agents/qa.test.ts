@@ -30,6 +30,12 @@ import {
   type QaRunResult,
 } from '../../src/agents';
 import type { AgentContext } from '../../src/orchestrator';
+import {
+  VITEST_FAIL_POSIX,
+  VITEST_FAIL_PREFIX_WIN,
+  VITEST_FAIL_WIN,
+  VITEST_PASS_WIN,
+} from '../fixtures/platform-samples';
 
 // ── 测试辅助 ──────────────────────────────────────────────────
 
@@ -129,6 +135,44 @@ describe('parseVerifyOutput（结构化测试报告解析）', () => {
     expect(report.testFiles).toBe(0);
     expect(report.testCases).toBe(0);
     expect(report.failedItems).toEqual([]);
+  });
+});
+
+// ── 跨平台样本库回归（v3.2 M1 / T1.5）─────────────────────────
+
+describe('parseVerifyOutput 跨平台样本（v3.2 M1 / T1.5）', () => {
+  it('Windows 盘符 vitest 失败输出 → 解析失败文件/用例（反斜杠路径）', () => {
+    const report = parseVerifyOutput(VITEST_FAIL_WIN, '', 1000);
+    expect(report.passed).toBe(false);
+    expect(report.testFiles).toBe(51);
+    expect(report.failedItems).toHaveLength(1);
+    expect(report.failedItems[0]?.file).toBe('C:\\work\\demo\\tests\\foo.test.ts');
+    expect(report.failedItems[0]?.testName).toBe('失败用例');
+    expect(report.failedItems[0]?.error).toContain('AssertionError');
+  });
+
+  it('POSIX vitest 失败输出 → 解析失败文件/用例（正斜杠路径）', () => {
+    const report = parseVerifyOutput(VITEST_FAIL_POSIX, '', 1000);
+    expect(report.passed).toBe(false);
+    expect(report.failedItems).toHaveLength(1);
+    expect(report.failedItems[0]?.file).toBe('/home/user/work/demo/tests/foo.test.ts');
+    expect(report.failedItems[0]?.error).toContain('AssertionError');
+  });
+
+  it('Windows 盘符 vitest 全绿输出 → passed=true 计数正确', () => {
+    const report = parseVerifyOutput(VITEST_PASS_WIN, '', 1000);
+    expect(report.passed).toBe(true);
+    expect(report.testFiles).toBe(51);
+    expect(report.testCases).toBe(577);
+  });
+
+  it('Windows FAIL 前缀形态（FAIL C:...）→ 失败文件解析', () => {
+    const report = parseVerifyOutput(VITEST_FAIL_PREFIX_WIN, '', 1000);
+    expect(report.passed).toBe(false);
+    expect(report.failedItems).toHaveLength(1);
+    expect(report.failedItems[0]?.file).toBe('C:\\work\\demo\\tests\\bar.spec.ts');
+    expect(report.failedItems[0]?.testName).toBe('另一个失败');
+    expect(report.failedItems[0]?.error).toContain('Error: boom');
   });
 });
 

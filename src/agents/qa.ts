@@ -166,8 +166,10 @@ const TEST_FILES_RE = /Test Files\s+(\d+)\s+(passed|failed)\s*\((\d+)\)/;
 /** 解析 vitest 输出的 Tests 行，如 `Tests  577 passed (577)`。 */
 const TESTS_RE = /Tests\s+(\d+)\s+(passed|failed)\s*\((\d+)\)/;
 /** 匹配 vitest 失败文件段起始：` ❯ path/to/file.test.ts (N tests | M failed)` 或 `FAIL path`。
+ *  可选盘符前缀 `C:`（Windows 反斜杠路径，v3.2 M1 / T1.3 修正——旧正则 `[^\s(:]+` 遇盘符冒号即停，
+ *  Windows 下 `C:\...\foo.test.ts` 只匹配到 `C`，导致失败文件解析漏判）；
  *  负向前瞻 (?!:) 排除错误定位行 `❯ path.test.ts:10:5`（其后是冒号，不是文件段）。 */
-const FAIL_FILE_RE = /(?:❯|FAIL)\s+([^\s(:]+\.(?:test|spec)\.(?:ts|tsx|js|jsx))(?!:)/;
+const FAIL_FILE_RE = /(?:❯|FAIL)\s+((?:[A-Za-z]:)?[^\s(:]+\.(?:test|spec)\.(?:ts|tsx|js|jsx))(?!:)/;
 /** 匹配失败用例行：`   ✗ 用例名` 或 `   × 用例名`。 */
 const FAIL_TEST_RE = /^\s*(?:✗|×|✖)\s+(.+)$/;
 

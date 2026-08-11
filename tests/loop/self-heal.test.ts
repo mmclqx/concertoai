@@ -25,6 +25,14 @@ import {
 } from '../../src/loop/self-heal';
 import type { ModelClient } from '../../src/model/client';
 import { SnapshotManager } from '../../src/orchestrator/transaction';
+import {
+  BIOME_ASSIST_ERROR_POSIX,
+  BIOME_FORMAT_ERROR_WIN,
+  BIOME_LINT_ERROR_POSIX,
+  BIOME_LINT_ERROR_WIN,
+  TSC_ERROR_PRETTY_POSIX,
+  TSC_ERROR_WIN,
+} from '../fixtures/platform-samples';
 
 // ── 测试样本 ──────────────────────────────────────────────────
 
@@ -265,6 +273,71 @@ describe('self-heal 分类器（T1.1）', () => {
       'format',
       'lint/style/noUnusedVariables',
     ]);
+  });
+
+  // v3.2 M1 / T1.5：跨平台样本库双平台回归（AGENTS.md 自查第 10 条）
+  it('样本库：Windows/POSIX Biome lint 错误均识别为 lint', () => {
+    for (const [name, sample] of [
+      ['win', BIOME_LINT_ERROR_WIN],
+      ['posix', BIOME_LINT_ERROR_POSIX],
+    ] as const) {
+      const r = parseVerifyReport(`> @concertoai/cli@3.1.0 lint\n${sample}\n`, '');
+      expect(r.passed).toBe(false);
+      expect(r.parseFailed.lint).toBe(false);
+      expect(r.errors).toHaveLength(1);
+      expect(r.errors[0]).toMatchObject({
+        stage: 'lint',
+        file: name === 'win' ? 'C:\\work\\demo\\src\\app.ts' : '/home/user/work/demo/src/app.ts',
+        line: 5,
+        code: 'lint/suspicious/noDebugger',
+      });
+    }
+  });
+
+  it('样本库：Windows format 无行列错误 / POSIX assist 错误均识别为 lint', () => {
+    const win = parseVerifyReport(`> @concertoai/cli@3.1.0 lint\n${BIOME_FORMAT_ERROR_WIN}\n`, '');
+    expect(win.parseFailed.lint).toBe(false);
+    expect(win.errors[0]).toMatchObject({
+      stage: 'lint',
+      file: 'C:\\work\\demo\\src\\app.ts',
+      code: 'format',
+    });
+    expect(win.errors[0]?.line).toBeUndefined();
+
+    const posix = parseVerifyReport(
+      `> @concertoai/cli@3.1.0 lint\n${BIOME_ASSIST_ERROR_POSIX}\n`,
+      '',
+    );
+    expect(posix.parseFailed.lint).toBe(false);
+    expect(posix.errors[0]).toMatchObject({
+      stage: 'lint',
+      file: '/home/user/work/demo/src/app.ts',
+      line: 2,
+      code: 'assist/source/organizeImports',
+    });
+  });
+
+  it('样本库：Windows/POSIX tsc 错误均识别为 type 简单错误（TS2304）', () => {
+    for (const [name, sample] of [
+      ['win', TSC_ERROR_WIN],
+      ['posix', TSC_ERROR_PRETTY_POSIX],
+    ] as const) {
+      const r = parseVerifyReport(`> @concertoai/cli@3.1.0 typecheck\n${sample}\n`, '');
+      expect(r.passed).toBe(false);
+      expect(r.parseFailed.type).toBe(false);
+      expect(r.errors).toHaveLength(1);
+      expect(r.errors[0]).toMatchObject({
+        stage: 'type',
+        file: name === 'win' ? 'C:\\work\\demo\\src\\app.ts' : '/home/user/work/demo/src/app.ts',
+        line: 10,
+        code: 'TS2304',
+      });
+      const first = r.errors[0];
+      expect(first).toBeDefined();
+      if (first !== undefined) {
+        expect(isSimpleTypeError(first)).toBe(true);
+      }
+    }
   });
 
   it('build 段 tsup 失败 → stage=build（file/line 为空）', () => {
