@@ -20,6 +20,7 @@ import {
   CoderAgent,
   DiskFileWriter,
   decomposeRequirement,
+  OrchestratorDecomposeError,
   type OrchestratorTask,
   QaAgent,
   TeamReviewerAgent,
@@ -81,6 +82,18 @@ export interface TeamCommandResult {
   artifacts: Artifact[];
   /** 对抗性闭环结果（未进入闭环时缺省）。 */
   loop?: TeamLoopResult;
+  /** 拆解失败诊断（v3.2 M3 / T3.3；仅 ok=false 且失败发生在拆解阶段时存在）。 */
+  diagnostics?: TeamCommandDiagnostics;
+}
+
+/** 需求拆解失败诊断（v3.2 M3 / T3.3：区分「格式解析失败」vs「网络超时」，记录原始输出）。 */
+export interface TeamCommandDiagnostics {
+  /** 失败类型：parse（模型输出格式/结构不符） / network（模型调用失败） / other。 */
+  kind: 'parse' | 'network' | 'other';
+  /** 模型原始输出（截断 ≤500 字符；parse 时存在）。 */
+  rawOutput?: string;
+  /** 错误消息（截断 ≤500 字符）。 */
+  message: string;
 }
 
 // ── 主流程 ────────────────────────────────────────────────────
@@ -129,13 +142,30 @@ export async function runTeamCommand(options: RunTeamCommandOptions): Promise<Te
   const model = resolveModel(resolved.model);
   const client = options.client ?? new DeepSeekClient({ apiKey: options.apiKey });
 
-  // 1. 拆解（模型输出 Task[]；失败给中文错误，不静默产出空清单）
+  // 1. 拆解（模型输出 Task[]；失败给中文错误 + diagnostics，不静默产出空清单）
   let tasks: OrchestratorTask[];
   try {
     tasks = await decomposeRequirement(client, model, options.task);
   } catch (err) {
+    // T3.3：OrchestratorDecomposeError 区分 parse/network（携带原始输出截断 ≤500）；
+    // 其余异常归为 other，避免丢失可定位信息
+    if (err instanceof OrchestratorDecomposeError) {
+      return {
+        ok: false,
+        summary: err.message,
+        tasks: [],
+        artifacts: [],
+        diagnostics: { kind: err.kind, rawOutput: err.raw, message: err.message.slice(0, 500) },
+      };
+    }
     const message = err instanceof Error ? err.message : String(err);
-    return { ok: false, summary: `需求拆解失败: ${message}`, tasks: [], artifacts: [] };
+    return {
+      ok: false,
+      summary: `需求拆解失败: ${message}`,
+      tasks: [],
+      artifacts: [],
+      diagnostics: { kind: 'other', message: message.slice(0, 500) },
+    };
   }
   options.traceStore?.record({
     id: `team:decompose:${Date.now()}`,

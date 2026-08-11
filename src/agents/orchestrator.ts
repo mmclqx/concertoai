@@ -95,6 +95,28 @@ const orchestratorTaskSchema = z.object({
 
 const orchestratorTasksSchema = z.array(orchestratorTaskSchema);
 
+/**
+ * 需求拆解失败（v3.2 M3 / T3.3：/orchestrate diagnostics 支撑）。
+ *
+ * 区分两类失败，供 CLI 向用户给出可定位的诊断：
+ * - `parse`：模型有输出但格式/结构不符（携带原始输出截断 ≤500 字符）；
+ * - `network`：模型调用失败（网络超时 / API 错误），无模型输出。
+ */
+export class OrchestratorDecomposeError extends Error {
+  readonly kind: 'parse' | 'network';
+  /** 模型原始输出（截断 ≤500 字符；仅 parse 失败存在）。 */
+  readonly raw?: string;
+
+  constructor(kind: 'parse' | 'network', message: string, raw?: string) {
+    super(message);
+    this.name = 'OrchestratorDecomposeError';
+    this.kind = kind;
+    if (raw !== undefined) {
+      this.raw = raw.slice(0, 500);
+    }
+  }
+}
+
 /** 拆解系统提示：要求模型输出严格 JSON 数组（低温度，可解析优先）。 */
 const DECOMPOSE_SYSTEM_PROMPT = [
   '你是 ConcertoAI 的任务编排器。将用户需求拆解为可串行/并行执行的任务清单。',
@@ -122,8 +144,11 @@ export function parseOrchestratorTasks(text: string): OrchestratorTask[] {
   try {
     parsed = JSON.parse(candidate) as unknown;
   } catch (err) {
-    throw new Error(
+    // T3.3：携带类型 + 原始输出（截断 ≤500），供 /orchestrate diagnostics 展示
+    throw new OrchestratorDecomposeError(
+      'parse',
       `需求拆解失败: 模型输出不是合法 JSON（${err instanceof Error ? err.message : String(err)}）。原文: ${trimmed.slice(0, 200)}`,
+      trimmed,
     );
   }
   const result = orchestratorTasksSchema.safeParse(parsed);
@@ -132,8 +157,10 @@ export function parseOrchestratorTasks(text: string): OrchestratorTask[] {
       .slice(0, 3)
       .map((i) => `${i.path.join('.')}: ${i.message}`)
       .join('; ');
-    throw new Error(
+    throw new OrchestratorDecomposeError(
+      'parse',
       `需求拆解失败: 任务清单结构不符合协议（${issues}）。原文: ${trimmed.slice(0, 200)}`,
+      trimmed,
     );
   }
   return result.data;
@@ -150,20 +177,26 @@ export async function decomposeRequirement(
   requirement: string,
 ): Promise<OrchestratorTask[]> {
   const contentParts: string[] = [];
-  for await (const chunk of client.streamChat({
-    model,
-    messages: [
-      { role: 'system', content: DECOMPOSE_SYSTEM_PROMPT },
-      { role: 'user', content: requirement },
-    ],
-    temperature: 0.2,
-  })) {
-    for (const choice of chunk.choices) {
-      const text = choice.delta.content ?? '';
-      if (text !== '') {
-        contentParts.push(text);
+  try {
+    for await (const chunk of client.streamChat({
+      model,
+      messages: [
+        { role: 'system', content: DECOMPOSE_SYSTEM_PROMPT },
+        { role: 'user', content: requirement },
+      ],
+      temperature: 0.2,
+    })) {
+      for (const choice of chunk.choices) {
+        const text = choice.delta.content ?? '';
+        if (text !== '') {
+          contentParts.push(text);
+        }
       }
     }
+  } catch (err) {
+    // T3.3：网络/API 调用失败 → 标记 network（区别于格式解析失败），供 diagnostics 区分
+    const message = err instanceof Error ? err.message : String(err);
+    throw new OrchestratorDecomposeError('network', `需求拆解失败: 模型调用错误（${message}）`);
   }
   return parseOrchestratorTasks(contentParts.join(''));
 }

@@ -65,24 +65,30 @@ export class AuditLogger {
     await appendFile(this.file, `${line}\n`, 'utf8');
   }
 
-  /** 读回全部审计记录（按 seq 升序）。损坏行跳过。 */
-  async exportJson(): Promise<AuditEntry[]> {
+  /**
+   * 读回全部审计记录（按 seq 升序）。
+   * @returns 有效条目 + 损坏行计数（v3.2 M3 / T3.2：损坏行不再静默，调用方可统计并提示）。
+   */
+  async exportJson(): Promise<{ entries: AuditEntry[]; skipped: number }> {
     let raw: string;
     try {
       raw = readFileSync(this.file, 'utf8');
     } catch {
-      return [];
+      return { entries: [], skipped: 0 };
     }
     const entries: AuditEntry[] = [];
+    let skipped = 0;
     for (const line of raw.split(/\r?\n/)) {
       if (line.trim() === '') continue;
       try {
         const parsed = JSON.parse(line) as AuditEntry;
         entries.push(parsed);
       } catch {
-        // 损坏行跳过（审计不因单行损坏中断）
+        // 损坏行跳过（审计不因单行损坏中断），计数供 CLI 输出提示
+        skipped += 1;
       }
     }
-    return entries.sort((a, b) => a.seq - b.seq);
+    entries.sort((a, b) => a.seq - b.seq);
+    return { entries, skipped };
   }
 }

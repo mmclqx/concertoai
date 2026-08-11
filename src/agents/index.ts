@@ -32,6 +32,7 @@ export {
   artifactTypeForAgent,
   decomposeRequirement,
   Orchestrator,
+  OrchestratorDecomposeError,
   type OrchestratorOptions,
   type OrchestratorRunResult,
   type OrchestratorTask,

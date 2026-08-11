@@ -41,20 +41,26 @@ export async function runAuditCommand(options: RunAuditCommandOptions): Promise<
     return 0;
   }
 
-  // 合并全部 JSONL（复用 AuditLogger.exportJson：读回 + 损坏行跳过），按 seq 保序
+  // 合并全部 JSONL（复用 AuditLogger.exportJson：读回 + 损坏行计数），按 seq 保序
   const entries: AuditEntry[] = [];
+  let skippedTotal = 0;
   for (const file of files) {
     const logger = new AuditLogger(path.join(dir, file));
-    entries.push(...(await logger.exportJson()));
+    const { entries: fileEntries, skipped } = await logger.exportJson();
+    entries.push(...fileEntries);
+    skippedTotal += skipped;
   }
   entries.sort((a, b) => a.seq - b.seq);
 
+  // 损坏行统计（v3.2 M3 / T3.2）：--out 模式并入主文案；stdout 模式走 stderr，不污染 JSON 管道
+  const statLine = `共 ${entries.length} 条记录（跳过 ${skippedTotal} 条损坏行）。`;
   const json = JSON.stringify(entries, null, 2);
   if (options.out !== undefined) {
     mkdirSync(path.dirname(options.out), { recursive: true });
     writeFileSync(options.out, json, 'utf8');
-    console.log(`✅ 审计日志已导出到 ${options.out}（${entries.length} 条）。`);
+    console.log(`✅ 审计日志已导出到 ${options.out}：${statLine}`);
   } else {
+    process.stderr.write(`${statLine}\n`);
     console.log(json);
   }
   return 0;

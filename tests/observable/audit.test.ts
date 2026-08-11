@@ -33,7 +33,7 @@ describe('AuditLogger 追加 / 导出', () => {
     await logger.append({ kind: 'state-change', detail: { from: 'pending', to: 'in_progress' } });
     await logger.append({ kind: 'approval', detail: { approved: true } });
 
-    const entries = await logger.exportJson();
+    const { entries } = await logger.exportJson();
     expect(entries).toHaveLength(3);
     expect(entries.map((e) => e.seq)).toEqual([1, 2, 3]);
     expect(entries[0]?.kind).toBe('message');
@@ -50,14 +50,16 @@ describe('AuditLogger 追加 / 导出', () => {
     appendFileSync(logFile, '{broken json}\n', 'utf8');
     await logger.append({ kind: 'rollback', detail: { taskId: 't1' } });
 
-    const entries = await logger.exportJson();
+    const { entries, skipped } = await logger.exportJson();
     expect(entries).toHaveLength(2);
     expect(entries.map((e) => e.kind)).toEqual(['message', 'rollback']);
+    // v3.2 M3 / T3.2：损坏行计数返回（不再静默）
+    expect(skipped).toBe(1);
   });
 
-  it('文件不存在时 exportJson 返回空数组', async () => {
+  it('文件不存在时 exportJson 返回空数组且 skipped=0', async () => {
     const logger = new AuditLogger(path.join(tmp, 'not-exists.jsonl'));
-    expect(await logger.exportJson()).toEqual([]);
+    expect(await logger.exportJson()).toEqual({ entries: [], skipped: 0 });
   });
 
   it('path getter 返回日志文件路径', () => {
@@ -75,6 +77,7 @@ describe('AuditLogger 性能基准（§6.1）', () => {
     }
     const elapsed = performance.now() - start;
     expect(elapsed / 5).toBeLessThan(10); // 平均单条 < 10ms
-    expect(await logger.exportJson()).toHaveLength(5);
+    const { entries } = await logger.exportJson();
+    expect(entries).toHaveLength(5);
   });
 });

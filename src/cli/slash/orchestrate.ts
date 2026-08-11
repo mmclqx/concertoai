@@ -66,6 +66,21 @@ export async function executeOrchestrateCommand(
   }
   const result = await deps.runTeam(cmd.task);
   const icon = result.ok ? '✅' : '❌';
+  // T3.3：拆解失败时附加 diagnostics（区分格式解析失败 / 网络调用失败，展示原始输出截断）
+  if (!result.ok && result.diagnostics !== undefined) {
+    const d = result.diagnostics;
+    const kindText =
+      d.kind === 'network'
+        ? '网络/API 调用失败'
+        : d.kind === 'parse'
+          ? '模型输出格式解析失败'
+          : '其他错误';
+    let content = `${icon} ${result.summary}\n🔍 诊断（${kindText}）：${d.message}`;
+    if (d.rawOutput !== undefined) {
+      content += `\n模型原始输出（截断）:\n${d.rawOutput}`;
+    }
+    return { handled: true, message: { role: 'assistant', content } };
+  }
   return {
     handled: true,
     message: { role: 'assistant', content: `${icon} ${result.summary}` },

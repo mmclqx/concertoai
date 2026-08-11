@@ -12,7 +12,7 @@ ConcertoAI 是一款**中文优先**的终端编码助手 CLI（DeepSeek 驱动�
 
 - **技术栈**：TypeScript (strict) + Node ≥22 + ESM，Ink 7 (React 19) 渲染 TUI，commander 解析 CLI，zod 做工具参数校验，vitest 测试，Biome 检查，tsup 打包
 - **运行时依赖**：`ink` / `react` / `commander` / `zod` / `cli-highlight` / `chalk`
-- **测试现状**：85 个测试文件、937 个用例，`npm run verify` 全绿，`npm audit` 0 漏洞；已用真实 `DEEPSEEK_API_KEY` 完成端到端冒烟
+- **测试现状**：86 个测试文件、976 个用例，`npm run verify` 全绿，`npm audit` 0 漏洞；已用真实 `DEEPSEEK_API_KEY` 完成端到端冒烟
 - **安全基线**：编辑与命令一律审批（fail-closed）、路径沙箱、结果截断、白名单免审批——无 yolo 模式
 - **v3.1 新增能力**：AI 自我修复闭环（self-heal）/ 多项目管理（project）/ 多租户登录（account）/ Orchestrator CLI（team、/orchestrate、audit export）/ 结构化错误增强（error-codes）；**v3.1 预留功能（已交付）**：`concertoai balance`（余额查询）/ `concertoai doctor`（环境诊断）、配置目录迁移 `~/.lumen → ~/.concertoai`（`src/store/paths.ts` 单一来源 + 幂等迁移）；**v2.2 智能成本控制**（高峰时段模型自动切换，见 §4 D41）
 
@@ -325,7 +325,7 @@ concertoai/
 │   │   ├── project.ts    concertoai project add/list/remove/info/switch（v3.1 M2）
 │   │   ├── self-heal.ts  concertoai self-heal：verify 失败自动分类→修复→验证→回滚（v3.1 M1）
 │   │   ├── team.ts       concertoai team "<任务>"：Orchestrator 全链路（拆解→对抗性闭环→回滚兜底，v3.1 M5）
-│   │   ├── audit.ts      concertoai audit export [--out]：审计日志保序 JSON 导出（v3.1 M5）
+│   │   ├── audit.ts      concertoai audit export [--out]：审计日志保序 JSON 导出（v3.1 M5；损坏行统计 v3.2 M3）
 │   │   ├── account.ts    多账号命令 login/logout/whoami/account（v3.1 M3）+ account-types.ts
 │   │   ├── crash-handler.ts 进程级崩溃日志（uncaughtException/unhandledRejection → ~/.concertoai/crash.log，v3.1 M3）
 │   │   ├── common.ts     CLI 共享：白名单 / 注册表构建 / OS 提示 / resolveProjectForCwd / mergeAllowlist / resolveApiKey / maskApiKey（轻量加载）
@@ -418,7 +418,7 @@ concertoai/
 │   ├── agents/           专业 Agent（v3.0 M3，详见 §4 D33/D34）
 │   │   ├── protocol.ts   Agent 接口契约：execute/send/receive + AgentDef schema（T1.2）
 │   │   ├── registry.ts   InMemoryAgentRegistry：register/get/list/unregister/permissionsOf（T1.2）
-│   │   ├── orchestrator.ts Orchestrator：需求拆解 Task[] + 按调度器分配 + 聚合（T2.3）
+│   │   ├── orchestrator.ts Orchestrator：需求拆解 Task[] + 按调度器分配 + 聚合（T2.3）；OrchestratorDecomposeError（parse/network 诊断，v3.2 M3）
 │   │   ├── architect.ts  架构师：需求 → ArchitectSpec（T3.1）
 │   │   ├── coder.ts      编码 Agent：spec 实现 + 反馈修复 + 事务登记（T3.2）
 │   │   ├── reviewer.ts   Team Reviewer：ReviewResult（approve/reject 打回，T3.3）
@@ -433,7 +433,7 @@ concertoai/
 │   │   └── index.ts      barrel
 │   ├── observable/       可观测性（v3.0 M5，详见 §4 D37）
 │   │   ├── trace.ts      TraceStore 调用链追踪（LRU 5000 + 状态机订阅，T5.1）
-│   │   ├── audit.ts      AuditLogger JSONL 审计日志（异步追加，T5.2）
+│   │   ├── audit.ts      AuditLogger JSONL 审计日志（异步追加，T5.2；exportJson 返回 { entries, skipped } 损坏行计数，v3.2 M3）
 │   │   └── index.ts      barrel
 │   ├── store/
 │   │   ├── paths.ts      全局路径单一来源（~/.concertoai/）+ migrateLegacyHome 旧目录迁移 + projectSessionsDir/projectKeyFor/accountsDir（v3.1）
@@ -447,7 +447,7 @@ concertoai/
 │       ├── zh.ts         中文字典 + fmt()
 │       ├── en.ts         英文字典（键与 zh 同构）
 │       └── index.ts      resolveLocale / setLocale / t() / DICTS
-└── tests/                镜像 src 结构（86 个文件 / 965 用例，v3.2 基线），含 tests/agent/、tests/agents/、tests/balance/、tests/cli/、tests/core/、tests/e2e/（team-cli/self-heal/project-isolation）、tests/fixtures/（platform-samples 跨平台样本库）、tests/i18n/、tests/knowledge/、tests/loop/（self-heal/error-reporting）、tests/market/、tests/mcp/、tests/model/、tests/observable/、tests/orchestrator/、tests/planner/、tests/reviewer/、tests/skill/、tests/store/（projects/accounts/accounts-exdev）、tests/tools/、tests/ui/ 等
+└── tests/                镜像 src 结构（86 个文件 / 976 用例，v3.2 M3 基线），含 tests/agent/、tests/agents/、tests/balance/、tests/cli/、tests/core/、tests/e2e/（team-cli/self-heal/project-isolation）、tests/fixtures/（platform-samples 跨平台样本库）、tests/i18n/、tests/knowledge/、tests/loop/（self-heal/error-reporting）、tests/market/、tests/mcp/、tests/model/、tests/observable/、tests/orchestrator/、tests/planner/、tests/reviewer/、tests/skill/、tests/store/（projects/accounts/accounts-exdev）、tests/tools/、tests/ui/ 等
 ```
 
 ## 6. 5分钟快速体验

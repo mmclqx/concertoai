@@ -95,4 +95,47 @@ describe('executeOrchestrateCommand', () => {
     );
     expect(result.message?.content).toContain('未确认');
   });
+
+  it('拆解失败带 diagnostics（parse）→ 消息含诊断类型 + 原始输出（v3.2 T3.3）', async () => {
+    const result = await executeOrchestrateCommand(
+      { task: '实现TODO' },
+      {
+        runTeam: async () => ({
+          ok: false,
+          summary: '需求拆解失败: 模型输出不是合法 JSON',
+          tasks: [],
+          artifacts: [],
+          diagnostics: {
+            kind: 'parse',
+            rawOutput: '不是 JSON 输出',
+            message: '需求拆解失败: 模型输出不是合法 JSON',
+          },
+        }),
+      },
+    );
+    expect(result.handled).toBe(true);
+    expect(result.message?.content).toContain('格式解析失败');
+    expect(result.message?.content).toContain('模型原始输出');
+    expect(result.message?.content).toContain('不是 JSON 输出');
+  });
+
+  it('拆解失败带 diagnostics（network）→ 消息区分网络失败且无原始输出（v3.2 T3.3）', async () => {
+    const result = await executeOrchestrateCommand(
+      { task: '实现TODO' },
+      {
+        runTeam: async () => ({
+          ok: false,
+          summary: '需求拆解失败: 模型调用错误（fetch failed）',
+          tasks: [],
+          artifacts: [],
+          diagnostics: {
+            kind: 'network',
+            message: '需求拆解失败: 模型调用错误（fetch failed）',
+          },
+        }),
+      },
+    );
+    expect(result.message?.content).toContain('网络/API 调用失败');
+    expect(result.message?.content).not.toContain('模型原始输出');
+  });
 });

@@ -74,13 +74,47 @@ describe('audit export', () => {
     log.mockRestore();
   });
 
-  it('损坏行跳过（复用 AuditLogger.exportJson 宽松读取）', async () => {
+  it('损坏行跳过 → stdout 为空 JSON 数组 + stderr 统计（v3.2 T3.2）', async () => {
     writeFileSync(path.join(auditDir, 'a.jsonl'), '{bad json}\n', 'utf8');
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const err = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     const code = await runAuditCommand({ dir: auditDir });
     expect(code).toBe(0);
     const parsed = JSON.parse(String(log.mock.calls[0]?.[0] ?? '[]')) as unknown[];
     expect(parsed).toHaveLength(0);
+    // 统计输出在 stderr（不污染 JSON 管道）
+    const errText = err.mock.calls.map((c) => String(c[0])).join('');
+    expect(errText).toContain('共 0 条记录');
+    expect(errText).toContain('跳过 1 条损坏行');
+    log.mockRestore();
+    err.mockRestore();
+  });
+
+  it('有效 + 损坏行混合 → 保序 JSON + 统计「共 N 条（跳过 M 条）」（v3.2 T3.2）', async () => {
+    const logger = new AuditLogger(path.join(auditDir, 'a.jsonl'));
+    await logger.append({ kind: 'message', detail: { id: 'm1' } });
+    const { appendFileSync } = await import('node:fs');
+    appendFileSync(path.join(auditDir, 'a.jsonl'), '{broken}\n', 'utf8');
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const err = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const code = await runAuditCommand({ dir: auditDir });
+    expect(code).toBe(0);
+    const parsed = JSON.parse(String(log.mock.calls[0]?.[0] ?? '[]')) as Array<{ kind: string }>;
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0]?.kind).toBe('message');
+    const errText = err.mock.calls.map((c) => String(c[0])).join('');
+    expect(errText).toContain('共 1 条记录（跳过 1 条损坏行）');
+    log.mockRestore();
+    err.mockRestore();
+  });
+
+  it('--out 模式：统计并入导出文案（v3.2 T3.2）', async () => {
+    writeFileSync(path.join(auditDir, 'a.jsonl'), '{bad json}\n', 'utf8');
+    const out = path.join(tmp, 'out.json');
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const code = await runAuditCommand({ dir: auditDir, out });
+    expect(code).toBe(0);
+    expect(log.mock.calls[0]?.[0]).toContain('跳过 1 条损坏行');
     log.mockRestore();
   });
 });

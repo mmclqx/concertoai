@@ -305,3 +305,28 @@ describe('ToolRepairError 渲染兼容（T4.2）', () => {
     expect(inferErrorCode(new Error('unknown error'))).toBeUndefined();
   });
 });
+
+// ── inferErrorCode en locale 回归（v3.2 M3 / T3.4：防回退，覆盖 Windows 变体）──
+
+describe('inferErrorCode en locale 回归（T3.4）', () => {
+  it('spawn ENOENT Windows 变体（.cmd / 前缀 Error:）→ COMMAND_NOT_FOUND', () => {
+    expect(inferErrorCode(new Error('spawn npx.cmd ENOENT'))).toBe('COMMAND_NOT_FOUND');
+    expect(inferErrorCode(new Error('Error: spawn npm ENOENT'))).toBe('COMMAND_NOT_FOUND');
+  });
+
+  it('outside sandbox Windows 反斜杠路径 / 盘符 → PATH_OUTSIDE_SANDBOX', () => {
+    expect(inferErrorCode(new Error('outside sandbox: ..\\secret'))).toBe('PATH_OUTSIDE_SANDBOX');
+    expect(inferErrorCode(new Error('path is outside the sandbox: C:\\app\\..'))).toBe(
+      'PATH_OUTSIDE_SANDBOX',
+    );
+  });
+
+  it('command not found 变体（含 .cmd 后缀）→ COMMAND_NOT_FOUND', () => {
+    expect(inferErrorCode(new Error('command not found: npx.cmd'))).toBe('COMMAND_NOT_FOUND');
+  });
+
+  it('不含关键词的 en 错误不误报 → undefined', () => {
+    expect(inferErrorCode(new Error('spawn succeeded'))).toBeUndefined();
+    expect(inferErrorCode(new Error('operation timed out'))).toBeUndefined();
+  });
+});

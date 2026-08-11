@@ -52,6 +52,15 @@ class FakeModel implements ModelClient {
   }
 }
 
+/** 抛网络错误的 client（v3.2 M3 / T3.3：模拟 API 超时 / fetch 失败，区分于格式解析失败）。 */
+class NetworkErrorModel implements ModelClient {
+  // biome-ignore lint/correctness/useYield: 故意不 yield —— 模拟 API 调用失败，首次迭代即抛错、永不产出（区别于 FakeModel 正常流式）
+  async *streamChat(): AsyncGenerator<ChatCompletionChunk> {
+    // 模拟 API 调用失败：首次迭代即抛错、永不产出 —— 故意不 yield（区别于 FakeModel 正常流式）
+    throw new Error('fetch failed: connect ECONNREFUSED 127.0.0.1:443');
+  }
+}
+
 /** 构造 Fake coder（记录调用；可注入 files）。 */
 function makeCoder(files: Array<{ path: string; content: string }> = []): CoderLike & {
   calls: number;
@@ -253,5 +262,55 @@ describe('runTeamCommand', () => {
     expect(result.ok).toBe(false);
     expect(result.summary).toContain('需求拆解失败');
     expect(coder.calls).toBe(0);
+  });
+
+  // ── diagnostics（v3.2 M3 / T3.3：区分格式解析失败 vs 网络超时）──
+
+  it('拆解 JSON 解析失败 → diagnostics.kind=parse + rawOutput 原文（截断 ≤500）', async () => {
+    const coder = makeCoder();
+    const result = await runTeamCommand({
+      cwd: tmp,
+      apiKey: 'sk-test',
+      task: '实现 TODO',
+      autoApprove: true,
+      client: new FakeModel([{ content: '不是 JSON 输出' }]),
+      agents: { coder, reviewer: makeReviewer(), qa: makeQa() },
+    });
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics?.kind).toBe('parse');
+    expect(result.diagnostics?.rawOutput).toContain('不是 JSON 输出');
+    expect(result.diagnostics?.rawOutput?.length).toBeLessThanOrEqual(500);
+    expect(coder.calls).toBe(0);
+  });
+
+  it('模型调用网络错误 → diagnostics.kind=network 且无 rawOutput', async () => {
+    const coder = makeCoder();
+    const result = await runTeamCommand({
+      cwd: tmp,
+      apiKey: 'sk-test',
+      task: '实现 TODO',
+      autoApprove: true,
+      client: new NetworkErrorModel(),
+      agents: { coder, reviewer: makeReviewer(), qa: makeQa() },
+    });
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics?.kind).toBe('network');
+    expect(result.diagnostics?.rawOutput).toBeUndefined();
+    expect(result.summary).toContain('模型调用错误');
+    expect(coder.calls).toBe(0);
+  });
+
+  it('拆解成功 → 无 diagnostics 字段', async () => {
+    const coder = makeCoder([{ path: 'src/todo.ts', content: 'export const todo = 1;' }]);
+    const result = await runTeamCommand({
+      cwd: tmp,
+      apiKey: 'sk-test',
+      task: '实现 TODO',
+      autoApprove: true,
+      client: new FakeModel([{ content: DECOMPOSE_JSON }]),
+      agents: { coder, reviewer: makeReviewer(), qa: makeQa() },
+    });
+    expect(result.ok).toBe(true);
+    expect(result.diagnostics).toBeUndefined();
   });
 });
