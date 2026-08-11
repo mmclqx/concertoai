@@ -22,9 +22,10 @@ import {
   executeAgentCommand,
   executeAgentMarketCommand,
   formatAgentList,
+  formatAgentListWithLatest,
   parseAgentCommand,
 } from '../../src/cli/slash/agent';
-import type { InstalledAgent, InstallResult } from '../../src/market';
+import type { InstalledAgent, InstallResult, MarketRegistry } from '../../src/market';
 import type { SkillLoader } from '../../src/skill/loader';
 
 // promote 命令层会真实落盘（promoteSkill 内部 mkdirSync），仅该组用例使用临时目录。
@@ -77,6 +78,26 @@ function installerMock(deps: AgentCommandDeps) {
 /** 构造 InstallResult 成功值。 */
 function installOk(name = 'my-agent'): InstallResult {
   return { ok: true, name, version: '1.0.0', action: 'install', dir: '/tmp/agents' };
+}
+
+/** 构造 MarketRegistry（fetchRegistry stub 返回值；v3.2 M5 / T5.4 测试辅助）。 */
+function makeRegistry(agents: { name: string; version: string }[]): MarketRegistry {
+  return {
+    registry: 'https://example.com/registry.json',
+    skills: [],
+    agents: agents.map((a) => ({
+      type: 'agent',
+      name: a.name,
+      version: a.version,
+      description: '',
+      author: '',
+      url: `https://example.com/${a.name}.json`,
+      sha256: 'abc',
+      interfaces: { input: {}, output: {}, version: '1.0.0' },
+      permissions: [{ tool: 'read_file' }],
+      runtime: 'external',
+    })),
+  } as never;
 }
 
 // ── parseAgentCommand ─────────────────────────────────────────
@@ -136,6 +157,10 @@ describe('parseAgentCommand', () => {
 
   it('/agent update（无参数）→ update 全部', () => {
     expect(parseAgentCommand('/agent update')).toEqual({ type: 'update', name: undefined });
+  });
+
+  it('/agent update --all → update 批量（v3.2 M5）', () => {
+    expect(parseAgentCommand('/agent update --all')).toEqual({ type: 'update', all: true });
   });
 
   it('/agent <未知子命令> → unknown', () => {
@@ -392,6 +417,132 @@ describe('executeAgentMarketCommand（/agent update）', () => {
     const result = await executeAgentMarketCommand({ type: 'update' }, deps);
     expect(result.handled).toBe(true);
     expect(result.message?.content).toContain('均是最新版本');
+  });
+});
+
+// ── /agent update --all（v3.2 M5 / T5.4 批量更新）────────────
+
+describe('executeAgentMarketCommand（/agent update --all）', () => {
+  it('批量更新成功：install 逐个调用（携带注册表引用避免重复拉取）', async () => {
+    const deps = makeDeps({
+      fetchRegistry: async () => makeRegistry([{ name: 'my-agent', version: '2.0.0' }]),
+    });
+    installerMock(deps).listInstalled.mockReturnValue([makeInstalled('my-agent', '1.0.0')]);
+    installerMock(deps).install.mockImplementation(async (name: string) => ({
+      ok: true,
+      name,
+      version: '2.0.0',
+      action: 'update',
+      dir: '/tmp/agents',
+    }));
+    const result = await executeAgentMarketCommand({ type: 'update', all: true }, deps);
+    expect(result.handled).toBe(true);
+    const content = result.message?.content ?? '';
+    expect(content).toContain('批量更新完成');
+    expect(content).toContain('my-agent');
+    expect(content).toContain('1.0.0 → 2.0.0');
+    expect(installerMock(deps).install).toHaveBeenCalledTimes(1);
+    // 第二个参数 = 注册表引用（不再重复 fetch）
+    const args = installerMock(deps).install.mock.calls[0];
+    expect(args?.[0]).toBe('my-agent');
+    expect(args?.[1]).toBeDefined();
+  });
+
+  it('批量更新：无可更新 → 「均是最新版本，无需批量更新」', async () => {
+    const deps = makeDeps({
+      fetchRegistry: async () => makeRegistry([{ name: 'my-agent', version: '1.0.0' }]),
+    });
+    installerMock(deps).listInstalled.mockReturnValue([makeInstalled('my-agent', '1.0.0')]);
+    const result = await executeAgentMarketCommand({ type: 'update', all: true }, deps);
+    expect(result.handled).toBe(true);
+    expect(result.message?.content).toContain('均是最新版本');
+    expect(installerMock(deps).install).not.toHaveBeenCalled();
+  });
+
+  it('批量更新：注册表不可达 → 中文提示，install 不被调用', async () => {
+    const deps = makeDeps({ fetchRegistry: async () => null });
+    installerMock(deps).listInstalled.mockReturnValue([makeInstalled('my-agent', '1.0.0')]);
+    const result = await executeAgentMarketCommand({ type: 'update', all: true }, deps);
+    expect(result.handled).toBe(true);
+    expect(result.message?.content).toContain('无法访问');
+    expect(installerMock(deps).install).not.toHaveBeenCalled();
+  });
+
+  it('批量更新：单个失败不影响其他（逐条汇总 ✅/❌）', async () => {
+    const deps = makeDeps({
+      fetchRegistry: async () =>
+        makeRegistry([
+          { name: 'my-agent', version: '2.0.0' },
+          { name: 'other', version: '2.0.0' },
+        ]),
+    });
+    installerMock(deps).listInstalled.mockReturnValue([
+      makeInstalled('my-agent', '1.0.0'),
+      makeInstalled('other', '1.0.0'),
+    ]);
+    installerMock(deps).install.mockImplementation(async (name: string) =>
+      name === 'other'
+        ? { ok: false, code: 'DOWNLOAD_FAILED', message: `下载 Agent ${name} 失败。` }
+        : { ok: true, name, version: '2.0.0', action: 'update', dir: '/tmp/agents' },
+    );
+    const result = await executeAgentMarketCommand({ type: 'update', all: true }, deps);
+    expect(result.handled).toBe(true);
+    const content = result.message?.content ?? '';
+    expect(content).toContain('批量更新完成（2 个可更新）');
+    expect(content).toContain('my-agent');
+    expect(content).toContain('other');
+    expect(installerMock(deps).install).toHaveBeenCalledTimes(2);
+  });
+});
+
+// ── /agent list 版本对比（v3.2 M5 / T5.4）────────────────────
+
+describe('executeAgentMarketCommand（/agent list 版本对比）', () => {
+  it('注册表可达：已安装落后 → 「↑ 可更新到 2.0.0」', async () => {
+    const deps = makeDeps({
+      fetchRegistry: async () => makeRegistry([{ name: 'my-agent', version: '2.0.0' }]),
+    });
+    installerMock(deps).listInstalled.mockReturnValue([makeInstalled('my-agent', '1.0.0')]);
+    const result = await executeAgentMarketCommand({ type: 'list' }, deps);
+    expect(result.handled).toBe(true);
+    const content = result.message?.content ?? '';
+    expect(content).toContain('my-agent');
+    expect(content).toContain('↑ 可更新到 2.0.0');
+  });
+
+  it('注册表可达：已安装最新 → 「最新」标注', async () => {
+    const deps = makeDeps({
+      fetchRegistry: async () => makeRegistry([{ name: 'my-agent', version: '1.0.0' }]),
+    });
+    installerMock(deps).listInstalled.mockReturnValue([makeInstalled('my-agent', '1.0.0')]);
+    const result = await executeAgentMarketCommand({ type: 'list' }, deps);
+    expect(result.handled).toBe(true);
+    const content = result.message?.content ?? '';
+    expect(content).toContain('最新');
+    expect(content).not.toContain('可更新');
+  });
+
+  it('注册表不可达：降级为同步列表（无版本对比，不阻塞）', async () => {
+    const deps = makeDeps({ fetchRegistry: async () => null });
+    installerMock(deps).listInstalled.mockReturnValue([makeInstalled('my-agent', '1.0.0')]);
+    const result = await executeAgentMarketCommand({ type: 'list' }, deps);
+    expect(result.handled).toBe(true);
+    const content = result.message?.content ?? '';
+    expect(content).toContain('my-agent');
+    expect(content).toContain('已安装外部 Agent（1 个）');
+    expect(content).not.toContain('可更新');
+  });
+
+  it('formatAgentListWithLatest：注册表中下架 Agent 不标注（维持原样）', () => {
+    const deps = makeDeps();
+    installerMock(deps).listInstalled.mockReturnValue([makeInstalled('legacy', '1.0.0')]);
+    const content = formatAgentListWithLatest(
+      deps,
+      makeRegistry([{ name: 'other', version: '2.0.0' }]),
+    );
+    expect(content).toContain('legacy');
+    expect(content).not.toContain('可更新');
+    expect(content).not.toContain('最新');
   });
 });
 

@@ -35,7 +35,7 @@ export type SlashAgentCommand =
   | { type: 'install'; name: string }
   | { type: 'remove'; name: string }
   | { type: 'promote'; skillName: string }
-  | { type: 'update'; name?: string }
+  | { type: 'update'; name?: string; all?: boolean }
   | { type: 'unknown'; message: string };
 
 /** 解析用户输入，识别 Agent 管理命令。 */
@@ -59,9 +59,13 @@ export function parseAgentCommand(input: string): SlashAgentCommand | null {
   }
 
   // v3.1 M5 / T5.4：/agent update [name]（复用 installer.install 的 update 语义）
+  // v3.2 M5 / T5.4：/agent update --all 批量更新（T5.4 增强）
   if (trimmed.startsWith('/agent update')) {
-    const name = trimmed.slice('/agent update'.length).trim();
-    return { type: 'update', name: name || undefined };
+    const rest = trimmed.slice('/agent update'.length).trim();
+    if (rest === '--all') {
+      return { type: 'update', all: true };
+    }
+    return { type: 'update', name: rest || undefined };
   }
 
   if (trimmed.startsWith('/agent ')) {
@@ -81,7 +85,7 @@ export function parseAgentCommand(input: string): SlashAgentCommand | null {
     if (rest === 'update') {
       return {
         type: 'unknown',
-        message: '用法: /agent update [name] — 检查并更新已安装 Agent',
+        message: '用法: /agent update [name | --all] — 更新指定 Agent 或批量更新全部',
       };
     }
     if (rest === 'list') {
@@ -89,7 +93,7 @@ export function parseAgentCommand(input: string): SlashAgentCommand | null {
     }
     return {
       type: 'unknown',
-      message: `未知子命令: ${rest}。可用: /agent list | install <name> | remove <name> | promote <skill> | update [name]`,
+      message: `未知子命令: ${rest}。可用: /agent list | install <name> | remove <name> | promote <skill> | update [name | --all]`,
     };
   }
 
@@ -108,7 +112,7 @@ export function parseAgentCommand(input: string): SlashAgentCommand | null {
  */
 export interface AgentManager {
   /** 安装 Agent（返回 InstallResult：ok=true 成功 / ok=false 失败码 + 中文消息）。 */
-  install(name: string): Promise<InstallResult>;
+  install(name: string, registryRef?: MarketRegistry | null): Promise<InstallResult>;
   /** 卸载已安装 Agent（返回是否成功；内置 Agent 由命令层拒绝，不触达此处）。 */
   remove(name: string): boolean;
   /** 列出已安装外部 Agent（按名称字典序）。 */
@@ -174,6 +178,22 @@ export async function executeAgentMarketCommand(
   cmd: SlashAgentCommand,
   deps: AgentCommandDeps,
 ): Promise<AgentCommandResult> {
+  // ── /agent list（v3.2 M5 / T5.4 增强：已安装版本 vs 最新版本对比）──
+  if (cmd.type === 'list') {
+    // 尝试拉取注册表对比版本；网络失败降级为无版本对比的同步列表（不阻塞）
+    const registry = await (deps.fetchRegistry ?? fetchMarketRegistry)();
+    if (registry === null) {
+      return {
+        handled: true,
+        message: { role: 'assistant', content: formatAgentList(deps) },
+      };
+    }
+    return {
+      handled: true,
+      message: { role: 'assistant', content: formatAgentListWithLatest(deps, registry) },
+    };
+  }
+
   // ── /agent install <name> ──
   if (cmd.type === 'install') {
     const result = await deps.installer.install(cmd.name);
@@ -226,8 +246,56 @@ export async function executeAgentMarketCommand(
     };
   }
 
-  // ── v3.1 M5 / T5.4：/agent update [name] ──
+  // ── v3.1 M5 / T5.4：/agent update [name]；v3.2 M5：/agent update --all 批量更新 ──
   if (cmd.type === 'update') {
+    // --all：批量更新全部可更新 Agent（复用 installer.install 的 update 语义 + 注册表引用避免重复拉取）
+    if (cmd.all === true) {
+      const registry = await (deps.fetchRegistry ?? fetchMarketRegistry)();
+      if (registry === null) {
+        return {
+          handled: true,
+          message: {
+            role: 'assistant',
+            content: '❌ 无法访问 Agent 注册表，请检查网络连接。',
+          },
+        };
+      }
+      const installed = deps.installer.listInstalled();
+      const updatable = installed
+        .map((a) => ({ inst: a, item: registry.agents.find((x) => x.name === a.name) }))
+        .filter(
+          (x): x is { inst: InstalledAgent; item: AgentRegistryItem } =>
+            x.item !== undefined && compareVersion(x.item.version, x.inst.version) > 0,
+        );
+      if (updatable.length === 0) {
+        return {
+          handled: true,
+          message: {
+            role: 'assistant',
+            content: '✅ 所有已安装 Agent 均是最新版本，无需批量更新。',
+          },
+        };
+      }
+      const lines: string[] = [];
+      for (const { inst } of updatable) {
+        const r = await deps.installer.install(inst.name, registry);
+        if (r.ok) {
+          lines.push(`- ✅ **${r.name}** ${inst.version} → ${r.version}`);
+        } else if (r.code === 'ALREADY_INSTALLED') {
+          lines.push(`- ⏭️ **${inst.name}** 已是最新版本`);
+        } else {
+          lines.push(`- ❌ **${inst.name}** ${r.message}`);
+        }
+      }
+      return {
+        handled: true,
+        message: {
+          role: 'assistant',
+          content: `📦 批量更新完成（${updatable.length} 个可更新）：\n\n${lines.join('\n')}`,
+        },
+      };
+    }
+
     // 指定名称：复用 installer.install 的 update 语义（版本落后覆盖 / 已最新 ALREADY_INSTALLED）
     if (cmd.name !== undefined) {
       const result = await deps.installer.install(cmd.name);
@@ -359,6 +427,53 @@ export function formatAgentList(deps: AgentCommandDeps): string {
 
   sections.push(
     '提示：内置 Agent 随 ConcertoAI 分发；外部 Agent 经市场安装，权限 fail-closed（未声明工具一律拒绝）。',
+  );
+  return sections.join('\n\n');
+}
+
+/**
+ * 带版本对比的 /agent list（v3.2 M5 / T5.4）：
+ * 已安装外部 Agent 与注册表最新版本对比，落后标注「↑ 可更新到 <latest>」、最新标注「最新」。
+ * 注册表中已下架的 Agent 不标注（维持原样展示）。
+ */
+export function formatAgentListWithLatest(
+  deps: AgentCommandDeps,
+  registry: MarketRegistry,
+): string {
+  const builtin = deps.builtinItems ?? BUILTIN_AGENT_ITEMS;
+  const installed = deps.installer.listInstalled();
+
+  const builtinLines = builtin.map((b) => {
+    const perms = b.permissions.map((p) => p.tool).join(', ');
+    return `- **${b.name}** ${b.version} — ${b.description} [权限: ${perms}]`;
+  });
+
+  const sections: string[] = [
+    `📋 Agent 团队（内置 ${builtin.length} 个）：\n\n${builtinLines.join('\n')}`,
+  ];
+
+  if (installed.length > 0) {
+    const installedLines = installed.map((a) => {
+      const item = registry.agents.find((x) => x.name === a.name);
+      const status =
+        item === undefined
+          ? ''
+          : compareVersion(item.version, a.version) > 0
+            ? `（↑ 可更新到 ${item.version}）`
+            : '（最新）';
+      const perms = a.def.permissions.map((p) => p.tool).join(', ');
+      const time = new Date(a.installedAt).toLocaleString('zh-CN');
+      return `- **${a.name}** ${a.version}${status} — [权限: ${perms}]（安装于 ${time}）`;
+    });
+    sections.push(
+      `📦 已安装外部 Agent（${installed.length} 个）：\n\n${installedLines.join('\n')}`,
+    );
+  } else {
+    sections.push('📦 已安装外部 Agent：无（使用 /agent install <name> 从市场安装）');
+  }
+
+  sections.push(
+    '提示：内置 Agent 随 ConcertoAI 分发；外部 Agent 经市场安装，权限 fail-closed（未声明工具一律拒绝）。使用 /agent update --all 可批量更新。',
   );
   return sections.join('\n\n');
 }

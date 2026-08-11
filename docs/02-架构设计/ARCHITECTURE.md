@@ -1,6 +1,6 @@
 # ConcertoAI 架构文档
 
-> 版本：v3.1（含 v2.2 / v3.1 全部已交付功能）· 2026-08-11
+> 版本：v3.2（含 v2.2 / v3.1 全部已交付功能）· 2026-08-11
 > 本文档基于当前代码实现编写，作为后续维护与扩展的技术参考。
 > 配套文档：[v3.0 开发任务](../03-开发计划与任务/v3.0-dev-tasks.md)、[v3.1 开发计划](../03-开发计划与任务/v3.1-dev-plan-ai.md)、[任务看板](../03-开发计划与任务/TASKS.md)
 
@@ -12,9 +12,10 @@ ConcertoAI 是一款**中文优先**的终端编码助手 CLI（DeepSeek 驱动�
 
 - **技术栈**：TypeScript (strict) + Node ≥22 + ESM，Ink 7 (React 19) 渲染 TUI，commander 解析 CLI，zod 做工具参数校验，vitest 测试，Biome 检查，tsup 打包
 - **运行时依赖**：`ink` / `react` / `commander` / `zod` / `cli-highlight` / `chalk`
-- **测试现状**：87 个测试文件、990 个用例，`npm run verify` 全绿，`npm audit` 0 漏洞；已用真实 `DEEPSEEK_API_KEY` 完成端到端冒烟
+- **测试现状**：87 个测试文件、999 个用例，`npm run verify` 全绿，`npm audit` 0 漏洞；已用真实 `DEEPSEEK_API_KEY` 完成端到端冒烟
 - **安全基线**：编辑与命令一律审批（fail-closed）、路径沙箱、结果截断、白名单免审批——无 yolo 模式
 - **v3.1 新增能力**：AI 自我修复闭环（self-heal）/ 多项目管理（project）/ 多租户登录（account）/ Orchestrator CLI（team、/orchestrate、audit export）/ 结构化错误增强（error-codes）；**v3.1 预留功能（已交付）**：`concertoai balance`（余额查询）/ `concertoai doctor`（环境诊断）、配置目录迁移 `~/.lumen → ~/.concertoai`（`src/store/paths.ts` 单一来源 + 幂等迁移）；**v2.2 智能成本控制**（高峰时段模型自动切换，见 §4 D41）
+- **v3.2 新增能力**：跨平台 CI 矩阵与 spawn 审计（ADR-032）/ UNC 路径与 EXDEV 边界（ADR-031）/ self-heal 模块化拆分（ADR-030）/ audit 损坏行统计 + /orchestrate diagnostics / 长任务进度推送（team onProgress + self-heal onPhase）/ project-account 视觉与 doctor 账号完整性 / 启动期缓存（ADR-029）/ Agent 市场版本对比与 `update --all`
 
 ## 2. 架构全景图
 
@@ -39,7 +40,7 @@ ConcertoAI 是一款**中文优先**的终端编码助手 CLI（DeepSeek 驱动�
 │   audit.ts   审计日志导出（v3.1，audit export）               │
 │   account.ts 多账号命令（v3.1，login/logout/whoami/account；whoami 修复提示+active 高亮 v3.2 M4）│
 │   crash-handler.ts 进程级崩溃日志（v3.1）                     │
-│   slash/     /agent /skill /mcp /memory /review /self-heal /orchestrate│
+│   slash/     /agent（list 版本对比 + update --all v3.2 M5）/skill /mcp /memory /review /self-heal /orchestrate│
 └──────────────────────┬──────────────────────────────────────┘
                        │ render(<App …>) / runLoop(...)
 ┌──────────────────────▼──────────────────────────────────────┐
@@ -283,6 +284,10 @@ MCP 服务故障
 | D44 | **多账号 git-credential 模式**（v3.1 / ADR-026）：账号 = 一个 DeepSeek API Key 配置文件（`~/.concertoai/accounts/<name>/config.json` 0600 + `active-account` 指针），与项目无关；Key 解析链 CLI > env > active account > config.json | 多账号切换低成本；Key 不落日志不进入审计；打码展示（sk-****abcd） | `store/accounts.ts` + `cli/account.ts` + `cli/common.ts`（resolveApiKey） |
 | D45 | **Orchestrator CLI 入口**（v3.1 / ADR-027）：`concertoai team "<任务>"`（拆解 → 对抗性闭环 → 事务回滚兜底 → 聚合工件）+ `/orchestrate`（chat 内）+ `audit export`（保序 JSON 导出）+ `/agent update` + `/review --severity` | v3.0 的 Orchestrator 仅库级 API，补 CLI 入口与运维命令；审计可导出满足合规 | `cli/team.ts` + `cli/audit.ts` + `cli/slash/orchestrate.ts` + `reviewer/types.ts` |
 | D46 | **版本归位 v2.2+v3.1 随 3.1.0 发布**（v3.1 / ADR-028）：CHANGELOG 不补发 v2.2.0，v2.2（peak-time/model-switcher）与 v3.1（balance/doctor/self-heal/project/team/account/audit）功能随 v3.1.0 一并发布 | 避免两套 Unreleased 并存；两主题同为「成本控制 + 日常体验」 | `CHANGELOG.md` |
+| D47 | **API Key 解析链统一 + 启动期缓存**（v3.2 M4 / ADR-029）：`resolveApiKeyCached` 按 accountsRoot 缓存 + `loadProjectRegistryCached` 按 registryFile 缓存 + clear 失效；CLI 入口 `getApiKey`/`doctor`/`preAction`/`resolveProjectForCwd` 统一走缓存 | 同一进程、同目录只读一次，消除重复读盘；模块级缓存零侵入；显式 clear 保证测试可控 | `cli/common.ts` + `cli/index.ts` |
+| D48 | **self-heal 模块化 + 范围限定**（v3.2 M2 / ADR-030）：`loop/self-heal/` 拆 3 模块（classifier/repair/snapshot-guard）+ index barrel，单文件 ≤400 行；公共 API 不变；仅修 ConcertoAI 自身代码 | 小文件优先；纯结构迁移不改行为；范围限定降低越权风险（对齐 ADR-004） | `loop/self-heal/` |
+| D49 | **项目注册表路径规范化 + 嵌套拒绝**（v3.2 M1 / ADR-031）：`normalizeProjectPath` 盘符/UNC 双分支 + `isNested` 分隔符边界比较；嵌套子目录注册拒绝 | 隔离矩阵（D43）依赖路径精确匹配；避免跨平台误判；拒绝嵌套 = fail-closed | `store/projects.ts` |
+| D50 | **跨平台 CI 矩阵 + spawn 兼容基线**（v3.2 M1 / ADR-032）：ci.yml 三平台矩阵（ubuntu/windows/macos）+ spawn 审计（`.cmd`/`.bat` 必须 `shell: true` 或经 `getPlatformAdapter`）+ 跨平台样本库 `tests/fixtures/platform-samples.ts` | 「事后修补」→「事前防线」；CI 前置拦截跨平台回归；解析类正则双平台样本验证 | `.github/workflows/ci.yml` + `tools/shell.ts` + `tests/fixtures/` |
 
 ## 5. 目录结构说明
 
@@ -447,7 +452,7 @@ concertoai/
 │       ├── zh.ts         中文字典 + fmt()
 │       ├── en.ts         英文字典（键与 zh 同构）
 │       └── index.ts      resolveLocale / setLocale / t() / DICTS
-└── tests/                镜像 src 结构（87 个文件 / 990 用例，v3.2 M4 基线），含 tests/agent/、tests/agents/、tests/balance/、tests/cli/（含 common.test.ts 启动缓存）、tests/core/、tests/e2e/（team-cli/self-heal/project-isolation）、tests/fixtures/（platform-samples 跨平台样本库）、tests/i18n/、tests/knowledge/、tests/loop/（self-heal/error-reporting）、tests/market/、tests/mcp/、tests/model/、tests/observable/、tests/orchestrator/、tests/planner/、tests/reviewer/、tests/skill/、tests/store/（projects/accounts/accounts-exdev）、tests/tools/、tests/ui/ 等
+└── tests/                镜像 src 结构（87 个文件 / 999 用例，v3.2 M5 基线），含 tests/agent/、tests/agents/、tests/balance/、tests/cli/（含 common.test.ts 启动缓存）、tests/core/、tests/e2e/（team-cli/self-heal/project-isolation）、tests/fixtures/（platform-samples 跨平台样本库）、tests/i18n/、tests/knowledge/、tests/loop/（self-heal/error-reporting）、tests/market/、tests/mcp/、tests/model/、tests/observable/、tests/orchestrator/、tests/planner/、tests/reviewer/、tests/skill/、tests/store/（projects/accounts/accounts-exdev）、tests/tools/、tests/ui/ 等
 ```
 
 ## 6. 5分钟快速体验

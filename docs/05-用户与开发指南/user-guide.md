@@ -1,6 +1,6 @@
 # ConcertoAI 用户手册
 
-> 面向使用 ConcertoAI 完成日常编码辅助的个人开发者。版本：v3.0。
+> 面向使用 ConcertoAI 完成日常编码辅助的个人开发者。版本：v3.2。
 
 ## 1. 安装与升级
 
@@ -86,7 +86,22 @@ CNY: 总额 110.00 ｜ 赠送 10.00 ｜ 充值 100.00
 | 配置文件 | `~/.concertoai/config.json` 可读性（区分不存在/损坏） |
 | 会话目录 | 可写性探测（创建临时文件后删除） |
 | 模型表 | 内置模型表是否可加载 |
+| 账号完整性（v3.2） | active 指针 → 账号 config.json 是否存在且可读；缺失/损坏时给出可复制的修复命令（`concertoai login <name>`） |
 | 账户余额 | 有 API Key 时查询 DeepSeek 余额（含总额/赠送/充值） |
+
+典型场景：
+
+```bash
+$ concertoai doctor          # 全项检查
+✅ Node.js / 平台: v22.x (win32)
+✅ API Key: 已设置（sk-****abcd）
+✅ 配置文件: 存在，schema 版本 1
+✅ 会话目录: 可写
+✅ 模型表: 11 个模型（deepseek-v4-flash, …）
+✅ 账号完整性: active: work（账号完整）
+✅ 账户余额: CNY 总额 110.00 ｜ 赠送 10.00 ｜ 充值 100.00
+# 退出码 0 = 全部正常；任一失败项返回 1
+```
 
 ### `concertoai self-heal` —— AI 自我修复闭环（v3.1）
 
@@ -100,19 +115,45 @@ CNY: 总额 110.00 ｜ 赠送 10.00 ｜ 充值 100.00
 
 - 修复上限 `MAX_SELF_HEAL_ATTEMPTS = 2`，超限保留详细报告转人工；
 - 仅修复 ConcertoAI 自身代码，**不自动修用户项目代码**；
-- chat 内也可用 `/self-heal`（修复期间状态条可见）。
+- chat 内也可用 `/self-heal`（v3.2：状态条 activeTool 随阶段动态更新——执行 verify / lint 修复 / 模型修复 / 修复后验证 / 回滚 / 完成，长任务可感知，不黑盒等待）。
+
+典型场景：
+
+```bash
+$ concertoai self-heal
+✓ 分类：2 个 lint 错误（确定性修复，免审批）
+→ 执行 npm run lint:fix …
+✓ lint 修复后重新 verify：通过
+✅ 自我修复完成：2 个 lint 错误已自动修复，0 个遗留
+
+# 模型修复场景（简单类型错误）：弹审批框逐项确认
+⚠️ 需要审批：修复 src/cli/foo.ts:12 缺失类型标注（y/n）: y
+→ 修复后 verify 失败 → 快照回滚，保留报告转人工
+```
 
 ### `concertoai project` —— 多项目管理（v3.1）
 
 | 子命令 | 说明 |
 | --- | --- |
 | `project add <name> [path]` | 注册项目（path 缺省用当前目录）；重名/嵌套子目录拒绝 |
-| `project list` | 表格列出 name / path / addedAt |
+| `project list` | 三列表格列出 名称 \| 路径 \| 注册时间（v3.2）；当前 cwd 所在项目整行绿色高亮 + ★（当前） |
 | `project remove <name>` | 卸载（不删除项目目录） |
 | `project info <name>` | 显示 path / whitelist / mcpServers |
 | `project switch <name>` | 校验项目存在并提示用 `-p` 或 `cd` 启动 |
 
 隔离矩阵：项目模式下会话写入 `~/.concertoai/sessions/<projectKey>/`、审批白名单按项目合并、MCP 服务按项目声明；启动时用 `-p <name>` 或 `cd` 到项目目录自动匹配，未匹配用全局配置（行为与 v3.0 一致）。
+
+典型场景：
+
+```bash
+$ cd ~/work/my-app && concertoai project list
+已注册项目：
+名称            路径                    注册时间
+--------        --------                ----------
+demo            D:\dev\demo             2026-08-10T10:00:00.000Z
+my-app ★（当前） D:\work\my-app          2026-08-11T09:30:00.000Z
+# 当前项目 my-app 整行绿色高亮 + ★（当前）标记
+```
 
 ### `concertoai team "<任务>"` —— Orchestrator 团队执行（v3.1）
 
@@ -126,7 +167,29 @@ CNY: 总额 110.00 ｜ 赠送 10.00 ｜ 充值 100.00
 | `--dry-run` | 仅输出拆解清单，不执行任何 Agent |
 | `--auto-approve` | 自动批准拆解方案与代码写盘（**谨慎**） |
 
-chat 内可用 `/orchestrate <任务>` 触发全链路，`o` 键打开可观测性面板查看 spans。
+**进度推送（v3.2）**：长任务不黑盒等待——CLI stdout 与 chat 消息流会渐进推送中间进度：拆解完成（📋 已拆解 N 个任务）→ 每轮闭环（🔁 第 x/5 轮 实现/审查/验证）→ 收尾（✅/❌）。
+
+chat 内可用 `/orchestrate <任务>` 触发全链路（进度同样以聊天消息渐进推送），`o` 键打开可观测性面板查看 spans。
+
+典型场景：
+
+```bash
+$ concertoai team "为项目添加单元测试框架配置"
+📋 已拆解 3 个任务
+=== 任务拆解 ===
+1. [architect] 调研 vitest 配置（依赖：无）
+2. [coder] 编写 vitest.config.ts（依赖：1）
+3. [qa] 运行 npm run verify（依赖：2）
+批准该方案并开始执行 (y/n): y
+🔁 第 1/5 轮（实现）
+🔁 第 1/5 轮（审查）
+🔁 第 1/5 轮（验证）
+✅ 团队执行完成
+=== 工件 ===
+- [code] vitest.config.ts
+- [review-result] loop-1-review: 通过
+- [test-report] loop-1-qa: 全部通过
+```
 
 ### `concertoai audit export` —— 审计日志导出（v3.1）
 
@@ -134,7 +197,15 @@ chat 内可用 `/orchestrate <任务>` 触发全链路，`o` 键打开可观测�
 
 - `concertoai audit export`：打印到 stdout；
 - `concertoai audit export --out <file>`：写入文件（目录自动创建）；
-- 无审计日志时输出「暂无审计日志」，退出码 0（非错误）。
+- 无审计日志时输出「暂无审计日志」，退出码 0（非错误）；
+- v3.2：输出末尾显示损坏行统计「共 N 条记录（跳过 M 条损坏行）」，损坏 JSONL 行跳过但不静默。
+
+典型场景：
+
+```bash
+$ concertoai audit export --out audit.json
+✅ 审计日志已导出到 audit.json：共 42 条记录（跳过 0 条损坏行）。
+```
 
 ### `concertoai login / logout / whoami / account` —— 多账号管理（v3.1）
 
@@ -142,10 +213,27 @@ chat 内可用 `/orchestrate <任务>` 触发全链路，`o` 键打开可观测�
 | --- | --- |
 | `login <name> [--key <key>]` | 登录账号（交互输入 API Key 不回显；`--key` 供 CI 非交互注入）；重名覆盖前确认 |
 | `logout <name> [--purge]` | 登出（清除 active 指针；`--purge` 才删除账号文件） |
-| `whoami` | 显示当前账号名 + Key 后 4 位（打码 `sk-****abcd`） |
-| `account switch <name>` / `account list` | 切换 active / 表格列出账号 |
+| `whoami` | 显示当前账号名 + Key 后 4 位（打码 `sk-****abcd`）；账号配置缺失时给出可复制修复命令（v3.2） |
+| `account switch <name>` / `account list` | 切换 active / 列出账号（v3.2：active 账号绿色高亮） |
 
 API Key 解析优先级：CLI > 环境变量 `DEEPSEEK_API_KEY` > active account > config.json（回退）。账号 = 一个 API Key 配置文件（`~/.concertoai/accounts/<name>/config.json`，权限 0600），与项目无关；任意命令不输出完整 Key。
+
+典型场景：
+
+```bash
+$ concertoai whoami
+当前账号: work（sk-****abcd）
+
+# 账号配置缺失（active 指针指向已删除账号）：
+$ concertoai whoami
+当前账号指针: ghost（账号配置缺失，请重新登录：concertoai login ghost）
+# ↑ 命令可直接复制执行修复
+
+$ concertoai account list
+已登录账号：
+  work ★（当前）      # 绿色高亮
+  personal
+```
 
 ## 3. 交互细节
 
@@ -287,10 +375,28 @@ v3.0 引入「多 Agent 团队」工作流（Orchestrator 模式）：Orchestrat
 
 | 命令 | 说明 |
 |------|------|
-| `/agent list` | 列出 Agent 团队：内置 4 个（architect/coder/reviewer/qa）+ 已安装外部 Agent（含权限摘要与安装时间） |
+| `/agent list` | 列出 Agent 团队：内置 4 个（architect/coder/reviewer/qa）+ 已安装外部 Agent（含权限摘要与安装时间）；v3.2：网络可用时标注「↑ 可更新到 <最新版>」或「最新」（已安装 vs 注册表最新版本对比），注册表不可达自动降级为无对比列表 |
 | `/agent install <name>` | 从市场安装 Agent：fetch 注册表 → 匹配条目 → 下载 → sha256 校验 → 接口合规检查 → 写入 `~/.concertoai/agents/<name>/` → 刷新注册表 |
 | `/agent remove <name>` | 卸载已安装外部 Agent（内置 Agent 随 ConcertoAI 分发，拒绝卸载） |
+| `/agent update [name]` | 检查并更新指定 Agent（版本落后覆盖；已最新提示无需更新）；无参数时列出全部可更新 Agent |
+| `/agent update --all` | （v3.2）批量更新全部可更新 Agent，逐条输出 ✅ 已更新 / ⏭️ 已最新 / ❌ 失败，单个失败不影响其他 |
 | `/agent promote <skill>` | 将技能一键升级为 Agent：读取 SKILL.md → 生成脚手架（AgentDef 接口声明 + 实现骨架 + 权限声明，默认继承技能所需最小权限）→ 注册；原技能保留 |
+
+典型场景：
+
+```bash
+$ /agent update --all
+📦 批量更新完成（2 个可更新）：
+- ✅ **my-agent** 1.0.0 → 2.0.0
+- ❌ **other-agent** 下载 other-agent 失败或 sha256 校验不通过（已拒绝安装）。
+
+$ /agent list
+📋 Agent 团队（内置 4 个）：
+- **architect** 1.0.0 — 需求 → 设计 spec [权限: read_file, search_content, list_directory]
+…
+📦 已安装外部 Agent（1 个）：
+- **my-agent** 1.0.0（↑ 可更新到 2.0.0）— [权限: read_file]（安装于 2026/8/10 10:00:00）
+```
 
 ### 安全保证
 
@@ -416,6 +522,14 @@ v3.1 新增：
 - **多账号**：`concertoai login/logout/whoami/account`，账号 = API Key 配置文件（0600 + active 指针），Key 打码展示；
 - **Orchestrator CLI**：`concertoai team "<任务>"`（拆解 → 对抗性闭环 → 回滚兜底）+ `/orchestrate` + `audit export`（审计日志保序导出）+ `/agent update` + `/review --severity`；
 - **结构化错误增强**：工具错误统一携带机器可读 `code` + 中文 `suggestion`。
+
+v3.2 新增（跨平台可靠 + 长任务可感知 + 代码可维护）：
+
+- **跨平台兼容性增强**：CI 三平台矩阵（ubuntu / windows / macOS）；spawn 审计（Windows `.cmd`/`.bat` 走 `shell: true` 或命令兼容层）；UNC 路径与 EXDEV 跨盘回退边界补齐；
+- **self-heal 模块化重构**：单文件 870 行 → 3 模块（classifier / repair / snapshot-guard）+ 增量 verify（lint 修复后仅 rerun lint 段，通过跳过全量）+ 快照失效通知；
+- **错误处理强化**：`audit export` 损坏行统计（共 N 条 / 跳过 M 条）、`/orchestrate` 拆解失败 diagnostics、inferErrorCode 英文关键词回归；
+- **用户体验优化**：`team` / `/orchestrate` 进度渐进推送（拆解/轮次/收尾）、`self-heal` 状态条阶段动态更新、`project list` 三列表格 + 当前项目高亮、`whoami` 可复制修复命令、`doctor` 账号完整性检查、启动期缓存（重复命令不再重复读盘）；
+- **Agent 市场版本管理**：`/agent list` 显示已安装 vs 最新版本对比、`/agent update --all` 批量更新。
 
 ### 配置目录迁移（~/.lumen → ~/.concertoai）
 

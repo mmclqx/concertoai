@@ -427,6 +427,58 @@ interface AgentDef {
 
 ---
 
+## ADR-029：API Key 解析链统一 + 启动期缓存
+
+| 字段 | 内容 |
+|------|------|
+| **状态** | 已采纳（v3.2 M4 / T4.5） |
+| **日期** | 2026-08-11 |
+| **上下文** | API Key 解析链（CLI > 环境变量 `DEEPSEEK_API_KEY` > active account > config.json）分布在 `resolveApiKey`（src/cli/common.ts），每次调用都重新读盘（active-account 指针 + 账号 config.json）；CLI 启动期 `getApiKey` 与 `doctor`/`team` 等多处重复解析，产生重复 I/O |
+| **选项** | ① 模块级缓存：`resolveApiKeyCached` 按 accountsRoot 缓存首次解析结果 + `loadProjectRegistryCached` 按 registryFile 缓存 ② 闭包传递：启动期解析一次后经参数层层传递 ③ 保持每次重读（现状） |
+| **结论** | 采用 ①：`src/cli/common.ts` 新增 `resolveApiKeyCached`（按 accountsRoot 键缓存）+ `clearApiKeyCache`（测试注入失效）+ `loadProjectRegistryCached`（按 registryFile 键缓存）+ `clearProjectRegistryCache`；CLI 入口 `getApiKey` / `doctor` / `preAction` 与 `resolveProjectForCwd` 统一走缓存 |
+| **理由** | (a) 同一进程、同一 accountsRoot 下只读一次，消除重复读盘（CLI 启动期多次命令调用显著降 I/O）；(b) 模块级缓存零侵入，无需改造调用链；(c) 显式 `clear` 函数保证测试可控、状态可刷新（切换 active 后重新解析）；(d) 缓存键含 accountsRoot/registryFile，多目录不串 |
+
+---
+
+## ADR-030：self-heal 修复范围限定 + 模块化结构
+
+| 字段 | 内容 |
+|------|------|
+| **状态** | 已采纳（v3.2 M2 / T2.1） |
+| **日期** | 2026-08-11 |
+| **上下文** | v3.1 self-heal 单文件 870 行（分类器/修复器/快照混合），维护成本高；修复范围依赖隐式约定（仅修 ConcertoAI 自身代码），缺少结构化声明 |
+| **选项** | ① 拆分为 3 模块（classifier / repair / snapshot-guard）+ index.ts barrel + 显式「仅修自身代码」范围限定 ② 保持单文件 ③ 全量重写 |
+| **结论** | 采用 ①：`src/loop/self-heal/` 拆分为 `classifier.ts`（四段解析）/ `repair.ts`（repairVerifyReport + 增量 verify）/ `snapshot-guard.ts`（applyModelFix 快照状态机），单文件 ≤400 行；公共 API（`runSelfHeal` 等）不变；修复范围仅限 ConcertoAI 自身代码（`concertoai self-heal` 在项目目录执行 verify，不触碰用户项目） |
+| **理由** | (a) 小文件优先（v3.2 设计原则 3.4）：单文件 ≤400 行硬性标准；(b) 纯结构迁移不改行为，公共 API 不变 + 既有测试兜底；(c) 范围限定显式化：仅修自身代码降低越权/破坏风险（与 ADR-004 fail-closed 一致） |
+
+---
+
+## ADR-031：项目注册表路径规范化与嵌套拒绝
+
+| 字段 | 内容 |
+|------|------|
+| **状态** | 已采纳（v3.2 M1 / T1.3） |
+| **日期** | 2026-08-11 |
+| **上下文** | `projects.json` 注册表（ADR-025）按路径匹配项目；Windows 下 UNC 路径（`\\server\share\`）与普通盘符路径（`C:\`）在嵌套检测（isNested）中缺少分隔符边界比较，可能误判；注册嵌套子目录项目会破坏隔离矩阵 |
+| **选项** | ① `normalizeProjectPath` 识别盘符/UNC 双分支 + isNested 分隔符边界比较；嵌套子目录项目拒绝注册 ② 允许任意嵌套 ③ 不做路径规范化 |
+| **结论** | 采用 ①：`src/store/projects.ts` `normalizeProjectPath` 处理 `\\server\share\` 前缀（盘符/UNC 双分支）；`isNested` 用分隔符边界比较覆盖 UNC；嵌套子目录项目注册时拒绝并给出中文提示（fail-closed） |
+| **理由** | (a) 多项目隔离矩阵（ADR-025）依赖路径精确匹配，嵌套项目会破坏会话/白名单/MCP 隔离；(b) 路径规范化统一处理盘符/UNC，避免跨平台误判；(c) 拒绝嵌套是安全基线的一部分（fail-closed 精神） |
+
+---
+
+## ADR-032：跨平台 CI 矩阵与 spawn 兼容基线
+
+| 字段 | 内容 |
+|------|------|
+| **状态** | 已采纳（v3.2 M1 / T1.1 / T1.2） |
+| **日期** | 2026-08-11 |
+| **上下文** | v3.1.1 连续出现 Windows 专属问题（QA spawn ENOENT、ESM `__dirname` 崩溃、Biome 解析漏类别）均为「事后修补」；ci.yml 仅 ubuntu-latest，Windows 问题无法在 CI 前置拦截 |
+| **选项** | ① CI 矩阵三平台（ubuntu / windows / macOS）+ spawn 适配审计（`.cmd`/`.bat` 必须 `shell: true` 或经 `getPlatformAdapter`）+ 跨平台样本库 ② 保持单平台 CI ③ 本地 Windows 手动验证 |
+| **结论** | 采用 ①：`.github/workflows/ci.yml` 增加 `strategy.matrix os: [ubuntu-latest, windows-latest, macos-latest]`；全项目 spawn 调用点审计（Windows 下 `.cmd`/`.bat` 一律 `shell: true` 或经 `getPlatformAdapter` 命令兼容层）；新增 `tests/fixtures/platform-samples.ts`（Windows 反斜杠+盘符 / POSIX 双样本、CRLF/LF）供解析类测试复用 |
+| **理由** | (a) 把「事后修补」固化为「事前防线」（v3.2 设计原则 3.2）；(b) 三平台矩阵在 CI 前置拦截跨平台回归；(c) 样本库统一双平台样本，避免各测试重复造样本且遗漏 Windows 变体；(d) 解析类正则要求用 Windows 与 POSIX 双样本验证（AGENTS.md 提交前自查第 10 条） |
+
+---
+
 ## 延后项目评估（v3.1，E1~E4）
 
 > v3.0 承诺「v3.1 评估」的项目逐一给出结论，不留悬空承诺（来源：v3.1-dev-plan-ai.md §7 / E1~E4）。

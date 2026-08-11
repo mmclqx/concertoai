@@ -656,7 +656,9 @@ export function App({
             agentCmd.type === 'install' ||
             agentCmd.type === 'remove' ||
             agentCmd.type === 'promote' ||
-            agentCmd.type === 'update'
+            agentCmd.type === 'update' ||
+            // v3.2 M5 / T5.4：/agent list 走异步（拉注册表对比「已安装 vs 最新」，失败降级同步列表）
+            agentCmd.type === 'list'
           ) {
             setInput('');
             setTokens((t) => ({ ...t, input: t.input + estimateTokens(text) }));
