@@ -350,7 +350,13 @@ concertoai/
 │   │   └── StatusBar.tsx 模型名/token（真实 usage/估算）/成本（costFor 实时计算）
 │   ├── loop/
 │   │   ├── loop.ts       runLoop / MAX_LOOP_TURNS=50 / MAX_REPAIRS=2 / LoopEvent（chunk/tool_call/tool_result/usage/error）
-│   │   ├── self-heal.ts  AI 自我修复闭环（v3.1 M1）：Verify 分类器四段解析 + 修复策略执行器 + 快照回滚 + runSelfHeal 入口（详见 §4 D42）
+│   │   ├── self-heal/    AI 自我修复闭环（v3.1 M1，v3.2 M2 拆分为 5 模块，详见 §4 D42 / §8）：
+│   │   │   ├── classifier.ts    四段分类器（build/lint/type/test）+ parseVerifyReport + mergeLintPassed（311 行）
+│   │   │   ├── model.ts         模型修复计划生成（isSimpleTypeError / parseModelFixOutput / generateModelFixPlan）
+│   │   │   ├── snapshot-guard.ts 快照守卫 applyModelFix（审批 → 快照 → 写盘 → 判定 → 回滚/提交 + snapshotWarning）
+│   │   │   ├── repair.ts        修复执行器 repairVerifyReport + 增量 verify（T2.3）+ 常量
+│   │   │   ├── types.ts         公共类型（避免循环依赖）
+│   │   │   └── index.ts         barrel + runSelfHeal 入口 + 生产辅助（runVerifyCommand / runLintFixCommand）
 │   │   ├── context.ts    上下文窗口管理（trimContext：80% 预算、整轮保留、日志）
 │   │   ├── messages.ts   消息构造 + toApiMessages + formatToolResult（20k 截断）
 │   │   ├── types.ts      ChatMessage / ToolCall / Role
@@ -441,7 +447,7 @@ concertoai/
 │       ├── zh.ts         中文字典 + fmt()
 │       ├── en.ts         英文字典（键与 zh 同构）
 │       └── index.ts      resolveLocale / setLocale / t() / DICTS
-└── tests/                镜像 src 结构（84 个文件 / 924 用例，v3.1 基线），含 tests/agent/、tests/agents/、tests/balance/、tests/cli/、tests/core/、tests/e2e/（team-cli/self-heal/project-isolation）、tests/i18n/、tests/knowledge/、tests/loop/（self-heal/error-reporting）、tests/market/、tests/mcp/、tests/model/、tests/observable/、tests/orchestrator/、tests/planner/、tests/reviewer/、tests/skill/、tests/store/（projects/accounts）、tests/tools/、tests/ui/ 等
+└── tests/                镜像 src 结构（86 个文件 / 965 用例，v3.2 基线），含 tests/agent/、tests/agents/、tests/balance/、tests/cli/、tests/core/、tests/e2e/（team-cli/self-heal/project-isolation）、tests/fixtures/（platform-samples 跨平台样本库）、tests/i18n/、tests/knowledge/、tests/loop/（self-heal/error-reporting）、tests/market/、tests/mcp/、tests/model/、tests/observable/、tests/orchestrator/、tests/planner/、tests/reviewer/、tests/skill/、tests/store/（projects/accounts/accounts-exdev）、tests/tools/、tests/ui/ 等
 ```
 
 ## 6. 5分钟快速体验
@@ -597,7 +603,7 @@ npm run verify     # 验收：build + lint + typecheck + test（--silent）
 
 ### 8.8 规划（v3.1+，详见 [v3.1-dev-plan-ai.md](../03-开发计划与任务/v3.1-dev-plan-ai.md)）
 
-- **P0 AI 自我修复闭环（M1）**：`src/loop/self-heal.ts` —— verify 四段（build/lint/typecheck/test）统一分类（复用 `agents/qa.ts` `parseVerifyOutput`）→ lint 确定性 `lint:fix` / 简单类型错误模型修复（审批）→ SnapshotManager 快照 + 修复后 verify + 失败回滚 → `/self-heal` + `concertoai self-heal`
+- **P0 AI 自我修复闭环（M1）**：`src/loop/self-heal/`（v3.2 M2 拆分）—— verify 四段（build/lint/typecheck/test）统一分类（`classifier.ts`，复用 `agents/qa.ts` `parseVerifyOutput`）→ lint 确定性 `lint:fix` / 简单类型错误模型修复（审批，`snapshot-guard.ts` applyModelFix 快照状态机）→ 增量 verify（`repair.ts`，lint 修复后仅 rerun lint 段）→ `/self-heal` + `concertoai self-heal`（`index.ts` runSelfHeal）
 - **P1 多项目管理（M2）**：`concertoai project add/switch/list/remove/info` + 隔离矩阵（会话目录 / 审批白名单 / MCP 服务按项目隔离，全局配置/技能/Agent 共享）
 - **P1 Orchestrator CLI 入口（M5）**：`concertoai team "<任务>"`（--dry-run 拆解预览）+ `/orchestrate` + `concertoai audit export` + `/agent update` + `/review --severity`
 - **P2 多租户登录（M3）**：`~/.concertoai/accounts/<name>/config.json`（多 API Key，git credential 模式）+ `login/logout/whoami/account switch`

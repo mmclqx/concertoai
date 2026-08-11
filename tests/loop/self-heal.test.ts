@@ -13,7 +13,7 @@ import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   diffLineStat,
   isSimpleTypeError,
@@ -424,6 +424,76 @@ describe('self-heal 修复执行器（T1.2）', () => {
     expect(result.attempts[0]?.feedback[0]?.suggestion).toContain('用户拒绝');
     expect(await readFile(fooPath, 'utf8')).toBe(original);
   });
+
+  // v3.2 M2 / T2.3：增量 verify——lint 修复后仅 rerun lint 段，通过则跳过全量
+  it('增量 verify：lint 修复后 lint 段通过 → 不触发全量 verify（runVerify 0 次）', async () => {
+    let verifyCalls = 0;
+    let lintOnlyCalls = 0;
+    const options: RepairVerifyOptions = {
+      cwd: await mkdtemp(path.join(os.tmpdir(), 'selfheal-')),
+      runVerify: async () => {
+        verifyCalls += 1;
+        return LINT_FAIL;
+      },
+      runLintFix: async () => ({ ok: true }),
+      runLintOnly: async () => {
+        lintOnlyCalls += 1;
+        return { stdout: 'All checks passed.', stderr: '' };
+      },
+      log: () => {},
+    };
+    const initial = parseVerifyReport(LINT_FAIL.stdout, LINT_FAIL.stderr);
+    const result = await repairVerifyReport(initial, options);
+    expect(result.passed).toBe(true);
+    // 增量：lint 修复后 lint 段通过 → mergeLintPassed 跳过全量，repair 内不再调 runVerify
+    expect(verifyCalls).toBe(0);
+    expect(lintOnlyCalls).toBe(1);
+    expect(result.attempts[0]?.action).toBe('lint-fix');
+  });
+
+  it('对照：无 runLintOnly → lint 修复后走全量 verify（runVerify 1 次）', async () => {
+    let verifyCalls = 0;
+    let lintFixed = false;
+    const options: RepairVerifyOptions = {
+      cwd: await mkdtemp(path.join(os.tmpdir(), 'selfheal-')),
+      runVerify: async () => {
+        verifyCalls += 1;
+        return lintFixed ? VERIFY_PASS : LINT_FAIL;
+      },
+      runLintFix: async () => {
+        lintFixed = true;
+        return { ok: true };
+      },
+      log: () => {},
+    };
+    const initial = parseVerifyReport(LINT_FAIL.stdout, LINT_FAIL.stderr);
+    const result = await repairVerifyReport(initial, options);
+    expect(result.passed).toBe(true);
+    expect(verifyCalls).toBe(1); // 非增量：lint 修复后全量 verify 一次
+  });
+
+  it('增量 verify：lint 段仍未通过 → 回退全量 verify（runVerify 1 次）', async () => {
+    let verifyCalls = 0;
+    const options: RepairVerifyOptions = {
+      cwd: await mkdtemp(path.join(os.tmpdir(), 'selfheal-')),
+      runVerify: async () => {
+        verifyCalls += 1;
+        return LINT_FAIL;
+      },
+      runLintFix: async () => ({ ok: true }),
+      runLintOnly: async () => ({
+        stdout: 'src/foo.ts:1:5  lint/suspicious/noExplicitAny  FIXABLE  ━━━',
+        stderr: '',
+      }),
+      log: () => {},
+    };
+    const initial = parseVerifyReport(LINT_FAIL.stdout, LINT_FAIL.stderr);
+    const result = await repairVerifyReport(initial, options);
+    // lint 段仍失败 → lintOnly 不合并，回退全量 verify；全量也仍失败 → 第二轮再 lint → 超限
+    expect(verifyCalls).toBeGreaterThanOrEqual(1);
+    expect(result.passed).toBe(false);
+    expect(result.exceeded).toBe(true);
+  });
 });
 
 // ── T1.3 快照与回滚 ───────────────────────────────────────────
@@ -591,6 +661,59 @@ describe('self-heal 快照与回滚（T1.3）', () => {
     // 文件最终恢复到原状（每次回滚都成功）
     expect(await readFile(fooPath, 'utf8')).toBe(original);
     // 快照全部清理
+    expect(await snapshots.list()).toEqual([]);
+  });
+
+  // v3.2 M2 / T2.4：快照登记失败 → snapshotWarning=true + 文件仍修复（放弃回滚保护继续写盘）
+  it('快照登记失败 → snapshotWarning=true，文件仍被修复（回滚保护放弃）', async () => {
+    const { cwd, fooPath } = await makeWorkspace(`import { foo } from './foo';\n${FIX.search}\n`);
+    const snapshots = new SnapshotManager(cwd);
+    // begin 抛错模拟快照目录不可写 → 快照登记失败
+    const beginSpy = vi
+      .spyOn(SnapshotManager.prototype, 'begin')
+      .mockRejectedValue(new Error('snapshot dir unwritable'));
+    try {
+      const options: RepairVerifyOptions = {
+        cwd,
+        client: fakeClient(FIX.json),
+        model: 'deepseek-test',
+        requestApproval: () => true,
+        snapshots,
+        runVerify: async () => VERIFY_PASS,
+        runLintFix: async () => ({ ok: true }),
+        log: () => {},
+      };
+      const initial = parseVerifyReport(TYPE_MISSING_IMPORT.stdout, TYPE_MISSING_IMPORT.stderr);
+      const result = await repairVerifyReport(initial, options);
+      expect(result.snapshotWarning).toBe(true);
+      // 快照保护放弃但继续写盘 → 文件仍被修复且 verify 通过
+      expect(result.passed).toBe(true);
+      expect(await readFile(fooPath, 'utf8')).toContain(FIX.replace);
+      // 快照未登记 → 无残留快照
+      expect(await snapshots.list()).toEqual([]);
+    } finally {
+      beginSpy.mockRestore();
+    }
+  });
+
+  it('快照登记正常 → snapshotWarning 不置位', async () => {
+    const { cwd, fooPath } = await makeWorkspace(`import { foo } from './foo';\n${FIX.search}\n`);
+    const snapshots = new SnapshotManager(cwd);
+    const options: RepairVerifyOptions = {
+      cwd,
+      client: fakeClient(FIX.json),
+      model: 'deepseek-test',
+      requestApproval: () => true,
+      snapshots,
+      runVerify: async () => VERIFY_PASS,
+      runLintFix: async () => ({ ok: true }),
+      log: () => {},
+    };
+    const initial = parseVerifyReport(TYPE_MISSING_IMPORT.stdout, TYPE_MISSING_IMPORT.stderr);
+    const result = await repairVerifyReport(initial, options);
+    expect(result.snapshotWarning).toBeUndefined();
+    expect(result.passed).toBe(true);
+    expect(await readFile(fooPath, 'utf8')).toContain(FIX.replace);
     expect(await snapshots.list()).toEqual([]);
   });
 });

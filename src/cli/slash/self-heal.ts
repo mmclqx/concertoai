@@ -137,5 +137,9 @@ export function formatSelfHealReport(result: RepairVerifyResult): string {
       '⚠️ 已启用快照保护：修复无效的变更已回滚；残留快照可用 `concertoai snapshot list` 查看。',
     );
   }
+  // T2.4：快照登记失败 → 明确告知快照保护未生效（修复可能无法回滚）
+  if (result.snapshotWarning === true) {
+    parts.push('⚠️ 快照保护未生效：本次模型修复快照登记失败，无法自动回滚（请人工检查变更内容）。');
+  }
   return parts.join('\n\n');
 }
