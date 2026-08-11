@@ -19,8 +19,12 @@ const STEP_LINE_RE = /^(?:\d+[.)]\s+|[-*]\s+\[ \]\s+|步骤\s*(\d+)[：:]\s*)(.*
 /** 匹配显式依赖声明：depends on: 1,2 / 依赖: 步骤 3,4 */
 const DEPENDS_ON_RE = /(?:depends?\s+on|依赖)[：:]\s*(?:步骤\s*)?([\d,\s]+)/i;
 
-/** 匹配文件路径引用：`path` / 'path' / 纯路径 */
-const FILE_REF_RE = /(?:[`'"]|^)([^\s`'"]*\.\w{1,10})(?:[`'"]|$)/gim;
+/**
+ * 匹配文件路径引用：`path` / 'path' / 纯路径。
+ * I2（v3.4）：与 W2 对齐，常量不带 g/i/m 标志（exec 循环需要 g 推进 lastIndex，i/m 为行为必需）；
+ * 使用处 new RegExp(source, 'gim') 显式带（每次调用新建，消除跨步骤 lastIndex 残留）。
+ */
+const FILE_REF_RE = /(?:[`'"]|^)([^\s`'"]*\.\w{1,10})(?:[`'"]|$)/;
 
 /** 写操作关键词。 */
 const WRITE_KEYWORDS = [
@@ -114,15 +118,16 @@ function extractSteps(text: string): PlanStep[] {
         .filter((n) => !Number.isNaN(n) && n > 0 && n !== step.index);
     }
 
-    // 文件路径引用
+    // 文件路径引用（I2：每次新建 RegExp，避免常量 lastIndex 跨步骤残留）
     const refs = new Set<string>();
-    let fileMatch = FILE_REF_RE.exec(step.description);
+    const fileRefRe = new RegExp(FILE_REF_RE.source, 'gim');
+    let fileMatch = fileRefRe.exec(step.description);
     while (fileMatch !== null) {
       const ref = fileMatch[1];
       if (ref !== undefined) {
         refs.add(ref);
       }
-      fileMatch = FILE_REF_RE.exec(step.description);
+      fileMatch = fileRefRe.exec(step.description);
     }
     step.fileRefs = [...refs];
 

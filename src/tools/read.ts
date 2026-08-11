@@ -63,8 +63,11 @@ const SENSITIVE_FILES = new Set([
   '.env.test',
 ]);
 
-/** API Key 遮蔽：匹配 sk- 开头且长度 ≥ 16 的密钥字符串，替换为 ****。 */
-const SECRET_PATTERN = /\bsk-[a-zA-Z0-9_-]{16,}\b/g;
+/**
+ * API Key 遮蔽：匹配 sk- 开头且长度 ≥ 16 的密钥字符串，替换为 ****。
+ * I2（v3.4）：与 W2 对齐，常量不带 g 标志（replace 需要全局）；使用处 new RegExp(source, 'g') 显式带。
+ */
+const SECRET_PATTERN = /\bsk-[a-zA-Z0-9_-]{16,}\b/;
 
 /** 判断文件名是否为 .env 类敏感文件。 */
 const isDotEnv = (name: string): boolean => SENSITIVE_FILES.has(name);
@@ -84,7 +87,7 @@ export function resolveSafe(cwd: string, p: string): string {
 
 /** 遮蔽文本中的 API Key 模式（sk-...），返回安全文本。 */
 export function maskSecrets(text: string): string {
-  return text.replace(SECRET_PATTERN, 'sk-****');
+  return text.replace(new RegExp(SECRET_PATTERN.source, 'g'), 'sk-****');
 }
 
 const readFileSchema = z.object({ path: z.string().min(1) });

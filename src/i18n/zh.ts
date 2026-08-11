@@ -161,6 +161,16 @@ export const zh = {
       '⚠️ 已启用快照保护：修复无效的变更已回滚；残留快照可用 `concertoai snapshot list` 查看。',
     snapshotWarning:
       '⚠️ 快照保护未生效：本次模型修复快照登记失败，无法自动回滚（请人工检查变更内容）。',
+    // feedback 数据层（v3.4 T1.4 I1：suggestion 文案走 i18n，--lang en 下报告不混合中英）
+    feedbackBuildFailed: '构建失败：请检查 tsup.config.ts 入口、缺失依赖或导出语法',
+    feedbackTestFailed: '测试失败：请检查测试断言或被测试模块实现（self-heal 不自动修测试）',
+    feedbackTypeError:
+      '类型错误（{code}）：请手动补全类型标注或调整类型（self-heal 仅自动修缺 import / 缺标注）',
+    feedbackFormatError: '格式错误：请运行 npm run lint:fix 自动修复',
+    feedbackUnknown: '未知错误：请人工检查',
+    feedbackDenied: '用户拒绝了自动修复，请手动处理',
+    feedbackWriteFailedRolledBack: '修复写盘失败，已回滚，请手动处理',
+    feedbackWriteFailed: '修复写盘失败，请手动处理',
   },
   ui: {
     thinking: '思索中',

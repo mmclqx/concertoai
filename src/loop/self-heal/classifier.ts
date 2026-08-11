@@ -55,12 +55,13 @@ const STAGE_MARKER_RE = /^>\s+@concertoai\/cli@[\d.]+\s+(build|lint|typecheck|te
 
 const ALL_STAGES: readonly VerifyStage[] = ['build', 'lint', 'type', 'test'];
 
+// I2（v3.4）：与 W2 对齐，常量不带 g 标志；使用处 new RegExp(source, 'g') 显式带（replace 需要全局）。
 // biome-ignore lint/suspicious/noControlCharactersInRegex: 匹配 ANSI ESC 转义序列必须包含控制字符 \u001b
-const ANSI_RE = /\u001b\[[0-9;]*[A-Za-z]/g;
+const ANSI_RE = /\u001b\[[0-9;]*[A-Za-z]/;
 
 /** 剥离 ANSI 转义序列。 */
 function stripAnsi(text: string): string {
-  return text.replace(ANSI_RE, '');
+  return text.replace(new RegExp(ANSI_RE.source, 'g'), '');
 }
 
 /**
@@ -198,12 +199,19 @@ export function parseLintErrors(text: string): StageParseResult {
 
 // ── type 段解析（tsc）────────────────────────────────────────
 
-/** tsc 标准格式：`src/foo.ts(1,5): error TS2304: Cannot find name 'bar'.` */
-const TSC_ERROR_RE = /([^\s]+?\.(?:ts|tsx|mts|cts))\((\d+),(\d+)\):\s*error\s+(TS\d+):\s*(.+)$/gm;
+/**
+ * tsc 标准格式：`src/foo.ts(1,5): error TS2304: Cannot find name 'bar'.`
+ * I2（v3.4）：与 W2 对齐，常量定义不带标志位（全局正则带 `g` 会残留 `lastIndex`）；
+ * 使用处 `new RegExp(SOURCE, 'gm')` 显式带（matchAll 需要 g）。
+ */
+const TSC_ERROR_RE = /([^\s]+?\.(?:ts|tsx|mts|cts))\((\d+),(\d+)\):\s*error\s+(TS\d+):\s*(.+)$/;
 
-/** tsc pretty 格式：`src/foo.ts:1:5 - error TS2304: Cannot find name 'bar'.` */
+/**
+ * tsc pretty 格式：`src/foo.ts:1:5 - error TS2304: Cannot find name 'bar'.`
+ * I2（v3.4）：同 TSC_ERROR_RE，常量不带标志位。
+ */
 const TSC_ERROR_PRETTY_RE =
-  /([^\s]+?\.(?:ts|tsx|mts|cts)):(\d+):(\d+)\s+-\s+error\s+(TS\d+):\s*(.+)$/gm;
+  /([^\s]+?\.(?:ts|tsx|mts|cts)):(\d+):(\d+)\s+-\s+error\s+(TS\d+):\s*(.+)$/;
 
 /** 解析 tsc（typecheck）段。 */
 function parseTypeErrors(text: string): StageParseResult {

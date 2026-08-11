@@ -12,6 +12,7 @@ import path from 'node:path';
 
 import { z } from 'zod';
 
+import { fmt, t } from '../../i18n';
 import { planEdit } from '../../tools/edit';
 import type { VerifyError } from './classifier';
 import type { ModelFixPlan, ModelFixPlanInput, RepairVerifyOptions } from './types';
@@ -82,19 +83,23 @@ export function diffLineStat(search: string, replace: string): { added: number; 
   return { added: countLines(replace), removed: countLines(search) };
 }
 
-/** 未自动修错误的修复建议（中文，结构化反馈）。 */
+/**
+ * 未自动修错误的修复建议（结构化反馈，v3.4 T1.4 I1：文案走 i18n，en 下全英文）。
+ * 返回当前 locale 的文案；调用方（repair / snapshot-guard）写入 feedback.suggestion 供报告展示。
+ */
 export function suggestionFor(error: VerifyError): string {
+  const d = t().selfHeal;
   switch (error.stage) {
     case 'build':
-      return '构建失败：请检查 tsup.config.ts 入口、缺失依赖或导出语法';
+      return d.feedbackBuildFailed;
     case 'test':
-      return '测试失败：请检查测试断言或被测试模块实现（self-heal 不自动修测试）';
+      return d.feedbackTestFailed;
     case 'type':
-      return `类型错误（${error.code ?? 'TS'}）：请手动补全类型标注或调整类型（self-heal 仅自动修缺 import / 缺标注）`;
+      return fmt(d.feedbackTypeError, { code: error.code ?? 'TS' });
     case 'lint':
-      return '格式错误：请运行 npm run lint:fix 自动修复';
+      return d.feedbackFormatError;
     default:
-      return '未知错误：请人工检查';
+      return d.feedbackUnknown;
   }
 }
 

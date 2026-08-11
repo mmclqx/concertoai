@@ -75,12 +75,8 @@ function normalizeNewlines(text: string): string {
  */
 function mapOffset(original: string, normOffset: number): number {
   let crlfCount = 0;
-  const re = /\r\n/g;
-  while (true) {
-    const m = re.exec(original);
-    if (m === null) {
-      break;
-    }
+  // I2（v3.4）：内联字面量（每次调用新建，无 lastIndex 跨调用残留；Biome 要求字面量而非 new RegExp）。
+  for (const m of original.matchAll(/\r\n/g)) {
     if (m.index - crlfCount >= normOffset) {
       break;
     }

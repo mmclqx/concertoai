@@ -13,13 +13,15 @@ import { get_encoding, type Tiktoken } from 'tiktoken';
 
 // ── 旧估算逻辑（降级方案）─────────────────────────────────────
 
-const CJK_RE = /[\u3040-\u30FF\u3400-\u4DBF\u4E00-\u9FFF\uAC00-\uD7AF\uF900-\uFAFF]/gu;
+// I2（v3.4）：与 W2 对齐，常量不带 g/u 标志（match 需要 g 返回全部命中，u 为 unicode 模式必需）；
+// 使用处 new RegExp(source, 'gu') 显式带（每次调用新建，消除 lastIndex 残留）。
+const CJK_RE = /[\u3040-\u30FF\u3400-\u4DBF\u4E00-\u9FFF\uAC00-\uD7AF\uF900-\uFAFF]/;
 
 function estimateTokens(text: string): number {
   if (text === '') {
     return 0;
   }
-  const cjk = text.match(CJK_RE)?.length ?? 0;
+  const cjk = text.match(new RegExp(CJK_RE.source, 'gu'))?.length ?? 0;
   const rest = text.length - cjk;
   return Math.ceil(rest / 4) + cjk;
 }

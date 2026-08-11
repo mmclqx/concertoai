@@ -163,6 +163,18 @@ export const en = {
       '⚠️ Snapshot protection enabled: ineffective fixes were rolled back; leftover snapshots can be viewed with `concertoai snapshot list`.',
     snapshotWarning:
       '⚠️ Snapshot protection inactive: snapshot registration failed for this model fix, automatic rollback unavailable (please review changes manually).',
+    // feedback data layer (v3.4 T1.4 I1: suggestion copy via i18n so --lang en reports stay all-English)
+    feedbackBuildFailed:
+      'Build failed: check the tsup.config.ts entry, missing dependencies, or export syntax',
+    feedbackTestFailed:
+      'Test failed: check the test assertions or the tested module implementation (self-heal does not auto-fix tests)',
+    feedbackTypeError:
+      'Type error ({code}): add type annotations or adjust the types manually (self-heal only auto-fixes missing imports / missing annotations)',
+    feedbackFormatError: 'Format error: run `npm run lint:fix` to auto-fix',
+    feedbackUnknown: 'Unknown error: please check manually',
+    feedbackDenied: 'User rejected the auto-fix; please handle manually',
+    feedbackWriteFailedRolledBack: 'Fix write failed; rolled back. Please handle manually',
+    feedbackWriteFailed: 'Fix write failed; please handle manually',
   },
   ui: {
     thinking: 'Thinking',

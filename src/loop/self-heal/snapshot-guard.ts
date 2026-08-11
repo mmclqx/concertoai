@@ -14,6 +14,7 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 
+import { t } from '../../i18n';
 import { parseVerifyReport, type VerifyError, type VerifyReport } from './classifier';
 import { diffLineStat, generateModelFixPlan, suggestionFor } from './model';
 import type { ApplyModelFixResult, RepairVerifyOptions, SelfHealAttempt } from './types';
@@ -76,7 +77,7 @@ export async function applyModelFix(
         action: 'none',
         report,
         appliedFixes: [],
-        feedback: [{ code: error.code, suggestion: '用户拒绝了自动修复，请手动处理' }],
+        feedback: [{ code: error.code, suggestion: t().selfHeal.feedbackDenied }],
       },
       snapshotWarning: false,
     };
@@ -120,7 +121,7 @@ export async function applyModelFix(
           action: 'none',
           report,
           appliedFixes: [],
-          feedback: [{ code: error.code, suggestion: '修复写盘失败，已回滚，请手动处理' }],
+          feedback: [{ code: error.code, suggestion: t().selfHeal.feedbackWriteFailedRolledBack }],
           rolledBack: true,
           rollbackReason: `写盘失败${rb.ok ? '' : `（回滚失败: ${rb.failed.map((f) => f.error).join('; ')}）`}`,
         },
@@ -133,7 +134,7 @@ export async function applyModelFix(
         action: 'none',
         report,
         appliedFixes: [],
-        feedback: [{ code: error.code, suggestion: '修复写盘失败，请手动处理' }],
+        feedback: [{ code: error.code, suggestion: t().selfHeal.feedbackWriteFailed }],
       },
       snapshotWarning,
     };
