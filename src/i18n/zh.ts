@@ -129,6 +129,35 @@ export const zh = {
     balanceSkipped: '未查询（缺少 DEEPSEEK_API_KEY）',
     balanceFailed: '查询失败：{message}',
     balanceEntry: '{currency}: 总额 {total} ｜ 赠送 {granted} ｜ 充值 {toppedUp}',
+    // VS Code 健康诊断（v3.4 M3 / doctor --vscode）
+    vscodeTitle: 'VS Code 健康诊断',
+    vscodeProcessLabel: 'Code 进程数',
+    vscodeProcessOk: '{count} 个（正常）',
+    vscodeProcessWarn: '{count} 个（偏多，建议关闭多余窗口，合并工作区）',
+    vscodeProcessFail: '{count} 个（严重，疑似多窗口×AI 扩展组合爆炸，请立即关闭多余窗口）',
+    vscodeProcessUnavailable: '无法检测（命令执行失败或超时）',
+    vscodeDumpLabel: '崩溃转储',
+    vscodeDumpOk: '无堆积（0 个）',
+    vscodeDumpWarn: '{count} 个 / {size}（建议清理）',
+    vscodeDumpFail: '{count} 个 / {size}（严重堆积，请清理）',
+    vscodeDumpCleanCmd: '清理命令: {command}',
+    vscodeAiExtLabel: 'AI 扩展',
+    vscodeAiExtOk: '{count} 个（≤3，正常）',
+    vscodeAiExtWarn: '{count} 个（>3，冗余 AI 扩展建议禁用/卸载）',
+    vscodeAiExtUnavailable: '无法检测（code CLI 不在 PATH）',
+    vscodeAiExtNotDisabled: '已装但未禁用: {ids}',
+    vscodeAiExtSuggest: '建议: {command} 或写入 argv.json',
+    vscodeArgvLabel: 'argv.json',
+    vscodeArgvOk: '{path}（disable-extensions 正确，禁用 {count} 个扩展）',
+    vscodeArgvWarn: '{path}（存在但未配置 disable-extensions）',
+    vscodeArgvMissing: '未找到 {path}（无持久禁用配置）',
+    vscodeArgvIneffective:
+      '⚠️ 无效位置: %APPDATA%\\Code\\argv.json 存在但 VS Code 不读取（实际读取 ~/.vscode/argv.json），建议删除或移走',
+    vscodeArgvInvalidField:
+      '❌ 字段名错误: 应为 disable-extensions（复数），检测到 disable-extension（单数）——VS Code 不识别，禁用不生效',
+    vscodeArgvInvalidValue: '❌ 值格式错误: disable-extensions 必须为数组或 true',
+    vscodeArgvInvalidId:
+      '❌ 扩展 ID 引号错误: 应为 JSON 字符串（以 " 开头和结尾，当前疑似无引号/单引号/尾逗号）',
   },
   selfHeal: {
     // 阶段标签（v3.3 S1：selfHealPhaseLabel 移入 i18n）

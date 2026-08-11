@@ -21,6 +21,14 @@ import { listModels } from '../model/models';
 import { getActiveAccount, getApiKeyFor, listAccounts } from '../store/accounts';
 import { configPath, sessionsDir } from '../store/paths';
 import { type ApiKeySource, maskApiKey } from './common';
+import {
+  defaultVscodeHealthEnv,
+  detectAiExtensions,
+  detectCrashDumps,
+  diagnoseVscodeProcesses,
+  type VscodeHealthEnv,
+  verifyArgvJson,
+} from './vscode-health';
 
 /** doctor 命令选项。 */
 export interface DoctorCommandOptions {
@@ -40,6 +48,10 @@ export interface DoctorCommandOptions {
   sessionDir?: string;
   /** accounts 根目录（v3.2 M4 / T4.4 账号完整性检查；测试注入；默认 ~/.concertoai/accounts）。 */
   accountsRoot?: string;
+  /** 是否输出 VS Code 健康诊断（v3.4 M3 / doctor --vscode）。 */
+  vscode?: boolean;
+  /** VS Code 健康诊断环境（测试注入样本；默认生产环境）。 */
+  vscodeEnv?: VscodeHealthEnv;
 }
 
 interface Diagnostic {
@@ -218,6 +230,19 @@ async function diagnoseBalance(options: DoctorCommandOptions): Promise<Diagnosti
   }
 }
 
+/**
+ * VS Code 健康诊断（v3.4 M3 / doctor --vscode）：进程数 / 崩溃转储 / AI 扩展 / argv.json 四维，
+ * 每项返回 { ok, lines }（ok=false 计入退出码；诊断只读，破坏性动作仅输出建议命令）。
+ */
+async function runVscodeDiagnostics(env: VscodeHealthEnv): Promise<Diagnostic[]> {
+  return [
+    await diagnoseVscodeProcesses(env),
+    await detectCrashDumps(env),
+    await detectAiExtensions(env),
+    await verifyArgvJson(env),
+  ];
+}
+
 /** 执行 doctor 命令；返回进程退出码（0 = 全部正常，1 = 存在诊断失败项）。 */
 export async function runDoctorCommand(options: DoctorCommandOptions): Promise<number> {
   console.log(t().doctor.title);
@@ -238,6 +263,14 @@ export async function runDoctorCommand(options: DoctorCommandOptions): Promise<n
     await diagnoseAccounts(options.accountsRoot),
     await diagnoseBalance(options),
   ];
+
+  // v3.4 M3 / doctor --vscode：追加 VS Code 四维健康诊断
+  if (options.vscode === true) {
+    console.log(t().doctor.vscodeTitle);
+    diagnostics.push(
+      ...(await runVscodeDiagnostics(options.vscodeEnv ?? defaultVscodeHealthEnv())),
+    );
+  }
 
   let failed = false;
   for (const d of diagnostics) {

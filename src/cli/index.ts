@@ -271,7 +271,8 @@ program
 program
   .command('doctor')
   .description(t().cli.doctor.description)
-  .action(async () => {
+  .option('--vscode', '追加 VS Code 健康诊断（进程数 / 崩溃转储 / AI 扩展 / argv.json）')
+  .action(async (options: { vscode?: boolean }) => {
     const { runDoctorCommand } = await import('./doctor');
     // v3.1 M3 T3.3：余额项按解析链（环境变量 > active account）标注账号
     // v3.2 M4 T4.5：走启动期缓存（getApiKey 已解析过则复用，消除二次读盘）
@@ -280,6 +281,7 @@ program
       apiKey: resolved.key,
       keySource: resolved.source,
       keyAccountName: resolved.accountName,
+      vscode: options.vscode,
     });
     if (code !== 0) {
       process.exitCode = code;

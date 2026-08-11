@@ -131,6 +131,36 @@ export const en = {
     balanceSkipped: 'not queried (missing DEEPSEEK_API_KEY)',
     balanceFailed: 'query failed: {message}',
     balanceEntry: '{currency}: total {total} | granted {granted} | topped-up {toppedUp}',
+    // VS Code health diagnostics (v3.4 M3 / doctor --vscode)
+    vscodeTitle: 'VS Code health diagnostics',
+    vscodeProcessLabel: 'Code processes',
+    vscodeProcessOk: '{count} (normal)',
+    vscodeProcessWarn: '{count} (elevated; close extra windows and merge workspaces)',
+    vscodeProcessFail:
+      '{count} (critical; likely multi-window x AI extensions blow-up, close extra windows now)',
+    vscodeProcessUnavailable: 'unable to detect (command failed or timed out)',
+    vscodeDumpLabel: 'Crash dumps',
+    vscodeDumpOk: 'no backlog (0)',
+    vscodeDumpWarn: '{count} / {size} (cleanup recommended)',
+    vscodeDumpFail: '{count} / {size} (severe backlog, clean up)',
+    vscodeDumpCleanCmd: 'cleanup command: {command}',
+    vscodeAiExtLabel: 'AI extensions',
+    vscodeAiExtOk: '{count} (<=3, normal)',
+    vscodeAiExtWarn: '{count} (>3, redundant AI extensions; disable or uninstall)',
+    vscodeAiExtUnavailable: 'unable to detect (code CLI not in PATH)',
+    vscodeAiExtNotDisabled: 'installed but not disabled: {ids}',
+    vscodeAiExtSuggest: 'suggestion: {command} or write to argv.json',
+    vscodeArgvLabel: 'argv.json',
+    vscodeArgvOk: '{path} (disable-extensions correct, {count} disabled)',
+    vscodeArgvWarn: '{path} (present but no disable-extensions configured)',
+    vscodeArgvMissing: '{path} not found (no persistent disable config)',
+    vscodeArgvIneffective:
+      '⚠️ ineffective location: %APPDATA%\\Code\\argv.json exists but VS Code does not read it (actual: ~/.vscode/argv.json); delete or move it',
+    vscodeArgvInvalidField:
+      '❌ wrong field name: use disable-extensions (plural); found disable-extension (singular) — VS Code ignores it, disabling does not take effect',
+    vscodeArgvInvalidValue: '❌ invalid value: disable-extensions must be an array or true',
+    vscodeArgvInvalidId:
+      '❌ invalid extension ID quoting: must be JSON strings (wrapped in "); found unquoted/single-quoted/trailing comma',
   },
   selfHeal: {
     // Phase labels (v3.3 S1: selfHealPhaseLabel moved into i18n)
