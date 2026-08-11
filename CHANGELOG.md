@@ -6,6 +6,42 @@
 - 条目按类型分组：`Added`（新增）/ `Changed`（变更）/ `Fixed`（修复）/ `Removed`（移除）；
 - 版本号由 `npm version <patch|minor|major>` 管理（自动 bump + 同步 `src/index.ts` 的 VERSION + git tag）。
 
+## [3.2.0] — 2026-08-11
+
+> v3.2 定位：**跨平台可靠 + 长任务可感知 + 代码可维护**（v3.1 核心功能已完整，聚焦把「事后修补」固化为「事前防线」，不做新的大功能面）。
+
+### Added — v3.2（跨平台兼容性）
+
+- **CI 三平台矩阵**（`.github/workflows/ci.yml`）：`strategy.matrix os: [ubuntu-latest, windows-latest, macos-latest]`，Windows 专属问题（spawn ENOENT / `__dirname` / 路径解析）CI 前置拦截
+- **spawn 命令适配审计**（T1.2）：Windows 下 `.cmd`/`.bat` 一律 `shell: true` 或经 `getPlatformAdapter` 命令兼容层（`npx` → `npx.cmd` / `cat` → `type` / `tail` → `Get-Content` / `grep` → `findstr` / `rm -rf` → `rmdir` / `mkdir -p` / `sed -i` BSD 适配）
+- **UNC 路径处理**（`src/store/projects.ts`，ADR-031）：`normalizeProjectPath` 盘符/UNC 双分支 + `isNested` 分隔符边界比较；项目注册表支持 `\\server\share\` 网络共享路径（规范化 + 嵌套拒绝）
+- **EXDEV 跨盘回退**（`src/store/accounts.ts`）：原子写 rename 失败捕获 EXDEV → copyFile + unlink 回退（对齐 `migrateLegacyHome`）
+- **跨平台样本库**：`tests/fixtures/platform-samples.ts`（Windows 反斜杠+盘符 / POSIX 双样本、CRLF/LF），解析类测试统一复用
+
+### Added — v3.2（长任务可感知 + 用户体验）
+
+- **team / /orchestrate 进度推送**（T4.1）：`runTeamCommand` 新增 `onProgress` 回调（拆解「📋 已拆解 N 个任务」/ 每轮闭环「🔁 第 x/5 轮 实现/审查/验证」/ 收尾「✅/❌」），CLI stdout 与 chat 消息流渐进推送，不再黑盒等待
+- **self-heal 阶段进度**（T4.2）：`SelfHealPhase`（verify/lint-fix/model-fix/verify-fix/rollback/done）+ `onPhase` 透传，状态条 activeTool 随阶段动态更新
+- **project / account 视觉**（T4.3）：`project list` 三列表格（名称|路径|注册时间）+ 当前 cwd 项目 ★（当前）chalk.green 高亮；`account list` active 绿色高亮
+- **whoami 修复提示 + doctor 账号完整性**（T4.4）：账号缺失时输出可复制命令 `concertoai login <name>`；doctor 新增账号完整性检查项（无 active→ok / 指针指向缺失账号→fail + 修复命令）
+- **启动期缓存**（T4.5，ADR-029）：`resolveApiKeyCached` / `loadProjectRegistryCached` 模块级缓存（同一进程、同一 accountsRoot/registryFile 只读一次），CLI 入口 `getApiKey`/`doctor`/`preAction`/`resolveProjectForCwd` 统一走缓存
+- **Agent 市场版本管理**（T5.4）：`/agent list` 拉注册表对比「已安装 vs 最新」（落后「↑ 可更新到 <latest>」/ 最新「最新」/ 下架不标注，网络失败降级同步列表）；`/agent update --all` 批量更新（逐条 ✅/⏭️/❌，单个失败不影响其他）
+
+### Changed — v3.2（质量与可维护性）
+
+- **self-heal 模块化重构**（ADR-030）：`src/loop/self-heal.ts` 870 行单文件 → `classifier.ts`（四段解析）/ `repair.ts`（修复执行器）/ `snapshot-guard.ts`（快照状态机）+ `index.ts` barrel，单文件 ≤400 行；公共 API（`runSelfHeal`）不变
+- **增量 verify**（T2.3）：lint 修复后仅 rerun lint 段（`runLintOnly`），通过则跳过全量 verify（调用次数 3 → ≤2）
+- **快照失效通知**（T2.4）：`RepairVerifyResult.snapshotWarning` 字段，快照登记失败置位并在 /self-heal 报告与 CLI 输出展示
+- **audit export 损坏行统计**（T3.2）：`exportJson` 返回 `{ entries, skipped }`，CLI 输出「共 N 条记录（跳过 M 条损坏行）」不静默
+- **/orchestrate diagnostics**（T3.3）：`TeamCommandResult.diagnostics?` 字段，拆解失败记录原始模型输出（截断 ≤500 字符），区分「格式解析失败」vs「网络超时」
+- **inferErrorCode 英文关键词**（T3.4）：outside sandbox / command not found / spawn ENOENT 英文关键词回归（en locale 样本）
+
+### 测试（v3.2）
+
+- 新增 `tests/cli/common.test.ts`（启动缓存 4 用例）、`tests/e2e/platform-e2e.test.ts`（Windows spawn 回归 + UNC 路径规范化 E2E）、`tests/fixtures/platform-samples.ts`
+- 扩展：team onProgress 回调序列（单元 + E2E 全链路）、self-heal 增量 verify（单元 + E2E）、slash-agent 版本对比 + update --all（+9）、doctor 账号完整性、project 三列表格高亮、whoami 修复命令、self-heal 阶段序列
+- **基线校准**：88 文件 / 1004 用例全绿（`npm run verify`），npm audit 0 漏洞
+
 ## [3.1.1] — 2026-08-11
 
 ### Fixed — v3.1.1 补丁（Windows/ESM/解析边界回归）

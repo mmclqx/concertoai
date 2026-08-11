@@ -4,7 +4,8 @@ ConcertoAI —— 面向个人开发者的**中文优先**终端编码助手 CLI
 
 在项目目录里启动：读取代码 → 提出 diff 方案 → 征求命令许可 → 跑验证 → 留下可续接的会话记录。
 
-> 状态：v3.1.0 开发完成（`npm run verify` 全绿，924 用例 / 84 测试文件；`npm audit` 0 漏洞）。
+> 状态：v3.2.0 开发完成（`npm run verify` 全绿，1004 用例 / 88 测试文件；`npm audit` 0 漏洞）。
+> v3.2 新增：跨平台 CI 矩阵 + spawn/UNC/EXDEV 边界 / self-heal 模块化重构 + 增量 verify / 长任务进度推送（team、self-heal）/ project-account 视觉与 doctor 账号完整性 / 启动期缓存 / Agent 市场版本对比与批量更新 / audit 损坏行统计。
 > 新特性：AI 自我修复闭环（self-heal）/ 多项目管理（project）/ 多账号（account）/ Orchestrator CLI（team、audit export）/ 结构化错误增强；智能成本控制（高峰时段自动切换本地 ollama 模型，peakTimeStrategy 可配）、`concertoai balance` 余额查询、`concertoai doctor` 环境诊断。
 > v3.0 新增：多 Agent 协作（Orchestrator + 对抗性闭环）/ Agent 市场 / 可观测性面板 / 多文件事务回滚。
 > v2.1 新增：知识图谱 / Reviewer Agent / 技能市场与嵌套 / 子代理 MCP 工具。
@@ -133,6 +134,27 @@ ConcertoAI 提供了三种常用 MCP 服务的推荐配置（`src/mcp/builtin-se
 ### 工具命名
 
 MCP 服务的工具以 `服务名_工具名` 格式注册（如 `filesystem_read_file`），与内置工具（`read_file`）并存，避免命名冲突。MCP 服务不可用时自动降级，不影响内置工具正常工作。
+
+## v3.2 新增功能
+
+### 跨平台可靠性
+- **CI 三平台矩阵**：ubuntu / windows / macOS 全覆盖，Windows 专属问题（spawn ENOENT / `__dirname` / 路径解析）前置拦截
+- **spawn 审计**：Windows 下 `.cmd`/`.bat` 一律 `shell: true` 或经命令兼容层（`npx` → `npx.cmd` 等）
+- **UNC / EXDEV 边界**：项目注册表支持 `\\server\share\` 网络共享路径（规范化 + 嵌套拒绝），账号原子写跨盘回退复制
+
+### 长任务可感知
+- **team / /orchestrate 进度推送**：拆解（📋 已拆解 N 个任务）→ 每轮闭环（🔁 第 x/5 轮）→ 收尾，CLI stdout 与 chat 消息流渐进推送，不再黑盒等待
+- **self-heal 阶段进度**：状态条 activeTool 随阶段动态更新（执行 verify / lint 修复 / 模型修复 / 修复后验证 / 回滚 / 完成）
+
+### 日常体验
+- **project list 三列表格**（名称|路径|注册时间）+ 当前项目绿色高亮；**account list** active 高亮
+- **whoami 修复提示**：账号缺失时给出可复制命令 `concertoai login <name>`；**doctor 账号完整性检查**
+- **启动期缓存**：API Key / 项目注册表同一进程只解析一次（消除重复读盘）
+- **Agent 市场版本管理**：`/agent list` 显示已安装 vs 最新版本对比、`/agent update --all` 批量更新
+
+### 质量与可维护性
+- **self-heal 模块化重构**：单文件 870 行 → 3 模块（classifier / repair / snapshot-guard）+ 增量 verify（lint 修复后仅 rerun lint 段）
+- **audit export 损坏行统计**：输出「共 N 条记录（跳过 M 条损坏行）」不静默
 
 ## v3.1 新增功能
 ### AI 自我修复闭环（self-heal）

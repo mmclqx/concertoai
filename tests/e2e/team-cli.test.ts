@@ -13,7 +13,7 @@ import path from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { QaReport } from '../../src/agents';
-import { runTeamCommand } from '../../src/cli/team';
+import { runTeamCommand, type TeamProgress } from '../../src/cli/team';
 import type { ChatCompletionChunk, ModelClient, StreamChatParams } from '../../src/model/client';
 import type { CoderLike, QaLike, ReviewerLike } from '../../src/orchestrator';
 
@@ -146,6 +146,48 @@ describe('E2E：team CLI 全链路（拆解 → 闭环 → 真实写盘 → 聚�
     expect(types).toContain('test-report');
     // 闭环成功 → 快照提交清理
     expect(leftoverTeamSnapshots()).toEqual([]);
+  });
+
+  it('onProgress 回调序列 E2E（v3.2 M6 / T6.1）：decomposed → loop-attempt×3 → done，伴随真实写盘', async () => {
+    const files = [{ path: 'src/todo.ts', content: 'export const todo = 1;\n' }];
+    const coder = makeDiskCoder(tmp, files);
+    const progress: TeamProgress[] = [];
+    const result = await runTeamCommand({
+      cwd: tmp,
+      apiKey: 'sk-test',
+      task: '实现 TODO 模块',
+      autoApprove: true,
+      client: new FakeModel([{ content: DECOMPOSE_JSON }]),
+      agents: { coder, reviewer: makeApproveReviewer(), qa: makeQa(true) },
+      // T4.1 进度回调：长任务中间消息推送（CLI stdout / chat 消息流共用）
+      onProgress: (p) => progress.push(p),
+    });
+
+    expect(result.ok).toBe(true);
+    // 文件真实落地（进度全链路伴随真实执行，非纯 mock）
+    expect(existsSync(path.join(tmp, 'src/todo.ts'))).toBe(true);
+    // 进度序列：拆解 → 1 轮闭环（implement/review/qa）→ 收尾
+    expect(progress.map((p) => p.kind)).toEqual([
+      'decomposed',
+      'loop-attempt',
+      'loop-attempt',
+      'loop-attempt',
+      'done',
+    ]);
+    const first = progress[0];
+    if (first?.kind === 'decomposed') {
+      expect(first.taskCount).toBe(1);
+    }
+    const phases = progress
+      .filter(
+        (p): p is Extract<TeamProgress, { kind: 'loop-attempt' }> => p.kind === 'loop-attempt',
+      )
+      .map((p) => p.phase);
+    expect(phases).toEqual(['implement', 'review', 'qa']);
+    const done = progress.at(-1);
+    if (done?.kind === 'done') {
+      expect(done.ok).toBe(true);
+    }
   });
 
   it('闭环超限（QA 连续失败）→ onRollback 事务回滚 → 新增文件删除（恢复任务前状态）', async () => {

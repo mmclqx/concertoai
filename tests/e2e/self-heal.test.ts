@@ -23,7 +23,7 @@ function verifyOutput(segments: Array<[stage: string, body: string]>): {
   stderr: string;
 } {
   return {
-    stdout: segments.map(([stage, body]) => `> @concertoai/cli@3.1.0 ${stage}\n${body}`).join('\n'),
+    stdout: segments.map(([stage, body]) => `> @concertoai/cli@3.2.0 ${stage}\n${body}`).join('\n'),
     stderr: '',
   };
 }
@@ -96,6 +96,32 @@ describe('E2E：self-heal lint 修复闭环（E2E-2）', () => {
     expect(result.attempts[0]?.action).toBe('lint-fix');
     expect(lintFixed).toBe(true);
     expect(result.report.summary).toContain('全部通过');
+  });
+});
+
+describe('E2E：self-heal 增量 verify（v3.2 M6 / T6.1）', () => {
+  it('lint 修复后 lint 段通过 → 跳过全量 verify（runVerify 仅初始 1 次 + runLintOnly 1 次）', async () => {
+    let verifyCalls = 0;
+    let lintOnlyCalls = 0;
+    const result = await runSelfHeal({
+      cwd: tmp,
+      runVerify: async () => {
+        verifyCalls += 1;
+        return LINT_FAIL;
+      },
+      runLintFix: async () => ({ ok: true }),
+      // T2.3 增量 verify：lint 修复后仅 rerun lint 段，通过则跳过全量
+      runLintOnly: async () => {
+        lintOnlyCalls += 1;
+        return { stdout: 'All checks passed.', stderr: '' };
+      },
+      log: () => {},
+    });
+    expect(result.passed).toBe(true);
+    // 初始 verify 1 次；lint 修复后走 lint 段（runLintOnly），不触发全量 verify
+    expect(verifyCalls).toBe(1);
+    expect(lintOnlyCalls).toBe(1);
+    expect(result.attempts[0]?.action).toBe('lint-fix');
   });
 });
 

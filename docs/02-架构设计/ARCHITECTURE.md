@@ -12,7 +12,7 @@ ConcertoAI 是一款**中文优先**的终端编码助手 CLI（DeepSeek 驱动�
 
 - **技术栈**：TypeScript (strict) + Node ≥22 + ESM，Ink 7 (React 19) 渲染 TUI，commander 解析 CLI，zod 做工具参数校验，vitest 测试，Biome 检查，tsup 打包
 - **运行时依赖**：`ink` / `react` / `commander` / `zod` / `cli-highlight` / `chalk`
-- **测试现状**：87 个测试文件、999 个用例，`npm run verify` 全绿，`npm audit` 0 漏洞；已用真实 `DEEPSEEK_API_KEY` 完成端到端冒烟
+- **测试现状**：88 个测试文件、1004 个用例，`npm run verify` 全绿，`npm audit` 0 漏洞；已用真实 `DEEPSEEK_API_KEY` 完成端到端冒烟
 - **安全基线**：编辑与命令一律审批（fail-closed）、路径沙箱、结果截断、白名单免审批——无 yolo 模式
 - **v3.1 新增能力**：AI 自我修复闭环（self-heal）/ 多项目管理（project）/ 多租户登录（account）/ Orchestrator CLI（team、/orchestrate、audit export）/ 结构化错误增强（error-codes）；**v3.1 预留功能（已交付）**：`concertoai balance`（余额查询）/ `concertoai doctor`（环境诊断）、配置目录迁移 `~/.lumen → ~/.concertoai`（`src/store/paths.ts` 单一来源 + 幂等迁移）；**v2.2 智能成本控制**（高峰时段模型自动切换，见 §4 D41）
 - **v3.2 新增能力**：跨平台 CI 矩阵与 spawn 审计（ADR-032）/ UNC 路径与 EXDEV 边界（ADR-031）/ self-heal 模块化拆分（ADR-030）/ audit 损坏行统计 + /orchestrate diagnostics / 长任务进度推送（team onProgress + self-heal onPhase）/ project-account 视觉与 doctor 账号完整性 / 启动期缓存（ADR-029）/ Agent 市场版本对比与 `update --all`
@@ -452,7 +452,7 @@ concertoai/
 │       ├── zh.ts         中文字典 + fmt()
 │       ├── en.ts         英文字典（键与 zh 同构）
 │       └── index.ts      resolveLocale / setLocale / t() / DICTS
-└── tests/                镜像 src 结构（87 个文件 / 999 用例，v3.2 M5 基线），含 tests/agent/、tests/agents/、tests/balance/、tests/cli/（含 common.test.ts 启动缓存）、tests/core/、tests/e2e/（team-cli/self-heal/project-isolation）、tests/fixtures/（platform-samples 跨平台样本库）、tests/i18n/、tests/knowledge/、tests/loop/（self-heal/error-reporting）、tests/market/、tests/mcp/、tests/model/、tests/observable/、tests/orchestrator/、tests/planner/、tests/reviewer/、tests/skill/、tests/store/（projects/accounts/accounts-exdev）、tests/tools/、tests/ui/ 等
+└── tests/                镜像 src 结构（88 个文件 / 1004 用例，v3.2 M6 基线），含 tests/agent/、tests/agents/、tests/balance/、tests/cli/（含 common.test.ts 启动缓存）、tests/core/、tests/e2e/（team-cli/self-heal/project-isolation/platform-e2e）、tests/fixtures/（platform-samples 跨平台样本库）、tests/i18n/、tests/knowledge/、tests/loop/（self-heal/error-reporting）、tests/market/、tests/mcp/、tests/model/、tests/observable/、tests/orchestrator/、tests/planner/、tests/reviewer/、tests/skill/、tests/store/（projects/accounts/accounts-exdev）、tests/tools/、tests/ui/ 等
 ```
 
 ## 6. 5分钟快速体验

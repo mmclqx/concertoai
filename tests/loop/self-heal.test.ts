@@ -42,7 +42,7 @@ function verifyOutput(segments: Array<[stage: string, body: string]>): {
   stderr: string;
 } {
   const stdout = segments
-    .map(([stage, body]) => `> @concertoai/cli@3.1.0 ${stage}\n${body}`)
+    .map(([stage, body]) => `> @concertoai/cli@3.2.0 ${stage}\n${body}`)
     .join('\n');
   return { stdout, stderr: '' };
 }
@@ -256,7 +256,7 @@ describe('self-heal 分类器（T1.1）', () => {
   it('lint 段多个不同类别错误（lint/assist/format）→ 全部识别', () => {
     const r = parseVerifyReport(
       [
-        '> @concertoai/cli@3.1.0 lint',
+        '> @concertoai/cli@3.2.0 lint',
         'src/a.ts:1:1  lint/style/noUnusedVariables  FIXABLE  ━━━',
         'src/b.ts:2:1  assist/source/organizeImports  FIXABLE  ━━━',
         'src/c.ts format ━━━',
@@ -281,7 +281,7 @@ describe('self-heal 分类器（T1.1）', () => {
       ['win', BIOME_LINT_ERROR_WIN],
       ['posix', BIOME_LINT_ERROR_POSIX],
     ] as const) {
-      const r = parseVerifyReport(`> @concertoai/cli@3.1.0 lint\n${sample}\n`, '');
+      const r = parseVerifyReport(`> @concertoai/cli@3.2.0 lint\n${sample}\n`, '');
       expect(r.passed).toBe(false);
       expect(r.parseFailed.lint).toBe(false);
       expect(r.errors).toHaveLength(1);
@@ -295,7 +295,7 @@ describe('self-heal 分类器（T1.1）', () => {
   });
 
   it('样本库：Windows format 无行列错误 / POSIX assist 错误均识别为 lint', () => {
-    const win = parseVerifyReport(`> @concertoai/cli@3.1.0 lint\n${BIOME_FORMAT_ERROR_WIN}\n`, '');
+    const win = parseVerifyReport(`> @concertoai/cli@3.2.0 lint\n${BIOME_FORMAT_ERROR_WIN}\n`, '');
     expect(win.parseFailed.lint).toBe(false);
     expect(win.errors[0]).toMatchObject({
       stage: 'lint',
@@ -305,7 +305,7 @@ describe('self-heal 分类器（T1.1）', () => {
     expect(win.errors[0]?.line).toBeUndefined();
 
     const posix = parseVerifyReport(
-      `> @concertoai/cli@3.1.0 lint\n${BIOME_ASSIST_ERROR_POSIX}\n`,
+      `> @concertoai/cli@3.2.0 lint\n${BIOME_ASSIST_ERROR_POSIX}\n`,
       '',
     );
     expect(posix.parseFailed.lint).toBe(false);
@@ -322,7 +322,7 @@ describe('self-heal 分类器（T1.1）', () => {
       ['win', TSC_ERROR_WIN],
       ['posix', TSC_ERROR_PRETTY_POSIX],
     ] as const) {
-      const r = parseVerifyReport(`> @concertoai/cli@3.1.0 typecheck\n${sample}\n`, '');
+      const r = parseVerifyReport(`> @concertoai/cli@3.2.0 typecheck\n${sample}\n`, '');
       expect(r.passed).toBe(false);
       expect(r.parseFailed.type).toBe(false);
       expect(r.errors).toHaveLength(1);

@@ -1,7 +1,7 @@
 # ConcertoAI 开发任务看板
 
 > 最后更新：2026-08-11
-> 当前里程碑：**🟢 v3.2 进行中（M0-M5 ✅ / M6 待办）**（v3.1: 27/27 ✅ · v3.2 基线 85 文件 / 937 用例 → 当前 87 文件 / 999 用例）
+> 当前里程碑：**🟢 v3.2 进行中（M0-M5 ✅ / M6 待办）**（v3.1: 27/27 ✅ · v3.2 基线 85 文件 / 937 用例 → 当前 88 文件 / 1004 用例）
 > 基于：[v3.2 开发计划](./v3.2-dev-plan.md) · 历史：[v3.1 开发计划](./v3.1-dev-plan-ai.md)
 
 ---
@@ -64,7 +64,7 @@
 | **V3.2-M3 错误处理强化** | **P1** | **4** | ✅ 已完成（本次） |
 | **V3.2-M4 用户体验优化** | **P1** | **5** | ✅ 已完成（本次） |
 | **V3.2-M5 文档与扩展能力** | **P1** | **5** | ✅ 已完成（本次） |
-| **V3.2-M6 集成测试与发布** | **P0** | **4** | ⏳ 待开始 |
+| **V3.2-M6 集成测试与发布** | **P0** | **4** | 🟢 进行中（T6.1-T6.3 ✅ / T6.4 待发布） |
 
 ---
 
@@ -1009,20 +1009,23 @@
 - [x] **T5.1** 用户手册补全（self-heal/team/project-account/audit 章节）
   - ✅ 2026-08-11 完成：user-guide.md 版本头 v3.0→v3.2；doctor 账号完整性检查项 + 典型场景；self-heal 典型场景 + /self-heal 阶段进度说明；project list 三列表格 + 当前高亮示例；team 进度推送说明 + 典型场景；audit 损坏行统计 + 示例；whoami 修复命令 + account list 高亮示例；/agent list 版本对比 + update --all 命令与示例；v3.2 新增能力章节（≥4 章节含示例）
 - [x] **T5.2** ARCHITECTURE 增量同步（第 2 节全景图 + 第 5 节目录树 + D 决策表）
-  - ✅ 2026-08-11 完成：版本头 v3.2 + v3.2 新增能力摘要；第 2 节全景图 slash/ 标注 /agent 版本对比 + update --all；D 决策表新增 D47~D50（ADR-029~032 引用）；第 5 节目录树 M4 已同步（common 缓存 / self-heal onPhase / tests 基线 87/999）
+  - ✅ 2026-08-11 完成：版本头 v3.2 + v3.2 新增能力摘要；第 2 节全景图 slash/ 标注 /agent 版本对比 + update --all；D 决策表新增 D47~D50（ADR-029~032 引用）；第 5 节目录树 M4 已同步（common 缓存 / self-heal onPhase / tests 基线 88/1004）
 - [x] **T5.3** DECISIONS ADR-029~032（API Key 解析链 / self-heal 范围限定 / 项目嵌套拒绝 / 跨平台 CI 基线）
   - ✅ 2026-08-11 完成：ADR-029（API Key 解析链统一 + 启动期缓存）/ ADR-030（self-heal 修复范围限定 + 模块化）/ ADR-031（项目注册表路径规范化 + 嵌套拒绝）/ ADR-032（跨平台 CI 矩阵 + spawn 兼容基线）全部落盘，上下文/选项/结论/理由四要素齐备
 - [x] **T5.4** Agent 市场版本管理增强（/agent list 版本对比 + update --all；共享策略 P2 评估）
   - ✅ 2026-08-11 完成：agent.ts `SlashAgentCommand.update` 扩展 all 字段 + parse `/agent update --all`；`executeAgentMarketCommand` list 走异步拉注册表 → `formatAgentListWithLatest`（落后「↑ 可更新到 <latest>」/ 最新「最新」/ 下架不标注，网络失败降级同步列表）；update --all 批量更新（复用 install + 注册表引用避免重复拉取，逐条 ✅/⏭️/❌）；App.tsx list 接入异步分支；测试 +8 用例（parse --all / 批量成功 / 无可更新 / 注册表不可达 / 单失败不中断 / list 版本对比 3 分支 + 下架不标注）
   - ✅ 共享策略 P2 评估结论（v3.2-dev-plan.md P2 评估项落盘）：**不做项目级声明**——Agent 安装目录已是全局 `~/.concertoai/agents/` 天然共享（ADR-025 隔离矩阵「全局配置/技能/Agent 共享」），项目级版本/权限声明收益低，避免过度设计
 - [x] **T5.5** 执行日志功能（P0，用户要求）— ✅ 已提前落地：execution-log-20260811-135318/135704/140143/144648/170827/173015 + AGENTS.md 规范
-  - ✅ **87 文件 / 999 用例全绿**（M5，本次提交）
+  - ✅ **88 文件 / 1004 用例全绿**（M5+M6 E2E，本次提交）
 
 ### V3.2-M6：集成测试与发布（P0，约 3h）
 
-- [ ] **T6.1** E2E（team 进度全链路 / self-heal 增量 verify / Windows spawn 回归 / UNC 路径）
-- [ ] **T6.2** 文档同步（README / user-guide / ARCHITECTURE / CHANGELOG v3.2.0 条目）
-- [ ] **T6.3** 手工测试报告 07.5（Windows 重点：self-heal/team/project/account 全流程）
+- [x] **T6.1** E2E（team 进度全链路 / self-heal 增量 verify / Windows spawn 回归 / UNC 路径）
+  - ✅ 2026-08-11 完成：`tests/e2e/team-cli.test.ts` +onProgress 回调序列 E2E（decomposed → loop-attempt×3 → done + 真实写盘）；`tests/e2e/self-heal.test.ts` +增量 verify E2E（lint 修复后仅 rerun lint 段通过即跳过全量，verify 仅 1 次）；`tests/e2e/platform-e2e.test.ts` 新增（E2E-A Windows spawn 回归：npx→npx.cmd + shell:true 真实 spawn；E2E-B UNC 路径规范化：findByPath 精确匹配 + 分隔符边界）；版本号 3.1.0→3.2.0 全量同步（version.ts / classifier.ts 注释 / smoke / slash-self-heal / self-heal 测试）；**88 文件 / 1004 用例全绿**（npm run verify 全绿）
+- [x] **T6.2** 文档同步（README / user-guide / ARCHITECTURE / CHANGELOG v3.2.0 条目）
+  - ✅ 2026-08-11 完成：README 状态行 1004 用例 / 88 测试文件 + v3.2 新增功能章节；ARCHITECTURE 测试现状 + 目录树基线 88/1004（tests/e2e/ 含 platform-e2e）；CHANGELOG v3.2.0 条目基线校准 87/999 → 88/1004；user-guide 无 3.1.0 残留引用（T5.1 已同步 v3.2）
+- [x] **T6.3** 手工测试报告 07.5（Windows 重点：self-heal/team/project/account 全流程）
+  - ✅ 2026-08-11 完成：`docs/07.5-手工测试报告-v3.2.md` 落盘（前置准备 + 1.1-1.5 新功能测试 24 用例 + v3.0/v3.1 回归抽查 12 用例 + 统计表；自动化基线已执行全绿，真实 API 冒烟待执行）
 - [ ] **T6.4** 发布动作（npm run verify → npm version 3.2.0 → npm publish → git tag v3.2.0）
 
 ---
@@ -1038,6 +1041,7 @@
 | 日期 | 变更内容 | 作者 |
 |------|---------|------|
 | 2026-08-11 | **V3.2-M5 完成**：T5.1-T5.5 文档与扩展能力（user-guide 补全 ≥4 章节 + ARCHITECTURE D47~D50 + ADR-029~032 + Agent 市场版本对比/update --all + 共享策略 P2 评估结论）；**87 文件 / 999 用例全绿**（+9） | Carbon Code |
+| 2026-08-11 | **V3.2-M6 进行中**：T6.1 E2E（team 进度回调全链路 + self-heal 增量 verify + platform-e2e Windows spawn/UNC）→ **88 文件 / 1004 用例全绿**（+5） | Carbon Code |
 | 2026-08-11 | **V3.2-M4 完成**：T4.1-T4.5 用户体验优化（team/self-heal 进度推送 + project/account 视觉高亮 + whoami 修复提示 + doctor 账号完整性 + 启动期缓存）；**87 文件 / 990 用例全绿**（+14） | Carbon Code |
 | 2026-08-11 | **V3.2-M3 完成**：T3.1-T3.4 错误处理强化（__dirname 扫描 0 命中 / audit export 损坏行统计 / /orchestrate diagnostics / inferErrorCode en 样本回归）；**86 文件 / 976 用例全绿**（+11） | Carbon Code |
 | 2026-08-11 | **V3.1-M6 完成（v3.1 全部 27 任务收官）**：T6.1 E2E 集成测试（team 全链路 / self-heal 修复+回滚 / project 隔离 / audit export）+ T6.2 文档更新（README / user-guide / ARCHITECTURE D42~D46 / CHANGELOG v3.1.0 归位）+ T6.3 收尾（trace S4 O(n²)→O(n) + ADR-024~028 + E1~E4 评估）+ T6.4 测试报告落盘（07.4）；**84 文件 / 923 用例全绿**（门检 ≥785/72） | Carbon Code |
