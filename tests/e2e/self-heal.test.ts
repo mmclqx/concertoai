@@ -23,7 +23,7 @@ function verifyOutput(segments: Array<[stage: string, body: string]>): {
   stderr: string;
 } {
   return {
-    stdout: segments.map(([stage, body]) => `> @concertoai/cli@3.3.0 ${stage}\n${body}`).join('\n'),
+    stdout: segments.map(([stage, body]) => `> @concertoai/cli@3.4.0 ${stage}\n${body}`).join('\n'),
     stderr: '',
   };
 }
