@@ -1,6 +1,6 @@
 {
   "name": "@concertoai/cli",
-  "version": "3.2.0",
+  "version": "3.3.0",
   "description": "ConcertoAI —— 面向个人开发者的中文优先终端编码助手 CLI（DeepSeek 驱动）",
   "type": "module",
   "license": "MIT",

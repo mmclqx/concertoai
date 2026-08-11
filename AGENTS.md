@@ -188,6 +188,25 @@ v3.0.0 已完成（多 Agent 协作 / Orchestrator）：
 - ✅ 多文件事务回滚（SnapshotManager）+ Agent 市场（/agent）+ 可观测性（TraceStore/AuditLogger）
 - ✅ 全量 24 任务落地 · 69 文件 750 用例全绿（v2.2/v3.1 预留功能已并入基线）· v3.0.0 tag 已打（7f477a5）
 
+v3.1.0 已完成（AI 自我修复 + 日常体验，v2.2 版本归位 ADR-028）：
+
+- ✅ Verify 分类器（self-heal）：npm run verify 四段输出统一解析（build/lint/type/test）+ 修复策略执行器（lint:fix 白名单 / 简单 type 错误模型修复审批 / MAX_SELF_HEAL_ATTEMPTS=2 超限转人工）
+- ✅ 日常命令齐备：balance / doctor / self-heal / project / account / team / audit export（peak-time / model-switcher 智能成本控制随本版归位）
+- ✅ 85 文件 / 937 用例全绿 · v3.1.0 tag 已打
+
+v3.2.0 已完成（跨平台可靠 + 长任务可感知 + 代码可维护）：
+
+- ✅ CI 三平台矩阵（ubuntu/windows/macos）+ spawn 命令适配审计（npx.cmd / type / Get-Content / findstr / rmdir）+ UNC 路径处理（ADR-031）+ EXDEV 跨盘回退 + 跨平台样本库
+- ✅ team / /orchestrate 进度推送 + self-heal 阶段进度（SelfHealPhase）+ Agent 市场版本管理（/agent list 对比 / update --all）+ 启动期缓存（ADR-029）
+- ✅ self-heal 模块化重构（classifier/repair/snapshot-guard，ADR-030）+ 增量 verify + audit export 损坏行统计 + 执行日志规范（T5.5）
+- ✅ 88 文件 / 1014 用例全绿 · v3.2.0 tag 已打
+
+v3.3.0 已完成（消化 v3.2 审查遗留 + 质量收尾）：
+
+- ✅ W1 lint:fix 失败 break 语义显式化 + W2 全局正则常量去 g 标志（消除 lastIndex 陷阱）
+- ✅ S1 self-heal 文案 i18n（--lang en 状态条/报告全英文）+ S2 存量解析测试迁移 platform-samples + S3 resolveApiKeyCached 缓存语义注释
+- ✅ config.test.ts 环境变量隔离修复（T2.3 实测发现）+ 88 文件 / 1014 用例全绿 · v3.3.0 已发布 npm + tag
+
 ## 发布门检查清单
 2.0.0 发布前已全部通过：
 
@@ -200,12 +219,15 @@ v3.0.0 已完成（多 Agent 协作 / Orchestrator）：
 ☑ 文档齐备（README / 用户手册 / 架构文档 / CHANGELOG）
 ☑ v2.0.0 tag 已打
 
-v3.0.0 发布门检查（当前）：
+v3.3.0 发布门检查（当前，2026-08-11）：
 
-☑ npm run verify 全绿（750 用例 / 69 测试文件，v3.0 基线校准 T0.1）
-☑ 版本号一致性核对（package.json / src/version.ts / tests/smoke.test.ts = 3.0.0）
-☑ 踩坑记录已归档（docs/09-踩坑记录/：I1 版本号不同步、I2 Reviewer 上下文丢失）
-☑ v3.0.0 tag 已打（7f477a5）
+☑ npm run verify 全绿（88 文件 / 1014 用例，v3.3 基线）
+☑ 版本号一致性核对（package.json / package-lock.json / src/version.ts / tests/smoke.test.ts = 3.3.0）
+☑ W1/W2/S1/S2/S3 五项审查遗留全部落地；i18n en 键一致性断言覆盖 selfHeal 分组
+☑ 手工测试报告 07.6 落盘；config.test.ts 环境变量隔离修复
+☑ npm audit 0 漏洞；npm pack 预演通过（76 文件 / 392.1 kB）
+☑ npm whoami 令牌有效（mmclqx）→ npm publish 成功（latest=3.3.0）
+☑ v3.3.0 tag 已打
 
 发布门通用检查项（每次发布前必过，不论版本）：
 
