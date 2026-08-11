@@ -1,8 +1,8 @@
 # ConcertoAI 开发任务看板
 
 > 最后更新：2026-08-11
-> 当前里程碑：**✅ v3.2 全部完成（v3.2.0 已发布 npm）**（v3.1: 27/27 ✅ · v3.2 基线 85 文件 / 937 用例 → 当前 88 文件 / 1014 用例）
-> 基于：[v3.2 开发计划](./v3.2-dev-plan.md) · 历史：[v3.1 开发计划](./v3.1-dev-plan-ai.md)
+> 当前里程碑：**🔵 v3.3 进行中（M1 已完成 / M2 文档同步中）**（v3.2: 29/29 ✅ · 基线 88 文件 / 1014 用例）
+> 基于：[v3.3 开发计划](./v3.3-dev-plan.md) · 历史：[v3.2 开发计划](./v3.2-dev-plan.md) · [v3.1 开发计划](./v3.1-dev-plan-ai.md)
 
 ---
 
@@ -10,13 +10,13 @@
 
 | 指标 | 数值 |
 |------|------|
-| 总任务数 | 152（v1.0: 20 ✅ + v1.1: 12 ✅ + v2.0: 15 ✅ + v2.1: 25 ✅ + v3.0: 24 ✅ + v3.1: 27 ✅ + v3.2: 29 全部 ✅） |
-| P0 任务 | 52（v1.1: 6 ✅ + v2.0: 5 ✅ + v2.1: 5 ✅ + v3.0: 14 ✅ + v3.1: 7 ✅ + v3.2: 15 ✅） |
+| 总任务数 | 161（v1.0: 20 ✅ + v1.1: 12 ✅ + v2.0: 15 ✅ + v2.1: 25 ✅ + v3.0: 24 ✅ + v3.1: 27 ✅ + v3.2: 29 ✅ + v3.3: 9 项，6 完成 / 1 进行中 / 2 待开始） |
+| P0 任务 | 61（v1.1: 6 ✅ + v2.0: 5 ✅ + v2.1: 5 ✅ + v3.0: 14 ✅ + v3.1: 7 ✅ + v3.2: 15 ✅ + v3.3: 9，6 完成 / 1 进行中 / 2 待开始） |
 | P1 任务 | 58（v1.1: 6 ✅ + v2.0: 10 ✅ + v2.1: 4 ✅ + v3.0: 10 ✅ + v3.1: 14 ✅ + v3.2: 14 ✅） |
 | P2 任务 | 14（v2.1: 8 ✅ + v3.1: 6 ✅） |
-| 待开始 | 0 |
-| 进行中 | 0 |
-| 已完成 | 152 |
+| 待开始 | 2（v3.3: T2.3 手工测试报告、T2.4 发布动作） |
+| 进行中 | 1（v3.3: T2.2 文档同步） |
+| 已完成 | 158（含 v3.3 M1 5 项 + T2.1 回归） |
 | 已阻塞 | 0 |
 
 ---
@@ -65,6 +65,8 @@
 | **V3.2-M4 用户体验优化** | **P1** | **5** | ✅ 已完成（本次） |
 | **V3.2-M5 文档与扩展能力** | **P1** | **5** | ✅ 已完成（本次） |
 | **V3.2-M6 集成测试与发布** | **P0** | **4** | ✅ 已完成（v3.2.0 已发布 npm，2026-08-11） |
+| **V3.3-M1 审查遗留修复** | **P0** | **5** | 🟢 已完成（5996836：W1/W2/S1/S2/S3） |
+| **V3.3-M2 回归与发布** | **P0** | **4** | 🔵 进行中（T2.1 回归完成 / T2.2 文档同步中 / T2.3-T2.4 待执行） |
 
 ---
 
@@ -1105,6 +1107,49 @@
 | 2026-08-10 | **V3.1-M0 完成（T0.2 完成）**：审查遗留复核（S3 已在 7f477a5 修复；S1/S2/S4 处置与计划 §7 一致；src/core/ 与 ARCHITECTURE D41 核对一致）→ M0 两任务全绿，v3.1 进入 M1 | Carbon Code |
 | 2026-08-10 | **V3.1-M1 启动（T1.1 完成）**：Verify 分类器四段统一解析（src/loop/self-heal.ts 新增；复用 qa.parseVerifyOutput；ANSI 剥离 + 段标记切分 + 尽力而为）→ 真实 verify 输出实测 4 段全解析 | Carbon Code |
 | 2026-08-10 | **V3.1-M1 推进（T1.2 完成）**：修复策略执行器（lint→lint:fix 免审批 / type 简单→模型修复走审批 / 复杂→结构化反馈 / MAX_SELF_HEAL_ATTEMPTS=2）+ 生产辅助 runVerifyCommand/runLintFixCommand | Carbon Code |
+
+---
+
+### V3.3-M1：审查遗留修复（P0，约 2h）
+
+> 背景：v3.2 审查报告（REVIEW-v3.2-full-2026-08-11，总评 9.2/10）标注的「v3.3 方向」5 项（W1/W2 + S1-S3）全部消化，不做新功能面。4.0 决策：先做 v3.3，4.0（插件市场/DAG/TS7）延后（见 v3.3-dev-plan §1）。
+
+- [x] **T1.1** W1：lint:fix 失败 break 语义显式化
+  - 涉及文件：`src/loop/self-heal/repair.ts`
+  - ✅ 2026-08-11 完成：`if (!fix.ok)` 分支补注释 + log「剩余 type 错误已跳过（环境问题），转人工」（行为不变，仍 break）
+
+- [x] **T1.2** W2：全局正则常量去 `g` 标志
+  - 涉及文件：`src/loop/self-heal/classifier.ts`
+  - ✅ 2026-08-11 完成：`BIOME_RULE_ERROR_RE` / `BIOME_FORMAT_ERROR_RE` 去 `g` + W2 注释（使用处 new RegExp(source,'g') 行为等价）
+
+- [x] **T1.3** S1：self-heal 文案 i18n
+  - 涉及文件：`src/i18n/zh.ts`、`src/i18n/en.ts`、`src/cli/slash/self-heal.ts`
+  - ✅ 2026-08-11 完成：新增 `selfHeal` 分组（阶段 6 + 动作 3 + 报告 15 键）；`selfHealPhaseLabel`/`actionLabel`/`formatSelfHealReport` 走 `t()`/`fmt()`；`--lang en` 全英文；en.test.ts 键一致性通过
+
+- [x] **T1.4** S3：缓存过期机制注释
+  - 涉及文件：`src/cli/common.ts`
+  - ✅ 2026-08-11 完成：`resolveApiKeyCached` JSDoc 补「缓存永不过期，仅适用 CLI 一次性进程；长驻进程应 clearApiKeyCache 或直接 resolveApiKey」
+
+- [x] **T1.5** S2：存量解析测试迁移到 platform-samples
+  - 涉及文件：`tests/fixtures/platform-samples.ts`、`tests/agents/qa.test.ts`
+  - ✅ 2026-08-11 完成：新增 `VITEST_FAIL_MIXED_POSIX`；qa.test.ts 删除内联 `PASS_OUTPUT`/`FAIL_OUTPUT` 改用样本库（22 用例语义不变、用例数不减）
+
+### V3.3-M2：回归与发布（P0，约 1.5h）
+
+- [x] **T2.1** 回归
+  - ✅ 2026-08-11 完成：`npm run verify` 88 文件 / 1014 用例全绿 + `npm audit` 0 漏洞
+
+- [ ] **T2.2** 文档同步（进行中）
+  - 涉及文件：`CHANGELOG.md`、`ARCHITECTURE.md`、`TASKS.md`、`AGENTS.md`
+  - ✅ 已更新：CHANGELOG [3.3.0] 条目、ARCHITECTURE 版本头 v3.3 + 能力行 + 配套文档、TASKS 总览/里程碑/本区块
+  - ⏳ 待更新：AGENTS.md 版本头 v3.3
+
+- [ ] **T2.3** 手工测试报告 07.6
+  - 涉及文件：`docs/07.6-手工测试报告-v3.3.md`（新增）
+
+- [ ] **T2.4** 发布动作
+  - 涉及文件：`package.json` / `package-lock.json` / `src/version.ts` / `tests/smoke.test.ts`（版本号联动）
+  - 步骤：npm version 3.3.0 → npm run verify → npm whoami → npm publish → git tag v3.3.0
 
 ---
 

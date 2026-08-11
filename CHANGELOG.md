@@ -6,6 +6,27 @@
 - 条目按类型分组：`Added`（新增）/ `Changed`（变更）/ `Fixed`（修复）/ `Removed`（移除）；
 - 版本号由 `npm version <patch|minor|major>` 管理（自动 bump + 同步 `src/index.ts` 的 VERSION + git tag）。
 
+## [3.3.0] — 2026-08-11
+
+> v3.3 定位：**消化 v3.2 审查遗留 + 质量收尾**（v3.2 审查报告 9.2/10 标注的「v3.3 方向」5 项全部落地，不做新功能面）。
+
+### Fixed — v3.3（审查遗留 W1/W2）
+
+- **lint:fix 失败 break 语义显式化**（W1，`src/loop/self-heal/repair.ts`）：`npm run lint:fix` 非零退出时补注释 + log「剩余 type 错误已跳过（环境问题），转人工」，说明显式转人工语义（行为不变，仍 break）
+- **全局正则常量去 `g` 标志**（W2，`src/loop/self-heal/classifier.ts`）：`BIOME_RULE_ERROR_RE` / `BIOME_FORMAT_ERROR_RE` 定义不再带 `g`（消除 `lastIndex` 残留陷阱），使用处按需 `new RegExp(source, 'g')` 行为等价
+
+### Changed — v3.3（完善建议 S1-S3）
+
+- **self-heal 文案 i18n**（S1）：`selfHealPhaseLabel` / `actionLabel` / `formatSelfHealReport` 硬编码中文 → `src/i18n/zh.ts` / `en.ts` 新增 `selfHeal` 分组（阶段标签 6 + 动作标签 3 + 报告文案 15），`--lang en` 下状态条/报告全英文；`selfHealPhaseLabel` 公共签名不变
+- **`resolveApiKeyCached` 缓存语义注释**（S3，`src/cli/common.ts`）：明确「缓存永不过期，仅适用 CLI 一次性进程；长驻进程应 `clearApiKeyCache()` 或直接 `resolveApiKey()`」
+- **存量解析测试迁移**（S2）：`tests/agents/qa.test.ts` 内联 vitest 样本（`PASS_OUTPUT`/`FAIL_OUTPUT`）→ 样本库 `platform-samples.ts`（全绿用 `VITEST_PASS_WIN`、新增 `VITEST_FAIL_MIXED_POSIX`），消除样本散落
+
+### 测试（v3.3）
+
+- 样本库新增 `VITEST_FAIL_MIXED_POSIX`（POSIX 双失败文件 + ❯/× 混合形态）
+- qa.test.ts 22 用例迁移后语义不变、用例数不减；i18n en.test.ts 键一致性断言覆盖新分组
+- **基线校准**：88 文件 / 1014 用例全绿（`npm run verify`），npm audit 0 漏洞
+
 ## [3.2.0] — 2026-08-11
 
 > v3.2 定位：**跨平台可靠 + 长任务可感知 + 代码可维护**（v3.1 核心功能已完整，聚焦把「事后修补」固化为「事前防线」，不做新的大功能面）。
