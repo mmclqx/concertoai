@@ -218,11 +218,11 @@ v4.0 规划方向（终稿 v4.0-dev-plan-final.md，约 32.5h / ≥1120 用例 /
 - ✅ 计划终稿已落盘：用户故事驱动 + 工程结构双轨（ADR-033~036 / 决策表 D53~D56）
 - M0 启动前置（1h）：基线校准 + config v3→v4 自动迁移设计（备份 config.v3.bak + _migrated 幂等）+ 破坏性变更清单 ≥6 项
 - M1 审查能修了（5h，P0）：/review --fix 一键修复——A/B 类分批 + 批量审批 + 复用 snapshot-guard 快照回滚（≤2 次交互）
-- M2 流程能记住了（6.5h，P1）：concertoai workflow——4 内置模板 + 自然语言生成 YAML（失败人工兜底）+ DAG 执行 + 失败恢复 UX（重试/跳过/修复/放弃）
+- M2 流程能记住了（6.5h，P0）：concertoai workflow——4 内置模板 + 自然语言生成 YAML（失败人工兜底）+ DAG 执行 + 失败恢复 UX（重试/跳过/修复/放弃）
 - M3 模型能换了（5.5h，P0）：多 Provider（DeepSeek/OpenAI/Ollama）+ --provider 切换 + 成本对比 + provider auth 认证 + config 自动迁移
 - M4 生态能扩展了（5h，P1）：插件市场——plugin browse/recommend/install + 权限清单（六类权限）+ sha256 校验 + 旧 skill/agent 零破坏
 - M5 多 Agent 能并行（3h，P2）：team --parallel——自然触发并行 + 结果汇总 + 文件冲突提示 + 意图识别失败降级串行
-- M6 IDE 能诊断（2.5h，P2）：LSP 三来源诊断（lint/type/self-heal）+ CodeAction 一键修复
+- M6 IDE 能诊断（2.5h，P2）：LSP 三来源诊断（lint/type/self-heal）+ CodeAction 一键修复（Web UI + VS Code 扩展骨架延后 v4.1）
 - M7 TS7 评估（1.5h，P2）：go/no-go 决策门 + ADR 落盘，不盲迁
 - M8 回归发布（2.5h，P0）：≥1120 用例 + 性能基准对比（v3.4 vs v4.0）+ 版本号多文件联动 + publish + tag v4.0.0
 

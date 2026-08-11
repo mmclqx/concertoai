@@ -4,7 +4,7 @@ ConcertoAI —— 面向个人开发者的**中文优先**终端编码助手 CLI
 
 在项目目录里启动：读取代码 → 提出 diff 方案 → 征求命令许可 → 跑验证 → 留下可续接的会话记录。
 
-> 状态：v3.4.0 开发完成（`npm run verify` 全绿，1044 用例 / 89 测试文件；`npm audit` 0 漏洞）。
+> 状态：v3.4.0 开发完成（`npm run verify` 全绿，1048 用例 / 90 测试文件；`npm audit` 0 漏洞）。
 > v3.3 新增：消化 v3.2 审查遗留（lint:fix 失败语义显式化 / 全局正则去 g / self-heal 文案 i18n / 缓存语义注释 / 解析测试样本统一）。
 > v3.4 新增：审查建议闭环（collectKeys maxDepth / feedback 数据层 i18n / 正则去 gm 全项目复核 / en 字典 CJK 校验）+ `concertoai doctor --vscode`（进程数 / 崩溃转储 / AI 扩展 / argv.json 四维健康诊断）。
 > v3.2 新增：跨平台 CI 矩阵 + spawn/UNC/EXDEV 边界 / self-heal 模块化重构 + 增量 verify / 长任务进度推送（team、self-heal）/ project-account 视觉与 doctor 账号完整性 / 启动期缓存 / Agent 市场版本对比与批量更新 / audit 损坏行统计。

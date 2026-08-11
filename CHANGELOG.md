@@ -6,6 +6,29 @@
 - 条目按类型分组：`Added`（新增）/ `Changed`（变更）/ `Fixed`（修复）/ `Removed`（移除）；
 - 版本号由 `npm version <patch|minor|major>` 管理（自动 bump + 同步 `src/index.ts` 的 VERSION + git tag）。
 
+## [Unreleased]（v4.0 规划，见 v4.0-dev-plan-final.md）
+
+> v4.0 定位：**可扩展的插件化 AI 开发平台**——架构拐点（major），破坏性变更集中在新增面（config 格式 / CLI --provider / Plugin 接口），旧命令 / 会话 / 技能平滑迁移。以下为 M0 T0.3 破坏性变更清单（≥6 项），随里程碑实施逐项落地。
+
+### Breaking Changes — v4.0（规划）
+
+- **config.json 格式升级**（v3 → v4）：`model` 字段 → `defaultProvider` + `providers` 字典。启动时自动迁移（备份 `config.v3.bak` + `_migrated` 幂等标记），`-m` CLI 参数保持兼容（映射到 defaultProvider.model）；`concertoai config restore` 一键回滚
+- **CLI 新增 `--provider`**：临时切换 Provider（`concertoai --provider openai`）；`concertoai provider list / auth` 子命令（Provider 认证 Key 安全存储）
+- **工具与 Agent 注册改 Plugin 接口**：v4.0 起 Plugin 是公共 API（semver），内置 Provider / 工具 / 技能 / Agent 统一实现 Plugin 接口；旧注册方式保留兼容层
+- **插件必须 ESM**：与 ConcertoAI 运行时（ESM）一致；CJS 插件在 v4.0 拒绝加载（明确报错提示迁移）
+- **市场 schema 扩展 `plugins[]`**：兼容旧 `skills[]` / `agents[]`（installer 按 type 分派，零破坏）；`concertoai plugin` 命令族（install/list/remove/browse/recommend）
+- **`concertoai workflow` 命令族新增**：工作流 YAML（steps/depends/retry/rollback/require:approval）+ 4 内置模板 + `workflow run <name>`（DAG 依赖排序 + SnapshotManager 整体回滚）
+- **会话格式兼容**：JSONL 不变，新增 `session.version: 4` 字段（v3 会话可继续读取）
+
+### Added — v4.0（规划）
+
+- `/review --fix`：审查后一键自动修复（A/B 类分批 + 批量审批 + snapshot-guard 快照回滚，≤2 次交互）
+- 多 Provider：DeepSeek / OpenAI（兼容协议）/ Ollama（本地探测）任意切换 + 成本对比 + fallback
+- 插件系统：Plugin 接口 + 生命周期钩子 + 六类权限（read/write/network/shell/knowledge/mcp）安装审批 + 运行时 enforce
+- 插件市场：registry `plugins[]` + browse/recommend/popular + sha256 校验 + `plugin audit` 安全审计
+- LSP 诊断（P2）：`concertoai lsp --stdio` 三来源诊断（lint/type/self-heal）+ CodeAction（Web UI / VS Code 扩展骨架延后 v4.1）
+- team --parallel（P2）：自然触发并行 + 结果汇总 + 文件冲突提示
+
 ## [3.4.0] — 2026-08-12
 
 > v3.4 定位：**审查建议闭环 + i18n/正则完整性加固 + VS Code 崩溃防护**（小版本收尾 + 环境健康功能）。
