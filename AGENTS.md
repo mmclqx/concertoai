@@ -116,6 +116,8 @@ UI 测试：Ink 组件需用 ink-testing-library 覆盖
 
 测试报告：每次版本发布前，生成 docs/07.{版本号}-手工测试报告-v{版本号}.md（参考 07.1/07.2/07.3 格式，含测试日期/环境/通过失败项/已知问题）
 
+执行日志：每次任务开始立即在 docs/ 下新建 execution-log-YYYYMMDD-HHMMSS.md，记录「任务交代 + 关键步骤（读文件/搜索/生成方案/编辑/测试）」，每步带时间戳，便于问题排查与回溯（v3.2 T5.5）
+
 ### 提交前自查（文档 vs 代码一致性）
 每次提交前对照以下清单，防止「注释与代码不一致」「目录树遗漏」类问题（历史教训：MAX_LOOP_TURNS 注释写 10 实际 50；knowledge/、reviewer/ 目录树漏 index.ts）：
 
@@ -129,6 +131,7 @@ UI 测试：Ink 组件需用 ink-testing-library 覆盖
 8. **版本号多文件联动**：bump 版本 = package.json + package-lock.json（顶部 2 处）+ src/version.ts + tests/smoke.test.ts + 代码中硬编码的 `@concertoai/cli@x.y.z` 段标记（如 self-heal 测试）+ README 状态行，**一次改完立即提交**，不留半成品
 9. **全景图与目录树双核对**：ARCHITECTURE 第 2 节（全景图）与第 5 节（目录树）独立维护，新增模块必须两处都更新，不能只更新一处
 10. **解析类正则多平台样本**：解析第三方工具输出（Biome/tsc/vitest）的正则，必须用 Windows（反斜杠路径/盘符冒号）与 POSIX 两种样本验证，且覆盖类别/行列变体（教训：lint/ 前缀正则漏掉 format/assist 类别，见 09-踩坑记录/2026-08-11-Biome解析漏掉format与assist类别错误.md）
+11. **执行日志落盘**：每次任务必须有 docs/execution-log-*.md 落盘，含任务交代 + 关键步骤（读文件/搜索/生成方案/编辑/测试）+ 时间戳；提交时随任务文件一并提交（v3.2 T5.5）
 
 ## 命名与包
 项目	内容
@@ -293,6 +296,8 @@ v3.0.0 发布门检查（当前）：
 文档同步：代码修改后同步更新相关文档（ARCHITECTURE.md 目录树 / 决策表 / JSDoc 中的数字与常量）
 
 踩坑落盘：修复 Bug 后立即写入 docs/09-踩坑记录/（问题/根因/方案/教训，格式见该目录 README）
+
+执行日志：每次任务开始立即创建 docs/execution-log-YYYYMMDD-HHMMSS.md，随任务推进逐条记录关键步骤（读文件/搜索/生成方案/编辑/测试）+ 时间戳（v3.2 T5.5）
 
 发布前测试报告：版本发布前生成 docs/07.{版本号}-手工测试报告-v{版本号}.md 并落盘
 

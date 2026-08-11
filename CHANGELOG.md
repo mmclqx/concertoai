@@ -6,7 +6,7 @@
 - 条目按类型分组：`Added`（新增）/ `Changed`（变更）/ `Fixed`（修复）/ `Removed`（移除）；
 - 版本号由 `npm version <patch|minor|major>` 管理（自动 bump + 同步 `src/index.ts` 的 VERSION + git tag）。
 
-## [Unreleased]
+## [3.1.1] — 2026-08-11
 
 ### Fixed — v3.1.1 补丁（Windows/ESM/解析边界回归）
 
@@ -64,6 +64,13 @@
 
 - 新增 `tests/loop/self-heal.test.ts`、`tests/loop/error-reporting.test.ts`、`tests/store/projects.test.ts`、`tests/store/accounts.test.ts`、`tests/cli/project.test.ts`、`tests/cli/project-isolation.test.ts`、`tests/cli/account.test.ts`、`tests/cli/team.test.ts`、`tests/cli/audit.test.ts`、`tests/cli/slash-orchestrate.test.ts`、`tests/cli/slash-review.test.ts`、`tests/e2e/team-cli.test.ts`、`tests/e2e/self-heal.test.ts`、`tests/e2e/project-isolation.test.ts` 等
 - **基线校准**：84 文件 / 924 用例全绿（`npm run verify`），npm audit 0 漏洞
+
+### 综合评价（专家评审 · 2026-08-11）
+
+- **总体评分**：**8.5/10**（优秀但未到完美）——功能完整性 9/10、多模型适配 9/10、开发效率 9/10、代码质量 8/10、文档同步 8/10、自我修复 8/10；短板为 Windows 兼容性 7/10 与测试通过率 7.5/10
+- **发布建议**：⚠️ 修复 team 的 `__dirname`（ESM/CJS 混用）后发布
+- **6 个改进方向**：① Windows CI 矩阵 + shellTool 命令统一 ② 全项目统一 `import.meta.url` ③ 结构化错误码替代中文关键词匹配 ④ team 中间消息推送 ⑤ `self-heal.ts`（853 行）拆分 ⑥ 边缘场景测试覆盖
+- **完整记录**：`docs/08-审查记录/v3.1-综合评价-2026-08-11.md`
 
 ## [3.0.0] — 2026-08-09
 
