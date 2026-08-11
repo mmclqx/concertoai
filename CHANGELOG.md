@@ -6,6 +6,32 @@
 - 条目按类型分组：`Added`（新增）/ `Changed`（变更）/ `Fixed`（修复）/ `Removed`（移除）；
 - 版本号由 `npm version <patch|minor|major>` 管理（自动 bump + 同步 `src/index.ts` 的 VERSION + git tag）。
 
+## [3.4.0] — 2026-08-12
+
+> v3.4 定位：**审查建议闭环 + i18n/正则完整性加固 + VS Code 崩溃防护**（小版本收尾 + 环境健康功能）。
+
+### Fixed — v3.4（M1 审查建议闭环 S-C1 / I1 / I2 / I3）
+
+- **collectKeys 加 maxDepth 兜底**（S-C1，`tests/i18n/en.test.ts`）：递归深度上限默认 5，超限抛清晰错误（含 maxDepth 值与路径），防未来 3 层嵌套字典栈溢出；现有 ≤2 层字典不受影响
+- **feedback 数据层 i18n**（I1，`snapshot-guard.ts` 3 处 + `model.ts` 5 处）：`suggestionFor` 与「用户拒绝 / 写盘失败 / 已回滚」建议文案移入 `selfHeal.feedback*` 键组（feedbackBuildFailed / feedbackTestFailed / feedbackTypeError / feedbackFormatError / feedbackUnknown / feedbackDenied / feedbackWriteFailedRolledBack / feedbackWriteFailed），`--lang en` 下 self-heal 报告全路径不再混合中英
+- **tsc 正则去 `gm` + 全项目 `/[gimy]` 复核**（I2，`classifier.ts`）：`TSC_ERROR_RE` / `TSC_ERROR_PRETTY_RE` 常量去标志位，使用处 `new RegExp(source,'gm')` 显式带（行为等价）；同步清理 `ANSI_RE`（classifier）、`mapOffset` 内联 `\r\n`（edit.ts）、`SECRET_PATTERN`（read.ts）、`CJK_RE`（tokenizer.ts）、`FILE_REF_RE`（planner/deps.ts）——全项目无带 `g` 标志常量残留（`/i` 单独使用无 lastIndex 陷阱保留）
+- **en 字典 CJK 校验**（I3，`tests/i18n/en.test.ts`）：非空英文断言增加「不含 CJK（\u4e00-\u9fff）」校验，en 字典误抄中文会红；新增负面测试（含中文 mock 字典断言失败）
+
+### Added — v3.4（M3 VS Code 崩溃防护）
+
+- **`concertoai doctor --vscode`**（`src/cli/vscode-health.ts` 新增 + `doctor.ts` / `index.ts` 接线）：VS Code 四维只读健康诊断，单项 ✅/⚠️/❌ 标记，破坏性动作仅输出建议命令——
+  - 进程数：Windows `tasklist` / POSIX `ps` 计数，>60 严重 / >40 警告 / ≤40 正常（对应 14 窗口×AI 扩展组合爆炸场景）
+  - 崩溃转储：Crashpad `reports/*.dmp` 数量 + 总体积（>5 个或 >100MB 告警 + 平台清理命令）
+  - AI 扩展：`code --list-extensions` 对照已知 AI 扩展清单（>3 告警）+ 已装未禁用核对（建议 `code --disable-extension <id>`）
+  - argv.json：`~/.vscode/argv.json` 核对 `disable-extensions`（**复数**）字段名 / 值格式（数组或 true）/ 扩展 ID 双引号；Windows 无效位置 `%APPDATA%\Code\argv.json` 检测（踩坑记录 §六：单数字段名导致禁用从未生效）
+- **doctor.vscode i18n 键组**：zh/en 同构 28 键（`vscodeProcess*` / `vscodeDump*` / `vscodeAiExt*` / `vscodeArgv*` / `vscodeTitle`），en 全英文过 CJK 断言
+
+### 测试（v3.4）
+
+- 新增 `tests/cli/vscode-health.test.ts`（28 用例：进程数解析/阈值、转储统计/路径、扩展解析、argv.json 字段名/值格式/ID 引号/无效位置、doctor --vscode 集成回归）
+- `tests/i18n/en.test.ts` 新增 maxDepth 超限 + CJK 负面测试（2 用例）
+- **基线校准**：89 文件 / 1044 用例全绿（`npm run verify`），npm audit 0 漏洞
+
 ## [3.3.0] — 2026-08-11
 
 > v3.3 定位：**消化 v3.2 审查遗留 + 质量收尾**（v3.2 审查报告 9.2/10 标注的「v3.3 方向」5 项全部落地，不做新功能面）。

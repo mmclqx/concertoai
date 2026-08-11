@@ -1,7 +1,7 @@
 # AGENTS.md - ConcertoAI 项目开发规范
 
-> 最后更新：2026-08-11
-> 版本：v3.3.0
+> 最后更新：2026-08-12
+> 版本：v3.4.0
 
 ---
 
@@ -206,6 +206,12 @@ v3.3.0 已完成（消化 v3.2 审查遗留 + 质量收尾）：
 - ✅ W1 lint:fix 失败 break 语义显式化 + W2 全局正则常量去 g 标志（消除 lastIndex 陷阱）
 - ✅ S1 self-heal 文案 i18n（--lang en 状态条/报告全英文）+ S2 存量解析测试迁移 platform-samples + S3 resolveApiKeyCached 缓存语义注释
 - ✅ config.test.ts 环境变量隔离修复（T2.3 实测发现）+ 88 文件 / 1014 用例全绿 · v3.3.0 已发布 npm + tag
+
+v3.4.0 已完成（审查建议闭环 + VS Code 崩溃防护）：
+
+- ✅ S-C1 collectKeys maxDepth + I1 feedback 数据层 i18n（selfHeal.feedback* 键组）+ I2 正则常量去 g/gm 全项目复核 + I3 en 字典 CJK 校验
+- ✅ `concertoai doctor --vscode`（src/cli/vscode-health.ts）：进程数 / 崩溃转储 / AI 扩展 / argv.json 四维只读诊断，argv.json 字段名复数 disable-extensions 校验（踩坑记录 §六）
+- ✅ 89 文件 / 1044 用例全绿 · v3.4.0 已发布 npm + tag
 
 ## 发布门检查清单
 2.0.0 发布前已全部通过：

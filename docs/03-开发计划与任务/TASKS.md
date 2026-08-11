@@ -1,8 +1,8 @@
 # ConcertoAI 开发任务看板
 
-> 最后更新：2026-08-11
-> 当前里程碑：**🟢 v3.3 已完成（v3.3.0 已发布 npm + tag）**（v3.2: 29/29 ✅ · v3.3: 9/9 ✅ · 基线 88 文件 / 1014 用例）
-> 基于：[v3.3 开发计划](./v3.3-dev-plan.md) · 历史：[v3.2 开发计划](./v3.2-dev-plan.md) · [v3.1 开发计划](./v3.1-dev-plan-ai.md)
+> 最后更新：2026-08-12
+> 当前里程碑：**🟢 v3.4 进行中（M1/M3 已完成，M2 回归/文档已完成，发布待 T2.4）**（v3.3: 9/9 ✅ · v3.4: M1 4/4 ✅ + M3 4/4 ✅ · 基线 89 文件 / 1044 用例）
+> 基于：[v3.4 开发计划](./v3.4-dev-plan.md) · 历史：[v3.3 开发计划](./v3.3-dev-plan.md) · [v3.2 开发计划](./v3.2-dev-plan.md) · [v3.1 开发计划](./v3.1-dev-plan-ai.md)
 
 ---
 
@@ -67,6 +67,9 @@
 | **V3.2-M6 集成测试与发布** | **P0** | **4** | ✅ 已完成（v3.2.0 已发布 npm，2026-08-11） |
 | **V3.3-M1 审查遗留修复** | **P0** | **5** | 🟢 已完成（5996836：W1/W2/S1/S2/S3） |
 | **V3.3-M2 回归与发布** | **P0** | **4** | 🟢 已完成（v3.3.0 已发布 npm + tag，2026-08-11） |
+| **V3.4-M1 审查建议闭环** | **P0** | **4** | 🟢 已完成（7a60729：S-C1/I1/I2/I3） |
+| **V3.4-M3 VS Code 崩溃防护** | **P1** | **4** | 🟢 已完成（5e62f79：doctor --vscode 四维） |
+| **V3.4-M2 回归与发布** | **P0** | **4** | 🔵 进行中（T2.1/T2.2 ✅，T2.3/T2.4 待办） |
 
 ---
 
@@ -1150,6 +1153,64 @@
 - [x] **T2.4** 发布动作
   - 涉及文件：`package.json` / `package-lock.json` / `src/version.ts` / `tests/smoke.test.ts`（版本号联动）
   - ✅ 2026-08-11 完成：npm version 3.3.0 → verify 88/1014 全绿 → npm whoami（mmclqx）→ npm publish（latest=3.3.0）→ git tag v3.3.0
+
+---
+
+### V3.4-M1：审查建议闭环（P0，约 1.5h）
+
+> 背景：v3.3 C 审查唯一完善建议 S-C1（collectKeys 深度限制）+ v3.3 自我审查 I1/I2/I3（feedback 数据层 i18n / tsc 正则残留 gm / en 字符集校验）四项闭环，延续「0 遗留」标准。4.0 决策继续延后。
+
+- [x] **T1.1** S-C1：collectKeys 加 maxDepth 参数
+  - 涉及文件：`tests/i18n/en.test.ts`
+  - ✅ 2026-08-12 完成：`collectKeys(obj, prefix, depth, maxDepth=5)` 超限抛清晰错误（含 maxDepth 值与路径）；2 层正常 + 6 层超限负面测试
+
+- [x] **T1.2** I2：TSC 正则去 `gm` + 全项目 `/[gimy]` 复核
+  - 涉及文件：`src/loop/self-heal/classifier.ts`、`src/tools/edit.ts`、`src/tools/read.ts`、`src/model/tokenizer.ts`、`src/planner/deps.ts`
+  - ✅ 2026-08-12 完成：`TSC_ERROR_RE`/`TSC_ERROR_PRETTY_RE` 去 gm（使用处 new RegExp 显式带）；同步清理 `ANSI_RE`/`SECRET_PATTERN`/`CJK_RE`/`FILE_REF_RE`/mapOffset 内联 `\r\n`——全项目无带 g 标志常量残留（`/i` 保留）
+
+- [x] **T1.3** I3：en.test.ts 字符集校验
+  - 涉及文件：`tests/i18n/en.test.ts`
+  - ✅ 2026-08-12 完成：非空英文断言增加「不含 CJK（\u4e00-\u9fff）」；负面测试（含中文 mock 字典断言失败）
+
+- [x] **T1.4** I1：feedback 数据层 i18n
+  - 涉及文件：`src/loop/self-heal/snapshot-guard.ts`、`src/loop/self-heal/model.ts`、`src/i18n/zh.ts`、`src/i18n/en.ts`
+  - ✅ 2026-08-12 完成：`suggestionFor` 5 处 + snapshot-guard 3 处硬编码中文 → `selfHeal.feedback*` 键组（8 键），en 下拒绝/写盘失败/回滚路径全英文
+
+### V3.4-M3：VS Code 崩溃防护（P1，约 2h）
+
+> 背景：2026-08-11 深夜 VS Code 再次闪退（12 转储 / 511MB / 83 进程），根因是 argv.json 写错位置**且字段名写错**（单数 `disable-extension`）导致 5 个 AI 扩展从未禁用 + 14 窗口×全套扩展组合爆炸（踩坑记录 §五/§六）。将排查 SOP 固化为 `concertoai doctor --vscode` 健康检查。
+
+- [x] **T3.1** VS Code 进程数检测
+  - 涉及文件：`src/cli/vscode-health.ts`（新增）、`src/cli/doctor.ts`（接入）
+  - ✅ 2026-08-12 完成：Windows `tasklist` / POSIX `ps` 解析 + 阈值分级（>60 ❌ / >40 ⚠️ / ≤40 ✅）；命令失败/超时降级「无法检测」不崩溃
+
+- [x] **T3.2** 崩溃转储堆积检测
+  - 涉及文件：`src/cli/vscode-health.ts`（新增）
+  - ✅ 2026-08-12 完成：三平台 Crashpad 路径 + `*.dmp` 数量/体积统计（>5 或 >100MB ❌，1~5 ⚠️）+ 平台清理命令输出
+
+- [x] **T3.3** AI 扩展数量与 argv.json 核对
+  - 涉及文件：`src/cli/vscode-health.ts`（新增）
+  - ✅ 2026-08-12 完成：`code --list-extensions` 解析对照已知 AI 清单（>3 告警）+ 已装未禁用核对；argv.json 字段名（复数 `disable-extensions`）/ 值格式（数组或 true）/ 扩展 ID 引号三项校验 + Windows 无效位置检测（踩坑记录 §六）
+
+- [x] **T3.4** i18n + 测试 + CLI 接线
+  - 涉及文件：`src/i18n/zh.ts`、`src/i18n/en.ts`、`src/cli/index.ts`、`tests/cli/vscode-health.test.ts`
+  - ✅ 2026-08-12 完成：doctor.vscode 键组 zh/en 同构 28 键（en 全英文过 CJK 断言）；`doctor --vscode` 开关接线；28 个新测试（含集成回归）
+
+### V3.4-M2：回归与发布（P0，约 1.5h）
+
+- [x] **T2.1** 回归
+  - ✅ 2026-08-12 完成：`npm run verify` 89 文件 / 1044 用例全绿 + `npm audit` 0 漏洞
+
+- [x] **T2.2** 文档同步
+  - 涉及文件：`CHANGELOG.md`、`ARCHITECTURE.md`、`TASKS.md`、`AGENTS.md`
+  - ✅ 2026-08-12 完成：CHANGELOG [3.4.0] 条目、ARCHITECTURE 版本头 v3.4 + 能力行 + doctor/vscode-health 目录树 + D51/D52、AGENTS.md 版本头 v3.4 + v3.4 完成条目
+
+- [ ] **T2.3** 手工测试报告 07.7 + 自我审查报告
+  - 涉及文件：`docs/07.7-手工测试报告-v3.4.md`（新增）、`docs/08-审查记录/REVIEW-v3.4-self-review-*.md`（新增）
+
+- [ ] **T2.4** 发布动作
+  - 涉及文件：`package.json` / `package-lock.json` / `src/version.ts` / `tests/smoke.test.ts`（版本号联动）
+  - ⏳ npm version 3.4.0 → verify → npm whoami → npm publish → git tag v3.4.0
 
 ---
 

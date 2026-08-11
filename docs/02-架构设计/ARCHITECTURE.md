@@ -1,8 +1,8 @@
 # ConcertoAI 架构文档
 
-> 版本：v3.3（含 v2.2 / v3.1 / v3.2 全部已交付功能）· 2026-08-11
+> 版本：v3.4（含 v2.2 / v3.1 / v3.2 / v3.3 全部已交付功能）· 2026-08-12
 > 本文档基于当前代码实现编写，作为后续维护与扩展的技术参考。
-> 配套文档：[v3.0 开发任务](../03-开发计划与任务/v3.0-dev-tasks.md)、[v3.1 开发计划](../03-开发计划与任务/v3.1-dev-plan-ai.md)、[v3.3 开发计划](../03-开发计划与任务/v3.3-dev-plan.md)、[任务看板](../03-开发计划与任务/TASKS.md)
+> 配套文档：[v3.0 开发任务](../03-开发计划与任务/v3.0-dev-tasks.md)、[v3.1 开发计划](../03-开发计划与任务/v3.1-dev-plan-ai.md)、[v3.3 开发计划](../03-开发计划与任务/v3.3-dev-plan.md)、[v3.4 开发计划](../03-开发计划与任务/v3.4-dev-plan.md)、[任务看板](../03-开发计划与任务/TASKS.md)
 
 ---
 
@@ -12,11 +12,12 @@ ConcertoAI 是一款**中文优先**的终端编码助手 CLI（DeepSeek 驱动�
 
 - **技术栈**：TypeScript (strict) + Node ≥22 + ESM，Ink 7 (React 19) 渲染 TUI，commander 解析 CLI，zod 做工具参数校验，vitest 测试，Biome 检查，tsup 打包
 - **运行时依赖**：`ink` / `react` / `commander` / `zod` / `cli-highlight` / `chalk`
-- **测试现状**：88 个测试文件、1014 个用例，`npm run verify` 全绿，`npm audit` 0 漏洞；已用真实 `DEEPSEEK_API_KEY` 完成端到端冒烟
+- **测试现状**：89 个测试文件、1044 个用例，`npm run verify` 全绿，`npm audit` 0 漏洞；已用真实 `DEEPSEEK_API_KEY` 完成端到端冒烟
 - **安全基线**：编辑与命令一律审批（fail-closed）、路径沙箱、结果截断、白名单免审批——无 yolo 模式
 - **v3.1 新增能力**：AI 自我修复闭环（self-heal）/ 多项目管理（project）/ 多租户登录（account）/ Orchestrator CLI（team、/orchestrate、audit export）/ 结构化错误增强（error-codes）；**v3.1 预留功能（已交付）**：`concertoai balance`（余额查询）/ `concertoai doctor`（环境诊断）、配置目录迁移 `~/.lumen → ~/.concertoai`（`src/store/paths.ts` 单一来源 + 幂等迁移）；**v2.2 智能成本控制**（高峰时段模型自动切换，见 §4 D41）
 - **v3.2 新增能力**：跨平台 CI 矩阵与 spawn 审计（ADR-032）/ UNC 路径与 EXDEV 边界（ADR-031）/ self-heal 模块化拆分（ADR-030）/ audit 损坏行统计 + /orchestrate diagnostics / 长任务进度推送（team onProgress + self-heal onPhase）/ project-account 视觉与 doctor 账号完整性 / 启动期缓存（ADR-029）/ Agent 市场版本对比与 `update --all`
 - **v3.3 质量收尾**（审查遗留 W1/W2 + S1-S3，不做新功能面）：lint:fix 失败 break 语义显式化 / 全局正则常量去 `g` 标志（消除 lastIndex 陷阱）/ self-heal 文案 i18n（`selfHeal` 分组 + `--lang en` 全英文）/ `resolveApiKeyCached` 缓存语义注释 / 存量解析测试迁移到 `platform-samples.ts`
+- **v3.4 审查闭环 + VS Code 崩溃防护**：S-C1 `collectKeys` maxDepth（en.test.ts）/ I1 feedback 数据层 i18n（`selfHeal.feedback*` 键组，en 下全英文）/ I2 正则常量去 `g`/`gm` 全项目复核（classifier / edit / read / tokenizer / planner）/ I3 en 字典 CJK 校验 / **`concertoai doctor --vscode`**（`src/cli/vscode-health.ts`：进程数 / 崩溃转储 / AI 扩展 / argv.json 四维诊断，argv.json 字段名复数 `disable-extensions` 校验——踩坑记录 §六）
 
 ## 2. 架构全景图
 
@@ -34,7 +35,7 @@ ConcertoAI 是一款**中文优先**的终端编码助手 CLI（DeepSeek 驱动�
 │   plan.ts    plan 计划-批准-执行三段式（readline y/n）          │
 │   snapshot.ts 快照命令（SnapshotManager，T3.6）                │
 │   balance.ts 余额命令（fetchBalance，GET /user/balance）       │
-│   doctor.ts  环境诊断命令（Node/Key/配置/会话/模型/余额/账号完整性，v3.2 M4）│
+│   doctor.ts  环境诊断命令（Node/Key/配置/会话/模型/余额/账号完整性，v3.2 M4；--vscode 四维 v3.4 M3）│
 │   project.ts 项目注册表命令 add/list/remove/info/switch（v3.1；list 三列表格+当前高亮 v3.2 M4）│
 │   self-heal.ts verify 失败自动修复（v3.1，非交互）            │
 │   team.ts    Orchestrator 团队执行（v3.1，拆解→闭环→回滚；onProgress 进度推送 v3.2 M4）│
@@ -289,6 +290,8 @@ MCP 服务故障
 | D48 | **self-heal 模块化 + 范围限定**（v3.2 M2 / ADR-030）：`loop/self-heal/` 拆 3 模块（classifier/repair/snapshot-guard）+ index barrel，单文件 ≤400 行；公共 API 不变；仅修 ConcertoAI 自身代码 | 小文件优先；纯结构迁移不改行为；范围限定降低越权风险（对齐 ADR-004） | `loop/self-heal/` |
 | D49 | **项目注册表路径规范化 + 嵌套拒绝**（v3.2 M1 / ADR-031）：`normalizeProjectPath` 盘符/UNC 双分支 + `isNested` 分隔符边界比较；嵌套子目录注册拒绝 | 隔离矩阵（D43）依赖路径精确匹配；避免跨平台误判；拒绝嵌套 = fail-closed | `store/projects.ts` |
 | D50 | **跨平台 CI 矩阵 + spawn 兼容基线**（v3.2 M1 / ADR-032）：ci.yml 三平台矩阵（ubuntu/windows/macos）+ spawn 审计（`.cmd`/`.bat` 必须 `shell: true` 或经 `getPlatformAdapter`）+ 跨平台样本库 `tests/fixtures/platform-samples.ts` | 「事后修补」→「事前防线」；CI 前置拦截跨平台回归；解析类正则双平台样本验证 | `.github/workflows/ci.yml` + `tools/shell.ts` + `tests/fixtures/` |
+| D51 | **VS Code 崩溃防护 doctor --vscode**（v3.4 M3）：`src/cli/vscode-health.ts` 四维只读诊断——进程数（tasklist/ps 阈值 60/40）/ 崩溃转储（Crashpad *.dmp 数量+体积，>5 或 >100MB 告警）/ AI 扩展（code --list-extensions 对照已知清单 >3 告警）/ argv.json（`disable-extensions` **复数**字段名 + 数组或 true 值格式 + 扩展 ID 双引号校验 + Windows 无效位置检测）；纯解析函数 + 依赖注入（exec/readFile/scanDir），检测失败降级「无法检测」不崩溃 | 环境问题（VS Code 崩溃/进程爆炸/转储堆积）必须有自动化检测入口，不依赖人工翻阅日志（踩坑记录 §五/§六：argv.json 位置 + 字段名双坑导致 5 扩展从未禁用）；诊断只读、破坏性动作仅输出建议命令 | `cli/vscode-health.ts` + `cli/doctor.ts` + `cli/index.ts` |
+| D52 | **正则常量标志位模式一致性**（v3.4 T1.2 I2，延续 W2）：全项目正则常量定义一律不带 `g`/`u`（消除 lastIndex 残留），使用处按需 `new RegExp(source, flags)` 显式带；`/i` 单独使用无 lastIndex 陷阱可保留；复核覆盖 `/[gimy]` 全变体 | C 复核盲区教训：搜索 `/g` 结尾漏掉 `/gm` 变体（v3.3）；模式统一后搜索 `const X = /…/[gimy]` 即可全量兜底 | `classifier.ts` / `edit.ts` / `read.ts` / `tokenizer.ts` / `planner/deps.ts` |
 
 ## 5. 目录结构说明
 
@@ -327,7 +330,8 @@ concertoai/
 │   │   ├── plan.ts       plan 装配：计划轮 → 终端 y/n → 执行轮（含依赖检测/进度/回滚）
 │   │   ├── snapshot.ts   concertoai snapshot [list|clean]：快照残留列出/清理（v3.0 M3）
 │   │   ├── balance.ts    concertoai balance：余额查询（fetchBalance，v3.1）
-│   │   ├── doctor.ts     concertoai doctor：环境诊断（Node/Key/配置/会话/模型/余额/账号完整性，v3.1 + v3.2 M4）
+│   │   ├── doctor.ts     concertoai doctor：环境诊断（Node/Key/配置/会话/模型/余额/账号完整性，v3.1 + v3.2 M4；--vscode 追加 VS Code 四维，v3.4 M3）
+│   ├── vscode-health.ts VS Code 健康诊断（v3.4 M3）：进程数（tasklist/ps）/ 崩溃转储（Crashpad *.dmp）/ AI 扩展（code --list-extensions + argv.json 核对）/ argv.json 字段名复数与值格式校验（disable-extensions）；纯解析函数 + 依赖注入（exec/readFile/scanDir），检测失败降级不崩溃
 │   │   ├── project.ts    concertoai project add/list/remove/info/switch（v3.1 M2；list 三列表格 + 当前项目 ★ 高亮，v3.2 M4）
 │   │   ├── self-heal.ts  concertoai self-heal：verify 失败自动分类→修复→验证→回滚（v3.1 M1）
 │   │   ├── team.ts       concertoai team "<任务>"：Orchestrator 全链路（拆解→对抗性闭环→回滚兜底，v3.1 M5；onProgress 进度推送，v3.2 M4）
