@@ -18,6 +18,7 @@ import type { ArchitectSpec } from '../agents';
 import {
   ChildProcessQaRunner,
   CoderAgent,
+  type CoderFileWriter,
   DiskFileWriter,
   decomposeRequirement,
   OrchestratorDecomposeError,
@@ -63,8 +64,8 @@ export interface RunTeamCommandOptions {
   client?: ModelClient;
   /** 终端确认回调（测试注入；缺省 readline y/n）。 */
   confirm?: (prompt: string) => Promise<boolean>;
-  /** 团队 Agent 注入（测试；缺省装配真实 4 角色）。 */
-  agents?: { coder: CoderLike; reviewer: ReviewerLike; qa: QaLike };
+  /** 团队 Agent 注入（测试；缺省装配真实 4 角色；coder 缺省装配真实 CoderAgent + 事务 writer）。 */
+  agents?: { coder?: CoderLike; reviewer?: ReviewerLike; qa?: QaLike };
   /** 可观测性调用链（可选；拆解/闭环阶段记录 spans）。 */
   traceStore?: TraceStore;
   /** 进度回调（v3.2 M4 / T4.1：拆解完成 / 每轮闭环 / 结束，供 CLI stdout 与聊天消息流）。 */
@@ -238,12 +239,24 @@ export async function runTeamCommand(options: RunTeamCommandOptions): Promise<Te
           process.stdout.write('代码方案生成完毕，批准写盘 (y/n): ');
           return confirm('');
         };
+  // 事务上下文先于 coder 装配创建（T6.5：写盘必须登记快照，回滚保护不依赖预登记清单）
+  const snapshots = new SnapshotManager(options.cwd);
+  const taskId = `team-${Date.now()}`;
+  // 事务感知 writer：写盘前 registerWrite 动态登记快照（begin 只预登记拆解清单，
+  // Agent 实际写盘路径可能超出清单——未登记的文件 rollback 时会被判「外部修改」拒绝覆盖）
+  const baseWriter = new DiskFileWriter(options.cwd);
+  const txnWriter: CoderFileWriter = {
+    async write(relPath: string, content: string): Promise<void> {
+      await snapshots.registerWrite(taskId, relPath, content);
+      await baseWriter.write(relPath, content);
+    },
+  };
   const coder =
     options.agents?.coder ??
     new CoderAgent({
       client,
       model,
-      writer: new DiskFileWriter(options.cwd),
+      writer: txnWriter,
       onApproval: codeApproval,
     });
   const reviewer =
@@ -258,8 +271,6 @@ export async function runTeamCommand(options: RunTeamCommandOptions): Promise<Te
     options.agents?.qa ?? new QaAgent({ runner: new ChildProcessQaRunner({ cwd: options.cwd }) });
 
   // 5. 事务 + 对抗性闭环（主任务文件清单取自拆解；超限/失败回滚兜底）
-  const snapshots = new SnapshotManager(options.cwd);
-  const taskId = `team-${Date.now()}`;
   const mainTask = tasks.find((t) => t.agent === 'coder') ?? tasks[0];
   const files = mainTask?.files ?? [];
   await snapshots.begin(taskId, files);

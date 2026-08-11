@@ -54,20 +54,37 @@ export function isAllowlisted(command: string, prefixes: readonly string[] | und
   return prefixes.some((prefix) => command === prefix || command.startsWith(`${prefix} `));
 }
 
-/** 终止子进程整棵树：Windows 用 taskkill /T /F，POSIX 用进程组 SIGKILL。 */
-function killTree(child: ChildProcess): void {
-  if (child.pid === undefined) {
-    return;
-  }
-  if (process.platform === 'win32') {
-    spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true });
-    return;
-  }
-  try {
-    process.kill(-child.pid, 'SIGKILL');
-  } catch {
-    child.kill('SIGKILL');
-  }
+/**
+ * 终止子进程整棵树并等待完成（T6.5 对齐 qa.ts killTree）：
+ * Windows 用 taskkill /T /F 并等待其退出（不等待会残留 npm/node 子进程树）；
+ * POSIX 用进程组 SIGKILL（shell: true 子进程同进程组，-pid 杀整组）。
+ */
+function killTree(child: ChildProcess): Promise<void> {
+  return new Promise((resolve) => {
+    if (child.pid === undefined) {
+      resolve();
+      return;
+    }
+    if (process.platform === 'win32') {
+      const killer = spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], {
+        windowsHide: true,
+        stdio: 'ignore',
+      });
+      killer.on('close', () => resolve());
+      killer.on('error', () => resolve());
+      return;
+    }
+    try {
+      process.kill(-child.pid, 'SIGKILL');
+    } catch {
+      try {
+        child.kill('SIGKILL');
+      } catch {
+        // 进程已退出
+      }
+    }
+    resolve();
+  });
 }
 
 function runShellCommand(command: string, cwd: string, timeoutMs: number): Promise<ToolResult> {
@@ -104,7 +121,8 @@ function runShellCommand(command: string, cwd: string, timeoutMs: number): Promi
     };
 
     timer = setTimeout(() => {
-      killTree(child);
+      // 立即返回超时结果；进程树清理在后台等待 taskkill 完成（不阻塞 finish）
+      void killTree(child);
       finish(
         toolError(ToolErrorCode.TIMEOUT, `命令执行超时（${timeoutMs}ms），已终止:\n  ${command}`, {
           data: buildData(-1),

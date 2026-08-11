@@ -340,6 +340,56 @@ describe('self-heal 分类器（T1.1）', () => {
     }
   });
 
+  // T6.5 手工测试回归：tsc/Biome 错误写入 stderr（真实 npm run verify 行为），
+  // 简单拼接 stdout+stderr 会把错误追加到最后一个段（test）→ 误判 passed=true
+  it('tsc 错误写入 stderr → 识别为 type 段错误（T6.5：undefinedVariable 未检测回归）', () => {
+    // stdout 4 段全部正常（含段标记），tsc 错误在 stderr（Windows 反斜杠相对路径）
+    const stdout = [
+      '> @concertoai/cli@3.2.0 build',
+      'CLI Build success: 408 modules',
+      '> @concertoai/cli@3.2.0 lint',
+      'Checked 408 files in 2.3s. No errors found.',
+      '> @concertoai/cli@3.2.0 typecheck',
+      '> tsc --noEmit',
+      '> @concertoai/cli@3.2.0 test',
+      'Test Files  88 passed (88)',
+      'Tests  1004 passed (1004)',
+    ].join('\n');
+    const stderr = "src\\foo.ts(2,10): error TS2304: Cannot find name 'undefinedVariable'.\n";
+    const r = parseVerifyReport(stdout, stderr);
+    expect(r.passed).toBe(false);
+    expect(r.parseFailed.type).toBe(false);
+    expect(r.errors).toHaveLength(1);
+    expect(r.errors[0]).toMatchObject({
+      stage: 'type',
+      file: 'src\\foo.ts',
+      line: 2,
+      code: 'TS2304',
+    });
+  });
+
+  it('stderr 混合 tsc/Biome/vitest 错误 → 各自归段（T6.5）', () => {
+    const stdout = [
+      '> @concertoai/cli@3.2.0 build',
+      'Build success.',
+      '> @concertoai/cli@3.2.0 lint',
+      '> @concertoai/cli@3.2.0 typecheck',
+      '> @concertoai/cli@3.2.0 test',
+    ].join('\n');
+    const stderr = [
+      'src\\a.ts:1:5  lint/suspicious/noExplicitAny  FIXABLE  ━━━',
+      "src\\b.ts(3,4): error TS2304: Cannot find name 'undefinedVariable'.",
+      'FAIL src/foo.test.ts',
+      '  ✗ 测试失败',
+      'AssertionError: expected 1 to be 2',
+    ].join('\n');
+    const r = parseVerifyReport(stdout, stderr);
+    expect(r.passed).toBe(false);
+    expect(r.errors.map((e) => e.stage).sort()).toEqual(['lint', 'test', 'type']);
+    const typeErr = r.errors.find((e) => e.stage === 'type');
+    expect(typeErr).toMatchObject({ file: 'src\\b.ts', line: 3, code: 'TS2304' });
+  });
+
   it('build 段 tsup 失败 → stage=build（file/line 为空）', () => {
     const r = parseVerifyReport(BUILD_FAIL.stdout, BUILD_FAIL.stderr);
     expect(r.passed).toBe(false);

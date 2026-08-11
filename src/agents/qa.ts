@@ -13,7 +13,7 @@
  * - 标准 Agent 契约（T1.2）：输入 description / 输出 QaReport（zod schema 同步）。
  */
 
-import { spawn } from 'node:child_process';
+import { type ChildProcess, spawn } from 'node:child_process';
 import { z } from 'zod';
 import type { AgentContext, AgentDef } from '../orchestrator';
 import { createAgentRuntimeState } from '../orchestrator';
@@ -106,8 +106,45 @@ export interface ChildProcessQaRunnerOptions {
 }
 
 /**
+ * 终止子进程整棵树并**等待完成**（T6.5 手工测试回归：超时后进程残留）。
+ *
+ * - Windows：`taskkill /pid <pid> /T /F`（/T 杀整棵进程树、/F 强制），等待 taskkill 退出
+ *   （不等待会留下 npm/node 子进程残留，需手动 taskkill 清理进程树）；
+ * - POSIX：进程组 SIGKILL（shell: true 时子进程同进程组，`-pid` 杀整组）。
+ *
+ * 导出供单测验证（真实 spawn 长进程 → killTree → 进程退出）。
+ */
+export function killTree(child: ChildProcess): Promise<void> {
+  return new Promise((resolve) => {
+    if (child.pid === undefined) {
+      resolve();
+      return;
+    }
+    if (process.platform === 'win32') {
+      const killer = spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], {
+        windowsHide: true,
+        stdio: 'ignore',
+      });
+      killer.on('close', () => resolve());
+      killer.on('error', () => resolve());
+      return;
+    }
+    try {
+      process.kill(-child.pid, 'SIGKILL');
+    } catch {
+      try {
+        child.kill('SIGKILL');
+      } catch {
+        // 进程已退出
+      }
+    }
+    resolve();
+  });
+}
+
+/**
  * 生产沙箱执行器：spawn `npm run verify`。
- * 超时后 kill 子进程（含 npm 子进程树），标记 timedOut 并视为失败。
+ * 超时后 kill 子进程树并**等待其完全退出**（含 close 宽限兜底），标记 timedOut 并视为失败。
  */
 export class ChildProcessQaRunner implements QaRunner {
   private readonly cwd: string;
@@ -129,16 +166,35 @@ export class ChildProcessQaRunner implements QaRunner {
       });
       let stdout = '';
       let stderr = '';
-      let timedOut = false;
 
-      const timer = setTimeout(() => {
-        timedOut = true;
-        // Windows 下 kill 子进程树（npm 会 spawn 子 node 进程）
-        if (process.platform === 'win32') {
-          spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true });
-        } else {
-          child.kill('SIGKILL');
+      let timedOut = false;
+      let settled = false;
+      let timer: NodeJS.Timeout | undefined;
+      let graceTimer: NodeJS.Timeout | undefined;
+
+      const settle = (result: QaRunResult): void => {
+        if (settled) {
+          return;
         }
+        settled = true;
+        if (timer !== undefined) {
+          clearTimeout(timer);
+        }
+        if (graceTimer !== undefined) {
+          clearTimeout(graceTimer);
+        }
+        resolve(result);
+      };
+
+      timer = setTimeout(() => {
+        timedOut = true;
+        // 杀进程树并等待完成（taskkill /T /F 退出 = 树已清理）；close 触发由 close 处理器 settle
+        void killTree(child).then(() => {
+          // 兜底：kill 完成但 close 未触发（极端）→ 宽限后强制 settle，避免 run 永不返回
+          graceTimer = setTimeout(() => {
+            settle({ ok: false, stdout, stderr, timedOut });
+          }, 1500);
+        });
       }, timeoutMs);
 
       child.stdout?.on('data', (d: Buffer) => {
@@ -148,12 +204,10 @@ export class ChildProcessQaRunner implements QaRunner {
         stderr += d.toString('utf8');
       });
       child.on('error', (err) => {
-        clearTimeout(timer);
-        resolve({ ok: false, stdout, stderr: `${stderr}\n${err.message}`, timedOut });
+        settle({ ok: false, stdout, stderr: `${stderr}\n${err.message}`, timedOut });
       });
       child.on('close', (code) => {
-        clearTimeout(timer);
-        resolve({ ok: code === 0, stdout, stderr, timedOut });
+        settle({ ok: code === 0, stdout, stderr, timedOut });
       });
     });
   }

@@ -23,6 +23,7 @@ import {
   ChildProcessQaRunner,
   DEFAULT_VERIFY_TIMEOUT_MS,
   formatFeedbackIssues,
+  killTree,
   parseVerifyOutput,
   QaAgent,
   type QaReport,
@@ -320,5 +321,58 @@ describe('ChildProcessQaRunner（v3.1.1 Windows 回归）', () => {
     mockChild.triggerClose(0);
     const result = await runPromise;
     expect(result.ok).toBe(true);
+  });
+});
+
+// ── killTree（T6.5：超时后进程残留回归）───────────────────────
+
+describe('killTree（超时后进程树清理）', () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('Windows：taskkill /pid /T /F 杀进程树，等待 killer 退出后才 resolve', async () => {
+    const child = createMockChild();
+    const killer = createMockChild();
+    const spawnMock = vi.mocked(childProcess.spawn);
+    spawnMock.mockReturnValue(killer as childProcess.ChildProcess);
+
+    let resolved = false;
+    const p = killTree(child as childProcess.ChildProcess).then(() => {
+      resolved = true;
+    });
+    // 微任务推进：killTree 内部应已调用 taskkill 但未 resolve（等待 killer close）
+    await Promise.resolve();
+    expect(resolved).toBe(false);
+    expect(spawnMock).toHaveBeenCalledWith(
+      'taskkill',
+      ['/pid', '4242', '/T', '/F'],
+      expect.objectContaining({ windowsHide: true }),
+    );
+
+    killer.triggerClose(0);
+    await p;
+    expect(resolved).toBe(true);
+  });
+
+  it('POSIX：进程组 SIGKILL（kill -pid），不调用 taskkill', async () => {
+    const child = createMockChild();
+    const platformSpy = vi
+      .spyOn(process, 'platform', 'get')
+      .mockReturnValue('linux' as NodeJS.Platform);
+    const killSpy = vi.spyOn(process, 'kill').mockImplementation(() => true);
+    const spawnMock = vi.mocked(childProcess.spawn);
+
+    await killTree(child as childProcess.ChildProcess);
+    expect(killSpy).toHaveBeenCalledWith(-4242, 'SIGKILL');
+    expect(spawnMock).not.toHaveBeenCalled();
+
+    platformSpy.mockRestore();
+    killSpy.mockRestore();
+  });
+
+  it('pid 缺失 → 直接 resolve（无操作）', async () => {
+    const ghost = { pid: undefined } as unknown as childProcess.ChildProcess;
+    await expect(killTree(ghost)).resolves.toBeUndefined();
   });
 });

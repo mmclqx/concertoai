@@ -7,7 +7,15 @@
  *
  * 依赖：M5（team.ts）+ v3.0（runTeamLoop / SnapshotManager / agents）。
  */
-import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -208,6 +216,46 @@ describe('E2E：team CLI 全链路（拆解 → 闭环 → 真实写盘 → 聚�
     expect(result.loop?.attempts).toBe(5); // MAX_LOOP_ATTEMPTS
     // 事务回滚：新增文件被删除（恢复到任务前不存在状态）
     expect(existsSync(path.join(tmp, 'src/todo.ts'))).toBe(false);
+    // 回滚成功 → 快照清理
+    expect(leftoverTeamSnapshots()).toEqual([]);
+  });
+
+  // T6.5 手工测试回归：快照保护失效——真实 CoderAgent（缺省装配 txnWriter）写盘必须
+  // 登记快照，回滚时预登记文件恢复 + 拆解清单外的新增文件删除（不再「外部修改」拒绝覆盖/残留）
+  it('真实 CoderAgent 写盘 → 闭环超限回滚：预登记文件恢复 + 动态登记新增文件删除（T6.5）', async () => {
+    // 任务前：src/todo.ts 已存在（拆解预登记），src/extra.ts 不存在（Agent 新增、清单外）
+    const todoPath = path.join(tmp, 'src', 'todo.ts');
+    mkdirSync(path.dirname(todoPath), { recursive: true });
+    writeFileSync(todoPath, '原始内容', 'utf8');
+
+    // CoderAgent 每次生成 2 个文件：todo.ts（覆盖已有）+ extra.ts（新增、清单外）
+    const codeJson = JSON.stringify({
+      files: [
+        { path: 'src/todo.ts', content: '// 新版本\n' },
+        { path: 'src/extra.ts', content: '// extra\n' },
+      ],
+    });
+    // 脚本：1 次拆解 + 5 轮闭环各 1 次代码生成
+    const script = [
+      { content: DECOMPOSE_JSON },
+      ...Array<{ content: string }>(5).fill({ content: codeJson }),
+    ];
+    const result = await runTeamCommand({
+      cwd: tmp,
+      apiKey: 'sk-test',
+      task: '实现 TODO 模块',
+      autoApprove: true,
+      client: new FakeModel(script),
+      // 不注入 coder → team.ts 装配真实 CoderAgent + txnWriter（DiskFileWriter 写盘前 registerWrite）
+      agents: { reviewer: makeApproveReviewer(), qa: makeQa(false) },
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.loop?.attempts).toBe(5);
+    // 预登记文件恢复到任务前内容（曾被 Agent 覆盖 → 不再「外部修改」拒绝覆盖）
+    expect(readFileSync(todoPath, 'utf8')).toBe('原始内容');
+    // 清单外新增文件被删除（动态登记生效，不再残留）
+    expect(existsSync(path.join(tmp, 'src', 'extra.ts'))).toBe(false);
     // 回滚成功 → 快照清理
     expect(leftoverTeamSnapshots()).toEqual([]);
   });

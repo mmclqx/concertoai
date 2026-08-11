@@ -191,6 +191,62 @@ describe('rollback（外部修改检测）', () => {
   });
 });
 
+// ── registerWrite（动态登记，T6.5：team 快照保护失效回归）─────
+
+describe('registerWrite（动态登记未预登记文件）', () => {
+  it('begin 后写未预登记文件（磁盘已存在）→ rollback 恢复原始内容', async () => {
+    await write('src/a.ts', '原A');
+    const tx = new SnapshotManager(cwd);
+    await tx.begin('task-1', ['src/a.ts']);
+
+    // 任务写一个 begin 清单外的文件（写盘前动态登记：快照原始内容 + 记录写入）
+    await write('src/extra.ts', 'extra 原始');
+    await tx.registerWrite('task-1', 'src/extra.ts', '任务写入 extra');
+    await write('src/extra.ts', '任务写入 extra');
+
+    const result = await tx.rollback('task-1');
+    expect(result.ok).toBe(true);
+    // 动态登记文件被恢复（不再是「外部修改」拒绝覆盖）
+    expect(result.restored).toContain('src/extra.ts');
+    expect(await read('src/extra.ts')).toBe('extra 原始');
+    // 预登记文件也被恢复（原子性）
+    expect(await read('src/a.ts')).toBe('原A');
+    expect(await snapshotExists('task-1')).toBe(false);
+  });
+
+  it('动态登记新增文件（磁盘不存在）→ rollback 删除', async () => {
+    const tx = new SnapshotManager(cwd);
+    await tx.begin('task-1', []);
+
+    // Agent 写拆解清单外的新文件（写盘前动态登记 → 标记新增）
+    await tx.registerWrite('task-1', 'src/new.ts', '内容');
+    await write('src/new.ts', '内容');
+
+    const result = await tx.rollback('task-1');
+    expect(result.ok).toBe(true);
+    expect(result.restored).toContain('src/new.ts');
+    expect(await read('src/new.ts')).toBeUndefined();
+  });
+
+  it('同一文件重复 registerWrite → 不重复快照（清单幂等）', async () => {
+    await write('src/a.ts', '原A');
+    const tx = new SnapshotManager(cwd);
+    await tx.begin('task-1', ['src/a.ts']);
+    await tx.registerWrite('task-1', 'src/a.ts', '写 1');
+    await tx.registerWrite('task-1', 'src/a.ts', '写 2');
+    await write('src/a.ts', '写 2');
+
+    const result = await tx.rollback('task-1');
+    expect(result.ok).toBe(true);
+    expect(await read('src/a.ts')).toBe('原A');
+  });
+
+  it('事务未 begin → registerWrite 抛错（不静默）', async () => {
+    const tx = new SnapshotManager(cwd);
+    await expect(tx.registerWrite('ghost', 'src/a.ts', 'x')).rejects.toThrow(/快照事务未开启/);
+  });
+});
+
 // ── commit / clean / 保留 ─────────────────────────────────────
 
 describe('commit / clean / 保留快照', () => {

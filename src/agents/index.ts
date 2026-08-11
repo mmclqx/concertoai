@@ -46,6 +46,7 @@ export {
   type ChildProcessQaRunnerOptions,
   DEFAULT_VERIFY_TIMEOUT_MS,
   formatFeedbackIssues,
+  killTree,
   parseVerifyOutput,
   QaAgent,
   type QaAgentOptions,

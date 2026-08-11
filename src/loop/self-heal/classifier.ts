@@ -64,15 +64,48 @@ function stripAnsi(text: string): string {
 }
 
 /**
+ * 推断 stderr 行所属阶段（防御归段，T6.5 手工测试回归）。
+ *
+ * 真实 `npm run verify` 中：段标记（`> @concertoai/cli@x.y.z typecheck`）由 npm 打印到
+ * **stdout**，而 tsc / Biome / vitest 的错误写入 **stderr**。若简单拼接 stdout+stderr，
+ * stderr 错误会被追加到 stdout 最后一段（test）之后 → type/lint 段为空 → 误判 passed=true
+ * （手工测试：undefinedVariable 未被检测）。因此按内容特征把 stderr 行归入对应阶段：
+ * tsc（error TSxxxx）→ type、Biome（lint|assist 规则 / format）→ lint、tsup → build、
+ * vitest（FAIL/❯/✗/×/AssertionError）→ test；无法识别时返回 undefined（归入 stdout 最后段）。
+ */
+function inferStageFromLine(line: string): VerifyStage | undefined {
+  if (/error\s+TS\d+/i.test(line)) {
+    return 'type';
+  }
+  // Biome 规则错误（lint/suspicious/noExplicitAny / assist/source/organizeImports）
+  if (/(?:^|\s)(?:lint|assist)\/[A-Za-z0-9/_-]+/.test(line)) {
+    return 'lint';
+  }
+  // Biome format 错误（带行列 `foo.ts:9:1 format` 或整文件 `foo.ts format`）
+  if (/\.(?:ts|tsx|js|jsx|mts|cts)(?::\d+:\d+)?\s+format(?:\s|━)/.test(line)) {
+    return 'lint';
+  }
+  if (/RollupError|Build error|error during build/i.test(line)) {
+    return 'build';
+  }
+  if (/Test Files|Tests\s+\d+|\bFAIL\b|❯|✗|×|AssertionError/.test(line)) {
+    return 'test';
+  }
+  return undefined;
+}
+
+/**
  * 按 npm 段标记切分合并输出为四段文本。
  * 标记行之前的内容（verify 头部）忽略；无标记时对应段为空字符串。
  * 入口统一剥离 ANSI（真实子进程输出可能含颜色码）。
+ *
+ * stderr 防御归段（T6.5）：stdout 按段标记切分后，stderr 行按内容特征归入对应阶段
+ * （inferStageFromLine），无特征行归入 stdout 最后出现的段（保留上下文、不丢弃）。
  */
 function splitStages(stdout: string, stderr: string): Record<VerifyStage, string> {
-  const combined = `${stripAnsi(stdout)}\n${stripAnsi(stderr)}`;
   const segments: Record<VerifyStage, string> = { build: '', lint: '', type: '', test: '' };
   let current: VerifyStage | undefined;
-  for (const line of combined.split('\n')) {
+  for (const line of stripAnsi(stdout).split('\n')) {
     const m = line.match(STAGE_MARKER_RE);
     const stage = m?.[1];
     if (stage === 'build' || stage === 'lint' || stage === 'typecheck' || stage === 'test') {
@@ -83,6 +116,13 @@ function splitStages(stdout: string, stderr: string): Record<VerifyStage, string
     }
     if (current !== undefined) {
       segments[current] += `${line}\n`;
+    }
+  }
+  // stderr 无段标记：按内容特征归段；无特征行归入 stdout 最后出现的段（防御不丢错误）
+  for (const line of stripAnsi(stderr).split('\n')) {
+    const target = inferStageFromLine(line) ?? current;
+    if (target !== undefined) {
+      segments[target] += `${line}\n`;
     }
   }
   return segments;

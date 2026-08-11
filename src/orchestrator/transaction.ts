@@ -8,6 +8,8 @@
  * - begin(taskId, files)：一次性快照全部涉及文件（存在 → 保存原内容；不存在 → 标记新增）；
  * - recordWrite(taskId, relPath, content)：登记任务写入（CoderFileWriter 接入点），
  *   供 rollback 区分「任务修改」与「外部修改」；
+ * - registerWrite(taskId, relPath, content)：动态登记（T6.5）——文件未在快照清单 →
+ *   先快照再记录写入，保证 Agent 实际写盘路径超出 begin 预登记清单时仍可回滚；
  * - rollback(taskId)：恢复文件 → 外部修改检测 → 全部成功清理快照 / 部分失败保留快照并报错；
  * - commit(taskId)：任务成功后清理快照；
  * - 失败/取消后未 rollback → 快照保留供人工检查；`concertoai snapshot clean` 手动清理；
@@ -137,6 +139,41 @@ export class SnapshotManager {
     }
     writes[relPath] = content;
     await writeFile(writesPath, JSON.stringify(writes, null, 2), 'utf8');
+  }
+
+  /**
+   * 动态登记任务写入（T6.5 手工测试回归：team 快照保护失效）。
+   *
+   * `begin(taskId, files)` 只快照预登记文件（如拆解清单），Agent 实际写盘路径可能
+   * 超出清单（新增文件 / begin 时未知文件）。写前调用本方法：文件未在快照清单中 →
+   * 先动态快照（存在→保存原内容；不存在→标记新增，回滚时删除），再记录写入。
+   * 这样 rollback 可恢复**任意**被任务写入的文件，快照保护不再依赖预登记清单完整性。
+   */
+  async registerWrite(taskId: string, relPath: string, content: string): Promise<void> {
+    const dir = this.dirFor(taskId);
+    const filesPath = path.join(dir, FILES_MANIFEST);
+    let entries: SnapshotFileEntry[] = [];
+    try {
+      entries = JSON.parse(await readFile(filesPath, 'utf8')) as SnapshotFileEntry[];
+    } catch {
+      throw new Error(`快照事务未开启（缺少 ${FILES_MANIFEST}），无法登记写入: ${relPath}`);
+    }
+    if (!entries.some((e) => e.relPath === relPath)) {
+      const encoded = encodeFilename(relPath);
+      const src = path.resolve(this.cwd, relPath);
+      let existed = false;
+      try {
+        const original = await readFile(src);
+        await writeFile(path.join(dir, encoded), original);
+        existed = true;
+      } catch {
+        // 文件不存在 → 新增文件标记（回滚时删除）
+        await writeFile(path.join(dir, `${encoded}.new`), '');
+      }
+      entries.push({ relPath, encoded, existed });
+      await writeFile(filesPath, JSON.stringify(entries, null, 2), 'utf8');
+    }
+    await this.recordWrite(taskId, relPath, content);
   }
 
   /**

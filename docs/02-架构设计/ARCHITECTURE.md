@@ -12,7 +12,7 @@ ConcertoAI 是一款**中文优先**的终端编码助手 CLI（DeepSeek 驱动�
 
 - **技术栈**：TypeScript (strict) + Node ≥22 + ESM，Ink 7 (React 19) 渲染 TUI，commander 解析 CLI，zod 做工具参数校验，vitest 测试，Biome 检查，tsup 打包
 - **运行时依赖**：`ink` / `react` / `commander` / `zod` / `cli-highlight` / `chalk`
-- **测试现状**：88 个测试文件、1004 个用例，`npm run verify` 全绿，`npm audit` 0 漏洞；已用真实 `DEEPSEEK_API_KEY` 完成端到端冒烟
+- **测试现状**：88 个测试文件、1014 个用例，`npm run verify` 全绿，`npm audit` 0 漏洞；已用真实 `DEEPSEEK_API_KEY` 完成端到端冒烟
 - **安全基线**：编辑与命令一律审批（fail-closed）、路径沙箱、结果截断、白名单免审批——无 yolo 模式
 - **v3.1 新增能力**：AI 自我修复闭环（self-heal）/ 多项目管理（project）/ 多租户登录（account）/ Orchestrator CLI（team、/orchestrate、audit export）/ 结构化错误增强（error-codes）；**v3.1 预留功能（已交付）**：`concertoai balance`（余额查询）/ `concertoai doctor`（环境诊断）、配置目录迁移 `~/.lumen → ~/.concertoai`（`src/store/paths.ts` 单一来源 + 幂等迁移）；**v2.2 智能成本控制**（高峰时段模型自动切换，见 §4 D41）
 - **v3.2 新增能力**：跨平台 CI 矩阵与 spawn 审计（ADR-032）/ UNC 路径与 EXDEV 边界（ADR-031）/ self-heal 模块化拆分（ADR-030）/ audit 损坏行统计 + /orchestrate diagnostics / 长任务进度推送（team onProgress + self-heal onPhase）/ project-account 视觉与 doctor 账号完整性 / 启动期缓存（ADR-029）/ Agent 市场版本对比与 `update --all`
@@ -113,7 +113,7 @@ ConcertoAI 是一款**中文优先**的终端编码助手 CLI（DeepSeek 驱动�
 │   state-machine.ts 任务状态机（pending→…→completed/failed）   │
 │   scheduler.ts     DAG 调度（拓扑排序 + 并行 + 重试 + 冲突）   │
 │   loop.ts          对抗性闭环（Coder→Reviewer→QA ≤5 次）      │
-│   transaction.ts   SnapshotManager 多文件事务回滚（T3.6）     │
+│   transaction.ts   SnapshotManager 多文件事务回滚 + 动态登记（T3.6 / T6.5）│
 └───────────────────────────┬─────────────────────────────────┘
 ┌───────────────────────────▼─────────────────────────────────┐
 │ agents/ 专业 Agent（v3.0 M3） market/ Agent 市场（v3.0 M4）   │
@@ -418,7 +418,7 @@ concertoai/
 │   │   ├── state-machine.ts 任务状态机：转换守卫 + onTransition 事件（T2.1）
 │   │   ├── scheduler.ts  DAG 调度：拓扑排序 + 并发池（默认 3）+ 重试 + 冲突检测（T2.2）
 │   │   ├── loop.ts       对抗性闭环编排：runTeamLoop（Coder→Reviewer→QA ≤5 次，T3.5）
-│   │   ├── transaction.ts SnapshotManager 多文件事务快照/回滚/提交（T3.6）
+│   │   ├── transaction.ts SnapshotManager 多文件事务快照/回滚/提交 + registerWrite 动态登记（T3.6 / T6.5）
 │   │   └── index.ts      barrel
 │   ├── agents/           专业 Agent（v3.0 M3，详见 §4 D33/D34）
 │   │   ├── protocol.ts   Agent 接口契约：execute/send/receive + AgentDef schema（T1.2）
@@ -452,7 +452,7 @@ concertoai/
 │       ├── zh.ts         中文字典 + fmt()
 │       ├── en.ts         英文字典（键与 zh 同构）
 │       └── index.ts      resolveLocale / setLocale / t() / DICTS
-└── tests/                镜像 src 结构（88 个文件 / 1004 用例，v3.2 M6 基线），含 tests/agent/、tests/agents/、tests/balance/、tests/cli/（含 common.test.ts 启动缓存）、tests/core/、tests/e2e/（team-cli/self-heal/project-isolation/platform-e2e）、tests/fixtures/（platform-samples 跨平台样本库）、tests/i18n/、tests/knowledge/、tests/loop/（self-heal/error-reporting）、tests/market/、tests/mcp/、tests/model/、tests/observable/、tests/orchestrator/、tests/planner/、tests/reviewer/、tests/skill/、tests/store/（projects/accounts/accounts-exdev）、tests/tools/、tests/ui/ 等
+└── tests/                镜像 src 结构（88 个文件 / 1014 用例，v3.2 M6 基线 + T6.5 回归），含 tests/agent/、tests/agents/、tests/balance/、tests/cli/（含 common.test.ts 启动缓存）、tests/core/、tests/e2e/（team-cli/self-heal/project-isolation/platform-e2e）、tests/fixtures/（platform-samples 跨平台样本库）、tests/i18n/、tests/knowledge/、tests/loop/（self-heal/error-reporting）、tests/market/、tests/mcp/、tests/model/、tests/observable/、tests/orchestrator/、tests/planner/、tests/reviewer/、tests/skill/、tests/store/（projects/accounts/accounts-exdev）、tests/tools/、tests/ui/ 等
 ```
 
 ## 6. 5分钟快速体验
@@ -587,7 +587,7 @@ npm run verify     # 验收：build + lint + typecheck + test（--silent）
 | --- | --- | --- |
 | 单 Agent 无法胜任复杂任务 | ✅ 多 Agent 团队：Orchestrator 拆解 + DAG 调度（拓扑排序/并行/重试/冲突检测）+ 聚合交付 | `orchestrator/` + `agents/orchestrator.ts` |
 | Coder↔Reviewer 无闭环 | ✅ 对抗性闭环：Coder 实现 → Reviewer 审查（approve/reject）→ QA 验证 → 修复循环 ≤ 5 次，超限回滚 | `orchestrator/loop.ts` |
-| 多文件修改无法原子回滚 | ✅ 任务级事务快照（SnapshotManager）+ `concertoai snapshot clean` + 外部修改检测 | `orchestrator/transaction.ts` + `cli/snapshot.ts` |
+| 多文件修改无法原子回滚 | ✅ 任务级事务快照（SnapshotManager）+ `concertoai snapshot clean` + 外部修改检测 + registerWrite 动态登记（Agent 写盘路径未知时兜底快照） | `orchestrator/transaction.ts` + `cli/snapshot.ts` + `cli/team.ts` |
 | 无可复用的 Agent 分发机制 | ✅ Agent 市场：/agent install/remove/list + 技能 promote（sha256 + 接口合规检查，复用技能市场架构） | `market/` + `cli/slash/agent.ts` |
 | 多 Agent 协作不可观测 | ✅ 调用链追踪（TraceStore LRU）+ 审计日志（AuditLogger JSONL <10ms）+ 流程树面板 | `observable/` + `ui/ObservabilityPanel.tsx` |
 
