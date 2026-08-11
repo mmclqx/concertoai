@@ -513,4 +513,56 @@ interface AgentDef {
 
 ---
 
+## ADR-033：插件权限模型——声明式拦截（非沙箱隔离）
+
+| 字段 | 内容 |
+|------|------|
+| **状态** | 已采纳（v4.0 规划，M2/M4 实施） |
+| **日期** | 2026-08-12 |
+| **上下文** | v4.0 引入插件系统（可执行代码），第三方插件可能恶意或误用权限（读取 Key / 破坏项目 / 访问网络）。v3.x 已有审批流（编辑/Shell fail-closed）与子代理进程隔离，但插件形态（生命周期钩子 + 工具注册）需要新的安全边界 |
+| **选项** | ① 声明式权限 + 安装审批 + 运行时 enforce（read/write/network/shell/knowledge/mcp 六类 + constraints 白名单），v4.0 进程内运行 ② 子进程沙箱（fork + IPC + crash 隔离），独立 3h 工时 ③ 不做权限控制（信任第三方） |
+| **结论** | 采用 ①：插件声明所需权限，安装时审批（展示权限清单），运行时 enforce（未声明 → 拒绝 + 审计）；v4.0 插件进程内运行 + 权限拦截；子进程沙箱降为 v4.1 强化 |
+| **理由** | (a) 与 v3.x fail-closed 审批基线一致，用户心智延续；(b) v4.0 工时可控（进程内无 IPC 开销），沙箱隔离收益低（个人 CLI 场景第三方插件数量有限）；(c) 权限审计复用 observable/audit.ts，安全可追踪；(d) 风险已知：恶意插件可声明全部权限，v4.1 用沙箱 + 评分体系缓解（对应架构决策 D53） |
+
+---
+
+## ADR-034：Provider 切换行为差异——文档标注 + 固定 Orchestrator Provider
+
+| 字段 | 内容 |
+|------|------|
+| **状态** | 已采纳（v4.0 规划，M3 实施） |
+| **日期** | 2026-08-12 |
+| **上下文** | v4.0 引入多 Provider（DeepSeek/OpenAI/Ollama），不同模型在流式格式、token 定价、工具调用能力上存在差异；多 Agent 协作（Orchestrator）中若 Agent 间使用不同 Provider，跨模型通信行为不可预测 |
+| **选项** | ① 文档标注差异 + Orchestrator 内部固定默认 Provider（Agent 团队统一模型）+ fallback 仅失败重试 ② 允许任意混合 Provider ③ 禁止切换（维持单供应商） |
+| **结论** | 采用 ①：用户侧 `--provider` / config 自由切换（切换前显示成本对比）；Orchestrator/团队闭环内部固定默认 Provider，避免跨模型通信；fallback 只做失败重试（≤1 次）+ 状态条通知 |
+| **理由** | (a) 用户自由度与系统确定性平衡：单 Agent 对话可任意切换，多 Agent 协作需行为一致；(b) 跨模型工具调用/输出格式差异是已知不可控风险（对应架构决策 D54）；(c) 成本透明（切换前对比）延续 v3.2 peak-time/model-switcher 的成本控制哲学 |
+
+---
+
+## ADR-035：工作流事务回滚边界——整体快照，任一步失败→全部回滚
+
+| 字段 | 内容 |
+|------|------|
+| **状态** | 已采纳（v4.0 规划，M2 实施） |
+| **日期** | 2026-08-12 |
+| **上下文** | v4.0 工作流引擎（用户 YAML 定义步骤依赖）执行中任一步可能失败；失败后已写文件的状态需要明确语义——回滚全部 vs 保留已完成步骤 |
+| **选项** | ① 整体快照：工作流开始前 SnapshotManager 登记全部待写文件，任一步失败 → 全部回滚 ② 步骤级回滚：仅回滚失败步骤自身 ③ 不回滚（失败后人工清理） |
+| **结论** | 采用 ①：整体快照，任一步失败 → 回滚已写文件（复用 v3.x SnapshotManager）；失败恢复 UX 展示已完成/已回滚/待执行清单 + [R]重试 [S]跳过 [F]修复后重试 [A]放弃 |
+| **理由** | (a) 工作流语义是「一次完整操作」，部分成功会造成项目中间态混乱；(b) 复用既有 SnapshotManager，工时可控；(c) 已知边界：嵌套工作流的快照归属待明确，v4.1 解决（对应架构决策 D55） |
+
+---
+
+## ADR-036：市场 schema plugins[] 向后兼容——installer 按 type 分派
+
+| 字段 | 内容 |
+|------|------|
+| **状态** | 已采纳（v4.0 规划，M4 实施） |
+| **日期** | 2026-08-12 |
+| **上下文** | v4.0 插件市场扩展 registry：新增 `plugins[]` 条目类型；既有市场已支持 `skills[]`（SKILL.md）与 `agents[]`（AgentDef），已安装用户的技能/Agent 不能被破坏 |
+| **选项** | ① registry 增加 `plugins[]` 字段（RegistryItemBase + type:'plugin' + manifest），installer 按 type 分派（skill→SKILL.md / agent→AgentDef / plugin→PluginManifest），旧条目零改动 ② 重建 registry（仅 plugins[]，迁移旧条目）③ 插件与 skill/agent 完全独立两套市场 |
+| **结论** | 采用 ①：`plugins[]` 与旧 `skills[]`/`agents[]` 共存；installer/加载器按 type 分派；版本比较复用 installer compareVersion；sha256 校验复用 |
+| **理由** | (a) 零破坏迁移：旧条目 schema 不变，已装技能/Agent 全量回归兜底；(b) 复用既有市场基础设施（registry/installer/审计），工时可控；(c) 插件是 skill/agent 的超集（声明式 + 命令式），统一市场形态利于用户认知（对应架构决策 D56） |
+
+---
+
 *当重要决策做出后，请在此追加新条目。*

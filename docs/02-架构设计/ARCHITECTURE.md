@@ -2,7 +2,7 @@
 
 > 版本：v3.4（含 v2.2 / v3.1 / v3.2 / v3.3 全部已交付功能）· 2026-08-12
 > 本文档基于当前代码实现编写，作为后续维护与扩展的技术参考。
-> 配套文档：[v3.0 开发任务](../03-开发计划与任务/v3.0-dev-tasks.md)、[v3.1 开发计划](../03-开发计划与任务/v3.1-dev-plan-ai.md)、[v3.3 开发计划](../03-开发计划与任务/v3.3-dev-plan.md)、[v3.4 开发计划](../03-开发计划与任务/v3.4-dev-plan.md)、[任务看板](../03-开发计划与任务/TASKS.md)
+> 配套文档：[v3.0 开发任务](../03-开发计划与任务/v3.0-dev-tasks.md)、[v3.1 开发计划](../03-开发计划与任务/v3.1-dev-plan-ai.md)、[v3.3 开发计划](../03-开发计划与任务/v3.3-dev-plan.md)、[v3.4 开发计划](../03-开发计划与任务/v3.4-dev-plan.md)、[v4.0 开发计划终稿](../03-开发计划与任务/v4.0-dev-plan-final.md)（规划中，未实施）、[任务看板](../03-开发计划与任务/TASKS.md)
 
 ---
 
@@ -18,6 +18,7 @@ ConcertoAI 是一款**中文优先**的终端编码助手 CLI（DeepSeek 驱动�
 - **v3.2 新增能力**：跨平台 CI 矩阵与 spawn 审计（ADR-032）/ UNC 路径与 EXDEV 边界（ADR-031）/ self-heal 模块化拆分（ADR-030）/ audit 损坏行统计 + /orchestrate diagnostics / 长任务进度推送（team onProgress + self-heal onPhase）/ project-account 视觉与 doctor 账号完整性 / 启动期缓存（ADR-029）/ Agent 市场版本对比与 `update --all`
 - **v3.3 质量收尾**（审查遗留 W1/W2 + S1-S3，不做新功能面）：lint:fix 失败 break 语义显式化 / 全局正则常量去 `g` 标志（消除 lastIndex 陷阱）/ self-heal 文案 i18n（`selfHeal` 分组 + `--lang en` 全英文）/ `resolveApiKeyCached` 缓存语义注释 / 存量解析测试迁移到 `platform-samples.ts`
 - **v3.4 审查闭环 + VS Code 崩溃防护**：S-C1 `collectKeys` maxDepth（en.test.ts）/ I1 feedback 数据层 i18n（`selfHeal.feedback*` 键组，en 下全英文）/ I2 正则常量去 `g`/`gm` 全项目复核（classifier / edit / read / tokenizer / planner）/ I3 en 字典 CJK 校验 / **`concertoai doctor --vscode`**（`src/cli/vscode-health.ts`：进程数 / 崩溃转储 / AI 扩展 / argv.json 四维诊断，argv.json 字段名复数 `disable-extensions` 校验——踩坑记录 §六）
+- **v4.0 规划（未实施）**：架构拐点——从「单体工具」到「插件化平台」。M0-M8 约 32.5h：Reviewer autoFix 闭环（`reviewer/autofix.ts`，复用 snapshot-guard）/ `concertoai workflow`（DAG 工作流引擎，复用 scheduler + SnapshotManager）/ 多 Provider 抽象层（DeepSeek/OpenAI/Ollama + config v3→v4 迁移器）/ 插件系统（Plugin 接口 + 权限六类 + 市场 `plugins[]`）/ LSP + Web + VS Code 骨架（P2）/ team --parallel（P2）。架构决策见 ADR-033~036（决策表 D53~D56）；详细计划见 [v4.0-dev-plan-final.md](../03-开发计划与任务/v4.0-dev-plan-final.md)，本架构正文在实施后同步更新
 
 ## 2. 架构全景图
 
@@ -292,6 +293,10 @@ MCP 服务故障
 | D50 | **跨平台 CI 矩阵 + spawn 兼容基线**（v3.2 M1 / ADR-032）：ci.yml 三平台矩阵（ubuntu/windows/macos）+ spawn 审计（`.cmd`/`.bat` 必须 `shell: true` 或经 `getPlatformAdapter`）+ 跨平台样本库 `tests/fixtures/platform-samples.ts` | 「事后修补」→「事前防线」；CI 前置拦截跨平台回归；解析类正则双平台样本验证 | `.github/workflows/ci.yml` + `tools/shell.ts` + `tests/fixtures/` |
 | D51 | **VS Code 崩溃防护 doctor --vscode**（v3.4 M3）：`src/cli/vscode-health.ts` 四维只读诊断——进程数（tasklist/ps 阈值 60/40）/ 崩溃转储（Crashpad *.dmp 数量+体积，>5 或 >100MB 告警）/ AI 扩展（code --list-extensions 对照已知清单 >3 告警）/ argv.json（`disable-extensions` **复数**字段名 + 数组或 true 值格式 + 扩展 ID 双引号校验 + Windows 无效位置检测）；纯解析函数 + 依赖注入（exec/readFile/scanDir），检测失败降级「无法检测」不崩溃 | 环境问题（VS Code 崩溃/进程爆炸/转储堆积）必须有自动化检测入口，不依赖人工翻阅日志（踩坑记录 §五/§六：argv.json 位置 + 字段名双坑导致 5 扩展从未禁用）；诊断只读、破坏性动作仅输出建议命令 | `cli/vscode-health.ts` + `cli/doctor.ts` + `cli/index.ts` |
 | D52 | **正则常量标志位模式一致性**（v3.4 T1.2 I2，延续 W2）：全项目正则常量定义一律不带 `g`/`u`（消除 lastIndex 残留），使用处按需 `new RegExp(source, flags)` 显式带；`/i` 单独使用无 lastIndex 陷阱可保留；复核覆盖 `/[gimy]` 全变体 | C 复核盲区教训：搜索 `/g` 结尾漏掉 `/gm` 变体（v3.3）；模式统一后搜索 `const X = /…/[gimy]` 即可全量兜底 | `classifier.ts` / `edit.ts` / `read.ts` / `tokenizer.ts` / `planner/deps.ts` |
+| D53 | **插件权限模型：声明式拦截**（v4.0 规划 / ADR-033）：插件声明 read/write/network/shell/knowledge/mcp 六类权限 + constraints 白名单，安装时审批（展示权限清单）+ 运行时 enforce（未声明 → 拒绝 + 审计）；v4.0 进程内运行 + 权限拦截，子进程沙箱 v4.1 强化 | 与 fail-closed 审批基线一致；复用 audit.ts 可追踪；工时可控（无 IPC 开销）；风险：恶意插件可声明全部权限 → v4.1 沙箱 + 评分缓解 | `src/plugin/`（types/manager/loader/permissions） |
+| D54 | **Provider 切换行为差异：文档标注 + 固定 Orchestrator Provider**（v4.0 规划 / ADR-034）：用户侧 `--provider`/config 自由切换（切换前显示成本对比）；Orchestrator/团队闭环内部固定默认 Provider 避免跨模型通信；fallback 仅失败重试（≤1 次）+ 状态条通知 | 用户自由度与系统确定性平衡；跨模型工具调用/输出格式差异不可控 → 团队协作固定模型；成本透明延续 peak-time/model-switcher 哲学 | `src/model/`（provider/registry/router）+ `src/cli/` |
+| D55 | **工作流事务回滚边界：整体快照，任一步失败→全部回滚**（v4.0 规划 / ADR-035）：工作流开始前 SnapshotManager 登记全部待写文件，任一步失败 → 回滚已写文件；失败恢复 UX（已完成/已回滚/待执行 + 重试/跳过/修复/放弃）；嵌套工作流快照归属 v4.1 明确 | 工作流语义是「一次完整操作」，部分成功造成中间态混乱；复用既有 SnapshotManager 工时可控 | `src/workflow/`（types/parser/executor）+ `src/loop/self-heal/snapshot-guard.ts` |
+| D56 | **市场 schema plugins[] 向后兼容：installer 按 type 分派**（v4.0 规划 / ADR-036）：registry 增加 `plugins[]`（RegistryItemBase + type:'plugin' + manifest），与旧 `skills[]`/`agents[]` 共存；installer 按 type 分派（skill→SKILL.md / agent→AgentDef / plugin→PluginManifest）；版本比较与 sha256 校验复用 installer | 零破坏迁移（旧条目 schema 不变 + 全量回归兜底）；复用既有市场基础设施；插件是 skill/agent 超集，统一市场形态利于用户认知 | `src/market/`（types/installer/registry）+ `src/cli/plugin.ts` |
 
 ## 5. 目录结构说明
 
