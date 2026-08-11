@@ -21,8 +21,10 @@ let tmp: string;
 
 beforeEach(() => {
   tmp = mkdtempSync(path.join(os.tmpdir(), 'concertoai-test-'));
-  // 隔离本机系统 LANG（如 zh_CN.UTF-8），避免影响「全部缺省」类断言
+  // 隔离本机系统 LANG / LUMEN_LOCALE（如 zh_CN.UTF-8 / en），避免影响「全部缺省」类断言
+  // （v3.3 S1 验证时发现：shell 预设 LUMEN_LOCALE=en 会让「全部缺省 → zh」断言假失败）
   vi.stubEnv('LANG', '');
+  vi.stubEnv('LUMEN_LOCALE', '');
 });
 
 afterEach(() => {
@@ -166,9 +168,10 @@ describe('resolveConfig 优先级（CLI > 环境变量 > 配置文件 > 默认�
     expect(resolveConfig({ schemaVersion: 1, locale: 'zh' }, undefined, 'zh').locale).toBe('zh');
     // 环境变量高于配置
     expect(resolveConfig({ schemaVersion: 1, locale: 'zh' }).locale).toBe('en');
-    // LANG 兜底（zh/en 前缀）
+    // LANG 兜底（zh/en 前缀）——unstub 后需重新隔离 LUMEN_LOCALE（外部 shell 可能预设）
     vi.unstubAllEnvs();
     vi.stubEnv('LANG', 'zh_CN.UTF-8');
+    vi.stubEnv('LUMEN_LOCALE', '');
     expect(resolveConfig({ schemaVersion: 1 }).locale).toBe('zh_CN.UTF-8');
     // LANG 非 zh/en 前缀时忽略，回退配置/默认
     vi.stubEnv('LANG', 'fr_FR.UTF-8');
