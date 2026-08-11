@@ -235,9 +235,18 @@ v3.3.0 发布门检查（当前，2026-08-11）：
 ☑ npm whoami 令牌有效（mmclqx）→ npm publish 成功（latest=3.3.0）
 ☑ v3.3.0 tag 已打
 
+v3.4.0 发布门检查（当前，2026-08-12）：
+
+☑ npm run verify 全绿（89 文件 / 1044 用例，v3.4 基线）
+☑ 版本号一致性核对（package.json / package-lock.json / src/version.ts / tests/smoke.test.ts = 3.4.0；段标记样本 @concertoai/cli@3.4.0 同步）
+☑ S-C1/I1/I2/I3 四项审查闭环 + doctor --vscode 四维诊断全部落地；en.test.ts maxDepth + CJK 断言覆盖
+☑ 手工测试报告 07.7 + 自我审查报告落盘；执行日志补全
+☑ npm audit 0 漏洞；npm whoami 令牌有效（mmclqx）→ npm publish 成功（latest=3.4.0）
+☑ v3.4.0 tag 已打
+
 发布门通用检查项（每次发布前必过，不论版本）：
 
-☑ 自我审查报告已生成落盘：`docs/08-审查记录/REVIEW-{版本号}-self-review-{日期}.md`（独立完成，不参考其他审查者；对照 v3.2 方法论：i18n 文案层沿数据流追踪 / 全项目同类模式扫描 / 追问控制流语义 / 区分当前正确 vs 模式脆弱；v3.3 案例见 09-踩坑记录/2026-08-11-自我审查与C审查视角差距.md 与 docs/08-审查记录/v3.3-self-review-2026-08-11.md）
+☑ 自我审查报告已生成落盘：`docs/08-审查记录/REVIEW-{版本号}-self-review-{日期}.md`（独立完成，不参考其他审查者；对照 v3.2 方法论：i18n 文案层沿数据流追踪 / 全项目同类模式扫描 / 追问控制流语义 / 区分当前正确 vs 模式脆弱；v3.3 案例见 09-踩坑记录/2026-08-11-自我审查与C审查视角差距.md 与 docs/08-审查记录/v3.3-self-review-2026-08-11.md；v3.4 案例见 docs/08-审查记录/REVIEW-v3.4-self-review-2026-08-12.md）
 ☑ npm 令牌有效性验证：`npm whoami` 返回用户名（401/403 说明令牌过期，先 `npm login` 重新生成；教训见 09-踩坑记录/2026-08-11-npm-token-expired.md）
 
 ## 重要决策（已确定）

@@ -1,7 +1,7 @@
 # ConcertoAI 开发任务看板
 
 > 最后更新：2026-08-12
-> 当前里程碑：**🟢 v3.4 进行中（M1/M3 已完成，M2 回归/文档已完成，发布待 T2.4）**（v3.3: 9/9 ✅ · v3.4: M1 4/4 ✅ + M3 4/4 ✅ · 基线 89 文件 / 1044 用例）
+> 当前里程碑：**🟢 v3.4 已完成（v3.4.0 已发布 npm + tag）**（v3.3: 9/9 ✅ · v3.4: M1 4/4 ✅ + M3 4/4 ✅ + M2 4/4 ✅ · 基线 89 文件 / 1044 用例）
 > 基于：[v3.4 开发计划](./v3.4-dev-plan.md) · 历史：[v3.3 开发计划](./v3.3-dev-plan.md) · [v3.2 开发计划](./v3.2-dev-plan.md) · [v3.1 开发计划](./v3.1-dev-plan-ai.md)
 
 ---
@@ -69,7 +69,7 @@
 | **V3.3-M2 回归与发布** | **P0** | **4** | 🟢 已完成（v3.3.0 已发布 npm + tag，2026-08-11） |
 | **V3.4-M1 审查建议闭环** | **P0** | **4** | 🟢 已完成（7a60729：S-C1/I1/I2/I3） |
 | **V3.4-M3 VS Code 崩溃防护** | **P1** | **4** | 🟢 已完成（5e62f79：doctor --vscode 四维） |
-| **V3.4-M2 回归与发布** | **P0** | **4** | 🔵 进行中（T2.1/T2.2 ✅，T2.3/T2.4 待办） |
+| **V3.4-M2 回归与发布** | **P0** | **4** | 🟢 已完成（v3.4.0 已发布 npm + tag，2026-08-12） |
 
 ---
 
@@ -1205,12 +1205,13 @@
   - 涉及文件：`CHANGELOG.md`、`ARCHITECTURE.md`、`TASKS.md`、`AGENTS.md`
   - ✅ 2026-08-12 完成：CHANGELOG [3.4.0] 条目、ARCHITECTURE 版本头 v3.4 + 能力行 + doctor/vscode-health 目录树 + D51/D52、AGENTS.md 版本头 v3.4 + v3.4 完成条目
 
-- [ ] **T2.3** 手工测试报告 07.7 + 自我审查报告
-  - 涉及文件：`docs/07.7-手工测试报告-v3.4.md`（新增）、`docs/08-审查记录/REVIEW-v3.4-self-review-*.md`（新增）
+- [x] **T2.3** 手工测试报告 07.7 + 自我审查报告
+  - 涉及文件：`docs/07.7-手工测试报告-v3.4.md`（新增）、`docs/08-审查记录/REVIEW-v3.4-self-review-2026-08-12.md`（新增）
+  - ✅ 2026-08-12 完成：07.7 报告（4 修复 + doctor --vscode 10 用例 + 7 回归抽查）；自我审查独立完成（发现 M1/M3 执行日志遗漏 + 3 个实现期问题已修复）
 
-- [ ] **T2.4** 发布动作
-  - 涉及文件：`package.json` / `package-lock.json` / `src/version.ts` / `tests/smoke.test.ts`（版本号联动）
-  - ⏳ npm version 3.4.0 → verify → npm whoami → npm publish → git tag v3.4.0
+- [x] **T2.4** 发布动作
+  - 涉及文件：`package.json` / `package-lock.json` / `src/version.ts` / `tests/smoke.test.ts`（版本号联动）+ 段标记样本 + README
+  - ✅ 2026-08-12 完成：npm version 3.4.0 → verify 89/1044 全绿 → npm whoami（mmclqx）→ npm publish（latest=3.4.0）→ git tag v3.4.0
 
 ---
 
