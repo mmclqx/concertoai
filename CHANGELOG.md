@@ -6,6 +6,21 @@
 - 条目按类型分组：`Added`（新增）/ `Changed`（变更）/ `Fixed`（修复）/ `Removed`（移除）；
 - 版本号由 `npm version <patch|minor|major>` 管理（自动 bump + 同步 `src/index.ts` 的 VERSION + git tag）。
 
+## [Unreleased]
+
+### Fixed — v3.1.1 补丁（Windows/ESM/解析边界回归）
+
+- **Windows QA 回归**（`src/agents/qa.ts`）：`ChildProcessQaRunner` 以 `shell: false` spawn `npm.cmd` → `.cmd` 无法被 CreateProcess 直接执行（ENOENT），team 闭环 QA 阶段在 Windows 直接失败；改为 `shell: true`，并注释防止重复拼接 `.cmd`（`npm.cmd.cmd`）
+- **ESM `__dirname` 崩溃**（`src/reviewer/knowledge.ts`）：`builtinKbDir()` 引用 CJS 全局 `__dirname` → team / `/orchestrate` / `/review` 抛 `ReferenceError: __dirname is not defined`；改为接收 `cwd` 参数基于项目根定位，目录缺失时静默降级
+- **Biome 解析漏类别**（`src/loop/self-heal.ts`）：lint 段正则只匹配 `lint/` 前缀，漏掉 `format`（Windows 反斜杠路径 + 行列可选）与 `assist/source/organizeImports` 两类错误 → self-heal 无法定位 lint 问题；新增 `BIOME_RULE_ERROR_RE`（lint|assist）+ `BIOME_FORMAT_ERROR_RE`（行列可选）双正则并行匹配
+- **QA 空失败项边界**（`src/orchestrator/loop.ts`）：`passed=false` 且 `failedItems` 为空时返回空数组 → Coder 误判「首次实现」抛「缺少 ArchitectSpec」；改为返回 1 条通用 critical issue（dimension=tests）保证进入修复模式，函数导出供测试覆盖
+
+### 测试（v3.1.1）
+
+- 新增 `tests/reviewer/knowledge.test.ts`（4 用例：__dirname 回归 / 项目级 / 内置 / 截断）
+- `tests/agents/qa.test.ts`（ChildProcessQaRunner Windows 回归）、`tests/loop/self-heal.test.ts`（format/assist/无行列/混合 4 用例）、`tests/orchestrator/loop.test.ts`（qaFailedToIssues 边界 4 用例）
+- **基线校准**：85 文件 / 937 用例全绿（`npm run verify`）
+
 ## [3.1.0] — 2026-08-11
 
 > **版本归位（2026-08-10 · T0.1 / ADR-028）**：v2.2（peak-time / model-switcher，智能成本控制）与 v3.1（balance / doctor / self-heal / project / account / team / audit export 等）功能**随 v3.1.0 一并发布**（不补发 v2.2.0，避免两套 Unreleased 并存；两主题同为「成本控制 + 日常体验」）。

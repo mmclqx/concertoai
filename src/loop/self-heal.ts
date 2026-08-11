@@ -118,11 +118,19 @@ function splitStages(stdout: string, stderr: string): Record<VerifyStage, string
 // ── lint 段解析（Biome）────────────────────────────────────────
 
 /**
- * Biome 错误行（2.x）：`src/foo.ts:1:5  lint/suspicious/noExplicitAny  FIXABLE  ━━━`。
- * 文件路径允许含 Windows 盘符冒号（`F:\...\src\foo.ts`），`[^\s]+?` 非贪婪至 `.ts` 后缀。
+ * Biome 规则错误行（2.x）：`src/foo.ts:1:5  lint/suspicious/noExplicitAny  FIXABLE  ━━━`。
+ * 兼容 `assist/source/organizeImports` 等 assist 类别；文件路径允许含 Windows 盘符冒号
+ * 与反斜杠分隔（`F:\...\src\foo.ts`），`[^\s]+?` 非贪婪至 `.ts` 后缀。
  */
-const BIOME_ERROR_RE =
-  /([^\s]+?\.(?:ts|tsx|js|jsx|mts|cts)):(\d+):(\d+)\s+lint\/([A-Za-z0-9/_-]+)/g;
+const BIOME_RULE_ERROR_RE =
+  /([^\s]+?\.(?:ts|tsx|js|jsx|mts|cts)):(\d+):(\d+)\s+(lint|assist)\/([A-Za-z0-9/_-]+)/g;
+
+/**
+ * Biome format 错误行：`src/version.ts:9:1 format  FIXABLE  ━━━`（带行列）
+ * 或 `tests\cli\foo.test.ts format ━━━━━`（整文件格式化，无行列）。
+ */
+const BIOME_FORMAT_ERROR_RE =
+  /([^\s]+?\.(?:ts|tsx|js|jsx|mts|cts))(?::(\d+):(\d+))?\s+format(?:\s|━|$)/g;
 
 /** Biome 成功标记（无错误输出时）。 */
 const BIOME_OK_RE = /(?:No fixes applied|All checks passed|Checked\s+\d+\s+files)/;
@@ -130,36 +138,42 @@ const BIOME_OK_RE = /(?:No fixes applied|All checks passed|Checked\s+\d+\s+files
 /** 错误行之后若干行内提取说明行（`× Unexpected ...` / `✗ ...`）。 */
 const BIOME_DETAIL_RE = /^\s*(?:×|✗|✖|error\[)\s*(.+)$/;
 
-/** 解析 Biome（lint）段。 */
+/** 解析 Biome（lint）段：识别规则错误（lint/assist 类别，必带行列）与 format 错误（行列可选）。 */
 function parseLintErrors(text: string): StageParseResult {
   const errors: VerifyError[] = [];
   if (text.trim() === '') {
     return { errors, parseFailed: false };
   }
-  const re = new RegExp(BIOME_ERROR_RE.source, 'g');
   const lines = text.split('\n');
-  for (const m of text.matchAll(re)) {
-    const file = m[1];
-    const line = m[2] !== undefined ? Number(m[2]) : undefined;
-    const code = m[4] !== undefined ? `lint/${m[4]}` : undefined;
-    // 说明行：错误行之后最近一个含 ×/✗/error[ 的行（最多向后找 5 行）
-    const errorLineNumber = text.slice(0, m.index).split('\n').length - 1;
-    let detail: string | undefined;
-    for (let i = errorLineNumber + 1; i < Math.min(errorLineNumber + 6, lines.length); i += 1) {
-      const dl = lines[i]?.match(BIOME_DETAIL_RE);
-      if (dl?.[1] !== undefined) {
-        detail = dl[1].trim();
-        break;
+  const pushFrom = (re: RegExp): void => {
+    for (const m of text.matchAll(re)) {
+      const file = m[1];
+      const line = m[2] !== undefined ? Number(m[2]) : undefined;
+      // 规则错误：m[4]=lint|assist、m[5]=规则名；format 错误：两者缺省 → code='format'
+      const category = m[4];
+      const rule = m[5];
+      const code = category !== undefined && rule !== undefined ? `${category}/${rule}` : 'format';
+      // 说明行：错误行之后最近一个含 ×/✗/error[ 的行（最多向后找 5 行）
+      const errorLineNumber = text.slice(0, m.index).split('\n').length - 1;
+      let detail: string | undefined;
+      for (let i = errorLineNumber + 1; i < Math.min(errorLineNumber + 6, lines.length); i += 1) {
+        const dl = lines[i]?.match(BIOME_DETAIL_RE);
+        if (dl?.[1] !== undefined) {
+          detail = dl[1].trim();
+          break;
+        }
       }
+      errors.push({
+        stage: 'lint',
+        file,
+        line,
+        code,
+        message: detail !== undefined && detail !== '' ? detail : (code ?? 'Biome lint 错误'),
+      });
     }
-    errors.push({
-      stage: 'lint',
-      file,
-      line,
-      code,
-      message: detail !== undefined && detail !== '' ? detail : (code ?? 'Biome lint 错误'),
-    });
-  }
+  };
+  pushFrom(new RegExp(BIOME_RULE_ERROR_RE.source, 'g'));
+  pushFrom(new RegExp(BIOME_FORMAT_ERROR_RE.source, 'g'));
   const parseFailed = errors.length === 0 && !BIOME_OK_RE.test(text);
   return { errors, parseFailed };
 }

@@ -128,6 +128,7 @@ UI 测试：Ink 组件需用 ink-testing-library 覆盖
 7. **工作区干净才审查/发布**：生成审查报告或发布前，先 `git status` 确认无 modified/untracked——版本号等改动停留在工作区未提交，会让审查基于旧状态产生假阳性（历史教训：v3.1 审查报版本号 3.0.0，实际工作区已改 3.1.0 未提交）
 8. **版本号多文件联动**：bump 版本 = package.json + package-lock.json（顶部 2 处）+ src/version.ts + tests/smoke.test.ts + 代码中硬编码的 `@concertoai/cli@x.y.z` 段标记（如 self-heal 测试）+ README 状态行，**一次改完立即提交**，不留半成品
 9. **全景图与目录树双核对**：ARCHITECTURE 第 2 节（全景图）与第 5 节（目录树）独立维护，新增模块必须两处都更新，不能只更新一处
+10. **解析类正则多平台样本**：解析第三方工具输出（Biome/tsc/vitest）的正则，必须用 Windows（反斜杠路径/盘符冒号）与 POSIX 两种样本验证，且覆盖类别/行列变体（教训：lint/ 前缀正则漏掉 format/assist 类别，见 09-踩坑记录/2026-08-11-Biome解析漏掉format与assist类别错误.md）
 
 ## 命名与包
 项目	内容
@@ -216,6 +217,7 @@ v3.0.0 发布门检查（当前）：
 1. 所有 `run_command` 执行的命令，在执行前必须检测操作系统
 2. 优先使用跨平台命令（如 `npm`、`node`），避免使用系统特有命令
 3. 必须使用系统特有命令时，用 `process.platform` 判断并分别实现
+4. Windows 下 spawn `.cmd`/`.bat` 文件必须 `shell: true`（或显式 `cmd.exe /c`），禁止 `shell: false` 直接执行（会 ENOENT；教训见 09-踩坑记录/2026-08-11-Windows下spawn执行npm.cmd报ENOENT.md）
 
 ### 路径处理规则
 1. 使用 `path.join()` 和 `path.resolve()`，不使用硬编码分隔符
@@ -260,6 +262,9 @@ v3.0.0 发布门检查（当前）：
 - 模式：`const item = arr[i]; if (item === undefined) break;`（或 `continue;`）
 - 禁止用非空断言 `!` 绕过检查；循环内越界时 `break`（游标）或 `continue`（跳过）
 
+### 模块与全局变量
+- 项目为 ESM（`"type": "module"`），禁止裸引用 CJS 全局 `__dirname` / `__filename`（运行时 `ReferenceError`）；相对路径定位用 `import.meta.url` 或由调用方传入 cwd（教训见 09-踩坑记录/2026-08-11-ESM模块误用__dirname导致team命令崩溃.md）
+
 ### 检查标准
 - 新增代码必须通过 `npm run typecheck`（零类型错误）
 - 禁止使用 `any` 类型绕过检查
@@ -292,6 +297,8 @@ v3.0.0 发布门检查（当前）：
 发布前测试报告：版本发布前生成 docs/07.{版本号}-手工测试报告-v{版本号}.md 并落盘
 
 提交前自查：提交前按「工程规范 → 提交前自查」核对文档 vs 代码一致性，全绿后再提交
+
+转换函数边界：任何 A → B 转换函数必须显式处理空集合边界语义（「空」可能表示「无数据」或「解析失败」，失败场景兜底不返回误导性空数组；教训见 09-踩坑记录/2026-08-11-QA失败无失败项导致Coder误判实现模式.md）
 
 安全第一：所有危险操作必须走审批流
 

@@ -31,10 +31,16 @@ export const KB_FILES = [
 /** 知识库内容截断阈值（字符数近似 token 数 × 2）。 */
 const MAX_KB_CHARS = 16_000;
 
-/** 内置知识库根目录（相对于项目根）。 */
-function builtinKbDir(): string {
-  // src/reviewer/knowledge.ts → ../.. → 项目根 → skills/reviewer/knowledge/
-  return path.resolve(__dirname ?? process.cwd(), '..', '..', 'skills', 'reviewer', 'knowledge');
+/**
+ * 内置知识库根目录（项目根下的 skills/reviewer/knowledge/）。
+ *
+ * v3.1.1 修复：ESM 模块（"type": "module"）没有 CommonJS 的全局 `__dirname`，
+ * 此前直接引用导致 `ReferenceError: __dirname is not defined`（team / /orchestrate / /review 崩溃）。
+ * 改为基于 cwd 定位——team/review 命令在项目根运行，内置知识库随仓库分发；
+ * 目录不存在时由 loadKnowledgeBase 的 try/catch 静默降级到项目级/全局级知识库。
+ */
+function builtinKbDir(cwd: string): string {
+  return path.resolve(cwd, 'skills', 'reviewer', 'knowledge');
 }
 
 /** 加载知识库，返回文档名 → 内容的映射。 */
@@ -43,7 +49,7 @@ export function loadKnowledgeBase(cwd: string): Map<string, string> {
   const searchPaths = [
     path.join(cwd, '.concertoai', 'reviewer', 'knowledge'),
     reviewerKnowledgeDir(),
-    builtinKbDir(),
+    builtinKbDir(cwd),
   ];
 
   for (const filename of KB_FILES) {

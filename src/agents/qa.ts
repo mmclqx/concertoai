@@ -120,9 +120,11 @@ export class ChildProcessQaRunner implements QaRunner {
 
   run(timeoutMs: number): Promise<QaRunResult> {
     return new Promise((resolve) => {
+      // npmCommand 已在构造器按平台处理（win32 → npm.cmd），此处直接使用；
+      // 若再追加 `.cmd` 会变成 `npm.cmd.cmd`（ENOENT，v3.1.1 Windows 回归）。
       const child = spawn(this.npmCommand, ['run', 'verify'], {
         cwd: this.cwd,
-        shell: false,
+        shell: true,
         windowsHide: true,
       });
       let stdout = '';

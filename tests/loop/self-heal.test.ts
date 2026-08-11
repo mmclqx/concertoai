@@ -63,6 +63,39 @@ const LINT_FAIL = verifyOutput([
   ['test', 'Test Files  1 passed (1)'],
 ]);
 
+/**
+ * Windows 下 Biome format 错误（v3.1.1 回归样本）：`src/version.ts:9:1 format`（多余分号）。
+ * 路径用反斜杠分隔，错误码是 `format`（无 lint/ 前缀）——旧正则无法匹配。
+ */
+const LINT_FORMAT_WIN = verifyOutput([
+  ['build', 'Build success.'],
+  ['lint', 'src\\version.ts:9:1 format  FIXABLE  ━━━\n  × Unnecessary semicolon.'],
+  ['typecheck', ''],
+  ['test', 'Test Files  1 passed (1)'],
+]);
+
+/** assist 类别错误（organizeImports）：`assist/source/organizeImports`（非 lint/ 前缀）。 */
+const LINT_ASSIST = verifyOutput([
+  ['build', 'Build success.'],
+  [
+    'lint',
+    'src\\cli\\slash\\agent.ts:19:1 assist/source/organizeImports  FIXABLE  ━━━\n  × Sort the imported names.',
+  ],
+  ['typecheck', ''],
+  ['test', 'Test Files  1 passed (1)'],
+]);
+
+/** 整文件 format 错误（无行列号）：`tests\cli\foo.test.ts format ━━━`。 */
+const LINT_FORMAT_NO_LOC = verifyOutput([
+  ['build', 'Build success.'],
+  [
+    'lint',
+    'tests\\cli\\slash-agent.test.ts format ━━━━━━━━━━━━━━━━━━━\n  × Formatter would have printed the following content:',
+  ],
+  ['typecheck', ''],
+  ['test', 'Test Files  1 passed (1)'],
+]);
+
 /** 引入新错误：原 TS2304 消失，新增 TS2322 @ src/foo.ts:5。 */
 const AFTER_INTRO = verifyOutput([
   ['build', 'Build success.'],
@@ -170,6 +203,68 @@ describe('self-heal 分类器（T1.1）', () => {
       line: 1,
       code: 'lint/suspicious/noExplicitAny',
     });
+  });
+
+  it('Windows 路径 format 错误（src\\version.ts:9:1 format）→ 识别为 lint（v3.1.1 回归）', () => {
+    const r = parseVerifyReport(LINT_FORMAT_WIN.stdout, LINT_FORMAT_WIN.stderr);
+    expect(r.passed).toBe(false);
+    expect(r.parseFailed.lint).toBe(false);
+    expect(r.errors).toHaveLength(1);
+    expect(r.errors[0]).toMatchObject({
+      stage: 'lint',
+      file: 'src\\version.ts',
+      line: 9,
+      code: 'format',
+    });
+    expect(r.errors[0]?.message).toContain('Unnecessary semicolon');
+  });
+
+  it('assist 类别错误（assist/source/organizeImports）→ 识别为 lint', () => {
+    const r = parseVerifyReport(LINT_ASSIST.stdout, LINT_ASSIST.stderr);
+    expect(r.passed).toBe(false);
+    expect(r.parseFailed.lint).toBe(false);
+    expect(r.errors).toHaveLength(1);
+    expect(r.errors[0]).toMatchObject({
+      stage: 'lint',
+      file: 'src\\cli\\slash\\agent.ts',
+      line: 19,
+      code: 'assist/source/organizeImports',
+    });
+  });
+
+  it('整文件 format 错误（无行列号）→ 识别为 lint，file 有值、line 为空', () => {
+    const r = parseVerifyReport(LINT_FORMAT_NO_LOC.stdout, LINT_FORMAT_NO_LOC.stderr);
+    expect(r.passed).toBe(false);
+    expect(r.parseFailed.lint).toBe(false);
+    expect(r.errors).toHaveLength(1);
+    expect(r.errors[0]).toMatchObject({
+      stage: 'lint',
+      file: 'tests\\cli\\slash-agent.test.ts',
+      code: 'format',
+    });
+    expect(r.errors[0]?.line).toBeUndefined();
+  });
+
+  it('lint 段多个不同类别错误（lint/assist/format）→ 全部识别', () => {
+    const r = parseVerifyReport(
+      [
+        '> @concertoai/cli@3.1.0 lint',
+        'src/a.ts:1:1  lint/style/noUnusedVariables  FIXABLE  ━━━',
+        'src/b.ts:2:1  assist/source/organizeImports  FIXABLE  ━━━',
+        'src/c.ts format ━━━',
+        '  × Formatter would have printed the following content:',
+        'Checked 3 files in 10ms. Found 3 errors.',
+      ].join('\n'),
+      '',
+    );
+    expect(r.passed).toBe(false);
+    expect(r.errors).toHaveLength(3);
+    const codes = r.errors.map((e) => e.code).sort();
+    expect(codes).toEqual([
+      'assist/source/organizeImports',
+      'format',
+      'lint/style/noUnusedVariables',
+    ]);
   });
 
   it('build 段 tsup 失败 → stage=build（file/line 为空）', () => {

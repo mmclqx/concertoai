@@ -7,9 +7,20 @@
  * - 测试失败时，失败详情格式化为 feedback 消息传回 Coder（formatFeedbackIssues）；
  * - 超时保护（默认 5min，超时视为失败且 passed=false）。
  */
-import { describe, expect, it } from 'vitest';
+import * as childProcess from 'node:child_process';
+import { EventEmitter } from 'node:events';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+// node:child_process 为 ESM 内置模块命名空间，不可直接 spyOn（Cannot redefine property: spawn）。
+// 模块级 mock：保留真实实现，仅将 spawn 替换为 vi.fn()（v3.1.1 Windows 回归测试用）。
+vi.mock('node:child_process', async () => {
+  const actual = await vi.importActual<typeof import('node:child_process')>('node:child_process');
+  return { ...actual, spawn: vi.fn() };
+});
+
 import {
   buildQaSummary,
+  ChildProcessQaRunner,
   DEFAULT_VERIFY_TIMEOUT_MS,
   formatFeedbackIssues,
   parseVerifyOutput,
@@ -213,5 +224,57 @@ describe('QaAgent（标准 Agent 契约）', () => {
     expect(report.passed).toBe(false);
     expect(report.failedItems).toHaveLength(1);
     expect(report.failedItems[0]?.error).toContain('退出码非 0');
+  });
+});
+
+// ── ChildProcessQaRunner（v3.1.1 Windows 回归）────────────────
+
+/** 假 ChildProcess：真实 ChildProcess 基础上附加 triggerClose 测试钩子。 */
+type MockChild = childProcess.ChildProcess & { triggerClose(code: number): void };
+
+/** 构造可触发 close 的假 ChildProcess（spawn mock 用）。 */
+function createMockChild(): MockChild {
+  const stdout = new EventEmitter();
+  const stderr = new EventEmitter();
+  let closeHandler: ((code: number) => void) | undefined;
+  const self = {
+    pid: 4242,
+    stdout,
+    stderr,
+    kill: () => true,
+    triggerClose: (code: number) => closeHandler?.(code),
+    on: (event: string, cb: (code: number) => void) => {
+      if (event === 'close') closeHandler = cb;
+      return self;
+    },
+  };
+  return self as unknown as MockChild;
+}
+
+describe('ChildProcessQaRunner（v3.1.1 Windows 回归）', () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('run() 直接使用构造器解析后的命令，不追加 .cmd 后缀（防 npm.cmd.cmd → ENOENT）', async () => {
+    const mockChild = createMockChild();
+    const spawnMock = vi.mocked(childProcess.spawn);
+    spawnMock.mockReturnValue(mockChild as childProcess.ChildProcess);
+
+    const runner = new ChildProcessQaRunner({ cwd: process.cwd() });
+    const runPromise = runner.run(1000);
+
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+    const cmd = spawnMock.mock.calls[0]?.[0] ?? '';
+    // 不允许双重 .cmd 后缀（旧代码：win32 → npm.cmd.cmd）
+    expect(cmd.endsWith('.cmd.cmd')).toBe(false);
+    // 平台默认：win32 → npm.cmd；其他 → npm
+    const expected = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+    expect(cmd).toBe(expected);
+
+    // 触发 close(0) 让 promise 正常 resolve（不挂起）
+    mockChild.triggerClose(0);
+    const result = await runPromise;
+    expect(result.ok).toBe(true);
   });
 });

@@ -24,6 +24,7 @@ import {
   type LoopRoundRecord,
   MAX_LOOP_ATTEMPTS,
   type QaLike,
+  qaFailedToIssues,
   type ReviewerLike,
   runTeamLoop,
 } from '../../src/orchestrator';
@@ -302,5 +303,102 @@ describe('runTeamLoop（对抗性闭环）', () => {
 
   it('MAX_LOOP_ATTEMPTS = 5（常量与文档同步）', () => {
     expect(MAX_LOOP_ATTEMPTS).toBe(5);
+  });
+});
+
+// ── qaFailedToIssues（v3.1.1 边界修复）────────────────────────
+
+describe('qaFailedToIssues（QA 失败无失败项 → 仍给 Coder 修复输入）', () => {
+  it('passed=false 且 failedItems 有内容 → 逐条映射为 tests issue', () => {
+    const issues = qaFailedToIssues({
+      passed: false,
+      testFiles: 1,
+      testCases: 1,
+      failedItems: [{ file: 'tests/a.test.ts', testName: '用例', error: 'boom' }],
+      timedOut: false,
+      durationMs: 10,
+      summary: '失败',
+    });
+    expect(issues).toHaveLength(1);
+    expect(issues[0]).toMatchObject({
+      dimension: 'tests',
+      severity: 'critical',
+      file: 'tests/a.test.ts',
+      title: '用例',
+      description: 'boom',
+    });
+  });
+
+  it('passed=false 且 failedItems 为空 → 返回 1 条通用 critical issue（防 Coder 误判实现模式）', () => {
+    const issues = qaFailedToIssues({
+      passed: false,
+      testFiles: 0,
+      testCases: 0,
+      failedItems: [],
+      timedOut: false,
+      durationMs: 10,
+      summary: 'npm run verify 失败：0 个文件 / 0 个用例',
+    });
+    expect(issues).toHaveLength(1);
+    expect(issues[0]).toMatchObject({
+      dimension: 'tests',
+      severity: 'critical',
+      title: '自动化测试失败',
+    });
+    expect(issues[0]?.description).toContain('npm run verify 失败');
+  });
+
+  it('passed=true → 返回空数组（不打扰成功闭环）', () => {
+    const issues = qaFailedToIssues({
+      passed: true,
+      testFiles: 51,
+      testCases: 577,
+      failedItems: [],
+      timedOut: false,
+      durationMs: 100,
+      summary: '通过',
+    });
+    expect(issues).toEqual([]);
+  });
+
+  it('闭环：QA 失败但 failedItems 为空 → Coder 第二次调用仍进入修复模式（issues 非空，spec 为空）', async () => {
+    // 真实场景：空目录跑 npm run verify 失败，parseVerifyOutput 解析不出具体失败项
+    const coder = new FakeCoder();
+    const reviewer = new FakeReviewer(['approve', 'approve']);
+    const qa = new FakeQa([false, true]);
+    // 覆盖 FakeQa：第一次 passed=false 且 failedItems=[]，第二次通过
+    let qaRuns = 0;
+    qa.execute = async () => {
+      qaRuns += 1;
+      return qaRuns === 1
+        ? {
+            passed: false,
+            testFiles: 0,
+            testCases: 0,
+            failedItems: [],
+            timedOut: false,
+            durationMs: 10,
+            summary: 'npm run verify 失败：0 个文件 / 0 个用例，0 项失败',
+          }
+        : {
+            passed: true,
+            testFiles: 1,
+            testCases: 1,
+            failedItems: [],
+            timedOut: false,
+            durationMs: 10,
+            summary: '通过',
+          };
+    };
+    const result = await runTeamLoop({ coder, reviewer, qa, spec: SPEC, context: makeContext() });
+
+    // 不抛「缺少 ArchitectSpec」：第二次调用进入修复模式
+    expect(result.ok).toBe(true);
+    expect(result.attempts).toBe(2);
+    expect(coder.calls).toHaveLength(2);
+    expect(coder.calls[1]?.input.spec).toBeUndefined();
+    const issues = coder.calls[1]?.input.issues ?? [];
+    expect(issues.length).toBeGreaterThan(0);
+    expect(issues[0]?.dimension).toBe('tests');
   });
 });

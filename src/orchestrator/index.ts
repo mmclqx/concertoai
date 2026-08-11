@@ -20,6 +20,7 @@ export {
   type LoopRoundRecord,
   MAX_LOOP_ATTEMPTS,
   type QaLike,
+  qaFailedToIssues,
   type ReviewerLike,
   runTeamLoop,
   type TeamLoopOptions,

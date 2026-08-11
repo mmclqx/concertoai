@@ -160,8 +160,28 @@ function withArtifacts(context: AgentContext, artifacts: Artifact[]): AgentConte
   return enforceLimit(merged).context;
 }
 
-/** QA 失败详情 → ReviewIssue[]（dimension=tests，供 Coder 修复模式消费）。 */
-function qaFailedToIssues(qa: QaReport): ReviewIssue[] {
+/**
+ * QA 失败详情 → ReviewIssue[]（dimension=tests，供 Coder 修复模式消费）。
+ *
+ * v3.1.1 边界修复：`passed=false` 但 `failedItems` 为空（如无 package.json 目录跑
+ * `npm run verify` 失败、解析不出具体失败项）时，仍返回 1 条通用 critical issue——
+ * 否则空数组会让 CoderAgent 的 `isFix = issues.length > 0` 判定为 false，误入实现模式
+ * 抛「缺少 ArchitectSpec」，导致闭环在修复轮直接失败而非尝试修复。
+ */
+export function qaFailedToIssues(qa: QaReport): ReviewIssue[] {
+  if (!qa.passed && qa.failedItems.length === 0) {
+    return [
+      {
+        dimension: 'tests',
+        severity: 'critical',
+        file: 'unknown',
+        line: undefined,
+        title: '自动化测试失败',
+        description: qa.summary || 'npm run verify 未通过（无具体失败项）',
+        suggestion: '请检查代码实现，确保项目 npm run verify 通过',
+      },
+    ];
+  }
   return qa.failedItems.map((item) => ({
     dimension: 'tests',
     severity: 'critical',
