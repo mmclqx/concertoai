@@ -130,6 +130,38 @@ export const zh = {
     balanceFailed: '查询失败：{message}',
     balanceEntry: '{currency}: 总额 {total} ｜ 赠送 {granted} ｜ 充值 {toppedUp}',
   },
+  selfHeal: {
+    // 阶段标签（v3.3 S1：selfHealPhaseLabel 移入 i18n）
+    phaseVerify: '执行 verify',
+    phaseLintFix: 'lint 修复',
+    phaseModelFix: '模型修复',
+    phaseVerifyFix: '修复后验证',
+    phaseRollback: '回滚',
+    phaseDone: '完成',
+    // 尝试动作标签（v3.3 S1：actionLabel 移入 i18n）
+    actionLintFix: 'lint 直修',
+    actionModelFix: '模型修复',
+    actionSkip: '跳过',
+    // 报告文案（formatSelfHealReport）
+    verifyPassedNoFix: '✅ verify 全部通过，无需修复',
+    repairedPassed: '✅ self-heal 修复完成：verify 全部通过',
+    exceeded: '❌ 修复超限（已尝试全部次数），请人工处理',
+    verifyFailed: '❌ verify 失败，请人工处理',
+    repairProcessTitle: '### 修复过程',
+    attemptLine: '{n}. 第 {attempt} 次尝试：{action}{fixes} {outcome}',
+    unknownReason: '未知原因',
+    rolledBack: '→ ❌ 已回滚（{reason}）',
+    notFixed: '→ ⏭ 未修复（{suggestion}）',
+    skipped: '→ ⏭ 跳过',
+    verifyPassed: '→ ✅ verify 通过',
+    keepGoing: '→ 🔁 继续（仍有错误）',
+    remainingTitle: '### 剩余错误（{count} 个，转人工）',
+    snapshotCommitted: '快照已提交，无残留。',
+    snapshotProtection:
+      '⚠️ 已启用快照保护：修复无效的变更已回滚；残留快照可用 `concertoai snapshot list` 查看。',
+    snapshotWarning:
+      '⚠️ 快照保护未生效：本次模型修复快照登记失败，无法自动回滚（请人工检查变更内容）。',
+  },
   ui: {
     thinking: '思索中',
     toolRunning: '执行工具: {name}',

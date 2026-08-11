@@ -134,16 +134,20 @@ function splitStages(stdout: string, stderr: string): Record<VerifyStage, string
  * Biome 规则错误行（2.x）：`src/foo.ts:1:5  lint/suspicious/noExplicitAny  FIXABLE  ━━━`。
  * 兼容 `assist/source/organizeImports` 等 assist 类别；文件路径允许含 Windows 盘符冒号
  * 与反斜杠分隔（`F:\...\src\foo.ts`），`[^\s]+?` 非贪婪至 `.ts` 后缀。
+ *
+ * W2（v3.3）：常量定义不带 `g` 标志（全局正则带 `g` 会残留 `lastIndex` 导致
+ * 交替匹配/漏匹配）；使用处按需 `new RegExp(SOURCE, 'g')` 创建带状态实例。
  */
 const BIOME_RULE_ERROR_RE =
-  /([^\s]+?\.(?:ts|tsx|js|jsx|mts|cts)):(\d+):(\d+)\s+(lint|assist)\/([A-Za-z0-9/_-]+)/g;
+  /([^\s]+?\.(?:ts|tsx|js|jsx|mts|cts)):(\d+):(\d+)\s+(lint|assist)\/([A-Za-z0-9/_-]+)/;
 
 /**
  * Biome format 错误行：`src/version.ts:9:1 format  FIXABLE  ━━━`（带行列）
  * 或 `tests\cli\foo.test.ts format ━━━━━`（整文件格式化，无行列）。
+ * W2（v3.3）：同 BIOME_RULE_ERROR_RE，不带 `g` 标志。
  */
 const BIOME_FORMAT_ERROR_RE =
-  /([^\s]+?\.(?:ts|tsx|js|jsx|mts|cts))(?::(\d+):(\d+))?\s+format(?:\s|━|$)/g;
+  /([^\s]+?\.(?:ts|tsx|js|jsx|mts|cts))(?::(\d+):(\d+))?\s+format(?:\s|━|$)/;
 
 /** Biome 成功标记（无错误输出时）。 */
 const BIOME_OK_RE = /(?:No fixes applied|All checks passed|Checked\s+\d+\s+files)/;

@@ -132,6 +132,38 @@ export const en = {
     balanceFailed: 'query failed: {message}',
     balanceEntry: '{currency}: total {total} | granted {granted} | topped-up {toppedUp}',
   },
+  selfHeal: {
+    // Phase labels (v3.3 S1: selfHealPhaseLabel moved into i18n)
+    phaseVerify: 'Running verify',
+    phaseLintFix: 'Lint fix',
+    phaseModelFix: 'Model fix',
+    phaseVerifyFix: 'Post-fix verify',
+    phaseRollback: 'Rollback',
+    phaseDone: 'Done',
+    // Attempt action labels (v3.3 S1: actionLabel moved into i18n)
+    actionLintFix: 'lint direct fix',
+    actionModelFix: 'model fix',
+    actionSkip: 'skipped',
+    // Report copy (formatSelfHealReport)
+    verifyPassedNoFix: '✅ verify passed, no fix needed',
+    repairedPassed: '✅ self-heal repaired: verify passed',
+    exceeded: '❌ Fix attempts exhausted; please handle manually',
+    verifyFailed: '❌ verify failed; please handle manually',
+    repairProcessTitle: '### Repair process',
+    attemptLine: '{n}. Attempt #{attempt}: {action}{fixes} {outcome}',
+    unknownReason: 'unknown reason',
+    rolledBack: '→ ❌ rolled back ({reason})',
+    notFixed: '→ ⏭ not fixed ({suggestion})',
+    skipped: '→ ⏭ skipped',
+    verifyPassed: '→ ✅ verify passed',
+    keepGoing: '→ 🔁 continuing (errors remain)',
+    remainingTitle: '### Remaining errors ({count}, manual)',
+    snapshotCommitted: 'Snapshot committed; no residue.',
+    snapshotProtection:
+      '⚠️ Snapshot protection enabled: ineffective fixes were rolled back; leftover snapshots can be viewed with `concertoai snapshot list`.',
+    snapshotWarning:
+      '⚠️ Snapshot protection inactive: snapshot registration failed for this model fix, automatic rollback unavailable (please review changes manually).',
+  },
   ui: {
     thinking: 'Thinking',
     toolRunning: 'Running tool: {name}',

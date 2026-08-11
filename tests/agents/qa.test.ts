@@ -32,6 +32,7 @@ import {
 } from '../../src/agents';
 import type { AgentContext } from '../../src/orchestrator';
 import {
+  VITEST_FAIL_MIXED_POSIX,
   VITEST_FAIL_POSIX,
   VITEST_FAIL_PREFIX_WIN,
   VITEST_FAIL_WIN,
@@ -71,37 +72,13 @@ class FakeRunner implements QaRunner {
   }
 }
 
-/** 模拟 vitest 全绿输出。 */
-const PASS_OUTPUT = [
-  ' RUN  v4.1.10 F:/developer/2026/concertoai',
-  '',
-  ' Test Files  51 passed (51)',
-  '      Tests  577 passed (577)',
-  '   Duration 3.62s',
-].join('\n');
-
-/** 模拟 vitest 失败输出（含失败文件/用例/错误）。 */
-const FAIL_OUTPUT = [
-  ' RUN  v4.1.10',
-  '',
-  ' ❯ tests/foo.test.ts (3 tests | 1 failed) 123ms',
-  '   ✓ 正常用例 1',
-  '   ✗ 失败用例',
-  '     AssertionError: expected 1 to be 2',
-  '     ❯ tests/foo.test.ts:10:5',
-  ' ❯ tests/bar.spec.ts (1 test | 1 failed) 5ms',
-  '   × 另一个失败',
-  '     Error: boom',
-  '',
-  ' Test Files  1 failed (51)',
-  '      Tests  2 failed (577)',
-].join('\n');
-
 // ── parseVerifyOutput：结构化报告解析 ─────────────────────────
+// v3.3 S2：存量内联样本迁移到 tests/fixtures/platform-samples.ts——
+// 全绿输出用 VITEST_PASS_WIN、POSIX 双失败文件混合形态用 VITEST_FAIL_MIXED_POSIX。
 
 describe('parseVerifyOutput（结构化测试报告解析）', () => {
   it('全绿输出 → passed=true，含 testFiles/testCases 计数', () => {
-    const report = parseVerifyOutput(PASS_OUTPUT, '', 1000);
+    const report = parseVerifyOutput(VITEST_PASS_WIN, '', 1000);
     expect(report.passed).toBe(true);
     expect(report.testFiles).toBe(51);
     expect(report.testCases).toBe(577);
@@ -111,7 +88,7 @@ describe('parseVerifyOutput（结构化测试报告解析）', () => {
   });
 
   it('失败输出 → passed=false，failedItems 含文件/用例/错误', () => {
-    const report = parseVerifyOutput(FAIL_OUTPUT, '', 2000);
+    const report = parseVerifyOutput(VITEST_FAIL_MIXED_POSIX, '', 2000);
     expect(report.passed).toBe(false);
     expect(report.testFiles).toBe(51);
     expect(report.testCases).toBe(577);
@@ -125,7 +102,7 @@ describe('parseVerifyOutput（结构化测试报告解析）', () => {
   });
 
   it('stderr 合并解析（错误可能输出到 stderr）', () => {
-    const report = parseVerifyOutput('', FAIL_OUTPUT, 3000);
+    const report = parseVerifyOutput('', VITEST_FAIL_MIXED_POSIX, 3000);
     expect(report.passed).toBe(false);
     expect(report.failedItems).toHaveLength(2);
   });
@@ -192,7 +169,7 @@ describe('buildQaSummary / formatFeedbackIssues', () => {
   });
 
   it('formatFeedbackIssues：失败详情格式化为 feedback 消息（含文件/用例/错误）', () => {
-    const report = parseVerifyOutput(FAIL_OUTPUT, '', 1000);
+    const report = parseVerifyOutput(VITEST_FAIL_MIXED_POSIX, '', 1000);
     const issues = formatFeedbackIssues(report);
     expect(issues).toHaveLength(2);
     expect(issues[0]).toContain('tests/foo.test.ts');
@@ -201,7 +178,7 @@ describe('buildQaSummary / formatFeedbackIssues', () => {
   });
 
   it('formatFeedbackIssues：无失败项时返回空数组', () => {
-    const report: QaReport = parseVerifyOutput(PASS_OUTPUT, '', 1000);
+    const report: QaReport = parseVerifyOutput(VITEST_PASS_WIN, '', 1000);
     expect(formatFeedbackIssues(report)).toEqual([]);
   });
 });
@@ -225,7 +202,7 @@ describe('QaAgent（标准 Agent 契约）', () => {
 
   it('execute：verify 通过 → 报告 passed=true', async () => {
     const agent = new QaAgent({
-      runner: new FakeRunner({ ok: true, stdout: PASS_OUTPUT }),
+      runner: new FakeRunner({ ok: true, stdout: VITEST_PASS_WIN }),
     });
     const report = await agent.execute({ description: '运行测试' }, makeContext());
     expect(report.passed).toBe(true);
@@ -236,7 +213,7 @@ describe('QaAgent（标准 Agent 契约）', () => {
 
   it('execute：verify 失败 → 报告 passed=false，含失败详情（供 feedback）', async () => {
     const agent = new QaAgent({
-      runner: new FakeRunner({ ok: false, stdout: FAIL_OUTPUT }),
+      runner: new FakeRunner({ ok: false, stdout: VITEST_FAIL_MIXED_POSIX }),
     });
     const report = await agent.execute({ description: '运行测试' }, makeContext());
     expect(report.passed).toBe(false);
@@ -262,7 +239,7 @@ describe('QaAgent（标准 Agent 契约）', () => {
 
   it('execute：exit code 非 0 但输出无 FAIL 段 → passed=false（退出码兜底）', async () => {
     const agent = new QaAgent({
-      runner: new FakeRunner({ ok: false, stdout: PASS_OUTPUT }),
+      runner: new FakeRunner({ ok: false, stdout: VITEST_PASS_WIN }),
     });
     const report = await agent.execute({ description: '运行测试' }, makeContext());
     // 输出看似通过但退出码非 0 → runner.ok 兜底强制 passed=false，防解析漏判

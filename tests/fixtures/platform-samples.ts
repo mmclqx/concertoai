@@ -87,6 +87,23 @@ export const VITEST_FAIL_PREFIX_WIN = [
   '      Tests  1 failed (577)',
 ].join('\n');
 
+/** vitest 失败输出（POSIX 双失败文件 + ❯/× 混合形态；qa 存量测试迁移，v3.3 S2）。 */
+export const VITEST_FAIL_MIXED_POSIX = [
+  ' RUN  v4.1.10',
+  '',
+  ' ❯ tests/foo.test.ts (3 tests | 1 failed) 123ms',
+  '   ✓ 正常用例 1',
+  '   ✗ 失败用例',
+  '     AssertionError: expected 1 to be 2',
+  '     ❯ tests/foo.test.ts:10:5',
+  ' ❯ tests/bar.spec.ts (1 test | 1 failed) 5ms',
+  '   × 另一个失败',
+  '     Error: boom',
+  '',
+  ' Test Files  1 failed (51)',
+  '      Tests  2 failed (577)',
+].join('\n');
+
 // ── Biome / tsc 输出样本 ──────────────────────────────────────
 
 /** Biome lint 错误（Windows 盘符路径，带行列）。 */

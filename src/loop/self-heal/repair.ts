@@ -98,7 +98,10 @@ export async function repairVerifyReport(
       });
       report = fresh;
       if (!fix.ok) {
-        log('[self-heal] lint:fix 执行失败，转人工');
+        // W1（v3.3）：lint:fix 执行失败（非零退出码）说明环境有问题（如 Biome 未安装），
+        // 后续 type 简单错误即使可修也一并跳过（继续修复意义有限），显式转人工。
+        // 注意：report 已更新为 lint 修复后的 verify 结果（fresh），供人工查看剩余错误。
+        log('[self-heal] lint:fix 执行失败，剩余 type 错误已跳过（环境问题），转人工');
         break;
       }
       continue;

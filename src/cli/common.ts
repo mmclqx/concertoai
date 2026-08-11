@@ -127,6 +127,11 @@ const projectRegistryCache = new Map<string, ProjectRegistry>();
  * 解析 API Key 并缓存（v3.2 M4 / T4.5）。
  * 同一进程、同一 accountsRoot 下只读一次 active-account + 账号 config；
  * 之后命中缓存返回（CLI 启动期多次命令调用消除重复 I/O）。
+ *
+ * S3（v3.3）：缓存**永不过期**——同一进程内切换 active 账号后再次 resolve 仍返回旧值。
+ * 仅适用于 CLI 一次性进程（每次命令独立进程，进程内 resolve 次数有限，且账号切换
+ * 均在进程启动前完成）；**不适用于长驻进程**（如服务器/daemon 内多次切换账号场景），
+ * 长驻进程应改用 `clearApiKeyCache()` 显式失效或直接调用 `resolveApiKey()`。
  */
 export async function resolveApiKeyCached(
   options: ResolveApiKeyOptions = {},

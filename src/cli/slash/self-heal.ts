@@ -8,6 +8,7 @@
  * 修复期间 App 置 streaming 阶段（状态条可见），不阻塞主对话流。
  */
 
+import { fmt, t } from '../../i18n';
 import { type RepairVerifyResult, runSelfHeal, type SelfHealPhase } from '../../loop/self-heal';
 import type { ModelClient } from '../../model/client';
 import type { ApprovalRequest, ToolContext } from '../../tools/registry';
@@ -43,21 +44,22 @@ export interface SelfHealCommandOptions {
   onPhase?: (phase: SelfHealPhase) => void;
 }
 
-/** 阶段中文名（App.tsx 状态条展示；v3.2 M4 / T4.2）。 */
+/** 阶段标签（App.tsx 状态条展示；v3.2 M4 / T4.2；v3.3 S1 移入 i18n）。 */
 export function selfHealPhaseLabel(phase: SelfHealPhase): string {
+  const d = t().selfHeal;
   switch (phase) {
     case 'verify':
-      return '执行 verify';
+      return d.phaseVerify;
     case 'lint-fix':
-      return 'lint 修复';
+      return d.phaseLintFix;
     case 'model-fix':
-      return '模型修复';
+      return d.phaseModelFix;
     case 'verify-fix':
-      return '修复后验证';
+      return d.phaseVerifyFix;
     case 'rollback':
-      return '回滚';
+      return d.phaseRollback;
     case 'done':
-      return '完成';
+      return d.phaseDone;
   }
 }
 
@@ -82,15 +84,16 @@ export async function executeSelfHealCommand(
 
 // ── 报告格式化 ──
 
-/** 尝试动作中文名。 */
+/** 尝试动作标签（v3.3 S1：移入 i18n）。 */
 function actionLabel(action: string): string {
+  const d = t().selfHeal;
   switch (action) {
     case 'lint-fix':
-      return 'lint 直修';
+      return d.actionLintFix;
     case 'model-fix':
-      return '模型修复';
+      return d.actionModelFix;
     default:
-      return '跳过';
+      return d.actionSkip;
   }
 }
 
@@ -99,22 +102,31 @@ function formatAttempts(result: RepairVerifyResult): string {
   if (result.attempts.length === 0) {
     return '';
   }
+  const d = t().selfHeal;
   const lines = result.attempts.map((a, i) => {
     const action = actionLabel(a.action);
     const fixes =
       a.appliedFixes.length > 0 ? ` ${a.appliedFixes.map((f) => f.file).join(', ')}` : '';
     let outcome: string;
     if (a.rolledBack === true) {
-      outcome = `→ ❌ 已回滚（${a.rollbackReason ?? '未知原因'}）`;
+      outcome = fmt(d.rolledBack, { reason: a.rollbackReason ?? d.unknownReason });
     } else if (a.action === 'none') {
       outcome =
-        a.feedback.length > 0 ? `→ ⏭ 未修复（${a.feedback[0]?.suggestion ?? ''}）` : '→ ⏭ 跳过';
+        a.feedback.length > 0
+          ? fmt(d.notFixed, { suggestion: a.feedback[0]?.suggestion ?? '' })
+          : d.skipped;
     } else if (a.report.passed) {
-      outcome = '→ ✅ verify 通过';
+      outcome = d.verifyPassed;
     } else {
-      outcome = '→ 🔁 继续（仍有错误）';
+      outcome = d.keepGoing;
     }
-    return `${i + 1}. 第 ${a.attempt} 次尝试：${action}${fixes} ${outcome}`;
+    return fmt(d.attemptLine, {
+      n: i + 1,
+      attempt: a.attempt,
+      action,
+      fixes,
+      outcome,
+    });
   });
   return lines.join('\n');
 }
@@ -129,38 +141,33 @@ function formatRemainingErrors(result: RepairVerifyResult): string {
     const loc = e.file !== undefined ? `${e.file}:${e.line ?? '?'}` : '—';
     return `- [${e.stage}] ${loc} ${e.code ?? ''} ${e.message}`.trimEnd();
   });
-  return `### 剩余错误（${errors.length} 个，转人工）\n${lines.join('\n')}`;
+  return `${fmt(t().selfHeal.remainingTitle, { count: errors.length })}\n${lines.join('\n')}`;
 }
 
-/** 将修复结果格式化为中文报告（CLI 与 chat 共用）。 */
+/** 将修复结果格式化为报告（CLI 与 chat 共用；v3.3 S1 文案走 i18n）。 */
 export function formatSelfHealReport(result: RepairVerifyResult): string {
+  const d = t().selfHeal;
   if (result.passed && result.attempts.length === 0) {
-    return '✅ verify 全部通过，无需修复';
+    return d.verifyPassedNoFix;
   }
-  const head = result.passed
-    ? '✅ self-heal 修复完成：verify 全部通过'
-    : result.exceeded
-      ? '❌ 修复超限（已尝试全部次数），请人工处理'
-      : '❌ verify 失败，请人工处理';
+  const head = result.passed ? d.repairedPassed : result.exceeded ? d.exceeded : d.verifyFailed;
   const attemptBlock = formatAttempts(result);
   const remaining = formatRemainingErrors(result);
   const parts = [head];
   if (attemptBlock !== '') {
-    parts.push(`### 修复过程\n${attemptBlock}`);
+    parts.push(`${d.repairProcessTitle}\n${attemptBlock}`);
   }
   if (remaining !== '') {
     parts.push(remaining);
   }
   if (result.passed) {
-    parts.push('快照已提交，无残留。');
+    parts.push(d.snapshotCommitted);
   } else {
-    parts.push(
-      '⚠️ 已启用快照保护：修复无效的变更已回滚；残留快照可用 `concertoai snapshot list` 查看。',
-    );
+    parts.push(d.snapshotProtection);
   }
   // T2.4：快照登记失败 → 明确告知快照保护未生效（修复可能无法回滚）
   if (result.snapshotWarning === true) {
-    parts.push('⚠️ 快照保护未生效：本次模型修复快照登记失败，无法自动回滚（请人工检查变更内容）。');
+    parts.push(d.snapshotWarning);
   }
   return parts.join('\n\n');
 }
