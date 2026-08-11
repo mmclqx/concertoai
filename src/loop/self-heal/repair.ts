@@ -67,6 +67,7 @@ export async function repairVerifyReport(
   options: RepairVerifyOptions,
 ): Promise<RepairVerifyResult> {
   const log = options.log ?? (() => {});
+  const onPhase = options.onPhase ?? (() => {});
   const attempts: SelfHealAttempt[] = [];
   let report = initial;
   let snapshotWarning = false;
@@ -82,7 +83,11 @@ export async function repairVerifyReport(
       log(
         `[self-heal] 第 ${attempt} 次尝试：执行 npm run lint:fix（${lintErrors.length} 个 lint 错误）`,
       );
+      // T4.2：lint 修复阶段
+      onPhase('lint-fix');
       const fix = await options.runLintFix();
+      // T4.2：修复后验证阶段
+      onPhase('verify-fix');
       const fresh = await verifyAfterLintFix(options, report);
       attempts.push({
         attempt,
@@ -105,11 +110,17 @@ export async function repairVerifyReport(
       log(
         `[self-heal] 第 ${attempt} 次尝试：模型修复类型错误 ${simpleType.code ?? 'TS'} @ ${simpleType.file ?? '?'}:${simpleType.line ?? '?'}`,
       );
+      // T4.2：模型修复阶段
+      onPhase('model-fix');
       const r = await applyModelFix(simpleType, report, options, attempt);
       snapshotWarning = snapshotWarning || r.snapshotWarning;
       attempts.push(r.attempt);
       // 回滚成功 → 磁盘已恢复原状，report 维持修复前（下一轮重新处理）；否则磁盘为修复后状态
       report = r.attempt.rolledBack === true ? report : r.attempt.report;
+      // T4.2：模型修复被回滚 → 回滚阶段
+      if (r.attempt.rolledBack === true) {
+        onPhase('rollback');
+      }
       // action=none（模型无法生成计划 / 审批拒绝 fail-closed / 写盘失败）→ 停止
       // 本轮（与原版 break 语义一致：不继续尝试其他 type 错误，保留报告转人工）
       if (r.attempt.action === 'none') {
@@ -128,6 +139,8 @@ export async function repairVerifyReport(
     break;
   }
 
+  // T4.2：修复流程结束
+  onPhase('done');
   const exceeded = !report.passed && attempts.length >= MAX_SELF_HEAL_ATTEMPTS;
   return {
     passed: report.passed,

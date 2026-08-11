@@ -12,6 +12,8 @@
  * 命令无副作用：add/remove 不触碰项目目录内容。
  */
 
+import chalk from 'chalk';
+
 import { ProjectRegistry, ProjectRegistryError } from '../store/projects';
 
 /** project 命令选项。 */
@@ -37,7 +39,7 @@ export async function runProjectCommand(options: ProjectCommandOptions): Promise
       await addProject(registry, options);
       break;
     case 'list':
-      listProjects(registry);
+      listProjects(registry, options.cwd);
       break;
     case 'remove':
       await removeProject(registry, options);
@@ -101,22 +103,31 @@ async function addProject(
   console.log(`✅ 项目 ${name} 已注册（${entry?.path ?? p}）`);
 }
 
-/** list：表格列出 name / path / addedAt。 */
-function listProjects(registry: ProjectRegistry): void {
+/**
+ * list：三列表格（名称 | 路径 | 注册时间）；当前 cwd 所在项目整行绿色高亮 + ★（当前）。
+ * v3.2 M4 / T4.3：视觉升级（原两列 + 尾部注册时间 → 三列表格 + active 高亮）。
+ */
+function listProjects(registry: ProjectRegistry, cwd: string): void {
   const items = registry.list();
   if (items.length === 0) {
     console.log('暂无已注册项目。');
     return;
   }
+  const current = registry.findByPath(cwd);
   console.log('已注册项目：');
-  // 简单表格：两列（name 宽度取最长，path 直接展示）
   const nameWidth = Math.max(...items.map((x) => x.name.length), 4);
-  console.log(`${'名称'.padEnd(nameWidth)}  路径`);
-  console.log(`${'-'.repeat(nameWidth)}  --------`);
+  const timeWidth = Math.max(...items.map((x) => x.entry.addedAt.length), 10);
+  const pathWidth = Math.max(...items.map((x) => x.entry.path.length), 6);
+  console.log(
+    `${'名称'.padEnd(nameWidth + 8)}  ${'路径'.padEnd(pathWidth)}  ${'注册时间'.padEnd(timeWidth)}`,
+  );
+  console.log(`${'-'.repeat(nameWidth + 8)}  ${'-'.repeat(pathWidth)}  ${'-'.repeat(timeWidth)}`);
   for (const { name, entry } of items) {
-    console.log(`${name.padEnd(nameWidth)}  ${entry.path}`);
+    const isCurrent = current !== undefined && current.name === name;
+    const nameCell = isCurrent ? `${name} ★（当前）` : name;
+    const row = `${nameCell.padEnd(nameWidth + 8)}  ${entry.path.padEnd(pathWidth)}  ${entry.addedAt}`;
+    console.log(isCurrent ? chalk.green(row) : row);
   }
-  console.log(`\n注册时间：${items.map((x) => `${x.name} → ${x.entry.addedAt}`).join('；')}`);
 }
 
 /** remove：卸载项目（不删除项目目录）。 */

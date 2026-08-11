@@ -8,7 +8,7 @@
  * 修复期间 App 置 streaming 阶段（状态条可见），不阻塞主对话流。
  */
 
-import { type RepairVerifyResult, runSelfHeal } from '../../loop/self-heal';
+import { type RepairVerifyResult, runSelfHeal, type SelfHealPhase } from '../../loop/self-heal';
 import type { ModelClient } from '../../model/client';
 import type { ApprovalRequest, ToolContext } from '../../tools/registry';
 
@@ -39,6 +39,26 @@ export interface SelfHealCommandOptions {
   runVerify?: () => Promise<{ stdout: string; stderr: string }>;
   /** 测试注入：执行 lint:fix（缺省走 shell 白名单 `npm run lint:fix`）。 */
   runLintFix?: () => Promise<{ ok: boolean }>;
+  /** 阶段回调（v3.2 M4 / T4.2）：随 verify/lint-fix/model-fix/... 动态更新 UI。 */
+  onPhase?: (phase: SelfHealPhase) => void;
+}
+
+/** 阶段中文名（App.tsx 状态条展示；v3.2 M4 / T4.2）。 */
+export function selfHealPhaseLabel(phase: SelfHealPhase): string {
+  switch (phase) {
+    case 'verify':
+      return '执行 verify';
+    case 'lint-fix':
+      return 'lint 修复';
+    case 'model-fix':
+      return '模型修复';
+    case 'verify-fix':
+      return '修复后验证';
+    case 'rollback':
+      return '回滚';
+    case 'done':
+      return '完成';
+  }
 }
 
 /** 执行 /self-heal：运行 verify → 失败走 M1 闭环 → 返回中文报告。 */
@@ -54,6 +74,7 @@ export async function executeSelfHealCommand(
     requestApproval: options.requestApproval,
     runVerify: options.runVerify,
     runLintFix: options.runLintFix,
+    onPhase: options.onPhase,
     log: (m) => logs.push(m),
   });
   return { message: formatSelfHealReport(result), result };

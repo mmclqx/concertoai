@@ -18,6 +18,7 @@ import path from 'node:path';
 import { fetchBalance } from '../balance';
 import { fmt, t } from '../i18n';
 import { listModels } from '../model/models';
+import { getActiveAccount, getApiKeyFor, listAccounts } from '../store/accounts';
 import { configPath, sessionsDir } from '../store/paths';
 import { type ApiKeySource, maskApiKey } from './common';
 
@@ -37,6 +38,8 @@ export interface DoctorCommandOptions {
   configPath?: string;
   /** 会话目录（测试注入；默认 ~/.concertoai/sessions）。 */
   sessionDir?: string;
+  /** accounts 根目录（v3.2 M4 / T4.4 账号完整性检查；测试注入；默认 ~/.concertoai/accounts）。 */
+  accountsRoot?: string;
 }
 
 interface Diagnostic {
@@ -140,6 +143,39 @@ function diagnoseModels(): Diagnostic {
   };
 }
 
+/**
+ * 账号完整性检查（v3.2 M4 / T4.4）：
+ * - 无 active 指针 → ok（尚未登录，提示可运行 login）；
+ * - active 指针指向账号且 config.json 可读 → ok；
+ * - 指针指向缺失/损坏账号 → fail（给出可复制的修复命令）。
+ */
+async function diagnoseAccounts(accountsRoot: string | undefined): Promise<Diagnostic> {
+  const dict = t().doctor;
+  const active = await getActiveAccount(accountsRoot);
+  if (active === undefined) {
+    return { ok: true, lines: [`${dict.ok} ${dict.accountsLabel}: ${dict.accountNoActive}`] };
+  }
+  const names = await listAccounts(accountsRoot);
+  if (!names.includes(active)) {
+    return {
+      ok: false,
+      lines: [`${dict.fail} ${dict.accountsLabel}: ${fmt(dict.accountBroken, { name: active })}`],
+    };
+  }
+  try {
+    await getApiKeyFor(active, accountsRoot);
+    return {
+      ok: true,
+      lines: [`${dict.ok} ${dict.accountsLabel}: ${fmt(dict.accountOk, { name: active })}`],
+    };
+  } catch {
+    return {
+      ok: false,
+      lines: [`${dict.fail} ${dict.accountsLabel}: ${fmt(dict.accountBroken, { name: active })}`],
+    };
+  }
+}
+
 async function diagnoseBalance(options: DoctorCommandOptions): Promise<Diagnostic> {
   const dict = t().doctor;
   if (options.apiKey === undefined || options.apiKey === '') {
@@ -198,6 +234,8 @@ export async function runDoctorCommand(options: DoctorCommandOptions): Promise<n
     await diagnoseConfig(options.configPath ?? configPath()),
     await diagnoseSessionDir(options.sessionDir ?? sessionsDir()),
     diagnoseModels(),
+    // v3.2 M4 / T4.4：账号完整性检查（active 指针 → 账号存在 + config 可读）
+    await diagnoseAccounts(options.accountsRoot),
     await diagnoseBalance(options),
   ];
 

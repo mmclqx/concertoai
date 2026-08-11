@@ -37,7 +37,7 @@ import type {
   ReviewerLike,
   TeamLoopResult,
 } from '../orchestrator';
-import { runTeamLoop, SnapshotManager } from '../orchestrator';
+import { MAX_LOOP_ATTEMPTS, runTeamLoop, SnapshotManager } from '../orchestrator';
 import { ReviewerEngine } from '../reviewer/engine';
 import { loadConfig, resolveConfig } from '../store/config';
 import { resolveModel } from './common';
@@ -67,6 +67,33 @@ export interface RunTeamCommandOptions {
   agents?: { coder: CoderLike; reviewer: ReviewerLike; qa: QaLike };
   /** 可观测性调用链（可选；拆解/闭环阶段记录 spans）。 */
   traceStore?: TraceStore;
+  /** 进度回调（v3.2 M4 / T4.1：拆解完成 / 每轮闭环 / 结束，供 CLI stdout 与聊天消息流）。 */
+  onProgress?: (progress: TeamProgress) => void;
+}
+
+/** team 执行进度（v3.2 M4 / T4.1：长任务中间消息推送，避免黑盒等待）。 */
+export type TeamProgress =
+  | { kind: 'decomposed'; taskCount: number }
+  | {
+      kind: 'loop-attempt';
+      attempt: number;
+      total: number;
+      phase: 'implement' | 'review' | 'qa';
+    }
+  | { kind: 'done'; ok: boolean };
+
+/** 进度中文文案（CLI stdout 与 /orchestrate 聊天消息流共用）。 */
+export function formatTeamProgress(p: TeamProgress): string {
+  switch (p.kind) {
+    case 'decomposed':
+      return `📋 已拆解 ${p.taskCount} 个任务`;
+    case 'loop-attempt': {
+      const phaseLabel = p.phase === 'implement' ? '实现' : p.phase === 'review' ? '审查' : '验证';
+      return `🔁 第 ${p.attempt}/${p.total} 轮（${phaseLabel}）`;
+    }
+    case 'done':
+      return p.ok ? '✅ 团队执行完成' : '❌ 团队执行未成功';
+  }
 }
 
 // ── 结果 ──────────────────────────────────────────────────────
@@ -177,8 +204,12 @@ export async function runTeamCommand(options: RunTeamCommandOptions): Promise<Te
     durationMs: 0,
   });
 
+  // T4.1：拆解完成 → 推送进度（CLI stdout / 聊天消息流）
+  options.onProgress?.({ kind: 'decomposed', taskCount: tasks.length });
+
   // 2. dry-run：仅输出拆解清单并退出，不执行任何 Agent
   if (options.dryRun === true) {
+    options.onProgress?.({ kind: 'done', ok: true });
     process.stdout.write(`=== 任务拆解（dry-run，未执行）===\n\n${formatTaskList(tasks)}\n`);
     return { ok: true, summary: 'dry-run：仅输出拆解清单，未执行任何 Agent', tasks, artifacts: [] };
   }
@@ -193,6 +224,7 @@ export async function runTeamCommand(options: RunTeamCommandOptions): Promise<Te
     process.stdout.write(`=== 任务拆解 ===\n\n${formatTaskList(tasks)}\n\n`);
     const approved = await confirm('批准该方案并开始执行 (y/n): ');
     if (!approved) {
+      options.onProgress?.({ kind: 'done', ok: false });
       process.stdout.write('用户未确认拆解方案，已取消（未执行任何 Agent）。\n');
       return { ok: false, summary: '用户未确认拆解方案，已取消', tasks, artifacts: [] };
     }
@@ -254,6 +286,13 @@ export async function runTeamCommand(options: RunTeamCommandOptions): Promise<Te
         startedAt: Date.now(),
         durationMs: 0,
       });
+      // T4.1：每轮闭环 → 推送进度（实现/审查/验证）
+      options.onProgress?.({
+        kind: 'loop-attempt',
+        attempt: record.attempt,
+        total: MAX_LOOP_ATTEMPTS,
+        phase: record.phase,
+      });
     },
     onRollback: async (reason) => {
       const rb = await snapshots.rollback(taskId);
@@ -267,6 +306,8 @@ export async function runTeamCommand(options: RunTeamCommandOptions): Promise<Te
   }
 
   // 6. 聚合输出：工件引用（spec/code/review-result/test-report）+ 中文 summary
+  // T4.1：闭环结束 → 推送 done（聚合输出前，消息流可感知收尾）
+  options.onProgress?.({ kind: 'done', ok: loop.ok });
   const artifacts = loop.context.artifacts;
   const artifactLines = artifacts
     .map(

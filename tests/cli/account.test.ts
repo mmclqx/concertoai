@@ -133,6 +133,14 @@ describe('runWhoamiCommand', () => {
     await runWhoamiCommand({ accountsRoot: root });
     expect(out()).toContain('当前未登录');
   });
+
+  it('T4.4 active 指针指向缺失账号 → 给出可复制的修复命令', async () => {
+    const { setActiveAccount } = await import('../../src/store/accounts');
+    await setActiveAccount('ghost', root);
+    await runWhoamiCommand({ accountsRoot: root });
+    expect(out()).toContain('ghost');
+    expect(out()).toContain('concertoai login ghost');
+  });
 });
 
 describe('runAccountListCommand / runAccountSwitchCommand', () => {

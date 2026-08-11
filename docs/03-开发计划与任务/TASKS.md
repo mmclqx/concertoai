@@ -1,7 +1,7 @@
 # ConcertoAI 开发任务看板
 
 > 最后更新：2026-08-11
-> 当前里程碑：**🟢 v3.2 进行中（M0-M3 ✅ / M4-M6 待办）**（v3.1: 27/27 ✅ · v3.2 基线 85 文件 / 937 用例 → 当前 86 文件 / 976 用例）
+> 当前里程碑：**🟢 v3.2 进行中（M0-M4 ✅ / M5-M6 待办）**（v3.1: 27/27 ✅ · v3.2 基线 85 文件 / 937 用例 → 当前 87 文件 / 990 用例）
 > 基于：[v3.2 开发计划](./v3.2-dev-plan.md) · 历史：[v3.1 开发计划](./v3.1-dev-plan-ai.md)
 
 ---
@@ -10,13 +10,13 @@
 
 | 指标 | 数值 |
 |------|------|
-| 总任务数 | 152（v1.0: 20 ✅ + v1.1: 12 ✅ + v2.0: 15 ✅ + v2.1: 25 ✅ + v3.0: 24 ✅ + v3.1: 27 ✅ + v3.2: 29（M0-M3 ✅ 15 / M4-M6 ⏳ 14）） |
+| 总任务数 | 152（v1.0: 20 ✅ + v1.1: 12 ✅ + v2.0: 15 ✅ + v2.1: 25 ✅ + v3.0: 24 ✅ + v3.1: 27 ✅ + v3.2: 29（M0-M4 ✅ 20 / M5-M6 ⏳ 9）） |
 | P0 任务 | 52（v1.1: 6 ✅ + v2.0: 5 ✅ + v2.1: 5 ✅ + v3.0: 14 ✅ + v3.1: 7 ✅ + v3.2: 15） |
 | P1 任务 | 58（v1.1: 6 ✅ + v2.0: 10 ✅ + v2.1: 4 ✅ + v3.0: 10 ✅ + v3.1: 14 ✅ + v3.2: 14） |
 | P2 任务 | 14（v2.1: 8 ✅ + v3.1: 6 ✅） |
-| 待开始 | 14（v3.2 M4-M6） |
+| 待开始 | 9（v3.2 M5-M6） |
 | 进行中 | 0 |
-| 已完成 | 138 |
+| 已完成 | 143 |
 | 已阻塞 | 0 |
 
 ---
@@ -62,7 +62,7 @@
 | **V3.2-M1 跨平台兼容性增强** | **P0** | **5** | ✅ 已完成（a5d30b1） |
 | **V3.2-M2 self-heal 模块化重构** | **P0** | **4** | ✅ 已完成（4b5bf55） |
 | **V3.2-M3 错误处理强化** | **P1** | **4** | ✅ 已完成（本次） |
-| **V3.2-M4 用户体验优化** | **P1** | **5** | ⏳ 待开始 |
+| **V3.2-M4 用户体验优化** | **P1** | **5** | ✅ 已完成（本次） |
 | **V3.2-M5 文档与扩展能力** | **P1** | **5** | ⏳ 待开始 |
 | **V3.2-M6 集成测试与发布** | **P0** | **4** | ⏳ 待开始 |
 
@@ -992,11 +992,17 @@
 
 ### V3.2-M4：用户体验优化（P1，约 4h）
 
-- [ ] **T4.1** team 进度推送（onProgress 回调 + CLI stdout + /orchestrate 消息流两处接入）
-- [ ] **T4.2** self-heal 阶段进度（activeTool 随阶段动态更新）
-- [ ] **T4.3** project/account 视觉（project list 三列表格 + active 高亮）
-- [ ] **T4.4** whoami 修复提示 + doctor 账号完整性检查
-- [ ] **T4.5** 启动期缓存（apiKey/keySource/accountName + ProjectRegistry + config 一次解析）
+- [x] **T4.1** team 进度推送（onProgress 回调 + CLI stdout + /orchestrate 消息流两处接入）
+  - ✅ 2026-08-11 完成：TeamProgress 联合类型 + formatTeamProgress 中文文案 + onProgress 透传；CLI stdout（index.ts）与 App.tsx 聊天消息流渐进推送（拆解/每轮闭环/收尾）；测试断言回调序列（decomposed→loop-attempt×3→done、审批拒绝 done:false）
+- [x] **T4.2** self-heal 阶段进度（activeTool 随阶段动态更新）
+  - ✅ 2026-08-11 完成：SelfHealPhase 类型（verify/lint-fix/model-fix/verify-fix/rollback/done）+ repair/index 透传 onPhase + selfHealPhaseLabel 中文名 + App.tsx activeTool 名称随阶段更新；测试断言阶段序列
+- [x] **T4.3** project/account 视觉（project list 三列表格 + active 高亮）
+  - ✅ 2026-08-11 完成：project list 三列表格（名称|路径|注册时间）+ 当前 cwd 项目 ★（当前）chalk.green 高亮；account list active 绿色高亮；测试断言表头/高亮/非 active 不带标记
+- [x] **T4.4** whoami 修复提示 + doctor 账号完整性检查
+  - ✅ 2026-08-11 完成：whoami 缺失提示改为「请重新登录：concertoai login <name>」（可复制）；doctor 新增账号完整性检查项（无 active→ok、指针指向缺失/损坏账号→fail + 修复命令）；i18n zh/en 补字段；测试覆盖两分支
+- [x] **T4.5** 启动期缓存（apiKey/keySource/accountName + ProjectRegistry + config 一次解析）
+  - ✅ 2026-08-11 完成：resolveApiKeyCached / loadProjectRegistryCached 模块级缓存（同 accountsRoot/registryFile 命中，clear 失效）；index.ts getApiKey/doctor/preAction 接入；resolveProjectForCwd 复用；新增 tests/cli/common.test.ts（4 用例）
+  - ✅ **87 文件 / 990 用例全绿**（M4，本次提交）
 
 ### V3.2-M5：文档与扩展能力（P1，约 3h）
 
@@ -1025,6 +1031,7 @@
 
 | 日期 | 变更内容 | 作者 |
 |------|---------|------|
+| 2026-08-11 | **V3.2-M4 完成**：T4.1-T4.5 用户体验优化（team/self-heal 进度推送 + project/account 视觉高亮 + whoami 修复提示 + doctor 账号完整性 + 启动期缓存）；**87 文件 / 990 用例全绿**（+14） | Carbon Code |
 | 2026-08-11 | **V3.2-M3 完成**：T3.1-T3.4 错误处理强化（__dirname 扫描 0 命中 / audit export 损坏行统计 / /orchestrate diagnostics / inferErrorCode en 样本回归）；**86 文件 / 976 用例全绿**（+11） | Carbon Code |
 | 2026-08-11 | **V3.1-M6 完成（v3.1 全部 27 任务收官）**：T6.1 E2E 集成测试（team 全链路 / self-heal 修复+回滚 / project 隔离 / audit export）+ T6.2 文档更新（README / user-guide / ARCHITECTURE D42~D46 / CHANGELOG v3.1.0 归位）+ T6.3 收尾（trace S4 O(n²)→O(n) + ADR-024~028 + E1~E4 评估）+ T6.4 测试报告落盘（07.4）；**84 文件 / 923 用例全绿**（门检 ≥785/72） | Carbon Code |
 | 2026-08-07 | T1.1 完成：核实 DeepSeek 模型 ID 与定价 | Carbon Code |

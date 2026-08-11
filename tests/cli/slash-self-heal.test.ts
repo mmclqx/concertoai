@@ -14,8 +14,9 @@ import {
   executeSelfHealCommand,
   formatSelfHealReport,
   parseSelfHealCommand,
+  selfHealPhaseLabel,
 } from '../../src/cli/slash/self-heal';
-import type { VerifyReport } from '../../src/loop/self-heal';
+import type { SelfHealPhase, VerifyReport } from '../../src/loop/self-heal';
 import type { ToolContext } from '../../src/tools/registry';
 
 // ── 测试样本 ──────────────────────────────────────────────────
@@ -106,6 +107,41 @@ describe('executeSelfHealCommand', () => {
     });
     expect(result.result.passed).toBe(false);
     expect(result.message).toContain('人工');
+  });
+
+  // ── 阶段回调（v3.2 M4 / T4.2：activeTool 随阶段更新）──
+
+  it('verify 通过 → 阶段序列 verify → done', async () => {
+    const phases: SelfHealPhase[] = [];
+    await executeSelfHealCommand(ctx, {
+      runVerify: async () => VERIFY_PASS,
+      runLintFix: async () => ({ ok: true }),
+      onPhase: (p) => phases.push(p),
+    });
+    expect(phases).toEqual(['verify', 'done']);
+  });
+
+  it('lint 失败自动修复 → 阶段序列 verify → lint-fix → verify-fix → done', async () => {
+    let lintFixed = false;
+    const phases: SelfHealPhase[] = [];
+    await executeSelfHealCommand(ctx, {
+      runVerify: async () => (lintFixed ? VERIFY_PASS : LINT_FAIL),
+      runLintFix: async () => {
+        lintFixed = true;
+        return { ok: true };
+      },
+      onPhase: (p) => phases.push(p),
+    });
+    expect(phases).toEqual(['verify', 'lint-fix', 'verify-fix', 'done']);
+  });
+
+  it('selfHealPhaseLabel：六个阶段均有中文名', () => {
+    expect(selfHealPhaseLabel('verify')).toBe('执行 verify');
+    expect(selfHealPhaseLabel('lint-fix')).toBe('lint 修复');
+    expect(selfHealPhaseLabel('model-fix')).toBe('模型修复');
+    expect(selfHealPhaseLabel('verify-fix')).toBe('修复后验证');
+    expect(selfHealPhaseLabel('rollback')).toBe('回滚');
+    expect(selfHealPhaseLabel('done')).toBe('完成');
   });
 });
 

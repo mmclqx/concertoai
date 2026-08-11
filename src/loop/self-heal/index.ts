@@ -36,7 +36,7 @@ import {
   repairVerifyReport,
   runVerifyAndParse,
 } from './repair';
-import type { RepairVerifyResult } from './types';
+import type { RepairVerifyResult, SelfHealPhase } from './types';
 
 // ── 生产辅助：真实执行 npm run verify / npm run lint:fix ───────
 
@@ -83,6 +83,8 @@ export interface RunSelfHealOptions {
   runLintFix?: () => Promise<{ ok: boolean }>;
   /** 测试注入：增量 lint 段（T2.3，缺省不启用增量 verify）。 */
   runLintOnly?: () => Promise<{ stdout: string; stderr: string }>;
+  /** 阶段回调（v3.2 M4 / T4.2）：verify/lint-fix/model-fix/verify-fix/rollback/done。 */
+  onPhase?: (phase: SelfHealPhase) => void;
 }
 
 /**
@@ -95,6 +97,7 @@ export interface RunSelfHealOptions {
  */
 export async function runSelfHeal(options: RunSelfHealOptions): Promise<RepairVerifyResult> {
   const log = options.log ?? (() => {});
+  const onPhase = options.onPhase ?? (() => {});
   // 测试注入优先；缺省走生产实现（spawn npm run verify / shell 白名单 lint:fix）
   const runVerify =
     options.runVerify ??
@@ -103,8 +106,11 @@ export async function runSelfHeal(options: RunSelfHealOptions): Promise<RepairVe
     options.runLintFix ?? ((): Promise<{ ok: boolean }> => runLintFixCommand(options.cwd));
 
   log('[self-heal] 执行 npm run verify …');
+  // T4.2：初始 verify 阶段
+  onPhase('verify');
   const initial = await runVerifyAndParse({ cwd: options.cwd, runVerify, runLintFix, log });
   if (initial.passed) {
+    onPhase('done');
     log(initial.summary);
     return { passed: true, report: initial, attempts: [], exceeded: false };
   }
@@ -120,6 +126,7 @@ export async function runSelfHeal(options: RunSelfHealOptions): Promise<RepairVe
     model: options.model,
     requestApproval: options.requestApproval,
     snapshots,
+    onPhase,
     log,
   });
   return result;
@@ -136,6 +143,7 @@ export type {
   RepairVerifyResult,
   SelfHealAction,
   SelfHealAttempt,
+  SelfHealPhase,
 } from './types';
 export {
   diffLineStat,

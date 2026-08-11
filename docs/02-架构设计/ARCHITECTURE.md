@@ -12,7 +12,7 @@ ConcertoAI 是一款**中文优先**的终端编码助手 CLI（DeepSeek 驱动�
 
 - **技术栈**：TypeScript (strict) + Node ≥22 + ESM，Ink 7 (React 19) 渲染 TUI，commander 解析 CLI，zod 做工具参数校验，vitest 测试，Biome 检查，tsup 打包
 - **运行时依赖**：`ink` / `react` / `commander` / `zod` / `cli-highlight` / `chalk`
-- **测试现状**：86 个测试文件、976 个用例，`npm run verify` 全绿，`npm audit` 0 漏洞；已用真实 `DEEPSEEK_API_KEY` 完成端到端冒烟
+- **测试现状**：87 个测试文件、990 个用例，`npm run verify` 全绿，`npm audit` 0 漏洞；已用真实 `DEEPSEEK_API_KEY` 完成端到端冒烟
 - **安全基线**：编辑与命令一律审批（fail-closed）、路径沙箱、结果截断、白名单免审批——无 yolo 模式
 - **v3.1 新增能力**：AI 自我修复闭环（self-heal）/ 多项目管理（project）/ 多租户登录（account）/ Orchestrator CLI（team、/orchestrate、audit export）/ 结构化错误增强（error-codes）；**v3.1 预留功能（已交付）**：`concertoai balance`（余额查询）/ `concertoai doctor`（环境诊断）、配置目录迁移 `~/.lumen → ~/.concertoai`（`src/store/paths.ts` 单一来源 + 幂等迁移）；**v2.2 智能成本控制**（高峰时段模型自动切换，见 §4 D41）
 
@@ -32,19 +32,19 @@ ConcertoAI 是一款**中文优先**的终端编码助手 CLI（DeepSeek 驱动�
 │   plan.ts    plan 计划-批准-执行三段式（readline y/n）          │
 │   snapshot.ts 快照命令（SnapshotManager，T3.6）                │
 │   balance.ts 余额命令（fetchBalance，GET /user/balance）       │
-│   doctor.ts  环境诊断命令（Node/Key/配置/会话/模型/余额）       │
-│   project.ts 项目注册表命令 add/list/remove/info/switch（v3.1）│
+│   doctor.ts  环境诊断命令（Node/Key/配置/会话/模型/余额/账号完整性，v3.2 M4）│
+│   project.ts 项目注册表命令 add/list/remove/info/switch（v3.1；list 三列表格+当前高亮 v3.2 M4）│
 │   self-heal.ts verify 失败自动修复（v3.1，非交互）            │
-│   team.ts    Orchestrator 团队执行（v3.1，拆解→闭环→回滚）     │
+│   team.ts    Orchestrator 团队执行（v3.1，拆解→闭环→回滚；onProgress 进度推送 v3.2 M4）│
 │   audit.ts   审计日志导出（v3.1，audit export）               │
-│   account.ts 多账号命令（v3.1，login/logout/whoami/account）   │
+│   account.ts 多账号命令（v3.1，login/logout/whoami/account；whoami 修复提示+active 高亮 v3.2 M4）│
 │   crash-handler.ts 进程级崩溃日志（v3.1）                     │
 │   slash/     /agent /skill /mcp /memory /review /self-heal /orchestrate│
 └──────────────────────┬──────────────────────────────────────┘
                        │ render(<App …>) / runLoop(...)
 ┌──────────────────────▼──────────────────────────────────────┐
 │ ui/  Ink TUI（src/ui/）                                      │
-│   App.tsx          根组件 + 状态机 idle→streaming→approval→plan-approval
+│   App.tsx          根组件 + 状态机 idle→streaming→approval→plan-approval；长任务进度消息推送 + activeTool 阶段更新（v3.2 M4）
 │   PromptInput      光标移动 + 输入历史 + 多行输入               │
 │   StreamingView    markdown→ANSI 渲染（markdown.tsx + 高亮）   │
 │   modals.tsx       EditConfirm / ShellConfirm / PlanConfirm   │
@@ -321,24 +321,24 @@ concertoai/
 │   │   ├── plan.ts       plan 装配：计划轮 → 终端 y/n → 执行轮（含依赖检测/进度/回滚）
 │   │   ├── snapshot.ts   concertoai snapshot [list|clean]：快照残留列出/清理（v3.0 M3）
 │   │   ├── balance.ts    concertoai balance：余额查询（fetchBalance，v3.1）
-│   │   ├── doctor.ts     concertoai doctor：环境诊断（Node/Key/配置/会话/模型/余额，v3.1）
-│   │   ├── project.ts    concertoai project add/list/remove/info/switch（v3.1 M2）
+│   │   ├── doctor.ts     concertoai doctor：环境诊断（Node/Key/配置/会话/模型/余额/账号完整性，v3.1 + v3.2 M4）
+│   │   ├── project.ts    concertoai project add/list/remove/info/switch（v3.1 M2；list 三列表格 + 当前项目 ★ 高亮，v3.2 M4）
 │   │   ├── self-heal.ts  concertoai self-heal：verify 失败自动分类→修复→验证→回滚（v3.1 M1）
-│   │   ├── team.ts       concertoai team "<任务>"：Orchestrator 全链路（拆解→对抗性闭环→回滚兜底，v3.1 M5）
+│   │   ├── team.ts       concertoai team "<任务>"：Orchestrator 全链路（拆解→对抗性闭环→回滚兜底，v3.1 M5；onProgress 进度推送，v3.2 M4）
 │   │   ├── audit.ts      concertoai audit export [--out]：审计日志保序 JSON 导出（v3.1 M5；损坏行统计 v3.2 M3）
-│   │   ├── account.ts    多账号命令 login/logout/whoami/account（v3.1 M3）+ account-types.ts
+│   │   ├── account.ts    多账号命令 login/logout/whoami/account（v3.1 M3；whoami 修复提示 + active 高亮，v3.2 M4）+ account-types.ts
 │   │   ├── crash-handler.ts 进程级崩溃日志（uncaughtException/unhandledRejection → ~/.concertoai/crash.log，v3.1 M3）
-│   │   ├── common.ts     CLI 共享：白名单 / 注册表构建 / OS 提示 / resolveProjectForCwd / mergeAllowlist / resolveApiKey / maskApiKey（轻量加载）
+│   │   ├── common.ts     CLI 共享：白名单 / 注册表构建 / OS 提示 / resolveProjectForCwd / mergeAllowlist / resolveApiKey / maskApiKey（轻量加载）；resolveApiKeyCached / loadProjectRegistryCached 启动期缓存（v3.2 M4）
 │   │   └── slash/        斜杠命令处理器
 │   │       ├── agent.ts  /agent list / install / remove / promote / update（v3.0 M4 + v3.1 M5）
 │   │       ├── memory.ts /remember /forget /memories
 │   │       ├── mcp.ts    /mcp status / connect / disconnect（v2.0）
 │   │       ├── skill.ts  /skill list / use / install / search / update（v2.0/v2.1）
 │   │       ├── review.ts /review [path|--pr|--severity strict|normal|lenient]（v2.1 + v3.1 M5）
-│   │       ├── self-heal.ts /self-heal 斜杠命令（v3.1 M1）
+│   │       ├── self-heal.ts /self-heal 斜杠命令（v3.1 M1；onPhase 阶段进度 + selfHealPhaseLabel，v3.2 M4）
 │   │       └── orchestrate.ts /orchestrate <任务>：chat 内 team 全链路（v3.1 M5）
 │   ├── ui/
-│   │   ├── App.tsx       状态机组件：send/sendPlan/executePlan/审批挂起/消息渲染/错误显示
+│   │   ├── App.tsx       状态机组件：send/sendPlan/executePlan/审批挂起/消息渲染/错误显示；长任务进度消息推送 + activeTool 阶段更新（v3.2 M4）
 │   │   ├── PromptInput.tsx  光标移动 + 历史浏览 + 多行输入
 │   │   ├── StreamingView.tsx 流式 markdown→ANSI（空文本显示 spinner）
 │   │   ├── markdown.tsx   markdown 解析 + cli-highlight 高亮（纯 ANSI 字符串）
@@ -354,8 +354,8 @@ concertoai/
 │   │   │   ├── classifier.ts    四段分类器（build/lint/type/test）+ parseVerifyReport + mergeLintPassed（311 行）
 │   │   │   ├── model.ts         模型修复计划生成（isSimpleTypeError / parseModelFixOutput / generateModelFixPlan）
 │   │   │   ├── snapshot-guard.ts 快照守卫 applyModelFix（审批 → 快照 → 写盘 → 判定 → 回滚/提交 + snapshotWarning）
-│   │   │   ├── repair.ts        修复执行器 repairVerifyReport + 增量 verify（T2.3）+ 常量
-│   │   │   ├── types.ts         公共类型（避免循环依赖）
+│   │   │   ├── repair.ts        修复执行器 repairVerifyReport + 增量 verify（T2.3）+ onPhase 阶段回调（v3.2 M4）+ 常量
+│   │   │   ├── types.ts         公共类型（避免循环依赖）；SelfHealPhase 阶段联合类型（v3.2 M4）
 │   │   │   └── index.ts         barrel + runSelfHeal 入口 + 生产辅助（runVerifyCommand / runLintFixCommand）
 │   │   ├── context.ts    上下文窗口管理（trimContext：80% 预算、整轮保留、日志）
 │   │   ├── messages.ts   消息构造 + toApiMessages + formatToolResult（20k 截断）
@@ -447,7 +447,7 @@ concertoai/
 │       ├── zh.ts         中文字典 + fmt()
 │       ├── en.ts         英文字典（键与 zh 同构）
 │       └── index.ts      resolveLocale / setLocale / t() / DICTS
-└── tests/                镜像 src 结构（86 个文件 / 976 用例，v3.2 M3 基线），含 tests/agent/、tests/agents/、tests/balance/、tests/cli/、tests/core/、tests/e2e/（team-cli/self-heal/project-isolation）、tests/fixtures/（platform-samples 跨平台样本库）、tests/i18n/、tests/knowledge/、tests/loop/（self-heal/error-reporting）、tests/market/、tests/mcp/、tests/model/、tests/observable/、tests/orchestrator/、tests/planner/、tests/reviewer/、tests/skill/、tests/store/（projects/accounts/accounts-exdev）、tests/tools/、tests/ui/ 等
+└── tests/                镜像 src 结构（87 个文件 / 990 用例，v3.2 M4 基线），含 tests/agent/、tests/agents/、tests/balance/、tests/cli/（含 common.test.ts 启动缓存）、tests/core/、tests/e2e/（team-cli/self-heal/project-isolation）、tests/fixtures/（platform-samples 跨平台样本库）、tests/i18n/、tests/knowledge/、tests/loop/（self-heal/error-reporting）、tests/market/、tests/mcp/、tests/model/、tests/observable/、tests/orchestrator/、tests/planner/、tests/reviewer/、tests/skill/、tests/store/（projects/accounts/accounts-exdev）、tests/tools/、tests/ui/ 等
 ```
 
 ## 6. 5分钟快速体验

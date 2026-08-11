@@ -11,13 +11,17 @@ import { executeMcpCommand, parseMcpCommand } from '../cli/slash/mcp';
 import { executeMemoryCommand, parseMemoryCommand } from '../cli/slash/memory';
 import { executeOrchestrateCommand, parseOrchestrateCommand } from '../cli/slash/orchestrate';
 import { executeReviewCommand, parseReviewCommand } from '../cli/slash/review';
-import { executeSelfHealCommand, parseSelfHealCommand } from '../cli/slash/self-heal';
+import {
+  executeSelfHealCommand,
+  parseSelfHealCommand,
+  selfHealPhaseLabel,
+} from '../cli/slash/self-heal';
 import {
   executeSkillCommand,
   executeSkillMarketCommand,
   parseSkillCommand,
 } from '../cli/slash/skill';
-import { runTeamCommand } from '../cli/team';
+import { formatTeamProgress, runTeamCommand } from '../cli/team';
 import { fmt, t } from '../i18n';
 import { retrieveLocalMemories } from '../loop/local-memory';
 import type { LoopEvent } from '../loop/loop';
@@ -537,6 +541,13 @@ export function App({
                 task,
                 confirm: async () => true,
                 traceStore,
+                // T4.1：拆解/轮次/收尾进度 → 渐进推送聊天消息（长任务可感知，不黑盒等待）
+                onProgress: (p) => {
+                  setMessages((prev) => [
+                    ...prev,
+                    { role: 'assistant', content: formatTeamProgress(p) },
+                  ]);
+                },
               }),
           });
           if (result.message !== undefined) {
@@ -905,6 +916,14 @@ export function App({
             client,
             model,
             requestApproval,
+            // T4.2：阶段进度 → 状态条 activeTool 名称随阶段更新（分类/lint 修复/模型修复/验证/回滚）
+            onPhase: (phase) => {
+              setActiveTool({
+                id: 'self-heal',
+                name: `self-heal（${selfHealPhaseLabel(phase)}）`,
+                arguments: '{}',
+              });
+            },
           });
           const msg: ChatMessage = { role: 'assistant', content: result.message };
           setMessages((prev) => [...prev, msg]);

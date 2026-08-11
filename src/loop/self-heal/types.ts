@@ -36,6 +36,15 @@ export interface ModelFixPlan {
 /** 单个错误的修复动作（lint 直修 / 模型修复 / 跳过）。 */
 export type SelfHealAction = 'lint-fix' | 'model-fix' | 'none';
 
+/** self-heal 阶段（v3.2 M4 / T4.2：activeTool 随阶段动态更新，长任务可感知）。 */
+export type SelfHealPhase =
+  | 'verify'
+  | 'lint-fix'
+  | 'model-fix'
+  | 'verify-fix'
+  | 'rollback'
+  | 'done';
+
 /** 单次尝试结果。 */
 export interface SelfHealAttempt {
   /** 尝试序号（1-based）。 */
@@ -74,6 +83,8 @@ export interface RepairVerifyOptions {
   snapshots?: SnapshotManager;
   /** 快照 taskId 前缀（默认 `self-heal`，快照目录 `.concertoai/snapshots/<prefix>-<ts>/`）。 */
   snapshotPrefix?: string;
+  /** 阶段回调（v3.2 M4 / T4.2）：verify/lint-fix/model-fix/verify-fix/rollback/done。 */
+  onPhase?: (phase: SelfHealPhase) => void;
   /** 日志输出。 */
   log?: (message: string) => void;
 }

@@ -119,6 +119,29 @@ describe('project list', () => {
     await runProjectCommand({ cwd: tmp, action: 'list', registryFile: regFile() });
     expect(logs.join('\n')).toContain('暂无');
   });
+
+  it('T4.3 三列表格（名称|路径|注册时间）+ 当前 cwd 项目 ★（当前）高亮', async () => {
+    const projDir = path.join(tmp, 'demo');
+    mkdirSync(projDir, { recursive: true });
+    const reg = await ProjectRegistry.load(regFile());
+    reg.add('demo', projDir);
+    reg.add('alpha', path.join(tmp, 'alpha'));
+    await reg.save();
+
+    await runProjectCommand({ cwd: projDir, action: 'list', registryFile: regFile() });
+    const out = logs.join('\n');
+    // 三列表头
+    expect(out).toContain('名称');
+    expect(out).toContain('路径');
+    expect(out).toContain('注册时间');
+    // 两项目均列出
+    expect(out).toContain('demo');
+    expect(out).toContain('alpha');
+    // 当前 cwd 命中项目带 ★（当前）标记（chalk 高亮行）
+    expect(out).toContain('demo ★（当前）');
+    // alpha 不带标记
+    expect(out).not.toContain('alpha ★');
+  });
 });
 
 describe('project remove', () => {

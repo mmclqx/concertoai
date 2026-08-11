@@ -7,7 +7,7 @@ import { Command } from 'commander';
 import { t } from '../i18n';
 import { crashLogPath, migrateLegacyHome } from '../store/paths';
 import { VERSION } from '../version';
-import { resolveApiKey } from './common';
+import { resolveApiKeyCached } from './common';
 import { installCrashHandlers } from './crash-handler';
 
 // ═══ 最早阶段：安装全局崩溃处理器（v3.1 M3 诊断） ═══
@@ -24,7 +24,8 @@ migrateLegacyHome((message) => console.error(message));
  * 无任何来源 → 报错退出（fail-closed，与现状一致）。
  */
 async function getApiKey(): Promise<string> {
-  const resolved = await resolveApiKey();
+  // v3.2 M4 / T4.5：启动期一次性解析并缓存（同一进程后续命令复用，消除重复读盘）
+  const resolved = await resolveApiKeyCached();
   if (resolved.key === undefined) {
     console.error(t().errors.noApiKey);
     process.exit(1);
@@ -59,8 +60,8 @@ program.hook('preAction', async () => {
   if (projectName === undefined) {
     return;
   }
-  const { ProjectRegistry } = await import('../store/projects');
-  const registry = await ProjectRegistry.load();
+  const { loadProjectRegistryCached } = await import('./common');
+  const registry = await loadProjectRegistryCached();
   const entry = registry.get(projectName);
   if (entry === undefined) {
     console.error(
@@ -204,7 +205,7 @@ program
       task: string,
       options: { model?: string; dryRun?: boolean; autoApprove?: boolean; lang?: string },
     ) => {
-      const { runTeamCommand } = await import('./team');
+      const { runTeamCommand, formatTeamProgress } = await import('./team');
       const result = await runTeamCommand({
         cwd: process.cwd(),
         apiKey: await getApiKey(),
@@ -213,6 +214,8 @@ program
         dryRun: options.dryRun,
         autoApprove: options.autoApprove ?? false,
         lang: options.lang,
+        // T4.1：长任务中间进度 → stdout（拆解/轮次/收尾，避免黑盒等待）
+        onProgress: (p) => process.stdout.write(`${formatTeamProgress(p)}\n`),
       });
       if (!result.ok && result.loop === undefined) {
         process.exitCode = 1;
@@ -271,7 +274,8 @@ program
   .action(async () => {
     const { runDoctorCommand } = await import('./doctor');
     // v3.1 M3 T3.3：余额项按解析链（环境变量 > active account）标注账号
-    const resolved = await resolveApiKey();
+    // v3.2 M4 T4.5：走启动期缓存（getApiKey 已解析过则复用，消除二次读盘）
+    const resolved = await resolveApiKeyCached();
     const code = await runDoctorCommand({
       apiKey: resolved.key,
       keySource: resolved.source,

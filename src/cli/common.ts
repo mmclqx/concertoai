@@ -116,6 +116,52 @@ export function maskApiKey(key: string): string {
   return `${prefix}****${last4}`;
 }
 
+// ═══ v3.2 M4 T4.5：启动期缓存（消除重复 I/O——同一进程多次解析 Key / 加载项目注册表）═══
+
+let apiKeyCache: { accountsRoot: string; value: ResolvedApiKey } | undefined;
+
+/** 项目注册表缓存（按 registryFile 路径键）。 */
+const projectRegistryCache = new Map<string, ProjectRegistry>();
+
+/**
+ * 解析 API Key 并缓存（v3.2 M4 / T4.5）。
+ * 同一进程、同一 accountsRoot 下只读一次 active-account + 账号 config；
+ * 之后命中缓存返回（CLI 启动期多次命令调用消除重复 I/O）。
+ */
+export async function resolveApiKeyCached(
+  options: ResolveApiKeyOptions = {},
+): Promise<ResolvedApiKey> {
+  const accountsRoot = options.accountsRoot ?? '';
+  if (apiKeyCache !== undefined && apiKeyCache.accountsRoot === accountsRoot) {
+    return apiKeyCache.value;
+  }
+  const value = await resolveApiKey(options);
+  apiKeyCache = { accountsRoot, value };
+  return value;
+}
+
+/** 清空 API Key 缓存（测试注入：验证缓存失效后重新解析）。 */
+export function clearApiKeyCache(): void {
+  apiKeyCache = undefined;
+}
+
+/** 加载项目注册表并缓存（v3.2 M4 / T4.5）：同一 registryFile 只读一次 projects.json。 */
+export async function loadProjectRegistryCached(registryFile?: string): Promise<ProjectRegistry> {
+  const key = registryFile ?? '';
+  const cached = projectRegistryCache.get(key);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const registry = await ProjectRegistry.load(registryFile);
+  projectRegistryCache.set(key, registry);
+  return registry;
+}
+
+/** 清空项目注册表缓存（测试注入）。 */
+export function clearProjectRegistryCache(): void {
+  projectRegistryCache.clear();
+}
+
 /** 项目上下文（T2.3）：按 cwd 精确匹配已注册项目。 */
 export interface ResolvedProject {
   name: string;
@@ -134,7 +180,8 @@ export async function resolveProjectForCwd(
   cwd: string,
   registryFile?: string,
 ): Promise<ResolvedProject | undefined> {
-  const registry = await ProjectRegistry.load(registryFile);
+  // v3.2 M4 / T4.5：走模块级缓存（-p 模式 preAction 已加载时复用，消除重复读盘）
+  const registry = await loadProjectRegistryCached(registryFile);
   const hit = registry.findByPath(cwd);
   if (hit === undefined) {
     return undefined;

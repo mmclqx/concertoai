@@ -114,4 +114,34 @@ describe('runDoctorCommand', () => {
     expect(output()).toContain('✅ 配置文件');
     expect(output()).toContain('不存在，使用默认配置');
   });
+
+  // ── 账号完整性（v3.2 M4 / T4.4）──
+
+  it('无 active 账号 → 账号完整性 ok（提示可登录）', async () => {
+    const code = await runDoctorCommand({
+      apiKey: 'k',
+      configPath: path.join(tmp, 'config.json'),
+      sessionDir: path.join(tmp, 'sessions'),
+      accountsRoot: path.join(tmp, 'accounts'),
+      fetchImpl: async () => jsonResponse(okBalance),
+    });
+    expect(code).toBe(0);
+    expect(output()).toContain('✅ 账号完整性');
+    expect(output()).toContain('无 active 账号');
+  });
+
+  it('active 指针指向缺失账号 → fail + 可复制修复命令', async () => {
+    const { setActiveAccount } = await import('../../src/store/accounts');
+    await setActiveAccount('ghost', path.join(tmp, 'accounts'));
+    const code = await runDoctorCommand({
+      apiKey: 'k',
+      configPath: path.join(tmp, 'config.json'),
+      sessionDir: path.join(tmp, 'sessions'),
+      accountsRoot: path.join(tmp, 'accounts'),
+      fetchImpl: async () => jsonResponse(okBalance),
+    });
+    expect(code).toBe(1);
+    expect(output()).toContain('❌ 账号完整性');
+    expect(output()).toContain('concertoai login ghost');
+  });
 });

@@ -15,7 +15,12 @@ import path from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { QaReport } from '../../src/agents';
-import { formatTaskList, runTeamCommand } from '../../src/cli/team';
+import {
+  formatTaskList,
+  formatTeamProgress,
+  runTeamCommand,
+  type TeamProgress,
+} from '../../src/cli/team';
 import type { ChatCompletionChunk, ModelClient, StreamChatParams } from '../../src/model/client';
 import type { CoderLike, QaLike, ReviewerLike } from '../../src/orchestrator';
 
@@ -312,5 +317,76 @@ describe('runTeamCommand', () => {
     });
     expect(result.ok).toBe(true);
     expect(result.diagnostics).toBeUndefined();
+  });
+
+  // ── 进度回调（v3.2 M4 / T4.1：长任务中间消息推送）──
+
+  it('onProgress 回调序列：decomposed → loop-attempt×3（implement/review/qa）→ done', async () => {
+    const progress: TeamProgress[] = [];
+    const result = await runTeamCommand({
+      cwd: tmp,
+      apiKey: 'sk-test',
+      task: '实现 TODO',
+      autoApprove: true,
+      client: new FakeModel([{ content: DECOMPOSE_JSON }]),
+      agents: {
+        coder: makeCoder([{ path: 'src/todo.ts', content: 'export const todo = 1;' }]),
+        reviewer: makeReviewer('approve'),
+        qa: makeQa(true),
+      },
+      onProgress: (p) => progress.push(p),
+    });
+    expect(result.ok).toBe(true);
+    expect(progress.map((p) => p.kind)).toEqual([
+      'decomposed',
+      'loop-attempt',
+      'loop-attempt',
+      'loop-attempt',
+      'done',
+    ]);
+    const first = progress[0];
+    if (first?.kind === 'decomposed') {
+      expect(first.taskCount).toBe(1);
+    }
+    const phases = progress
+      .filter(
+        (p): p is Extract<TeamProgress, { kind: 'loop-attempt' }> => p.kind === 'loop-attempt',
+      )
+      .map((p) => p.phase);
+    expect(phases).toEqual(['implement', 'review', 'qa']);
+    const done = progress.at(-1);
+    if (done?.kind === 'done') {
+      expect(done.ok).toBe(true);
+    }
+  });
+
+  it('formatTeamProgress：拆解/轮次/完成中文文案', () => {
+    expect(formatTeamProgress({ kind: 'decomposed', taskCount: 2 })).toBe('📋 已拆解 2 个任务');
+    expect(
+      formatTeamProgress({ kind: 'loop-attempt', attempt: 1, total: 5, phase: 'review' }),
+    ).toBe('🔁 第 1/5 轮（审查）');
+    expect(formatTeamProgress({ kind: 'done', ok: false })).toContain('未成功');
+  });
+
+  it('审批拒绝 → done(ok:false) 收尾（fail-closed 进度一致）', async () => {
+    Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
+    const progress: TeamProgress[] = [];
+    const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    const result = await runTeamCommand({
+      cwd: tmp,
+      apiKey: 'sk-test',
+      task: '实现 TODO',
+      client: new FakeModel([{ content: DECOMPOSE_JSON }]),
+      confirm: async () => false,
+      agents: { coder: makeCoder(), reviewer: makeReviewer(), qa: makeQa() },
+      onProgress: (p) => progress.push(p),
+    });
+    expect(result.ok).toBe(false);
+    expect(progress.map((p) => p.kind)).toEqual(['decomposed', 'done']);
+    const done = progress.at(-1);
+    if (done?.kind === 'done') {
+      expect(done.ok).toBe(false);
+    }
+    stdout.mockRestore();
   });
 });

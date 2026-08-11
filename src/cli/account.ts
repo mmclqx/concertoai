@@ -11,6 +11,8 @@
 
 import readline from 'node:readline';
 
+import chalk from 'chalk';
+
 import {
   getActiveAccount,
   getApiKeyFor,
@@ -128,7 +130,8 @@ export async function runWhoamiCommand(options: AccountCommandOptions): Promise<
     const key = await getApiKeyFor(active, options.accountsRoot);
     console.log(`当前账号: ${active}（${maskApiKey(key)}）`);
   } catch {
-    console.log(`当前账号指针: ${active}（但账号配置缺失，请重新 login）`);
+    // v3.2 M4 / T4.4：给出可复制的修复命令（而非泛化提示）
+    console.log(`当前账号指针: ${active}（账号配置缺失，请重新登录：concertoai login ${active}）`);
   }
 }
 
@@ -142,11 +145,13 @@ export async function runAccountListCommand(options: AccountCommandOptions): Pro
   }
   console.log('已登录账号：');
   for (const name of accounts) {
-    const marker = name === active ? ' ★（当前）' : '';
-    console.log(`  ${name}${marker}`);
+    const isActive = name === active;
+    const line = isActive ? `  ${name} ★（当前）` : `  ${name}`;
+    // v3.2 M4 / T4.3：active 账号绿色高亮
+    console.log(isActive ? chalk.green(line) : line);
   }
   if (active !== undefined && !accounts.includes(active)) {
-    console.log(`  ${active} ★（当前，但账号文件缺失）`);
+    console.log(chalk.green(`  ${active} ★（当前，但账号文件缺失）`));
   }
 }
 
