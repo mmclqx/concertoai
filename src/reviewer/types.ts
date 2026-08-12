@@ -87,6 +87,19 @@ export interface ReviewReport {
   summary: Record<ReviewDimension, { critical: number; medium: number; suggestion: number }>;
   /** 审查耗时（毫秒）。 */
   durationMs: number;
+  /** autoFix 修复结果（v4.0 M1 T1.4：/review --fix 后附加，格式化为「修复结果」区块）。 */
+  fixResult?: {
+    fixed: number;
+    manual: number;
+    rolledBack: number;
+    items: Array<{
+      issue: ReviewIssue;
+      category: 'A' | 'B';
+      status: 'fixed' | 'manual' | 'rolledback';
+      diff?: string;
+      reason?: string;
+    }>;
+  };
 }
 
 // ── 审查子代理分组 ──────────────────────────────────────────

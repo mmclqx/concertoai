@@ -1,8 +1,8 @@
 # ConcertoAI 开发任务看板
 
 > 最后更新：2026-08-12
-> 当前里程碑：**🟢 v3.4 已完成（v3.4.0 已发布 npm + tag）**（v3.3: 9/9 ✅ · v3.4: M1 4/4 ✅ + M3 4/4 ✅ + M2 4/4 ✅ · 基线 90 文件 / 1048 用例）
-> 基于：[v3.4 开发计划](./v3.4-dev-plan.md) · 历史：[v3.3 开发计划](./v3.3-dev-plan.md) · [v3.2 开发计划](./v3.2-dev-plan.md) · [v3.1 开发计划](./v3.1-dev-plan-ai.md)
+> 当前里程碑：**🟢 v3.4 已完成（v3.4.0 已发布 npm + tag）** · **🔵 v4.0 开发中（M0 ✅ + M1 ✅ / 6 任务）**（v3.3: 9/9 ✅ · v3.4: M1 4/4 ✅ + M3 4/4 ✅ + M2 4/4 ✅ · 基线 92 文件 / 1080 用例）
+> 基于：[v4.0 开发任务](./v4.0-dev-tasks.md) · [v3.4 开发计划](./v3.4-dev-plan.md) · 历史：[v3.3 开发计划](./v3.3-dev-plan.md) · [v3.2 开发计划](./v3.2-dev-plan.md) · [v3.1 开发计划](./v3.1-dev-plan-ai.md)
 
 ---
 
@@ -1212,6 +1212,38 @@
 - [x] **T2.4** 发布动作
   - 涉及文件：`package.json` / `package-lock.json` / `src/version.ts` / `tests/smoke.test.ts`（版本号联动）+ 段标记样本 + README
   - ✅ 2026-08-12 完成：npm version 3.4.0 → verify 89/1044 全绿 → npm whoami（mmclqx）→ npm publish（latest=3.4.0）→ git tag v3.4.0
+
+---
+
+## V4.0-M1：审查能修了——/review --fix（P0，约 5h）✅ 已完成
+
+> 用户故事：我运行 /review，ConcertoAI 告诉我 15 个建议。现在它批量审批一次，修好能自动修的，复杂的一起展示，修完自动跑 verify，修坏自动回滚。全程只敲一个「y」。
+> 复用：self-heal snapshot-guard 状态机（快照→写盘→verify→commit/rollback，ADR-030）。
+> 提交：`<M1 提交 hash>` · verify 92 文件 / 1080 用例全绿
+
+- [x] **T1.1** 一键修复入口
+  - 涉及文件：`src/cli/slash/review.ts`（--fix 解析 + 提示）、`src/reviewer/engine.ts`（autoFix 委托 + 无问题短路）、`src/ui/App.tsx`（--fix 接线 + 进度推送）
+  - ✅ 2026-08-12 完成：`/review --fix` 解析（auto/files/pr × --fix 组合）+ 审查完成后自动进入修复模式；无问题短路不进入修复流程（engine.autoFix + runAutoFix 双短路）；进度条「正在修复第 x/y 个问题…」渐进推送聊天消息（onProgress 接线）
+
+- [x] **T1.2** 智能分批 + 批量审批
+  - 涉及文件：`src/reviewer/autofix.ts`（新增，categorizeIssue A/B 分批）、`tests/reviewer/autofix.test.ts`（新增）
+  - ✅ 2026-08-12 完成：A 类 = 🟢 suggestion + 可定位文件（尝试模型补丁，一次批量审批 diff 摘要）；B 类 = 🔴 critical / 🟡 medium / 无文件（聚合展示需人工判断，不自动修——安全阀门 fail-closed）
+
+- [x] **T1.3** 修复执行引擎
+  - 涉及文件：`src/reviewer/autofix.ts`（applyOneFix 快照→写盘→verify→commit/rollback）、`src/ui/App.tsx`（增量 verify：lint + typecheck 段）
+  - ✅ 2026-08-12 完成：每个修复快照登记（SnapshotManager + 随机 taskId 防同毫秒冲突）→ 写盘 → 增量 verify（lint+type 段，跳过 build/test）→ 通过 commit / 失败自动 rollback；快照登记失败降级跳过回滚保护（与 self-heal 语义一致）
+
+- [x] **T1.4** 修复报告
+  - 涉及文件：`src/reviewer/types.ts`（fixResult 字段）、`src/reviewer/engine.ts`（formatReport 修复结果区块 + compactDiff 摘要）、`src/ui/ReviewReport.tsx`（UI 区块）、`tests/ui/review-report.test.tsx`（新增）
+  - ✅ 2026-08-12 完成：报告底部「修复结果」区块——✅ 已修复 x / ⚠ 需人工 y / ❌ 自动回滚 z；每条带 diff 摘要（≤8 行截断）与失败原因；formatReport 文本 + ReviewReportView UI 双渲染，ink-testing-library UI 用例 2 个
+
+- [x] **T1.5** 安全阀门
+  - 涉及文件：`src/reviewer/autofix.ts`（批量审批 fail-closed + 回滚兜底）
+  - ✅ 2026-08-12 完成：审批拒绝 → 全部 manual 不写盘（fail-closed）；verify 失败 → 自动 rollback 恢复原文件；拒绝后不自动重试；补丁生成失败（模型非法 JSON / search 不唯一 / 文件不存在）→ 降级 manual 不中断整体流程
+
+- [x] **T1.6** i18n + 测试 + v3.4 遗留收尾
+  - 涉及文件：`src/i18n/zh.ts`、`src/i18n/en.ts`（reviewer.autofix* 键组 + selfHeal.log* 日志语言化）、`src/loop/self-heal/repair.ts`（I4 遗留日志 i18n）、`tests/planner/deps.test.ts`（FILE_REF_RE lastIndex 回归）
+  - ✅ 2026-08-12 完成：zh/en 键同构（collectKeys + CJK 断言通过）；repair.ts 硬编码中文日志 → `selfHeal.log*` 键组；FILE_REF_RE 跨 step lastIndex 回归测试；新增 36 用例（autofix 29 + UI 2 + engine 0 + deps 1 + 现有改造），verify 92 文件 / 1080 用例全绿
 
 ---
 

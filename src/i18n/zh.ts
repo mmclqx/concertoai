@@ -159,6 +159,18 @@ export const zh = {
     vscodeArgvInvalidId:
       '❌ 扩展 ID 引号错误: 应为 JSON 字符串（以 " 开头和结尾，当前疑似无引号/单引号/尾逗号）',
   },
+  reviewer: {
+    // v4.0 M1 T1.6：autoFix 文案（/review --fix，审查→修复闭环）
+    autofixBatchSummary: 'autoFix 批量修复 {count} 个建议（A 类）',
+    autofixProgress: '正在修复第 {fixed}/{total} 个问题…',
+    fixResultTitle: '🔧 修复结果',
+    fixResultLine: '✅ 已修复 {fixed} 个 / ⚠ 需人工处理 {manual} 个 / ❌ 自动回滚 {rolledBack} 个',
+    fixItemFixed: '✅ {location} — {title}',
+    fixItemRolledBack: '❌ {location} — {title}（已自动撤销：{reason}）',
+    fixItemManual: '⚠ {location} — {title}（{reason}）',
+    reasonVerifyFailed: '修复后验证失败，已自动撤销',
+    reasonManual: '需人工处理',
+  },
   selfHeal: {
     // 阶段标签（v3.3 S1：selfHealPhaseLabel 移入 i18n）
     phaseVerify: '执行 verify',
@@ -200,6 +212,12 @@ export const zh = {
     feedbackDenied: '用户拒绝了自动修复，请手动处理',
     feedbackWriteFailedRolledBack: '修复写盘失败，已回滚，请手动处理',
     feedbackWriteFailed: '修复写盘失败，请手动处理',
+    // repair.ts 调试日志（v4.0 M1 T1.6：I4 遗留，日志语言化）
+    logLintFixAttempt:
+      '[self-heal] 第 {attempt} 次尝试：执行 npm run lint:fix（{count} 个 lint 错误）',
+    logLintFixFailed: '[self-heal] lint:fix 执行失败，剩余 type 错误已跳过（环境问题），转人工',
+    logModelFixAttempt: '[self-heal] 第 {attempt} 次尝试：模型修复类型错误 {code} @ {file}:{line}',
+    logRemainingManual: '[self-heal] 剩余错误不可自动修复，转人工',
   },
   ui: {
     thinking: '思索中',

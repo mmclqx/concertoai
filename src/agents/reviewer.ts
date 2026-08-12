@@ -23,14 +23,18 @@ import type {
   ReviewSeverity,
 } from '../reviewer';
 import { buildReviewResult } from '../reviewer';
+import type { AutoFixOptions } from '../reviewer/autofix';
 import type { Agent } from './protocol';
 
 // ── 类型定义 ──────────────────────────────────────────────────
 
-/** 自动修正能力（v2.1 ReviewerEngine.autoFix 的抽象）。 */
+/** 自动修正能力（v2.1 ReviewerEngine.autoFix 的抽象；v4.0 M1 支持可选 options）。 */
 export interface AutoFixLike {
   /** 自动修正 🟢 suggestion（返回修正数量与回滚标记；实际写盘由调用方审批）。 */
-  autoFix(report: ReviewReport): Promise<{
+  autoFix(
+    report: ReviewReport,
+    options?: AutoFixOptions,
+  ): Promise<{
     report: ReviewReport;
     fixed: number;
     rolledBack: boolean;
@@ -131,10 +135,13 @@ export class TeamReviewerAgent implements Agent {
   }
 
   /**
-   * 自动修正 🟢 suggestion（保留 v2.1 能力）。
+   * 自动修正 🟢 suggestion（保留 v2.1 能力；v4.0 M1 透传可选 options）。
    * 委托给引擎的 autoFix（若存在）；引擎不支持时返回未修正。
    */
-  async autoFix(report: ReviewReport): Promise<{
+  async autoFix(
+    report: ReviewReport,
+    options?: AutoFixOptions,
+  ): Promise<{
     report: ReviewReport;
     fixed: number;
     rolledBack: boolean;
@@ -143,7 +150,7 @@ export class TeamReviewerAgent implements Agent {
     if (engine?.autoFix === undefined) {
       return { report, fixed: 0, rolledBack: false };
     }
-    return engine.autoFix(report);
+    return engine.autoFix(report, options);
   }
 
   /** 发送消息（闭环暂未启用，no-op 占位）。 */

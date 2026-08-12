@@ -162,6 +162,19 @@ export const en = {
     vscodeArgvInvalidId:
       '❌ invalid extension ID quoting: must be JSON strings (wrapped in "); found unquoted/single-quoted/trailing comma',
   },
+  reviewer: {
+    // v4.0 M1 T1.6: autoFix copy (/review --fix, review-to-fix loop)
+    autofixBatchSummary: 'autoFix batch repair of {count} suggestion(s) (class A)',
+    autofixProgress: 'Repairing issue {fixed}/{total}…',
+    fixResultTitle: '🔧 Fix Results',
+    fixResultLine:
+      '✅ {fixed} fixed / ⚠ {manual} need manual review / ❌ {rolledBack} auto-rolled back',
+    fixItemFixed: '✅ {location} — {title}',
+    fixItemRolledBack: '❌ {location} — {title} (auto-reverted: {reason})',
+    fixItemManual: '⚠ {location} — {title} ({reason})',
+    reasonVerifyFailed: 'verify failed after fix; auto-reverted',
+    reasonManual: 'needs manual review',
+  },
   selfHeal: {
     // Phase labels (v3.3 S1: selfHealPhaseLabel moved into i18n)
     phaseVerify: 'Running verify',
@@ -205,6 +218,14 @@ export const en = {
     feedbackDenied: 'User rejected the auto-fix; please handle manually',
     feedbackWriteFailedRolledBack: 'Fix write failed; rolled back. Please handle manually',
     feedbackWriteFailed: 'Fix write failed; please handle manually',
+    // repair.ts debug logs (v4.0 M1 T1.6: I4 carry-over, localized logs)
+    logLintFixAttempt:
+      '[self-heal] attempt {attempt}: running npm run lint:fix ({count} lint error(s))',
+    logLintFixFailed:
+      '[self-heal] lint:fix failed; remaining type errors skipped (environment issue), hand off to human',
+    logModelFixAttempt:
+      '[self-heal] attempt {attempt}: model-fixing type error {code} @ {file}:{line}',
+    logRemainingManual: '[self-heal] remaining errors are not auto-fixable; hand off to human',
   },
   ui: {
     thinking: 'Thinking',

@@ -10,6 +10,7 @@
  * - T2.4 快照保护失效警告：聚合 applyModelFix 的 snapshotWarning 到 RepairVerifyResult。
  */
 
+import { fmt, t } from '../../i18n';
 import type { VerifyReport } from './classifier';
 import { mergeLintPassed, parseLintErrors, parseVerifyReport } from './classifier';
 import { isSimpleTypeError, suggestionFor } from './model';
@@ -81,7 +82,10 @@ export async function repairVerifyReport(
     const lintErrors = report.errors.filter((e) => e.stage === 'lint');
     if (lintErrors.length > 0) {
       log(
-        `[self-heal] 第 ${attempt} 次尝试：执行 npm run lint:fix（${lintErrors.length} 个 lint 错误）`,
+        fmt(t().selfHeal.logLintFixAttempt, {
+          attempt,
+          count: lintErrors.length,
+        }),
       );
       // T4.2：lint 修复阶段
       onPhase('lint-fix');
@@ -101,7 +105,7 @@ export async function repairVerifyReport(
         // W1（v3.3）：lint:fix 执行失败（非零退出码）说明环境有问题（如 Biome 未安装），
         // 后续 type 简单错误即使可修也一并跳过（继续修复意义有限），显式转人工。
         // 注意：report 已更新为 lint 修复后的 verify 结果（fresh），供人工查看剩余错误。
-        log('[self-heal] lint:fix 执行失败，剩余 type 错误已跳过（环境问题），转人工');
+        log(t().selfHeal.logLintFixFailed);
         break;
       }
       continue;
@@ -111,7 +115,12 @@ export async function repairVerifyReport(
     const simpleType = report.errors.find((e) => isSimpleTypeError(e));
     if (simpleType !== undefined) {
       log(
-        `[self-heal] 第 ${attempt} 次尝试：模型修复类型错误 ${simpleType.code ?? 'TS'} @ ${simpleType.file ?? '?'}:${simpleType.line ?? '?'}`,
+        fmt(t().selfHeal.logModelFixAttempt, {
+          attempt,
+          code: simpleType.code ?? 'TS',
+          file: simpleType.file ?? '?',
+          line: simpleType.line ?? '?',
+        }),
       );
       // T4.2：模型修复阶段
       onPhase('model-fix');
@@ -138,7 +147,7 @@ export async function repairVerifyReport(
       suggestion: suggestionFor(e),
     }));
     attempts.push({ attempt, action: 'none', report, appliedFixes: [], feedback });
-    log('[self-heal] 剩余错误不可自动修复，转人工');
+    log(t().selfHeal.logRemainingManual);
     break;
   }
 

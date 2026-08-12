@@ -41,6 +41,24 @@ describe('步骤提取', () => {
     expect(refs).toContain('src/index.ts');
     expect(refs).toContain('package.json');
   });
+
+  it('FILE_REF_RE 跨 step lastIndex 无残留（v4.0 M1 T1.6 回归，v3.4 遗留）', () => {
+    // v3.4 审查发现：FILE_REF_RE 原为带 g 的共享常量，多个 step 复用同一常量 exec
+    // 会在 step 间残留 lastIndex 导致后续 step 漏匹配。本用例构造「每个 step 多个引用 +
+    // 引用模式长度不一」，若回归为共享带 g 常量则第二个 step 会漏掉 d/e。
+    const plan = [
+      '1. 读取 `src/a.ts`、`src/b.ts`、`src/c.ts`',
+      '2. 读取 `src/d.ts`、`src/e.ts`',
+    ].join('\n');
+
+    const result = analyzeDeps(plan);
+    const refs = [...(result.steps[0]?.fileRefs ?? []), ...(result.steps[1]?.fileRefs ?? [])];
+    expect(refs).toContain('src/a.ts');
+    expect(refs).toContain('src/b.ts');
+    expect(refs).toContain('src/c.ts');
+    expect(refs).toContain('src/d.ts');
+    expect(refs).toContain('src/e.ts');
+  });
 });
 
 describe('显式依赖', () => {

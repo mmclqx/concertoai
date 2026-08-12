@@ -1,3 +1,5 @@
+import { execSync } from 'node:child_process';
+
 import { Box, Text, useApp, useInput } from 'ink';
 import { memo, useCallback, useMemo, useRef, useState } from 'react';
 import type { SubagentSpawner } from '../agent/spawner';
@@ -35,6 +37,7 @@ import type { ModelClient } from '../model/client';
 import { cacheHitCostFor, costFor, getModel } from '../model/models';
 import { estimateMessageListTokens, estimateTokens } from '../model/tokenizer';
 import type { AuditLogger, TraceStore } from '../observable';
+import { SnapshotManager } from '../orchestrator/transaction';
 import { ReviewerEngine } from '../reviewer/engine';
 import type { SkillLoader } from '../skill/loader';
 import type { MemoryStore } from '../store/memory-store';
@@ -608,7 +611,42 @@ export function App({
             // v3.1 M5 / T5.4：审查阈值透传（strict/normal/lenient）
             severity: reviewCmd.type === 'unknown' ? undefined : reviewCmd.severity,
           });
-          const reportText = ReviewerEngine.formatReport(report);
+          // v4.0 M1：/review --fix → 审查完成后自动修复 A 类建议（≤2 次交互）
+          // 注意：unknown 已由 executeReviewCommand 短路（handled=true return），此处仅剩 auto/files/pr
+          let finalReport = report;
+          if (reviewCmd.type !== 'unknown' && reviewCmd.fix === true) {
+            const fixResult = await engine.autoFix(report, {
+              cwd: ctx.cwd,
+              client,
+              model,
+              requestApproval,
+              snapshots: new SnapshotManager(ctx.cwd),
+              // T1.1 修复进度可视化：「正在修复第 x/y 个问题…」渐进推送聊天消息（长任务可感知）
+              onProgress: (fixed, total) => {
+                setMessages((prev) => [
+                  ...prev,
+                  {
+                    role: 'assistant',
+                    content: fmt(t().reviewer.autofixProgress, { fixed, total }),
+                  },
+                ]);
+              },
+              // T1.3 增量 verify：只 rerun 受影响段（lint + type 段），跳过 build/test（快）。
+              // 全量 verify 由发布门/CI 兜底；修复引入 test/build 回归概率低，且 fail-closed
+              // 回滚已保证修不坏代码（runVerify 注入式设计，后续可无缝替换为单文件增量）。
+              runVerify: async () => {
+                try {
+                  execSync('npm run lint', { cwd: ctx.cwd, timeout: 60_000, stdio: 'pipe' });
+                  execSync('npm run typecheck', { cwd: ctx.cwd, timeout: 60_000, stdio: 'pipe' });
+                  return { passed: true };
+                } catch {
+                  return { passed: false };
+                }
+              },
+            });
+            finalReport = fixResult.report;
+          }
+          const reportText = ReviewerEngine.formatReport(finalReport);
           setMessages((prev) => [...prev, { role: 'assistant', content: reportText }]);
           setTokens((t) => ({ ...t, output: t.output + estimateTokens(reportText) }));
         } catch (err) {

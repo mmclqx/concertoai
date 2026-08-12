@@ -11,8 +11,9 @@
  */
 
 import { execSync } from 'node:child_process';
-
 import type { SubagentSpawner } from '../agent/spawner';
+import { fmt, t } from '../i18n';
+import { type AutoFixOptions, runAutoFix } from './autofix';
 import { createReviewAgents, parseReviewOutput } from './dimensions';
 import { formatKnowledgeContext, loadKnowledgeBase } from './knowledge';
 import type {
@@ -113,22 +114,33 @@ export class ReviewerEngine {
   }
 
   /**
-   * 自动修正 🟢 suggestion 级别问题。
-   * 返回修正后的报告（包含修正结果）。
+   * 自动修复审查问题（v4.0 M1 T1.1-T1.5 真正实现）。
+   *
+   * 委托 autofix.runAutoFix：A/B 分批 → 批量审批（fail-closed）→
+   * 快照 → 写盘 → 增量 verify → commit / rollback。
+   * 返回修正后的报告（fixResult 附加到 report，formatReport 渲染「修复结果」区块）。
    */
   async autoFix(
     report: ReviewReport,
-  ): Promise<{ report: ReviewReport; fixed: number; rolledBack: boolean }> {
-    const suggestions = report.issues.filter(
-      (i) => i.severity === 'suggestion' && i.suggestion !== undefined,
-    );
-    if (suggestions.length === 0) {
-      return { report, fixed: 0, rolledBack: false };
+    options: AutoFixOptions,
+  ): Promise<{ report: ReviewReport; fixed: number; rolledBack: boolean; manual: number }> {
+    // T1.1 无问题可修 → 直接结束（不进入修复流程，也不附加「修复结果」区块）
+    if (report.issues.length === 0) {
+      return { report, fixed: 0, rolledBack: false, manual: 0 };
     }
-
-    // 对每个 suggestion 生成修复（由调用方负责审批和写入）
-    // 此处仅标记，实际写入由 App.tsx 的审批流控制
-    return { report, fixed: suggestions.length, rolledBack: false };
+    const result = await runAutoFix(report, options);
+    report.fixResult = {
+      fixed: result.fixed,
+      manual: result.manual,
+      rolledBack: result.rolledBack,
+      items: result.items,
+    };
+    return {
+      report,
+      fixed: result.fixed,
+      rolledBack: result.rolledBack > 0,
+      manual: result.manual,
+    };
   }
 
   /**
@@ -181,6 +193,41 @@ export class ReviewerEngine {
       const dc = report.summary[dim];
       if (dc.critical + dc.medium + dc.suggestion > 0) {
         lines.push(`| ${dim} | ${dc.critical} | ${dc.medium} | ${dc.suggestion} |`);
+      }
+    }
+
+    // v4.0 M1 T1.4：修复结果区块（/review --fix 后附加；文案走 i18n，T1.6）
+    if (report.fixResult !== undefined) {
+      const { fixed, manual, rolledBack, items } = report.fixResult;
+      const d = t().reviewer;
+      lines.push('', `### ${d.fixResultTitle}`, '');
+      lines.push(fmt(d.fixResultLine, { fixed, manual, rolledBack }), '');
+      for (const item of items) {
+        const loc = `${item.issue.file}${item.issue.line !== undefined ? `:${item.issue.line}` : ''}`;
+        const title = item.issue.title;
+        if (item.status === 'fixed') {
+          lines.push(`- ${fmt(d.fixItemFixed, { location: loc, title })}`);
+          const diffBlock = compactDiff(item.diff);
+          if (diffBlock !== '') {
+            lines.push(diffBlock);
+          }
+        } else if (item.status === 'rolledback') {
+          lines.push(
+            `- ${fmt(d.fixItemRolledBack, {
+              location: loc,
+              title,
+              reason: item.reason ?? d.reasonVerifyFailed,
+            })}`,
+          );
+          const diffBlock = compactDiff(item.diff);
+          if (diffBlock !== '') {
+            lines.push(diffBlock);
+          }
+        } else {
+          lines.push(
+            `- ${fmt(d.fixItemManual, { location: loc, title, reason: item.reason ?? d.reasonManual })}`,
+          );
+        }
       }
     }
 
@@ -246,6 +293,20 @@ export function formatContextArtifacts(artifacts: ReviewContextArtifact[] | unde
     return `${header}\n\`\`\`\n${a.content}\n\`\`\``;
   });
   return `\n\n上下文代码工件（Coder 产出，优先于磁盘文件）：\n${lines.join('\n\n')}`;
+}
+
+/**
+ * 修复 diff 摘要（T1.4：修复结果区块每条带 diff 摘要）。
+ * 截断为前 8 行，超出追加省略标记；空 diff 返回空字符串（不渲染）。
+ */
+function compactDiff(diff: string | undefined): string {
+  if (diff === undefined || diff === '') {
+    return '';
+  }
+  const lines = diff.split('\n');
+  const shown = lines.slice(0, 8);
+  const suffix = lines.length > 8 ? `\n  …（共 ${lines.length} 行）` : '';
+  return `  \`\`\`diff\n  ${shown.join('\n  ')}\n  \`\`\`${suffix}`;
 }
 
 /** 格式化单个问题为 markdown。 */

@@ -1,11 +1,12 @@
 /**
- * 审查斜杠命令处理器：/review（v2.1 M5 + v3.1 M5 / T5.4 --severity）。
+ * 审查斜杠命令处理器：/review（v2.1 M5 + v3.1 M5 / T5.4 --severity + v4.0 M1 --fix）。
  *
- * 支持三种模式：
+ * 支持四种模式：
  * - /review              → 审查最近修改的文件（auto 模式）
  * - /review <path>       → 审查指定文件/目录
  * - /review --pr         → PR 模式（审查当前分支 diff）
  * - /review --severity <strict|normal|lenient> → 设定审查阈值（默认 normal）
+ * - /review --fix        → 审查完成后自动修复 A 类建议（v4.0 M1，≤2 次交互）
  */
 
 import type { ChatMessage } from '../../loop/types';
@@ -15,9 +16,9 @@ import { REVIEW_SEVERITIES } from '../../reviewer';
 // ── 命令解析 ──
 
 export type SlashReviewCommand =
-  | { type: 'auto'; severity?: ReviewSeverity }
-  | { type: 'files'; paths: string[]; severity?: ReviewSeverity }
-  | { type: 'pr'; severity?: ReviewSeverity }
+  | { type: 'auto'; severity?: ReviewSeverity; fix?: boolean }
+  | { type: 'files'; paths: string[]; severity?: ReviewSeverity; fix?: boolean }
+  | { type: 'pr'; severity?: ReviewSeverity; fix?: boolean }
   | { type: 'unknown'; message: string };
 
 /** 解析 --severity <值> 选项；缺失返回 undefined；非法值返回 { error }。 */
@@ -43,6 +44,14 @@ function parseSeverityOption(rest: string): {
   };
 }
 
+/** 从剩余参数中提取 `--fix`（任意位置出现即生效），返回剩余部分。 */
+function extractFixFlag(rest: string): { fix: boolean; rest: string } {
+  const parts = rest.split(/\s+/).filter((p) => p.length > 0);
+  const fix = parts.includes('--fix');
+  const restParts = parts.filter((p) => p !== '--fix');
+  return { fix, rest: restParts.join(' ') };
+}
+
 /** 解析 /review 命令。非 /review 返回 null。 */
 export function parseReviewCommand(input: string): SlashReviewCommand | null {
   const trimmed = input.trim();
@@ -52,7 +61,7 @@ export function parseReviewCommand(input: string): SlashReviewCommand | null {
   }
 
   if (trimmed.startsWith('/review ')) {
-    const rest = trimmed.slice('/review '.length).trim();
+    const { fix, rest } = extractFixFlag(trimmed.slice('/review '.length).trim());
     const severityOpt = parseSeverityOption(rest);
     if (severityOpt.invalid !== undefined) {
       return {
@@ -62,11 +71,15 @@ export function parseReviewCommand(input: string): SlashReviewCommand | null {
     }
     const { severity, rest: restAfter } = severityOpt;
     if (restAfter === '' || restAfter === '--pr') {
-      return { type: restAfter === '--pr' ? 'pr' : 'auto', severity };
+      return fix === true
+        ? { type: restAfter === '--pr' ? 'pr' : 'auto', severity, fix: true }
+        : { type: restAfter === '--pr' ? 'pr' : 'auto', severity };
     }
     // 按空格拆分文件路径
     const paths = restAfter.split(/\s+/).filter((p) => p.length > 0);
-    return { type: 'files', paths, severity };
+    return fix === true
+      ? { type: 'files', paths, severity, fix: true }
+      : { type: 'files', paths, severity };
   }
 
   return null;
@@ -92,6 +105,7 @@ export function executeReviewCommand(cmd: SlashReviewCommand): ReviewCommandResu
     };
   }
   const severityNote = cmd.severity !== undefined ? `\n审查阈值：${cmd.severity}` : '';
+  const fixNote = cmd.fix === true ? '\n修复模式：审查完成后自动修复 A 类建议（≤2 次交互）' : '';
   const scopeDesc =
     cmd.type === 'auto'
       ? '最近修改的文件'
@@ -104,7 +118,7 @@ export function executeReviewCommand(cmd: SlashReviewCommand): ReviewCommandResu
     command: cmd,
     message: {
       role: 'assistant',
-      content: `🔍 Reviewer Agent 启动中…\n审查范围：${scopeDesc}${severityNote}\n\n正在收集上下文并启动 5 个审查子代理，请稍候…`,
+      content: `🔍 Reviewer Agent 启动中…\n审查范围：${scopeDesc}${severityNote}${fixNote}\n\n正在收集上下文并启动 5 个审查子代理，请稍候…`,
     },
   };
 }

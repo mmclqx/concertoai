@@ -114,6 +114,32 @@ export const ReviewReportView: FC<ReviewReportProps> = ({ report }) => {
           );
         })}
       </Box>
+
+      {report.fixResult !== undefined && (
+        <Box flexDirection="column" marginY={1}>
+          <Text bold>🔧 修复结果</Text>
+          <Text>
+            ✅ 已修复 {report.fixResult.fixed} 个 / ⚠ 需人工处理 {report.fixResult.manual} 个 / ❌
+            自动回滚 {report.fixResult.rolledBack} 个
+          </Text>
+          {report.fixResult.items.map((item) => {
+            const loc = `${item.issue.file}${item.issue.line !== undefined ? `:${item.issue.line}` : ''}`;
+            const icon = item.status === 'fixed' ? '✅' : item.status === 'rolledback' ? '❌' : '⚠';
+            const reason = item.reason !== undefined ? `（${item.reason}）` : '';
+            return (
+              <Box
+                key={`${item.issue.file}:${item.issue.line ?? 0}:${item.issue.title}:${item.status}`}
+                marginLeft={2}
+              >
+                <Text>
+                  {icon} {loc} — {item.issue.title}
+                  {reason}
+                </Text>
+              </Box>
+            );
+          })}
+        </Box>
+      )}
     </Box>
   );
 };
