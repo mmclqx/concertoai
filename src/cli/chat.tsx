@@ -15,7 +15,6 @@ import { AgentInstaller } from '../market';
 import { toMcpServerConfig } from '../mcp/builtin-servers';
 import { McpManager } from '../mcp/manager';
 import type { MCPServerConfig } from '../mcp/types';
-import { DeepSeekClient } from '../model/client';
 import { preloadTokenizer } from '../model/tokenizer';
 import { AuditLogger, TraceStore } from '../observable';
 import { SkillLoader } from '../skill/loader';
@@ -34,9 +33,9 @@ import {
   buildRegistry,
   DEFAULT_ALLOWLIST,
   mergeAllowlist,
-  resolveModel,
   resolveProjectForCwd,
 } from './common';
+import { buildClientForProvider, resolveRuntimeProvider } from './provider-runtime';
 
 // 保持 ./chat 的公共 API 不变（run/plan 现从 ./common 导入，此处 re-export 兼容旧引用）
 export { buildOsHint, buildRegistry, DEFAULT_ALLOWLIST, resolveModel } from './common';
@@ -51,6 +50,8 @@ export interface RunChatOptions {
   listOnly?: boolean;
   /** CLI --lang（覆盖环境变量与配置）。 */
   lang?: string;
+  /** CLI --provider（v4.0 M3 T3.1）：临时切换 Provider（本次进程生效，不写 config）。 */
+  provider?: string;
 }
 
 export async function runChat(options: RunChatOptions): Promise<void> {
@@ -80,14 +81,45 @@ export async function runChat(options: RunChatOptions): Promise<void> {
     console.error(t().errors.noTty);
     process.exit(1);
   }
-  // v2.2 智能成本控制：高峰时段切换到的本地模型（ollamaModel）不在 DeepSeek
-  // 模型表中，跳过严格校验，并按 ollamaBaseUrl 构建客户端（OpenAI 兼容 /v1）。
-  const isLocalModel = resolved.model === resolved.ollamaModel;
-  const model = isLocalModel ? resolved.ollamaModel : resolveModel(resolved.model);
-  const client = new DeepSeekClient({
+  // v4.0 M3 T3.1：--provider 临时切换 / config defaultProvider 持久化 → 解析运行时 Provider。
+  // 三 Provider（deepseek/openai/ollama）均为 OpenAI 兼容 /chat/completions，统一复用
+  // DeepSeekClient（baseUrl 可配）；非 DeepSeek 模型跳过模型表校验（不在 DeepSeek 表中）。
+  const runtime = await resolveRuntimeProvider(config, {
+    provider: options.provider,
+    model: options.model,
     apiKey: options.apiKey,
-    baseUrl: isLocalModel ? resolved.ollamaBaseUrl : undefined,
   });
+  let providerName = runtime.provider;
+  let fallbackNote: string | undefined;
+  let client = buildClientForProvider(runtime);
+  // v4.0 M3 T3.4：启动 fallback 探测——主 Provider 不可用自动切备选（≤1 次，D54）。
+  // 探测失败不阻塞启动（保持主 Provider，后续调用原样报错）；Ollama 本地探测快，DeepSeek 余额探测有超时兜底。
+  try {
+    const { buildBuiltinRegistry } = await import('./provider');
+    const { ProviderRouter } = await import('../model/router');
+    const registry = await buildBuiltinRegistry();
+    const router = new ProviderRouter(registry);
+    const startup = await router.resolveStartupProvider(runtime.provider, {
+      healthCheckTimeoutMs: 3_000,
+    });
+    if (startup.fellBack && startup.provider.name !== providerName) {
+      const fallbackRuntime = await resolveRuntimeProvider(config, {
+        provider: startup.provider.name,
+        model: options.model,
+        apiKey: options.apiKey,
+      });
+      fallbackNote = fmt(t().provider.fallbackNote, {
+        primary: providerName,
+        fallback: startup.provider.name,
+        reason: startup.reason ?? '',
+      });
+      providerName = startup.provider.name;
+      client = buildClientForProvider(fallbackRuntime);
+    }
+  } catch {
+    // 探测异常（如 accounts 读取失败）→ 静默保持主 Provider，不阻塞启动
+  }
+  const model = runtime.model;
 
   // MCP 服务初始化（v1.1）
   // v2.1 性能优化：MCP 服务改为后台启动，不阻塞首帧渲染（冷启动 3-5s → ~1.2s）。
@@ -188,6 +220,8 @@ export async function runChat(options: RunChatOptions): Promise<void> {
       agentInstaller={agentInstaller}
       traceStore={traceStore}
       auditLogger={auditLogger}
+      providerName={providerName}
+      fallbackNote={fallbackNote}
     />,
   );
 

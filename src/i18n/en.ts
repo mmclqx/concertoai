@@ -67,6 +67,7 @@ export const en = {
     placeholder: 'Type your request… (Enter to send / Shift+Enter for newline / Esc to quit)',
   },
   status: {
+    provider: 'Provider',
     model: 'Model',
     tokens: 'token',
     cost: 'Cost',
@@ -164,6 +165,25 @@ export const en = {
     vscodeArgvInvalidValue: '❌ invalid value: disable-extensions must be an array or true',
     vscodeArgvInvalidId:
       '❌ invalid extension ID quoting: must be JSON strings (wrapped in "); found unquoted/single-quoted/trailing comma',
+    // v4.0 M3 T3.2: model recommendation block
+    recommendLabel: 'Model recommendation',
+    recommendLine: 'Recommend {provider}/{model} (monthly cost est. ¥{monthlyCost}) — {reason}',
+    recommendReasonLowLocal: 'Low budget + local Ollama available; zero cost, offline-capable',
+    recommendReasonLowCloud: 'Low budget + no local model; DeepSeek low-cost tier',
+    recommendReasonMedium: 'Default combo; balanced cost/quality',
+    recommendReasonHighLarge: 'Large project + high budget; prefer the strongest model',
+    recommendReasonHighSmall: 'High budget + lightweight project; OpenAI value tier',
+    recommendLocalUnavailable: 'Local Ollama probe failed (no local model recommended)',
+    // v4.0 M3 T3.5: config migration integrity check
+    migrationLabel: 'Config migration integrity',
+    migrationOk: 'v4 migration complete (schema v2 + defaultProvider + providers)',
+    migrationNotMigrated:
+      'Config is still v3 format (schema v1); it will be auto-migrated at startup',
+    migrationBackupOk: 'backup exists: {path}',
+    migrationBackupMissing: 'backup missing (config.v3.bak not found)',
+    migrationSessionOk:
+      'session format compatible (v4 only adds fields; v3 sessions are not broken)',
+    migrationIdempotentOk: 'idempotent (check is read-only; repeated runs have no side effects)',
   },
   reviewer: {
     // v4.0 M1 T1.6: autoFix copy (/review --fix, review-to-fix loop)
@@ -217,6 +237,34 @@ export const en = {
     inferFound: 'Possible dependencies detected between steps:',
     inferPrompt: 'Add these depends edges? (y/N): ',
     inferSkipped: 'Dependency inference skipped (config unchanged)',
+  },
+  provider: {
+    // v4.0 M3 T3.1/T3.2b: provider management copy
+    listTitle: 'Available providers:',
+    statusOk: 'available',
+    statusDegraded: 'degraded',
+    statusUnavailable: 'unavailable',
+    defaultLabel: 'default',
+    ollamaLocalHint: 'Local model (Ollama) — zero cost, offline-capable',
+    switchHint:
+      'Switch: `concertoai provider switch <name>` or `concertoai --provider <name>` (temporary)',
+    switchUnknown: 'Unknown provider: {name} (configure providers.{name} first)',
+    switchDone: 'Default provider switched → {name}',
+    authUnknown: 'Unknown provider: {name} (only deepseek / openai supported)',
+    authPrompt: 'Enter {name} API Key (hidden):',
+    authNoTty: 'Non-interactive terminal cannot hide input; use --key <key> instead',
+    authEmpty: 'API Key must not be empty',
+    authFailed: '❌ Key verification failed: ',
+    authOk: '✅ Key verified',
+    authVerifyOnly: '(--verify only; not saved)',
+    authSaved: '✅ {name} API Key saved to accounts/ (0600) and set active',
+    authSaveFailed: '❌ Save failed: ',
+    // T3.4 fallback + T3.2a cost hints (status bar)
+    fallbackNote: 'Primary model {primary} unavailable; switched to {fallback} (reason: {reason})',
+    costCompare: 'Switched to {current}; estimated cost is about {ratio}x of {baseline}',
+    costCompareLocal: 'Using a local model (Ollama) — zero cost, offline-capable',
+    sessionCostCompare:
+      'This session cost ¥{actual} ({current}); with {baseline} it would be about ¥{estimate}',
   },
   selfHeal: {
     // Phase labels (v3.3 S1: selfHealPhaseLabel moved into i18n)

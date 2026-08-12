@@ -35,6 +35,7 @@ import type { ChatMessage, ToolCall } from '../loop/types';
 import type { AgentInstaller } from '../market';
 import type { McpManager } from '../mcp/manager';
 import type { ModelClient } from '../model/client';
+import { costForProvider } from '../model/cost';
 import { cacheHitCostFor, costFor, getModel } from '../model/models';
 import { estimateMessageListTokens, estimateTokens } from '../model/tokenizer';
 import type { AuditLogger, TraceStore } from '../observable';
@@ -100,6 +101,10 @@ export interface AppProps {
   traceStore?: TraceStore;
   /** 审计日志（v3.0 M5）：Agent 交互追加写入，可导出 JSON。 */
   auditLogger?: AuditLogger;
+  /** 当前 Provider 名（v4.0 M3 T3.1；缺省 deepseek）。 */
+  providerName?: string;
+  /** fallback 提示（v4.0 M3 T3.4）：主 Provider 故障已切备选时传入，状态条黄色警示。 */
+  fallbackNote?: string;
 }
 
 /**
@@ -261,6 +266,8 @@ export function App({
   agentInstaller,
   traceStore,
   auditLogger,
+  providerName = 'deepseek',
+  fallbackNote,
 }: AppProps) {
   const { exit } = useApp();
   const [messages, setMessages] = useState<ChatMessage[]>(initialHistory ?? []);
@@ -1197,9 +1204,35 @@ export function App({
   const display = phase === 'streaming' || !showReal ? tokens : realUsage;
   const displayCacheHit = showReal ? realUsage.cacheHit : 0;
   // v2.2 智能成本控制：本地模型（ollamaModel）不在 DeepSeek 模型表中，成本按 0 展示
-  const isLocalModel = getModel(model) === undefined;
-  const cost = isLocalModel ? 0 : costFor(model, display.input, display.output, displayCacheHit);
-  const hitCost = isLocalModel ? 0 : cacheHitCostFor(model, displayCacheHit);
+  // v4.0 M3 T3.2a：多 Provider 成本统一走 costForProvider（deepseek 复用模型表；openai 走定价表；ollama 恒 0）
+  const isLocalModel = providerName !== 'deepseek' && getModel(model) === undefined;
+  const cost = isLocalModel
+    ? 0
+    : providerName === 'deepseek'
+      ? costFor(model, display.input, display.output, displayCacheHit)
+      : costForProvider(providerName, model, display.input, display.output, displayCacheHit);
+  const hitCost =
+    isLocalModel || providerName !== 'deepseek' ? 0 : cacheHitCostFor(model, displayCacheHit);
+
+  // v4.0 M3 T3.2a：会话结束成本对比提示（非 DeepSeek Provider 且已有真实 usage 时显示）
+  // 「本次消费 ¥x（openai），如用 deepseek 约 ¥y」；本地模型显示 0 成本提示
+  const costCompareNote =
+    showReal && providerName !== 'deepseek' && phase !== 'streaming'
+      ? providerName === 'ollama'
+        ? t().provider.costCompareLocal
+        : fmt(t().provider.sessionCostCompare, {
+            actual: cost.toFixed(2),
+            current: providerName,
+            baseline: 'DeepSeek',
+            estimate: costForProvider(
+              'deepseek',
+              'deepseek-v4-flash',
+              display.input,
+              display.output,
+              displayCacheHit,
+            ).toFixed(2),
+          })
+      : undefined;
 
   // MCP 状态摘要
   const mcpSummary = mcpManager
@@ -1236,6 +1269,7 @@ export function App({
       {traceStore !== undefined && <ObservabilityPanel spans={traceStore.all()} open={obsOpen} />}
       <StatusBar
         model={model}
+        providerName={providerName}
         inputTokens={display.input}
         outputTokens={display.output}
         cost={cost}
@@ -1243,6 +1277,8 @@ export function App({
         cacheHitTokens={displayCacheHit}
         cacheHitCost={hitCost}
         mcpStatus={mcpSummary}
+        fallbackNote={fallbackNote}
+        costCompareNote={costCompareNote}
       />
     </Box>
   );

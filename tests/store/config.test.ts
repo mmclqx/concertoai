@@ -38,18 +38,44 @@ describe('loadConfig / writeConfig', () => {
     expect(config).toEqual(emptyConfig());
   });
 
-  it('写入后可读回（含目录自动创建）', async () => {
+  it('v4 格式写入后可读回（含目录自动创建）', async () => {
     const file = path.join(tmp, 'nested', 'config.json');
+    await writeConfig(
+      {
+        schemaVersion: 2,
+        defaultProvider: 'deepseek',
+        providers: { deepseek: { type: 'deepseek', model: 'deepseek-v4-pro' } },
+        legacy: { allowlist: ['npm test'] },
+        _migrated: true,
+      } as unknown as ReturnType<typeof emptyConfig>,
+      file,
+    );
+    const config = await loadConfig(file);
+    expect(config).toMatchObject({
+      schemaVersion: 2,
+      defaultProvider: 'deepseek',
+      providers: { deepseek: { type: 'deepseek', model: 'deepseek-v4-pro' } },
+    });
+  });
+
+  it('v3 配置读回时自动迁移（M3 T3.5）', async () => {
+    const file = path.join(tmp, 'config.json');
     await writeConfig(
       { schemaVersion: 1, defaultModel: 'deepseek-v4-pro', allowlist: ['npm test'] },
       file,
     );
     const config = await loadConfig(file);
-    expect(config).toEqual({
-      schemaVersion: 1,
-      defaultModel: 'deepseek-v4-pro',
-      allowlist: ['npm test'],
+    expect(config).toMatchObject({
+      schemaVersion: 2,
+      defaultProvider: 'deepseek',
+      _migrated: true,
+      providers: { deepseek: { type: 'deepseek', model: 'deepseek-v4-pro' } },
     });
+    const { readFileSync } = await import('node:fs');
+    const backup = JSON.parse(readFileSync(`${file}.v3.bak`, 'utf8')) as {
+      defaultModel?: string;
+    };
+    expect(backup.defaultModel).toBe('deepseek-v4-pro');
   });
 
   it('JSON 损坏时返回空配置（不抛错）', async () => {

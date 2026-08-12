@@ -12,13 +12,16 @@
  * 任一 ❌ 项存在 → 返回 1；全部 ✅ → 返回 0。
  */
 
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import { fetchBalance } from '../balance';
 import { fmt, t } from '../i18n';
 import { listModels } from '../model/models';
+import { listOllamaModels } from '../model/providers/ollama';
+import { detectComplexity, recommendProvider } from '../model/recommend';
 import { getActiveAccount, getApiKeyFor, listAccounts } from '../store/accounts';
+import { checkMigrationIntegrity } from '../store/migration';
 import { configPath, sessionsDir } from '../store/paths';
 import { type ApiKeySource, maskApiKey } from './common';
 import {
@@ -52,6 +55,10 @@ export interface DoctorCommandOptions {
   vscode?: boolean;
   /** VS Code 健康诊断环境（测试注入样本；默认生产环境）。 */
   vscodeEnv?: VscodeHealthEnv;
+  /** 当前工作目录（v4.0 M3 T3.2 模型推荐复杂度检测；默认 process.cwd()）。 */
+  cwd?: string;
+  /** 预算档位（v4.0 M3 T3.2 模型推荐；low / medium / high；默认 medium）。 */
+  budget?: 'low' | 'medium' | 'high';
 }
 
 interface Diagnostic {
@@ -230,6 +237,96 @@ async function diagnoseBalance(options: DoctorCommandOptions): Promise<Diagnosti
   }
 }
 
+/** 项目复杂度检测（v4.0 M3 T3.2）：顶层条目数 + package.json 依赖数 → 启发式档位。 */
+async function detectProjectComplexity(cwd: string): Promise<{
+  complexity: ReturnType<typeof detectComplexity>;
+  fileCount: number;
+  dependencyCount: number;
+}> {
+  let fileCount = 0;
+  let dependencyCount = 0;
+  try {
+    const entries = await readdir(cwd, { withFileTypes: true });
+    fileCount = entries.length;
+    // package.json 依赖数（dependencies + devDependencies）
+    try {
+      const pkgRaw = await readFile(path.join(cwd, 'package.json'), 'utf8');
+      const pkg = JSON.parse(pkgRaw) as {
+        dependencies?: Record<string, string>;
+        devDependencies?: Record<string, string>;
+      };
+      dependencyCount =
+        Object.keys(pkg.dependencies ?? {}).length + Object.keys(pkg.devDependencies ?? {}).length;
+    } catch {
+      // 无 package.json → 依赖数 0
+    }
+  } catch {
+    // cwd 不可读 → 视为 small
+  }
+  return {
+    complexity: detectComplexity({ fileCount, dependencyCount }),
+    fileCount,
+    dependencyCount,
+  };
+}
+
+/** 模型推荐诊断（v4.0 M3 T3.2）：复杂度 + 预算 + 本地 Ollama → 推荐组合 + 月成本。 */
+async function diagnoseRecommend(options: DoctorCommandOptions): Promise<Diagnostic> {
+  const dict = t().doctor;
+  const cwd = options.cwd ?? process.cwd();
+  const { complexity } = await detectProjectComplexity(cwd);
+  // 本地 Ollama 探测（失败 → 未推荐本地模型，降级提示）
+  const localModels = await listOllamaModels({ fetchImpl: options.fetchImpl });
+  const localAvailable = localModels.length > 0;
+  const result = recommendProvider({
+    complexity,
+    budget: options.budget ?? 'medium',
+    localAvailable,
+  });
+  const reasonKey = `recommendReason${result.reason.charAt(0).toUpperCase()}${result.reason.slice(1)}`;
+  const reason = (dict as unknown as Record<string, string>)[reasonKey] ?? result.reason;
+  const lines = [
+    `${dict.money} ${dict.recommendLabel}: ${fmt(dict.recommendLine, {
+      provider: result.provider,
+      model: result.model,
+      monthlyCost: result.monthlyCost.toFixed(2),
+      reason,
+    })}`,
+  ];
+  if (!localAvailable) {
+    lines.push(`  ${dict.recommendLocalUnavailable}`);
+  }
+  // ok 恒为 true（推荐是建议性信息，不阻塞退出码）
+  return { ok: true, lines };
+}
+
+/** 配置迁移完整性诊断（v4.0 M3 T3.5）：迁移成功 / 备份存在 / 会话兼容 / 幂等。 */
+async function diagnoseMigration(options: DoctorCommandOptions): Promise<Diagnostic> {
+  const dict = t().doctor;
+  const cfgPath = options.configPath ?? configPath();
+  const sessionDir = options.sessionDir ?? sessionsDir();
+  const integrity = await checkMigrationIntegrity(cfgPath, sessionDir);
+  // 语义：v3 待迁移 → ok（loadConfig 启动时自动迁移，非环境故障）；配置不存在 → ok（无配置可迁移）；
+  // 仅「已迁移但备份缺失」（迁移成功但 config.v3.bak 被删，无法回滚）→ fail。
+  const migrated = integrity.migrated;
+  const ok = migrated ? integrity.backupExists : true;
+  const lines: string[] = [];
+  if (migrated) {
+    lines.push(`${dict.ok} ${dict.migrationLabel}: ${dict.migrationOk}`);
+    lines.push(
+      integrity.backupExists
+        ? `  ${fmt(dict.migrationBackupOk, { path: `${cfgPath}.v3.bak` })}`
+        : `  ${dict.migrationBackupMissing}`,
+    );
+  } else {
+    lines.push(`${dict.ok} ${dict.migrationLabel}: ${dict.migrationNotMigrated}`);
+    lines.push(`  ${dict.migrationBackupMissing}`);
+  }
+  lines.push(integrity.sessionCompatible ? `  ${dict.migrationSessionOk}` : '');
+  lines.push(integrity.idempotent ? `  ${dict.migrationIdempotentOk}` : '');
+  return { ok, lines: lines.filter((l) => l !== '') };
+}
+
 /**
  * VS Code 健康诊断（v3.4 M3 / doctor --vscode）：进程数 / 崩溃转储 / AI 扩展 / argv.json 四维，
  * 每项返回 { ok, lines }（ok=false 计入退出码；诊断只读，破坏性动作仅输出建议命令）。
@@ -262,6 +359,10 @@ export async function runDoctorCommand(options: DoctorCommandOptions): Promise<n
     // v3.2 M4 / T4.4：账号完整性检查（active 指针 → 账号存在 + config 可读）
     await diagnoseAccounts(options.accountsRoot),
     await diagnoseBalance(options),
+    // v4.0 M3 T3.2：模型推荐区块（复杂度 + 预算 + 本地 Ollama → 组合 + 月成本）
+    await diagnoseRecommend(options),
+    // v4.0 M3 T3.5：配置迁移完整性检测（迁移 / 备份 / 会话兼容 / 幂等）
+    await diagnoseMigration(options),
   ];
 
   // v3.4 M3 / doctor --vscode：追加 VS Code 四维健康诊断

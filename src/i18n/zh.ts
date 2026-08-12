@@ -66,6 +66,7 @@ export const zh = {
     placeholder: '输入你的需求…（Enter 发送 / Shift+Enter 换行 / Esc 退出）',
   },
   status: {
+    provider: 'Provider',
     model: '模型',
     tokens: 'token',
     cost: '成本',
@@ -161,6 +162,23 @@ export const zh = {
     vscodeArgvInvalidValue: '❌ 值格式错误: disable-extensions 必须为数组或 true',
     vscodeArgvInvalidId:
       '❌ 扩展 ID 引号错误: 应为 JSON 字符串（以 " 开头和结尾，当前疑似无引号/单引号/尾逗号）',
+    // v4.0 M3 T3.2：模型推荐区块
+    recommendLabel: '模型推荐',
+    recommendLine: '推荐 {provider}/{model}（月成本预估 ¥{monthlyCost}）——{reason}',
+    recommendReasonLowLocal: '预算低 + 本地 Ollama 可用，0 成本可离线',
+    recommendReasonLowCloud: '预算低 + 无本地模型，DeepSeek 低价位',
+    recommendReasonMedium: '默认组合，成本/质量均衡',
+    recommendReasonHighLarge: '复杂项目 + 高预算，优先最强模型',
+    recommendReasonHighSmall: '高预算 + 轻量项目，OpenAI 性价比档',
+    recommendLocalUnavailable: '本地 Ollama 探测失败（未推荐本地模型）',
+    // v4.0 M3 T3.5：配置迁移完整性检测
+    migrationLabel: '配置迁移完整性',
+    migrationOk: 'v4 迁移完成（schema v2 + defaultProvider + providers）',
+    migrationNotMigrated: '配置仍为 v3 格式（schema v1），启动时将自动迁移',
+    migrationBackupOk: '备份存在: {path}',
+    migrationBackupMissing: '备份缺失（未找到 config.v3.bak）',
+    migrationSessionOk: '会话格式兼容（v4 只新增字段不破坏 v3 会话）',
+    migrationIdempotentOk: '幂等（检测只读，重复执行无副作用）',
   },
   reviewer: {
     // v4.0 M1 T1.6：autoFix 文案（/review --fix，审查→修复闭环）
@@ -212,6 +230,32 @@ export const zh = {
     inferFound: '检测到步骤间可能存在依赖关系：',
     inferPrompt: '是否添加这些 depends 依赖? (y/N): ',
     inferSkipped: '已跳过依赖推断（保持原配置）',
+  },
+  provider: {
+    // v4.0 M3 T3.1/T3.2b：Provider 管理文案
+    listTitle: '可用 Provider：',
+    statusOk: '可用',
+    statusDegraded: '降级',
+    statusUnavailable: '不可用',
+    defaultLabel: '默认',
+    ollamaLocalHint: '本地模型（Ollama）——成本 0，可离线',
+    switchHint: '切换：concertoai provider switch <name> 或 concertoai --provider <name> 临时切换',
+    switchUnknown: '未知 Provider: {name}（请先配置 providers.{name}）',
+    switchDone: '已持久化切换默认 Provider → {name}',
+    authUnknown: '未知 Provider: {name}（仅支持 deepseek / openai）',
+    authPrompt: '输入 {name} API Key（不回显）:',
+    authNoTty: '非交互终端无法回显隐藏输入，请用 --key <key> 非交互注入',
+    authEmpty: 'API Key 不能为空',
+    authFailed: '❌ Key 验证失败：',
+    authOk: '✅ Key 验证通过',
+    authVerifyOnly: '（--verify 仅验证，未保存）',
+    authSaved: '✅ 已保存 {name} API Key 至 accounts/（0600）+ 设为 active',
+    authSaveFailed: '❌ 保存失败：',
+    // T3.4 fallback + T3.2a 成本提示（状态条）
+    fallbackNote: '主模型 {primary} 不可用，已切换至 {fallback}（原因：{reason}）',
+    costCompare: '已切换至 {current}，预估成本约为 {baseline} 的 {ratio} 倍',
+    costCompareLocal: '当前使用本地模型（Ollama），成本为 0，可离线',
+    sessionCostCompare: '本次消费 ¥{actual}（{current}），如用 {baseline} 约 ¥{estimate}',
   },
   selfHeal: {
     // 阶段标签（v3.3 S1：selfHealPhaseLabel 移入 i18n）

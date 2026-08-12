@@ -101,7 +101,26 @@ export async function loadConfig(
 ): Promise<ConcertoAIConfig> {
   try {
     const raw = await readFile(configPath, 'utf8');
-    const parsed = JSON.parse(raw) as Partial<ConcertoAIConfig>;
+    const parsed = JSON.parse(raw) as Partial<ConcertoAIConfig> & {
+      _migrated?: boolean;
+    };
+    // v4.0 M3 T3.5：检测到 v3 格式 → 自动迁移（备份 config.v3.bak + 写 v4 格式 + _migrated 幂等）
+    // isV3Config 判定：schemaVersion===1 或 无 schemaVersion 但含 defaultModel 且无 defaultProvider
+    const { isV3Config, migrateV3ToV4 } = await import('./migration');
+    if (isV3Config(parsed)) {
+      const result = await migrateV3ToV4(parsed as ConcertoAIConfig, configPath);
+      if (result.migrated) {
+        // 迁移成功 → 返回迁移后的配置（v4 形态：schemaVersion=2 + defaultProvider + providers）
+        const migrated = await readFile(configPath, 'utf8');
+        return JSON.parse(migrated) as ConcertoAIConfig;
+      }
+      // 迁移失败（备份失败等）→ 返回原配置（保持兼容读取，不阻塞启动）
+      return { schemaVersion: CONFIG_SCHEMA_VERSION, ...parsed };
+    }
+    // v4 格式（schemaVersion=2）→ 直接读取
+    if (parsed.schemaVersion === 2) {
+      return parsed as ConcertoAIConfig;
+    }
     if (parsed.schemaVersion !== CONFIG_SCHEMA_VERSION) {
       return emptyConfig();
     }
@@ -131,12 +150,42 @@ function env(name: string): string | undefined {
  * 合并优先级：CLI 参数 > 环境变量（LUMEN_*）> 配置文件 > 默认值。
  * cliModel / cliLocale 为 CLI 参数（无则 undefined）。
  */
+/**
+ * 从配置解析生效模型（v4.0 M3 T3.5）：
+ * - v4 格式（defaultProvider + providers）：model = providers[defaultProvider].model，
+ *   CLI -m 优先（映射到 defaultProvider.model，保持兼容）；
+ * - v3 格式（defaultModel）：直通（迁移前兼容读取）。
+ */
+export function resolveModelFromConfig(
+  file: ConcertoAIConfig,
+  cliModel?: string,
+): string | undefined {
+  const fileV4 = file as ConcertoAIConfig & {
+    defaultProvider?: string;
+    providers?: Record<string, { model?: string }>;
+  };
+  if (cliModel !== undefined) {
+    return cliModel;
+  }
+  const envModel = env('LUMEN_MODEL');
+  if (envModel !== undefined) {
+    return envModel;
+  }
+  if (fileV4.defaultProvider !== undefined && fileV4.providers !== undefined) {
+    const provider = fileV4.providers[fileV4.defaultProvider];
+    if (provider?.model !== undefined) {
+      return provider.model;
+    }
+  }
+  return file.defaultModel;
+}
+
 export function resolveConfig(
   file: ConcertoAIConfig,
   cliModel?: string,
   cliLocale?: string,
 ): ResolvedConfig {
-  const model = cliModel ?? env('LUMEN_MODEL') ?? file.defaultModel;
+  const model = resolveModelFromConfig(file, cliModel);
 
   const allowlistRaw = env('LUMEN_ALLOWLIST') ?? file.allowlist?.join(',') ?? undefined;
   const allowlist =

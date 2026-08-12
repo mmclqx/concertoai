@@ -137,6 +137,57 @@ describe('StatusBar', () => {
     expect(frame).toContain('0.0012');
     unmount();
   });
+
+  it('渲染 Provider 名（v4.0 M3 T3.1）', () => {
+    const { lastFrame, unmount } = render(
+      <StatusBar
+        model="gpt-4o"
+        providerName="openai"
+        inputTokens={10}
+        outputTokens={5}
+        cost={0.01}
+      />,
+    );
+    const frame = lastFrame();
+    expect(frame).toContain('Provider');
+    expect(frame).toContain('openai');
+    expect(frame).toContain('gpt-4o');
+    unmount();
+  });
+
+  it('渲染 fallback 提示（黄色警示，v4.0 M3 T3.4）', () => {
+    const { lastFrame, unmount } = render(
+      <StatusBar
+        model="qwen3.6:27b-q4_K_M"
+        providerName="ollama"
+        inputTokens={10}
+        outputTokens={5}
+        cost={0}
+        fallbackNote="主模型 deepseek 不可用，已切换至 ollama"
+      />,
+    );
+    const frame = lastFrame();
+    expect(frame).toContain('⚠️');
+    expect(frame).toContain('已切换至 ollama');
+    unmount();
+  });
+
+  it('渲染成本对比提示（v4.0 M3 T3.2a）', () => {
+    const { lastFrame, unmount } = render(
+      <StatusBar
+        model="gpt-4o"
+        providerName="openai"
+        inputTokens={10}
+        outputTokens={5}
+        cost={0.01}
+        costCompareNote="本次消费 ¥0.01（openai），如用 DeepSeek 约 ¥0.00"
+      />,
+    );
+    const frame = lastFrame();
+    expect(frame).toContain('💵');
+    expect(frame).toContain('本次消费');
+    unmount();
+  });
 });
 
 describe('审批框', () => {

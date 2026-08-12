@@ -16,7 +16,6 @@ import { fmt, resolveLocale, setLocale, t } from '../i18n';
 import { runLoop } from '../loop/loop';
 import { userMessage } from '../loop/messages';
 import type { ChatMessage } from '../loop/types';
-import { DeepSeekClient } from '../model/client';
 import { getModel } from '../model/models';
 import { preloadTokenizer } from '../model/tokenizer';
 import { loadConfig, resolveConfig } from '../store/config';
@@ -24,7 +23,8 @@ import { loadProjectRules } from '../store/project-rules';
 import { SessionStore } from '../store/session';
 import type { ToolContext } from '../tools/registry';
 // v2.1 性能优化：从轻量 common 模块导入，避免加载 chat.tsx 的 TUI 依赖树
-import { buildRegistry, DEFAULT_ALLOWLIST, resolveModel } from './common';
+import { buildRegistry, DEFAULT_ALLOWLIST } from './common';
+import { buildClientForProvider, resolveRuntimeProvider } from './provider-runtime';
 
 export interface RunPlanOptions {
   cwd: string;
@@ -35,6 +35,8 @@ export interface RunPlanOptions {
   autoApprove?: boolean;
   /** CLI --lang（覆盖环境变量与配置）。 */
   lang?: string;
+  /** CLI --provider（v4.0 M3 T3.1）：临时切换 Provider（本次进程生效，不写 config）。 */
+  provider?: string;
 }
 
 /** 终端确认：批准计划 (y/n)。 */
@@ -58,8 +60,14 @@ export async function runPlan(options: RunPlanOptions): Promise<void> {
   const config = await loadConfig();
   const resolved = resolveConfig(config, options.model, options.lang);
   setLocale(resolveLocale(resolved.locale));
-  const model = resolveModel(resolved.model);
-  const client = new DeepSeekClient({ apiKey: options.apiKey });
+  // v4.0 M3 T3.1：--provider 临时切换 / config defaultProvider 持久化 → 解析运行时 Provider
+  const runtime = await resolveRuntimeProvider(config, {
+    provider: options.provider,
+    model: options.model,
+    apiKey: options.apiKey,
+  });
+  const model = runtime.model;
+  const client = buildClientForProvider(runtime);
   const registry = buildRegistry();
   const rules = await loadProjectRules(options.cwd);
   const store = new SessionStore(resolved.sessionDir);

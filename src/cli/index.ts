@@ -55,6 +55,8 @@ program.name('concertoai').description(t().cli.description).version(VERSION);
 // （等价 cd 后启动）。preAction hook 在任意子命令 action 前执行，保证 chat/run/plan 等
 // 都以项目路径为 cwd 装配。未注册项目 → 报错退出（fail-closed）。
 program.option('-p, --project <name>', '按已注册项目启动（等价 cd 到项目目录）');
+// v4.0 M3 T3.1：--provider 临时切换（本次进程生效，不写盘）
+program.option('--provider <name>', '临时切换 Provider（本次进程生效；不写 config）');
 program.hook('preAction', async () => {
   const projectName = program.opts().project as string | undefined;
   if (projectName === undefined) {
@@ -123,6 +125,8 @@ program
         model,
         listOnly: options.list,
         lang: options.lang,
+        // v4.0 M3 T3.1：--provider 临时切换（本次进程生效，不写 config）
+        provider: program.opts().provider,
       });
     },
   );
@@ -143,6 +147,7 @@ program
         model: options.model,
         autoApprove: options.autoApprove ?? false,
         lang: options.lang,
+        provider: program.opts().provider,
       });
     },
   );
@@ -163,6 +168,7 @@ program
         model: options.model,
         autoApprove: options.autoApprove ?? false,
         lang: options.lang,
+        provider: program.opts().provider,
       });
     },
   );
@@ -360,6 +366,90 @@ program
     if (code !== 0) {
       process.exitCode = code;
     }
+  });
+
+// v4.0 M3 T3.1/T3.2b：Provider 命令族（list / auth / switch）
+program
+  .command('provider <action> [name]')
+  .description('Provider 管理（v4.0 M3）：provider list / auth <name> [--verify] / switch <name>')
+  .option('--key <key>', '非交互注入 API Key（auth 场景；CI 使用）')
+  .option('--verify', '仅验证 Key 不保存（auth 场景）')
+  .option('--lang <zh|en>', '界面语言')
+  .action(
+    async (
+      action: string,
+      name: string | undefined,
+      options: { key?: string; verify?: boolean; lang?: string },
+    ) => {
+      const { runProviderAuth, runProviderList, runProviderSwitch } = await import('./provider');
+      if (action === 'list') {
+        const code = await runProviderList({});
+        if (code !== 0) process.exitCode = code;
+        return;
+      }
+      if (action === 'switch') {
+        if (name === undefined) {
+          console.error('用法: concertoai provider switch <name>');
+          process.exitCode = 1;
+          return;
+        }
+        const code = await runProviderSwitch({ name });
+        if (code !== 0) process.exitCode = code;
+        return;
+      }
+      if (action === 'auth') {
+        if (name === undefined) {
+          console.error('用法: concertoai provider auth <name> [--key <key>] [--verify]');
+          process.exitCode = 1;
+          return;
+        }
+        const code = await runProviderAuth({ name, key: options.key, verify: options.verify });
+        if (code !== 0) process.exitCode = code;
+        return;
+      }
+      console.error(`未知 provider 子命令: ${action}（支持 list / auth <name> / switch <name>）`);
+      process.exitCode = 1;
+    },
+  );
+
+// v4.0 M3 T3.5：config 命令族（config set provider <name> / config restore）
+program
+  .command('config <action> [name] [value]')
+  .description('配置管理（v4.0 M3）：config set provider <name> / config restore')
+  .option('--lang <zh|en>', '界面语言')
+  .action(async (action: string, name?: string, value?: string) => {
+    const { configPath } = await import('../store/paths');
+    const { copyFile, rm } = await import('node:fs/promises');
+    const cfgPath = configPath();
+    if (action === 'set' && name === 'provider') {
+      if (value === undefined) {
+        console.error('用法: concertoai config set provider <name>');
+        process.exitCode = 1;
+        return;
+      }
+      const { runProviderSwitch } = await import('./provider');
+      const code = await runProviderSwitch({ name: value });
+      if (code !== 0) process.exitCode = code;
+      return;
+    }
+    if (action === 'restore') {
+      // 从 config.v3.bak 回滚（M3 T3.5）
+      const bak = `${cfgPath}.v3.bak`;
+      try {
+        await copyFile(bak, cfgPath);
+        await rm(bak, { force: true });
+        console.log('✅ 已从 config.v3.bak 回滚配置（v3 格式恢复）。');
+        return;
+      } catch (err) {
+        console.error(
+          `❌ config restore 失败: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        process.exitCode = 1;
+        return;
+      }
+    }
+    console.error('用法: concertoai config set provider <name> | config restore');
+    process.exitCode = 1;
   });
 
 program.parse();

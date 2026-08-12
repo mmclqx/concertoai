@@ -12,7 +12,6 @@ import { SubagentSpawner } from '../agent/spawner';
 import { fmt, resolveLocale, setLocale, t } from '../i18n';
 import { runLoop } from '../loop/loop';
 import type { ChatMessage } from '../loop/types';
-import { DeepSeekClient } from '../model/client';
 import { getModel } from '../model/models';
 import { preloadTokenizer } from '../model/tokenizer';
 import { loadConfig, resolveConfig } from '../store/config';
@@ -21,7 +20,8 @@ import { SessionStore } from '../store/session';
 import type { ToolContext } from '../tools/registry';
 import { createSpawnSubagentTool } from '../tools/spawn';
 // v2.1 性能优化：从轻量 common 模块导入，避免加载 chat.tsx 的 TUI 依赖树
-import { buildOsHint, buildRegistry, DEFAULT_ALLOWLIST, resolveModel } from './common';
+import { buildOsHint, buildRegistry, DEFAULT_ALLOWLIST } from './common';
+import { buildClientForProvider, resolveRuntimeProvider } from './provider-runtime';
 
 export interface RunTaskOptions {
   cwd: string;
@@ -32,6 +32,8 @@ export interface RunTaskOptions {
   autoApprove?: boolean;
   /** CLI --lang（覆盖环境变量与配置）。 */
   lang?: string;
+  /** CLI --provider（v4.0 M3 T3.1）：临时切换 Provider（本次进程生效，不写 config）。 */
+  provider?: string;
 }
 
 export async function runTask(options: RunTaskOptions): Promise<void> {
@@ -39,8 +41,14 @@ export async function runTask(options: RunTaskOptions): Promise<void> {
   const config = await loadConfig();
   const resolved = resolveConfig(config, options.model, options.lang);
   setLocale(resolveLocale(resolved.locale));
-  const model = resolveModel(resolved.model);
-  const client = new DeepSeekClient({ apiKey: options.apiKey });
+  // v4.0 M3 T3.1：--provider 临时切换 / config defaultProvider 持久化 → 解析运行时 Provider
+  const runtime = await resolveRuntimeProvider(config, {
+    provider: options.provider,
+    model: options.model,
+    apiKey: options.apiKey,
+  });
+  const model = runtime.model;
+  const client = buildClientForProvider(runtime);
 
   // v2.0 子代理系统
   // v2.1 M1：run 模式暂不接入 MCP（子代理仅内置工具）
