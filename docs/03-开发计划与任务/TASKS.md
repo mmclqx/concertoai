@@ -1219,7 +1219,7 @@
 
 > 用户故事：我运行 /review，ConcertoAI 告诉我 15 个建议。现在它批量审批一次，修好能自动修的，复杂的一起展示，修完自动跑 verify，修坏自动回滚。全程只敲一个「y」。
 > 复用：self-heal snapshot-guard 状态机（快照→写盘→verify→commit/rollback，ADR-030）。
-> 提交：`<M1 提交 hash>` · verify 92 文件 / 1080 用例全绿
+> 提交：`b184ed3` · verify 92 文件 / 1080 用例全绿
 
 - [x] **T1.1** 一键修复入口
   - 涉及文件：`src/cli/slash/review.ts`（--fix 解析 + 提示）、`src/reviewer/engine.ts`（autoFix 委托 + 无问题短路）、`src/ui/App.tsx`（--fix 接线 + 进度推送）
