@@ -1,7 +1,7 @@
 # ConcertoAI 开发任务看板
 
 > 最后更新：2026-08-12
-> 当前里程碑：**🟢 v3.4 已完成（v3.4.0 已发布 npm + tag）** · **🔵 v4.0 开发中（M0 ✅ + M1 ✅ / 6 任务）**（v3.3: 9/9 ✅ · v3.4: M1 4/4 ✅ + M3 4/4 ✅ + M2 4/4 ✅ · 基线 92 文件 / 1080 用例）
+> 当前里程碑：**🟢 v3.4 已完成（v3.4.0 已发布 npm + tag）** · **🔵 v4.0 开发中（M0 ✅ + M1 ✅ + M2 ✅ / 6 任务）**（v3.3: 9/9 ✅ · v3.4: M1 4/4 ✅ + M3 4/4 ✅ + M2 4/4 ✅ · 基线 98 文件 / 1127 用例）
 > 基于：[v4.0 开发任务](./v4.0-dev-tasks.md) · [v3.4 开发计划](./v3.4-dev-plan.md) · 历史：[v3.3 开发计划](./v3.3-dev-plan.md) · [v3.2 开发计划](./v3.2-dev-plan.md) · [v3.1 开发计划](./v3.1-dev-plan-ai.md)
 
 ---
@@ -1244,6 +1244,38 @@
 - [x] **T1.6** i18n + 测试 + v3.4 遗留收尾
   - 涉及文件：`src/i18n/zh.ts`、`src/i18n/en.ts`（reviewer.autofix* 键组 + selfHeal.log* 日志语言化）、`src/loop/self-heal/repair.ts`（I4 遗留日志 i18n）、`tests/planner/deps.test.ts`（FILE_REF_RE lastIndex 回归）
   - ✅ 2026-08-12 完成：zh/en 键同构（collectKeys + CJK 断言通过）；repair.ts 硬编码中文日志 → `selfHeal.log*` 键组；FILE_REF_RE 跨 step lastIndex 回归测试；新增 36 用例（autofix 29 + UI 2 + engine 0 + deps 1 + 现有改造），verify 92 文件 / 1080 用例全绿
+
+---
+
+## V4.0-M2：流程能记住了——concertoai workflow（P0，约 6.5h）✅ 已完成
+
+> 用户故事：每次发版手动跑 lint → test → build → changelog → publish。现在定义 release.yml 后敲 `concertoai workflow run release`，ConcertoAI 知道依赖顺序、审批节点、失败自动回滚。
+> 复用：scheduler（DAG 拓扑/并行/重试）+ SnapshotManager（事务回滚）+ onProgress（进度推送）+ PlanConfirm（审批节点）——禁止另起炉灶（§3.4）。
+> 提交：本次 · verify 98 文件 / 1127 用例全绿
+
+- [x] **T2.1** 4 个开箱即用的工作流模板
+  - 涉及文件：`src/workflow/templates.ts`（新增）、`src/workflow/types.ts`（新增）
+  - ✅ 2026-08-12 完成：4 内置模板（init-ts / upgrade-deps / release / precommit）以 TS 常量定义（`workflow export` 序列化为 YAML）；release 含审批节点示例（publish 前 require: approval + files 快照跟踪）；`getWorkflowTemplate` 深拷贝防污染注册表；模板 roundtrip 可解析
+
+- [x] **T2.2** 自然语言生成工作流
+  - 涉及文件：`src/workflow/nl-generator.ts`（新增）、`src/workflow/parser.ts`（新增）
+  - ✅ 2026-08-12 完成：`workflow create "<描述>"` 调模型生成 YAML → ```yaml 围栏剥离 → parseWorkflowYaml（zod 校验：缺失字段/非法名/未知键/缩进）→ 展示确认；非法 YAML → 降级提示「AI 生成失败，请手动编辑 YAML 或重试」；未配置模型直接报错不调模型
+
+- [x] **T2.3** 工作流执行引擎
+  - 涉及文件：`src/workflow/executor.ts`（新增，复用 TaskScheduler + SnapshotManager）
+  - ✅ 2026-08-12 完成：DAG 拓扑排序（test 依赖 build 串行、无依赖并行并发 >1）；审批节点 require:approval 暂停等待（拒绝 fail-closed 视为失败）；失败恢复 UX R/S/F/A（retry 不重跑已完成 / skip 下游剔除依赖继续 / abort 整体快照回滚）；onProgress 进度推送；整体回滚边界（任一步失败且放弃 → 全部回滚，全部完成含跳过 → commit）
+
+- [x] **T2.4** 步骤智能命名 + 自动依赖推断
+  - 涉及文件：`src/workflow/parser.ts`（inferDependencies）、`src/cli/workflow.ts`（confirmInferredDependencies）
+  - ✅ 2026-08-12 完成：命令语义启发式（test→build / publish→build / build→lint / lint→typecheck，每步最高优先级一条）；推断结果提示用户确认（y/N），非 TTY/拒绝保持原配置不静默写入；init/create 链路接入
+
+- [x] **T2.5** 工作流分享
+  - 涉及文件：`src/cli/workflow.ts`（export/import）
+  - ✅ 2026-08-12 完成：`workflow export <name>` 输出 YAML（可重定向）；`workflow import <file>` 解析校验 → 注册到 `.concertoai/workflows/<name>.yml`（可提交 Git 团队共享）；roundtrip 等价 + 非法 YAML 报错带行号
+
+- [x] **T2.6** CLI + /workflow + i18n + 测试
+  - 涉及文件：`src/cli/workflow.ts`（新增）、`src/cli/slash/workflow.ts`（新增）、`src/cli/index.ts`、`src/ui/App.tsx`、`src/i18n/zh.ts`、`src/i18n/en.ts`、`tests/workflow/*.test.ts`、`tests/cli/workflow.test.ts`、`tests/cli/slash-workflow.test.ts`
+  - ✅ 2026-08-12 完成：`concertoai workflow list/init/run/export/import/create` 全部可用（run 走 DAG 引擎 + 进度 `▎ 正在执行 step x/y` + 失败恢复交互）；`/workflow` chat 内可用（进度推送消息 + 审批走统一 requestApproval 弹窗 + SnapshotManager 快照）；zh/en `workflow.*` 键组同构（collectKeys + CJK 断言通过）；新增 47 用例（workflow 4 文件 36 + cli 2 文件 11），verify 98 文件 / 1127 用例全绿
 
 ---
 

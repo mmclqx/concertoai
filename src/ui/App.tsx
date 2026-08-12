@@ -23,6 +23,7 @@ import {
   executeSkillMarketCommand,
   parseSkillCommand,
 } from '../cli/slash/skill';
+import { parseWorkflowCommand, runWorkflowSlash } from '../cli/slash/workflow';
 import { formatTeamProgress, runTeamCommand } from '../cli/team';
 import { fmt, t } from '../i18n';
 import { retrieveLocalMemories } from '../loop/local-memory';
@@ -649,6 +650,55 @@ export function App({
           const reportText = ReviewerEngine.formatReport(finalReport);
           setMessages((prev) => [...prev, { role: 'assistant', content: reportText }]);
           setTokens((t) => ({ ...t, output: t.output + estimateTokens(reportText) }));
+        } catch (err) {
+          setError(err instanceof Error ? err.message : String(err));
+        } finally {
+          busy.current = false;
+          setPhase('idle');
+          setStreamed('');
+        }
+        return;
+      }
+
+      // v4.0 M2 T2.6：工作流命令（/workflow）→ chat 内执行（run 走 DAG 引擎 + 进度推送）
+      const workflowCmd = parseWorkflowCommand(trimmed);
+      if (workflowCmd !== null) {
+        setInput('');
+        setTokens((t) => ({ ...t, input: t.input + estimateTokens(text) }));
+        setMessages((prev) => [...prev, { role: 'user', content: text }]);
+        setPhase('streaming');
+        busy.current = true;
+        try {
+          const result = await runWorkflowSlash(workflowCmd, {
+            cwd: ctx.cwd,
+            // 审批节点走统一审批弹窗（require: approval 步骤）；普通步骤由 /workflow 显式授权执行
+            requestApproval: async (step) =>
+              requestApproval({
+                kind: 'shell',
+                summary: fmt(t().workflow.approveStep, { command: step.run }),
+                detail: step.run,
+              }),
+            // T2.3 进度推送：聊天内渐进显示「正在执行 step x/y: name…」
+            onProgress: (p) => {
+              if (p.stepName === '') {
+                return;
+              }
+              setMessages((prev) => [
+                ...prev,
+                {
+                  role: 'assistant',
+                  content: `▎ ${fmt(t().workflow.runProgress, {
+                    current: p.done + 1,
+                    total: p.total,
+                    step: p.stepName,
+                  })}`,
+                },
+              ]);
+            },
+            // 快照事务回滚（任一步失败且放弃 → 整体回滚）
+            snapshots: new SnapshotManager(ctx.cwd),
+          });
+          setMessages((prev) => [...prev, result.message as ChatMessage]);
         } catch (err) {
           setError(err instanceof Error ? err.message : String(err));
         } finally {

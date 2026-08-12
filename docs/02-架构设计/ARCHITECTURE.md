@@ -12,13 +12,13 @@ ConcertoAI 是一款**中文优先**的终端编码助手 CLI（DeepSeek 驱动�
 
 - **技术栈**：TypeScript (strict) + Node ≥22 + ESM，Ink 7 (React 19) 渲染 TUI，commander 解析 CLI，zod 做工具参数校验，vitest 测试，Biome 检查，tsup 打包
 - **运行时依赖**：`ink` / `react` / `commander` / `zod` / `cli-highlight` / `chalk`
-- **测试现状**：92 个测试文件、1080 个用例，`npm run verify` 全绿，`npm audit` 0 漏洞；已用真实 `DEEPSEEK_API_KEY` 完成端到端冒烟
+- **测试现状**：98 个测试文件、1127 个用例，`npm run verify` 全绿，`npm audit` 0 漏洞；已用真实 `DEEPSEEK_API_KEY` 完成端到端冒烟
 - **安全基线**：编辑与命令一律审批（fail-closed）、路径沙箱、结果截断、白名单免审批——无 yolo 模式
 - **v3.1 新增能力**：AI 自我修复闭环（self-heal）/ 多项目管理（project）/ 多租户登录（account）/ Orchestrator CLI（team、/orchestrate、audit export）/ 结构化错误增强（error-codes）；**v3.1 预留功能（已交付）**：`concertoai balance`（余额查询）/ `concertoai doctor`（环境诊断）、配置目录迁移 `~/.lumen → ~/.concertoai`（`src/store/paths.ts` 单一来源 + 幂等迁移）；**v2.2 智能成本控制**（高峰时段模型自动切换，见 §4 D41）
 - **v3.2 新增能力**：跨平台 CI 矩阵与 spawn 审计（ADR-032）/ UNC 路径与 EXDEV 边界（ADR-031）/ self-heal 模块化拆分（ADR-030）/ audit 损坏行统计 + /orchestrate diagnostics / 长任务进度推送（team onProgress + self-heal onPhase）/ project-account 视觉与 doctor 账号完整性 / 启动期缓存（ADR-029）/ Agent 市场版本对比与 `update --all`
 - **v3.3 质量收尾**（审查遗留 W1/W2 + S1-S3，不做新功能面）：lint:fix 失败 break 语义显式化 / 全局正则常量去 `g` 标志（消除 lastIndex 陷阱）/ self-heal 文案 i18n（`selfHeal` 分组 + `--lang en` 全英文）/ `resolveApiKeyCached` 缓存语义注释 / 存量解析测试迁移到 `platform-samples.ts`
 - **v3.4 审查闭环 + VS Code 崩溃防护**：S-C1 `collectKeys` maxDepth（en.test.ts）/ I1 feedback 数据层 i18n（`selfHeal.feedback*` 键组，en 下全英文）/ I2 正则常量去 `g`/`gm` 全项目复核（classifier / edit / read / tokenizer / planner）/ I3 en 字典 CJK 校验 / **`concertoai doctor --vscode`**（`src/cli/vscode-health.ts`：进程数 / 崩溃转储 / AI 扩展 / argv.json 四维诊断，argv.json 字段名复数 `disable-extensions` 校验——踩坑记录 §六）
-- **v4.0 实施中**：架构拐点——从「单体工具」到「插件化平台」。M0-M8 约 32.5h：**M0 已完成**（config v3→v4 迁移器骨架 + 破坏性变更清单）；**M1 已完成**（Reviewer autoFix 闭环 `reviewer/autofix.ts` + `/review --fix`：A/B 分批 → 批量审批 fail-closed → 快照 → 写盘 → 增量 verify → commit/rollback，≤2 次交互）；后续：`concertoai workflow`（DAG 工作流引擎，复用 scheduler + SnapshotManager）/ 多 Provider 抽象层（DeepSeek/OpenAI/Ollama + config v3→v4 迁移器）/ 插件系统（Plugin 接口 + 权限六类 + 市场 `plugins[]`）/ LSP 诊断（P2；Web UI + VS Code 扩展骨架延后 v4.1）/ team --parallel（P2）。架构决策见 ADR-033~036（决策表 D53~D56）；详细计划见 [v4.0-dev-plan-final.md](../03-开发计划与任务/v4.0-dev-plan-final.md)，本架构正文随实施进度同步更新
+- **v4.0 实施中**：架构拐点——从「单体工具」到「插件化平台」。M0-M8 约 32.5h：**M0 已完成**（config v3→v4 迁移器骨架 + 破坏性变更清单）；**M1 已完成**（Reviewer autoFix 闭环 `reviewer/autofix.ts` + `/review --fix`：A/B 分批 → 批量审批 fail-closed → 快照 → 写盘 → 增量 verify → commit/rollback，≤2 次交互）；**M2 已完成**（`concertoai workflow` DAG 工作流引擎 `workflow/`：4 内置模板 + YAML 解析/序列化 + NL 自然语言生成 + TaskScheduler 执行（拓扑/并行/审批/失败恢复 R/S/F/A）+ SnapshotManager 整体回滚 + 依赖推断提示确认 + export/import 分享 + `/workflow` chat 内可用）；后续：多 Provider 抽象层（DeepSeek/OpenAI/Ollama + config v3→v4 迁移器）/ 插件系统（Plugin 接口 + 权限六类 + 市场 `plugins[]`）/ LSP 诊断（P2；Web UI + VS Code 扩展骨架延后 v4.1）/ team --parallel（P2）。架构决策见 ADR-033~036（决策表 D53~D56）；详细计划见 [v4.0-dev-plan-final.md](../03-开发计划与任务/v4.0-dev-plan-final.md)，本架构正文随实施进度同步更新
 
 ## 2. 架构全景图
 
@@ -30,6 +30,7 @@ ConcertoAI 是一款**中文优先**的终端编码助手 CLI（DeepSeek 驱动�
 │              concertoai balance（v3.1 余额查询）/ concertoai doctor（v3.1 环境诊断）│
 │              concertoai project（v3.1 项目管理）/ concertoai self-heal（v3.1 自我修复）│
 │              concertoai team（v3.1 团队执行）/ concertoai audit export（v3.1 审计导出）│
+│              concertoai workflow list|init|run|export|import|create（v4.0 M2 DAG 工作流）│
 │              concertoai login / logout / whoami / account（v3.1 多账号）│
 │   chat.tsx   chat 装配：TUI + loop + store（含 TTY 检查）      │
 │   run.ts     run 一次性执行：loop + stdout 流式 + 存档          │
@@ -43,7 +44,7 @@ ConcertoAI 是一款**中文优先**的终端编码助手 CLI（DeepSeek 驱动�
 │   audit.ts   审计日志导出（v3.1，audit export）               │
 │   account.ts 多账号命令（v3.1，login/logout/whoami/account；whoami 修复提示+active 高亮 v3.2 M4）│
 │   crash-handler.ts 进程级崩溃日志（v3.1）                     │
-│   slash/     /agent（list 版本对比 + update --all v3.2 M5）/skill /mcp /memory /review（--fix v4.0 M1）/self-heal /orchestrate│
+│   slash/     /agent（list 版本对比 + update --all v3.2 M5）/skill /mcp /memory /review（--fix v4.0 M1）/self-heal /orchestrate /workflow（v4.0 M2）│
 └──────────────────────┬──────────────────────────────────────┘
                        │ render(<App …>) / runLoop(...)
 ┌──────────────────────▼──────────────────────────────────────┐
@@ -296,7 +297,7 @@ MCP 服务故障
 | D52 | **正则常量标志位模式一致性**（v3.4 T1.2 I2，延续 W2）：全项目正则常量定义一律不带 `g`/`u`（消除 lastIndex 残留），使用处按需 `new RegExp(source, flags)` 显式带；`/i` 单独使用无 lastIndex 陷阱可保留；复核覆盖 `/[gimy]` 全变体 | C 复核盲区教训：搜索 `/g` 结尾漏掉 `/gm` 变体（v3.3）；模式统一后搜索 `const X = /…/[gimy]` 即可全量兜底 | `classifier.ts` / `edit.ts` / `read.ts` / `tokenizer.ts` / `planner/deps.ts` |
 | D53 | **插件权限模型：声明式拦截**（v4.0 规划 / ADR-033）：插件声明 read/write/network/shell/knowledge/mcp 六类权限 + constraints 白名单，安装时审批（展示权限清单）+ 运行时 enforce（未声明 → 拒绝 + 审计）；v4.0 进程内运行 + 权限拦截，子进程沙箱 v4.1 强化 | 与 fail-closed 审批基线一致；复用 audit.ts 可追踪；工时可控（无 IPC 开销）；风险：恶意插件可声明全部权限 → v4.1 沙箱 + 评分缓解 | `src/plugin/`（types/manager/loader/permissions） |
 | D54 | **Provider 切换行为差异：文档标注 + 固定 Orchestrator Provider**（v4.0 规划 / ADR-034）：用户侧 `--provider`/config 自由切换（切换前显示成本对比）；Orchestrator/团队闭环内部固定默认 Provider 避免跨模型通信；fallback 仅失败重试（≤1 次）+ 状态条通知 | 用户自由度与系统确定性平衡；跨模型工具调用/输出格式差异不可控 → 团队协作固定模型；成本透明延续 peak-time/model-switcher 哲学 | `src/model/`（provider/registry/router）+ `src/cli/` |
-| D55 | **工作流事务回滚边界：整体快照，任一步失败→全部回滚**（v4.0 规划 / ADR-035）：工作流开始前 SnapshotManager 登记全部待写文件，任一步失败 → 回滚已写文件；失败恢复 UX（已完成/已回滚/待执行 + 重试/跳过/修复/放弃）；嵌套工作流快照归属 v4.1 明确 | 工作流语义是「一次完整操作」，部分成功造成中间态混乱；复用既有 SnapshotManager 工时可控 | `src/workflow/`（types/parser/executor）+ `src/loop/self-heal/snapshot-guard.ts` |
+| D55 | **工作流事务回滚边界：整体快照，任一步失败→全部回滚**（v4.0 M2 已落地 / ADR-035）：工作流开始前 SnapshotManager 登记全部待写文件（steps[].files 合并去重），任一步失败且用户放弃（abort）→ 回滚已写文件；失败恢复 UX（已完成/已回滚/待执行 + 重试/跳过/修复后重试/放弃）；用户显式跳过（skip）视为完成不触发回滚；嵌套工作流快照归属 v4.1 明确 | 工作流语义是「一次完整操作」，部分成功造成中间态混乱；复用既有 SnapshotManager 工时可控 | `src/workflow/`（types/templates/parser/nl-generator/executor）+ `src/cli/workflow.ts` + `src/cli/slash/workflow.ts` |
 | D56 | **市场 schema plugins[] 向后兼容：installer 按 type 分派**（v4.0 规划 / ADR-036）：registry 增加 `plugins[]`（RegistryItemBase + type:'plugin' + manifest），与旧 `skills[]`/`agents[]` 共存；installer 按 type 分派（skill→SKILL.md / agent→AgentDef / plugin→PluginManifest）；版本比较与 sha256 校验复用 installer | 零破坏迁移（旧条目 schema 不变 + 全量回归兜底）；复用既有市场基础设施；插件是 skill/agent 超集，统一市场形态利于用户认知 | `src/market/`（types/installer/registry）+ `src/cli/plugin.ts` |
 
 ## 5. 目录结构说明
@@ -343,6 +344,7 @@ concertoai/
 │   │   ├── team.ts       concertoai team "<任务>"：Orchestrator 全链路（拆解→对抗性闭环→回滚兜底，v3.1 M5；onProgress 进度推送，v3.2 M4）
 │   │   ├── audit.ts      concertoai audit export [--out]：审计日志保序 JSON 导出（v3.1 M5；损坏行统计 v3.2 M3）
 │   │   ├── account.ts    多账号命令 login/logout/whoami/account（v3.1 M3；whoami 修复提示 + active 高亮，v3.2 M4）+ account-types.ts
+│   │   ├── workflow.ts   concertoai workflow list/init/run/export/import/create（v4.0 M2：模板生成 / DAG 执行 + 进度推送 + 失败恢复 R/S/F/A / YAML 导出导入 / NL 生成 + 依赖推断提示确认）
 │   │   ├── crash-handler.ts 进程级崩溃日志（uncaughtException/unhandledRejection → ~/.concertoai/crash.log，v3.1 M3）
 │   │   ├── common.ts     CLI 共享：白名单 / 注册表构建 / OS 提示 / resolveProjectForCwd / mergeAllowlist / resolveApiKey / maskApiKey（轻量加载）；resolveApiKeyCached / loadProjectRegistryCached 启动期缓存（v3.2 M4）
 │   │   └── slash/        斜杠命令处理器
@@ -352,7 +354,8 @@ concertoai/
 │   │       ├── skill.ts  /skill list / use / install / search / update（v2.0/v2.1）
 │   │       ├── review.ts /review [path|--pr|--severity strict|normal|lenient]（v2.1 + v3.1 M5）
 │   │       ├── self-heal.ts /self-heal 斜杠命令（v3.1 M1；onPhase 阶段进度 + selfHealPhaseLabel，v3.2 M4）
-│   │       └── orchestrate.ts /orchestrate <任务>：chat 内 team 全链路（v3.1 M5）
+│   │       ├── orchestrate.ts /orchestrate <任务>：chat 内 team 全链路（v3.1 M5）
+│   │       └── workflow.ts /workflow list|init|run|export|import：chat 内工作流执行（v4.0 M2，进度推送消息 + 审批走统一弹窗）
 │   ├── ui/
 │   │   ├── App.tsx       状态机组件：send/sendPlan/executePlan/审批挂起/消息渲染/错误显示；长任务进度消息推送 + activeTool 阶段更新（v3.2 M4）
 │   │   ├── PromptInput.tsx  光标移动 + 历史浏览 + 多行输入
@@ -424,6 +427,12 @@ concertoai/
 │   │   ├── loader.ts     SKILL.md 加载 + @skill 递归展开（≤3 层）/ @agent 引用
 │   │   ├── types.ts      SkillDef / SkillFrontmatter / AgentRef 类型
 │   │   └── index.ts      barrel
+│   ├── workflow/         工作流引擎（v4.0 M2，详见 §4 D55）
+│   │   ├── types.ts      Workflow / WorkflowStep（run/depends/retry/require:approval/files）/ StepRunState / WorkflowRunResult / InferredDependency
+│   │   ├── templates.ts  4 内置模板：init-ts / upgrade-deps / release（含审批节点）/ precommit（WORKFLOW_TEMPLATES + getWorkflowTemplate 深拷贝）
+│   │   ├── parser.ts     轻量 YAML 子集解析（无 yaml 依赖，行号报错 + 注释剥离 + 引号转义）+ zod schema 校验 + serializeWorkflowYaml roundtrip + inferDependencies 命令语义依赖推断（T2.4）
+│   │   ├── nl-generator.ts 自然语言 → 工作流 YAML（调模型 + ```yaml 围栏剥离 + 校验失败降级人工编辑，T2.2）
+│   │   └── executor.ts   runWorkflow 执行引擎（复用 TaskScheduler 拓扑/并行/重试 + SnapshotManager 整体回滚；审批节点暂停；失败恢复 R/S/F/A；onProgress 进度推送）
 │   ├── orchestrator/     多 Agent 编排核心（v3.0 M1-M3，详见 §4 D33/D35）
 │   │   ├── types.ts      AgentMessage / AgentContext / AgentDef / AgentState / Artifact（T1.1）
 │   │   ├── context.ts    显式上下文：serialize/deserialize/extractSubset/mergeContexts（≤64KB，T1.3）
@@ -465,7 +474,7 @@ concertoai/
 │       ├── zh.ts         中文字典 + fmt()
 │       ├── en.ts         英文字典（键与 zh 同构）
 │       └── index.ts      resolveLocale / setLocale / t() / DICTS
-└── tests/                镜像 src 结构（92 个文件 / 1080 用例，v3.4 基线 + M0 迁移器骨架 + M1 autoFix），含 tests/agent/、tests/agents/、tests/balance/、tests/cli/（含 common.test.ts 启动缓存）、tests/core/、tests/e2e/（team-cli/self-heal/project-isolation/platform-e2e）、tests/fixtures/（platform-samples 跨平台样本库）、tests/i18n/、tests/knowledge/、tests/loop/（self-heal/error-reporting）、tests/market/、tests/mcp/、tests/model/、tests/observable/、tests/orchestrator/、tests/planner/、tests/reviewer/（含 autofix.test.ts）、tests/skill/、tests/store/（projects/accounts/accounts-exdev/migration）、tests/tools/、tests/ui/（含 review-report.test.tsx） 等
+└── tests/                镜像 src 结构（98 个文件 / 1127 用例，v3.4 基线 + M0 迁移器骨架 + M1 autoFix + M2 workflow），含 tests/agent/、tests/agents/、tests/balance/、tests/cli/（含 common.test.ts 启动缓存 + workflow.test.ts / slash-workflow.test.ts）、tests/core/、tests/e2e/（team-cli/self-heal/project-isolation/platform-e2e）、tests/fixtures/（platform-samples 跨平台样本库）、tests/i18n/、tests/knowledge/、tests/loop/（self-heal/error-reporting）、tests/market/、tests/mcp/、tests/model/、tests/observable/、tests/orchestrator/、tests/planner/、tests/reviewer/（含 autofix.test.ts）、tests/skill/、tests/store/（projects/accounts/accounts-exdev/migration）、tests/tools/、tests/ui/（含 review-report.test.tsx）、tests/workflow/（templates/parser/nl-generator/executor） 等
 ```
 
 ## 6. 5分钟快速体验

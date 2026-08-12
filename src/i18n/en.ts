@@ -34,6 +34,9 @@ export const en = {
     doctor: {
       description: 'Environment diagnostics (includes DeepSeek account balance)',
     },
+    workflow: {
+      description: 'Workflow management (init/run/export/import, DAG execution)',
+    },
   },
   errors: {
     noApiKey: 'DEEPSEEK_API_KEY not found. Set it first, then start again.',
@@ -174,6 +177,46 @@ export const en = {
     fixItemManual: '⚠ {location} — {title} ({reason})',
     reasonVerifyFailed: 'verify failed after fix; auto-reverted',
     reasonManual: 'needs manual review',
+  },
+  workflow: {
+    // v4.0 M2 T2.6: workflow copy (concertoai workflow + /workflow)
+    usage: 'Usage: concertoai workflow <list|init|run|export|import|create>',
+    listEmpty: 'No workflows installed yet',
+    listHint:
+      'Generate one with `concertoai workflow init <template>`, or import a file with `concertoai workflow import <file>`',
+    listHeader: 'Installed workflows ({count})',
+    initPrompt: 'Choose a workflow template:',
+    initChoice: 'Enter a number or template name: ',
+    initAborted: 'No template selected; cancelled',
+    initUnknown: 'Unknown template: {name}',
+    initDone: 'Workflow {name} generated → {file}',
+    runMissing: 'Usage: concertoai workflow run <name>',
+    runStart: '▶ Starting workflow {name} ({steps} steps)',
+    runProgress: 'Running step {current}/{total}: {step}…',
+    runOk: 'Workflow {name} completed successfully',
+    runFailed: 'Workflow {name} failed (failed step: {step}, {skipped} skipped)',
+    workflowNotFound:
+      'Workflow not found: {name} (generate one with `workflow init` or import a file)',
+    exportMissing: 'Usage: concertoai workflow export <name>',
+    exportTitle: 'Workflow {name} definition:',
+    importMissing: 'Usage: concertoai workflow import <file>',
+    importDone: 'Workflow {name} imported → {file}',
+    importFailed: 'Import failed: {error}',
+    createMissing: 'Usage: concertoai workflow create "<natural-language description>"',
+    createFailed: 'Generation failed; please write the YAML manually',
+    createPreview: 'Generated workflow preview (y to save / other to cancel):',
+    createConfirm: 'Save this workflow? (y/N): ',
+    createDone: 'Workflow {name} saved → {file}',
+    createAborted: 'Save cancelled',
+    failureHeader: '⚠️ Workflow execution failed',
+    failureStep: 'Step {step} failed: {error}',
+    failureOptions: '[R]etry [S]kip [F]ix and retry [A]bort',
+    failurePrompt: 'Choose (R/S/F/A): ',
+    approveStep: '⏸ Step requires approval. Command: {command}',
+    approvePrompt: 'Approve execution? (y/N): ',
+    inferFound: 'Possible dependencies detected between steps:',
+    inferPrompt: 'Add these depends edges? (y/N): ',
+    inferSkipped: 'Dependency inference skipped (config unchanged)',
   },
   selfHeal: {
     // Phase labels (v3.3 S1: selfHealPhaseLabel moved into i18n)

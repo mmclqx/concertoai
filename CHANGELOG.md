@@ -23,6 +23,7 @@
 ### Added — v4.0（规划）
 
 - ✅ **`/review --fix`（M1 已落地）**：审查后一键自动修复——A/B 类分批（🟢 suggestion 可定位文件 → A 类尝试模型补丁；🔴 critical / 🟡 medium / 无文件 → B 类需人工判断）+ 一次批量审批 diff 摘要（fail-closed）+ snapshot-guard 快照回滚 + 增量 verify（lint+type 段）+ 报告底部「修复结果」区块（✅已修复 / ⚠需人工 / ❌自动回滚，每条带 diff 摘要），≤2 次交互；`reviewer/autofix.ts` 复用 self-heal snapshot-guard 状态机
+- ✅ **`concertoai workflow`（M2 已落地）**：DAG 工作流引擎——4 内置模板（init-ts / upgrade-deps / release 含审批节点 / precommit）+ `workflow init` 交互选模板生成 `.concertoai/workflows/<name>.yml` + `workflow run <name>`（TaskScheduler 拓扑排序/并行/重试 + 审批节点 require:approval 暂停 + 失败恢复 R/S/F/A + SnapshotManager 整体回滚 + onProgress 进度推送）+ `workflow export/import` 分享（YAML 可提交 Git）+ `workflow create "<自然语言>"` 模型生成（非法降级人工编辑）+ 依赖推断提示确认（不静默写入）+ chat 内 `/workflow`；`src/workflow/` 复用 orchestrator/scheduler + transaction
 - 多 Provider：DeepSeek / OpenAI（兼容协议）/ Ollama（本地探测）任意切换 + 成本对比 + fallback
 - 插件系统：Plugin 接口 + 生命周期钩子 + 六类权限（read/write/network/shell/knowledge/mcp）安装审批 + 运行时 enforce
 - 插件市场：registry `plugins[]` + browse/recommend/popular + sha256 校验 + `plugin audit` 安全审计
