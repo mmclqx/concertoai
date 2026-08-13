@@ -37,6 +37,10 @@ export const zh = {
     workflow: {
       description: '工作流管理（init/run/export/import，DAG 执行）',
     },
+    lsp: {
+      description: '启动 Language Server（--stdio：保存即诊断 + CodeAction 一键修复）',
+      stdioRequired: 'lsp 命令需要 --stdio 参数（当前仅支持 stdio 传输）',
+    },
     plugin: {
       description: '插件市场（install/search/list/remove/browse/recommend/popular）',
     },

@@ -239,6 +239,21 @@ program
   );
 
 program
+  .command('lsp')
+  .description(t().cli.lsp.description)
+  .option('--stdio', 'stdio 模式（Content-Length 帧，供 VS Code 等客户端连接）')
+  .option('--lang <zh|en>', '界面语言')
+  .action(async (options: { stdio?: boolean; lang?: string }) => {
+    if (options.stdio !== true) {
+      process.stderr.write(`❌ ${t().cli.lsp.stdioRequired}\n`);
+      process.exitCode = 1;
+      return;
+    }
+    const { runLspCommand } = await import('./lsp');
+    await runLspCommand({ cwd: process.cwd(), lang: options.lang });
+  });
+
+program
   .command('self-heal')
   .description('AI 自我修复闭环（v3.1 M1）：执行 npm run verify，失败自动分类→修复→验证→回滚')
   .option('-m, --model <id>', t().cli.model.description)

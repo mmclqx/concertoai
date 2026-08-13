@@ -28,13 +28,14 @@
 - ✅ **插件系统（M4 已落地）**：plugin.json 规范 + PluginLoader 双路径扫描（全局 `~/.concertoai/plugins/` + 项目 `.concertoai/plugins/`，ESM 强制非 ESM 拒绝并明确报错）+ PluginRuntime 动态装配（entry `create(ctx)` 单工具/多工具 → 工具注入 ToolRegistry 带 pluginSource/pluginPermission）+ 六类权限（read/write/network/shell/knowledge/mcp）安装时清单审批（彩色图标，拒绝 CANCELED 不落盘）+ 运行时两层校验（调用门槛粗粒度声明检查 fail-closed + `ctx.guard` 白名单细粒度 network/shell/mcp）+ shell 权限 guard 通过后仍走宿主审批流（插件不可绕过）+ 权限拒绝写审计日志；4 内置示例插件（git-status / api-docs / todo-tracker / release-helper）
 - ✅ **插件市场（M4 已落地）**：MarketRegistry 扩展 `plugins[]`（兼容旧 skills[]/agents[]，installer 按 type 分派零破坏）+ `concertoai plugin install/search/list/remove/browse/recommend/popular`（下载 + sha256 校验 + 权限确认；browse 分类含下载量+评分；recommend 项目特征启发式；popular Top 10）+ chat 内 `/plugin` + 内置注册表 4 示例插件条目
 - ✅ **多 Agent 并行 `team --parallel`（M5 已落地）**：自然语言「同时/并行/分别/各自/并发」自动触发并行分支 + 显式 `--parallel` 开关；拆解任务按依赖分层（复用 topologicalSort wave 分层，层内并行/层间串行）；纯串行链降级串行 + 提示「无法拆解为可并行任务」；组内文件冲突检测（复用 detectFileConflicts）+ 冲突组整组串行化（避免并行写同一文件竞态）+ 汇总报告提示「⚠️ A 和 B 都修改了 X，请检查保留哪个版本」；每任务独立 AgentContext/taskId（上下文/工件隔离）+ 独立 SnapshotManager 事务（成功 commit / 失败 rollback）；审批 fail-closed（拒绝不执行任何 Agent）；`src/orchestrator/parallel.ts` 复用 runTeamLoop 小闭环
+- ✅ **LSP 三来源诊断 `concertoai lsp --stdio`（M6 已落地）**：LSP 3.17 最小闭环（JSON-RPC 2.0 + Content-Length 帧，跨平台 CRLF/LF，零运行时依赖）——VS Code 一行配置即可连接；保存 .ts/.tsx → 三来源诊断推送 Problems 面板：biome lint → Warning / tsc type → Error / self-heal 静态规则（未使用 import、显式 any、console.log）→ Information；CodeAction「🔧 用 ConcertoAI 修复」（biome check --write 临时副本生成整文件替换 diff，服务端不直接改用户文件）与「移除未使用的 import / console.log」行删除，应用后 didChange 触发重新诊断 → 诊断消失闭环；`src/lsp/` 协议/帧/诊断/服务器四模块 + `tests/lsp/` 35 用例；Web UI + VS Code 扩展骨架延后 v4.1
 
 ### Fixed — v4.0（规划，M4 收尾落地）
 
 - **argv.json 字段语义修正（更正 v3.4 §六 错误结论，踩坑记录 §七）**：正确字段是**单数** `disable-extension`（值 = 字符串数组，禁用指定扩展）；复数 `disable-extensions` 只接受布尔值（true = 禁用全部），写成数组 VS Code 类型不匹配**静默忽略** → 禁用从未生效 → 崩溃第四次复发。`vscode-health.ts` 校验逻辑同步修正：单数+数组 ✅ 正确；复数+数组 ❌ 无效（本次根因，告警）；复数 true ⚠️ 合法但激进（提示改用单数）；`detectAiExtensions` 识别复数 true = 全部禁用（不误报"已装未禁用"）；i18n zh/en 文案同步 + 测试用例改写（vscode-health.test.ts 28 用例）
 
-- LSP 诊断（P2）：`concertoai lsp --stdio` 三来源诊断（lint/type/self-heal）+ CodeAction（Web UI / VS Code 扩展骨架延后 v4.1）
-- team --parallel（P2）：自然触发并行 + 结果汇总 + 文件冲突提示
+- ~~LSP 诊断（P2）~~：✅ M6 已落地（`concertoai lsp --stdio` 三来源诊断 + CodeAction）；Web UI / VS Code 扩展骨架延后 v4.1
+- ~~team --parallel（P2）~~：✅ M5 已落地（自然触发并行 + 结果汇总 + 文件冲突提示）
 
 ## [3.4.0] — 2026-08-12
 

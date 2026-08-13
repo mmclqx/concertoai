@@ -75,7 +75,8 @@
 | **V4.0-M2 流程能记住了** | **P0** | **6** | ✅ 已完成（e8466ea，98 文件 / 1127 用例） |
 | **V4.0-M3 模型能换了** | **P0** | **7** | ✅ 已完成（968a373，103 文件 / 1187 用例） |
 | **V4.0-M4 生态能扩展了** | **P1** | **6** | ✅ 已完成（本次提交，108 文件 / 1277 用例） |
-| **V4.0-M5 多 Agent 能并行** | **P2** | **3** | ✅ 已完成（本次提交，109 文件 / 1299 用例） |
+| **V4.0-M5 多 Agent 能并行** | **P2** | **3** | ✅ 已完成（c23d5b7，109 文件 / 1299 用例） |
+| **V4.0-M6 IDE 能诊断** | **P2** | **3** | ✅ 已完成（本次提交，112 文件 / 1334 用例） |
 
 ---
 
@@ -1370,6 +1371,26 @@
 - [x] **T5.3** 审批节点 + 上下文隔离 + i18n + 测试
   - 涉及文件：`src/cli/team.ts`（每任务独立快照 begin/rollback/commit + onProgress taskId）、`src/i18n/zh.ts` / `en.ts`（team.parallel 键组）、`tests/cli/team-parallel.test.ts`（新增 22 用例）
   - ✅ 2026-08-13 完成：审批 fail-closed（拆解确认在并行分支前，拒绝不执行任何 Agent）；每任务独立 AgentContext/taskId（artifacts 隔离，测试断言峰值并发=2）；每任务独立 SnapshotManager 事务（成功 commit / 失败 onRollback 回滚）；zh/en `team.parallel` 键组同构（collectKeys + CJK 断言通过）；M5 新增 22 用例（意图识别 2 + 分层 5 + 冲突 3 + 并行执行 6 + 集成 5 + 文案 1），verify 109 文件 / 1299 用例全绿
+
+---
+
+## V4.0-M6：IDE 能诊断——LSP 三来源诊断（P2，约 2.5h）✅ 已完成
+
+> 用户故事：我在 VS Code 里打开项目，保存一个 .ts 文件，Problems 面板立刻出现 Biome 的警告、tsc 的类型错误，还有 ConcertoAI 的「未使用 import / 显式 any / console.log」建议。点一下「🔧 用 ConcertoAI 修复」，文件自动修好，诊断消失。
+> 复用：self-heal classifier.parseLintErrors（平台样本已覆盖）+ biomeFixEdits（临时副本，不直接改用户文件）+ snapshot 无关（本版只产出 diff，不落盘）。
+> 提交：本次 · verify 112 文件 / 1334 用例全绿（M6 新增 35 用例 ≥ 8 验收门）
+
+- [x] **T6.1** 保存即诊断
+  - 涉及文件：`src/lsp/server.ts`（新增 LspServer 主循环）、`src/lsp/protocol.ts`（新增 LSP 3.17 最小协议子集）、`src/lsp/diagnostics.ts`（新增三来源诊断聚合）、`src/lsp/framing.ts`（新增 Content-Length 帧编解码）、`src/lsp/index.ts`（barrel）
+  - ✅ 2026-08-13 完成：`concertoai lsp --stdio` 启动 LSP 服务器（initialize 能力声明 textDocumentSync:1 + codeActionProvider + serverInfo）；didOpen/didChange/didSave → 三来源诊断推送（biome lint → Warning / tsc type → Error / self-heal 静态规则 → Information）→ publishDiagnostics；跨平台 stdio（CRLF/LF 帧变体 + Windows 盘符 URI 转换，平台样本双覆盖）；同 uri 诊断任务合并（进行中标记 pending，避免高频 didChange 排队子进程）；异步诊断不阻塞帧主循环
+
+- [x] **T6.2** 一键修复入口
+  - 涉及文件：`src/lsp/server.ts`（textDocument/codeAction 处理）、`src/lsp/diagnostics.ts`（biomeFixEdits 临时副本 diff + selfHealCodeActions 行删除）
+  - ✅ 2026-08-13 完成：lint 诊断 → CodeAction「🔧 用 ConcertoAI 修复」（biome check --write 临时副本 → 整文件替换 edit，服务端不直接改用户文件）；self-heal R1/R3 →「移除未使用的 import」/「移除 console.log 调试语句」行删除 edit；R2（显式 any）不可自动修复不提供 CodeAction；客户端应用 edit 后 didChange 触发重新诊断 → 已修复诊断消失（闭环测试覆盖）
+
+- [x] **T6.3** CLI + 跨平台 stdio + i18n + 测试
+  - 涉及文件：`src/cli/lsp.ts`（新增 lsp 命令接线）、`src/cli/index.ts`（注册 lsp 命令 + --stdio 必需校验）、`src/i18n/zh.ts` / `en.ts`（cli.lsp 键组）、`tests/lsp/*.test.ts`（新增 framing 7 + diagnostics 20 + server 8 = 35 用例）
+  - ✅ 2026-08-13 完成：`concertoai lsp --stdio` 命令可用（缺 --stdio 报错 exit 1）；zh/en `cli.lsp` 键组同构（collectKeys + CJK 断言通过）；M6 新增 35 用例（协议/帧 7 + 诊断纯函数 20 + 服务器集成 8），verify 112 文件 / 1334 用例全绿
 
 ---
 

@@ -37,6 +37,10 @@ export const en = {
     workflow: {
       description: 'Workflow management (init/run/export/import, DAG execution)',
     },
+    lsp: {
+      description: 'Start Language Server (--stdio: diagnose on save + one-click CodeAction fix)',
+      stdioRequired: 'lsp command requires --stdio (only stdio transport is supported)',
+    },
     plugin: {
       description: 'Plugin marketplace (install/search/list/remove/browse/recommend/popular)',
     },
