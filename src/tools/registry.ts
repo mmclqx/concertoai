@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { DeepSeekApiTool } from '../model/client';
-
 import type { SnapshotStore } from '../planner/rollback';
+import type { PluginPermissionType } from '../plugin/types';
 import { inferErrorCode, TOOL_ERROR_SUGGESTIONS } from './error-codes';
 
 export interface ToolContext {
@@ -69,7 +69,24 @@ export interface ToolSpec {
   parallelSafe: boolean;
   /** 执行工具。入参已被 parameters 校验通过（实现内按需断言类型）。 */
   execute(args: unknown, ctx: ToolContext): Promise<ToolResult> | ToolResult;
+  /**
+   * 插件工具来源（v4.0 M4）：`plugin:<name>`；内置工具无此字段。
+   * 存在时 run 前经 permissionCheck 钩子拦截（fail-closed + 审计）。
+   */
+  pluginSource?: string;
+  /**
+   * 插件工具所需权限类型（v4.0 M4）：声明后调用前经 permissionCheck guard；
+   * 未声明（undefined）表示该工具无需敏感权限，直接放行。
+   */
+  pluginPermission?: PluginPermissionType;
 }
+
+/** 插件工具调用前权限检查钩子（v4.0 M4 方案 C：对内置工具零影响）。 */
+export type PermissionCheck = (
+  pluginSource: string,
+  permission: PluginPermissionType | undefined,
+  args: unknown,
+) => boolean | Promise<boolean>;
 
 export class ToolRegistry {
   private readonly tools = new Map<string, ToolSpec>();
@@ -78,6 +95,17 @@ export class ToolRegistry {
    * 避免每轮模型调用重复执行 zod → JSON Schema 转换；register 时失效。
    */
   private apiToolsCache: DeepSeekApiTool[] | null = null;
+  /** v4.0 M4：插件工具权限钩子（未设置 = 不拦截，内置工具场景默认无钩子）。 */
+  private permissionCheck: PermissionCheck | undefined;
+
+  /**
+   * 设置插件工具权限钩子（v4.0 M4）。只影响带 pluginSource 的工具，内置工具零影响。
+   * 返回 this 便于链式装配。
+   */
+  setPermissionCheck(check: PermissionCheck): this {
+    this.permissionCheck = check;
+    return this;
+  }
 
   register(spec: ToolSpec): this {
     if (this.tools.has(spec.name)) {
@@ -122,6 +150,25 @@ export class ToolRegistry {
     const parsed = spec.parameters.safeParse(args);
     if (!parsed.success) {
       return { ok: false, error: `参数校验失败: ${formatIssues(parsed.error)}`, repairable: true };
+    }
+    // v4.0 M4：插件工具权限拦截（方案 C——只影响带 pluginSource 的工具，内置工具零影响）。
+    // 未设置 permissionCheck 钩子 = 无插件装配场景，直接放行（保持旧行为）。
+    if (spec.pluginSource !== undefined && this.permissionCheck !== undefined) {
+      let allowed: boolean;
+      try {
+        allowed = await this.permissionCheck(spec.pluginSource, spec.pluginPermission, parsed.data);
+      } catch {
+        // 钩子异常 → fail-closed（权限检查失败即拒绝）
+        allowed = false;
+      }
+      if (!allowed) {
+        return {
+          ok: false,
+          error: `插件 ${spec.pluginSource} 未声明执行 ${name} 所需权限，已拒绝。`,
+          code: 'PLUGIN_PERMISSION_DENIED',
+          repairable: false,
+        };
+      }
     }
     try {
       return await spec.execute(parsed.data, ctx);

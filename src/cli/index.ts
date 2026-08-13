@@ -9,6 +9,7 @@ import { crashLogPath, migrateLegacyHome } from '../store/paths';
 import { VERSION } from '../version';
 import { resolveApiKeyCached } from './common';
 import { installCrashHandlers } from './crash-handler';
+import { makePermissionConfirm as makeCliPermissionConfirm } from './plugin';
 
 // ═══ 最早阶段：安装全局崩溃处理器（v3.1 M3 诊断） ═══
 // 必须在任何异步操作前安装，确保 uncaughtException / unhandledRejection
@@ -362,6 +363,25 @@ program
       param,
       client,
       model,
+    });
+    if (code !== 0) {
+      process.exitCode = code;
+    }
+  });
+
+// v4.0 M4 T4.1/T4.1a/T4.5：插件命令族（install / search / list / remove / browse / recommend / popular）
+program
+  .command('plugin <action> [param]')
+  .description(t().cli.plugin.description)
+  .option('-y, --yes', '自动批准权限（非交互安装；默认逐项确认，fail-closed）')
+  .option('--lang <zh|en>', '界面语言')
+  .action(async (action: string, param: string | undefined, options: { yes?: boolean }) => {
+    const { runPluginCli } = await import('./plugin');
+    const code = await runPluginCli({
+      cwd: process.cwd(),
+      action,
+      param,
+      confirm: makeCliPermissionConfirm(options.yes ?? false),
     });
     if (code !== 0) {
       process.exitCode = code;

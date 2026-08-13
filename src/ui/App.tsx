@@ -12,6 +12,7 @@ import {
 import { executeMcpCommand, parseMcpCommand } from '../cli/slash/mcp';
 import { executeMemoryCommand, parseMemoryCommand } from '../cli/slash/memory';
 import { executeOrchestrateCommand, parseOrchestrateCommand } from '../cli/slash/orchestrate';
+import { parsePluginCommand, runPluginSlash } from '../cli/slash/plugin';
 import { executeReviewCommand, parseReviewCommand } from '../cli/slash/review';
 import {
   executeSelfHealCommand,
@@ -704,6 +705,29 @@ export function App({
             },
             // 快照事务回滚（任一步失败且放弃 → 整体回滚）
             snapshots: new SnapshotManager(ctx.cwd),
+          });
+          setMessages((prev) => [...prev, result.message as ChatMessage]);
+        } catch (err) {
+          setError(err instanceof Error ? err.message : String(err));
+        } finally {
+          busy.current = false;
+          setPhase('idle');
+          setStreamed('');
+        }
+        return;
+      }
+
+      // v4.0 M4 T4.5：插件命令（/plugin）→ chat 内可用（install/search/list/remove/browse/recommend/popular）
+      const pluginCmd = parsePluginCommand(trimmed);
+      if (pluginCmd !== null) {
+        setInput('');
+        setTokens((t) => ({ ...t, input: t.input + estimateTokens(text) }));
+        setMessages((prev) => [...prev, { role: 'user', content: text }]);
+        setPhase('streaming');
+        busy.current = true;
+        try {
+          const result = await runPluginSlash(pluginCmd, {
+            cwd: ctx.cwd,
           });
           setMessages((prev) => [...prev, result.message as ChatMessage]);
         } catch (err) {

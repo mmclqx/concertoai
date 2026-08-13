@@ -37,6 +37,9 @@ export const zh = {
     workflow: {
       description: '工作流管理（init/run/export/import，DAG 执行）',
     },
+    plugin: {
+      description: '插件市场（install/search/list/remove/browse/recommend/popular）',
+    },
   },
   errors: {
     noApiKey: '未找到 DEEPSEEK_API_KEY 环境变量，请先设置后再启动。',
@@ -230,6 +233,58 @@ export const zh = {
     inferFound: '检测到步骤间可能存在依赖关系：',
     inferPrompt: '是否添加这些 depends 依赖? (y/N): ',
     inferSkipped: '已跳过依赖推断（保持原配置）',
+  },
+  plugin: {
+    // v4.0 M4 T4.1~T4.5：插件市场文案（concertoai plugin + /plugin）
+    usage: '用法: concertoai plugin <install|search|list|remove|browse|recommend|popular>',
+    // 分类（browse 展示：图标 + 名称）
+    categoryTool: '🔧 工具',
+    categoryWorkflow: '📋 工作流',
+    categoryAgent: '🤖 Agent',
+    // install
+    installMissing: '用法: concertoai plugin install <name>',
+    installSearching: '🔍 正在匹配注册表: {name}…',
+    installStart: '📦 正在安装 {name}@{version}…',
+    installOk:
+      '✅ 插件 {name}@{version} 安装成功 → {dir}\n\n在 chat 中输入 /plugin list 查看，或按插件文档使用。',
+    installUpdated: '✅ 插件 {name} 已更新到 {version} → {dir}',
+    installFailed: '❌ 插件安装失败：{message}',
+    installCanceled: '已取消安装 {name}（权限未获批准，未写入任何文件）。',
+    installAlready: '📦 {message}',
+    // 权限清单（T4.2：彩色图标一眼看懂）
+    permissionTitle: '🔐 权限清单（安装后运行时可验证，未声明权限一律拒绝）:',
+    permissionConfirm: '确认安装? (y/N): ',
+    permissionEmpty: '（无权限声明——只读模式，敏感操作一律拒绝）',
+    // search
+    searchMissing: '用法: concertoai plugin search <keyword>',
+    searchTitle: '🔍 插件市场（{count} 个）:',
+    searchEmpty: '未找到匹配 "{keyword}" 的插件。',
+    searchHint: '\n\n使用 concertoai plugin install <name> 安装。',
+    searchInstalled: ' [已安装 {version}]',
+    // list
+    listEmpty: '暂无已安装插件。',
+    listHint:
+      '使用 `concertoai plugin browse` 浏览市场，或 `concertoai plugin install <name>` 安装。',
+    listHeader: '已安装插件（{count} 个）:',
+    // remove
+    removeMissing: '用法: concertoai plugin remove <name>',
+    removeOk: '✅ 插件 {name} 已卸载。',
+    removeNotFound: '❌ 插件 {name} 未安装（无法卸载）。',
+    // browse（T4.1a：分类浏览含下载量 + 评分）
+    browseMissing: '用法: concertoai plugin browse [category]（category: tool / workflow / agent）',
+    browseHeader: '📚 插件市场（{category}，{count} 个）:',
+    browseAll: '全部',
+    browseLine: '- **{name}** {version} — {description}（⬇ {downloads} ⭐ {rating}）',
+    browseEmpty: '该分类暂无插件。',
+    // recommend（T4.1a：项目特征启发式）
+    recommendHeader: '💡 检测到项目特征，为你推荐:',
+    recommendReasonExpress: '检测到 Express → 推荐 api-docs（自动扫描路由生成 API 文档）',
+    recommendReasonTodo: '检测到 TODO/FIXME 标记 → 推荐 todo-tracker（跟踪待办生成清单）',
+    recommendReasonRelease: '检测到 package.json → 推荐 release-helper（版本检查 → 门禁 → 发布）',
+    recommendReasonGit: '检测到 git 仓库 → 推荐 git-status（一键查看分支/暂存/未跟踪）',
+    recommendEmpty: '未检测到明确项目特征，试试 `concertoai plugin browse` 浏览全部插件。',
+    // popular（T4.1a：Top 10）
+    popularHeader: '🔥 社区热门插件 Top {count}:',
   },
   provider: {
     // v4.0 M3 T3.1/T3.2b：Provider 管理文案

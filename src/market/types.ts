@@ -12,9 +12,10 @@
  */
 
 import type { AgentDef } from '../orchestrator';
+import type { PluginCategory, PluginPermission } from '../plugin/types';
 
-/** 注册表条目类型：技能（v2.1）或 Agent（v3.0）。 */
-export type RegistryItemType = 'skill' | 'agent';
+/** 注册表条目类型：技能（v2.1）、Agent（v3.0）或插件（v4.0 M4）。 */
+export type RegistryItemType = 'skill' | 'agent' | 'plugin';
 
 /** 注册表条目公共字段（与技能市场一致）。 */
 export interface RegistryItemBase {
@@ -49,10 +50,23 @@ export interface SkillRegistryItem extends RegistryItemBase {
   type: 'skill';
 }
 
-/** 注册表条目判别联合（按 type 收窄）。 */
-export type RegistryItem = AgentRegistryItem | SkillRegistryItem;
+/** 插件条目（v4.0 M4，类型标记 'plugin'；含分类/下载量/评分/权限声明）。 */
+export interface PluginRegistryItem extends RegistryItemBase {
+  type: 'plugin';
+  /** 插件分类（🔧工具 / 📋工作流 / 🤖Agent，browse 按此分类）。 */
+  category: PluginCategory;
+  /** 下载量（市场展示排序用）。 */
+  downloads: number;
+  /** 评分（0~5，一位小数）。 */
+  rating: number;
+  /** 权限声明（六类权限，安装时展示 + 运行时 enforce，fail-closed）。 */
+  permissions: PluginPermission[];
+}
 
-/** 完整市场注册表（registry URL + 技能/Agent 条目）。 */
+/** 注册表条目判别联合（按 type 收窄）。 */
+export type RegistryItem = AgentRegistryItem | SkillRegistryItem | PluginRegistryItem;
+
+/** 完整市场注册表（registry URL + 技能/Agent/插件条目）。 */
 export interface MarketRegistry {
   /** 注册表自身 URL（刷新/更新用）。 */
   registry: string;
@@ -60,6 +74,8 @@ export interface MarketRegistry {
   skills: SkillRegistryItem[];
   /** Agent 条目（v3.0 新增）。 */
   agents: AgentRegistryItem[];
+  /** 插件条目（v4.0 M4 新增）。 */
+  plugins: PluginRegistryItem[];
 }
 
 /** 内置 4 个 Agent 的市场条目（architect/coder/reviewer/qa）。 */
@@ -130,9 +146,72 @@ export const BUILTIN_AGENT_ITEMS: AgentRegistryItem[] = [
   },
 ];
 
-/** 内置注册表（技能 + 4 个 Agent）。 */
+/** 内置 4 个示例插件的市场条目（v4.0 M4 / T4.3，sha256='builtin' 表示内置内容直装）。 */
+export const BUILTIN_PLUGIN_ITEMS: PluginRegistryItem[] = [
+  {
+    type: 'plugin',
+    name: 'git-status',
+    version: '1.0.0',
+    description: '一键查看 git 状态摘要（分支/暂存/未跟踪）',
+    author: 'ConcertoAI',
+    url: 'builtin://git-status',
+    sha256: 'builtin',
+    category: 'tool',
+    downloads: 1200,
+    rating: 4.7,
+    permissions: [{ type: 'read', paths: ['.git'] }],
+  },
+  {
+    type: 'plugin',
+    name: 'api-docs',
+    version: '1.0.0',
+    description: '自动扫描代码生成 API 文档（Express 优先）',
+    author: 'ConcertoAI',
+    url: 'builtin://api-docs',
+    sha256: 'builtin',
+    category: 'tool',
+    downloads: 980,
+    rating: 4.5,
+    permissions: [{ type: 'read', paths: ['src'] }],
+  },
+  {
+    type: 'plugin',
+    name: 'todo-tracker',
+    version: '1.0.0',
+    description: '跟踪代码中 TODO/FIXME 标记并生成任务清单',
+    author: 'ConcertoAI',
+    url: 'builtin://todo-tracker',
+    sha256: 'builtin',
+    category: 'tool',
+    downloads: 860,
+    rating: 4.3,
+    permissions: [
+      { type: 'read', paths: ['src'] },
+      { type: 'write', paths: ['TODO.md'] },
+    ],
+  },
+  {
+    type: 'plugin',
+    name: 'release-helper',
+    version: '1.0.0',
+    description: '发布辅助：版本检查 → lint/test 门禁 → 发布命令',
+    author: 'ConcertoAI',
+    url: 'builtin://release-helper',
+    sha256: 'builtin',
+    category: 'workflow',
+    downloads: 640,
+    rating: 4.1,
+    permissions: [
+      { type: 'read', paths: ['package.json'] },
+      { type: 'shell', allowlist: ['npm run verify'] },
+    ],
+  },
+];
+
+/** 内置注册表（技能 + 4 个 Agent + 4 个示例插件）。 */
 export const BUILTIN_REGISTRY: MarketRegistry = {
   registry: 'https://raw.githubusercontent.com/concertoai/cli/main/skills/registry.json',
   skills: [],
   agents: BUILTIN_AGENT_ITEMS,
+  plugins: BUILTIN_PLUGIN_ITEMS,
 };

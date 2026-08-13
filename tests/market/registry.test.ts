@@ -1,22 +1,27 @@
 /**
- * Agent 市场注册表测试（v3.0 M4 / T4.1）。
+ * 市场注册表测试（v3.0 M4 / T4.1；v4.0 M4 / T4.3 扩展 plugins[]）。
  *
  * 覆盖验收标准：
- * - 复用技能市场 registry.json 结构（registry + skills[] 或 agents[]），条目含 type 区分；
+ * - 复用技能市场 registry.json 结构（registry + skills[] / agents[] / plugins[]），条目含 type 区分；
  * - Agent 条目扩展 AgentDef 字段（interfaces/permissions/runtime）+ 接口版本号；
  * - 注册表读写用 zod schema 校验（共用校验逻辑）；
- * - 内置注册表初始包含 4 个内置 Agent 条目（architect/coder/reviewer/qa）。
+ * - 内置注册表初始包含 4 个内置 Agent 条目 + 4 个示例插件条目；
+ * - plugins[] 扩展对旧 skill/agent 条目完全兼容（回归）。
  */
 import { describe, expect, it } from 'vitest';
 import {
   BUILTIN_AGENT_ITEMS,
+  BUILTIN_PLUGIN_ITEMS,
   BUILTIN_REGISTRY,
   findAgentItem,
+  findPluginItem,
   listAgentItems,
+  listPluginItems,
   loadBuiltinRegistry,
   type MarketRegistry,
   parseAgentItem,
   parseMarketRegistry,
+  searchPluginItems,
 } from '../../src/market';
 
 // ── 测试辅助 ──────────────────────────────────────────────────
@@ -116,6 +121,74 @@ describe('parseAgentItem（Agent 条目校验）', () => {
   });
 });
 
+// ── plugins[] 扩展（v4.0 M4 / T4.3）──────────────────────────
+
+describe('parseMarketRegistry（plugins[] 扩展）', () => {
+  it('解析含 plugins[] 的注册表：type 区分 + 六类权限保留', () => {
+    const json = JSON.stringify({
+      registry: 'https://example.com/registry.json',
+      skills: [],
+      agents: [],
+      plugins: [
+        {
+          type: 'plugin',
+          name: 'api-docs',
+          version: '1.0.0',
+          description: 'API 文档生成',
+          author: 'ConcertoAI',
+          url: 'https://example.com/api-docs.mjs',
+          sha256: 'abc123',
+          category: 'tool',
+          downloads: 980,
+          rating: 4.5,
+          permissions: [
+            { type: 'read', paths: ['src'] },
+            { type: 'network', allowedDomains: ['api.example.com'] },
+          ],
+        },
+      ],
+    });
+    const registry = parseMarketRegistry(json);
+    expect(registry.plugins).toHaveLength(1);
+    const p = registry.plugins[0];
+    expect(p?.type).toBe('plugin');
+    expect(p?.name).toBe('api-docs');
+    expect(p?.category).toBe('tool');
+    expect(p?.downloads).toBe(980);
+    expect(p?.rating).toBe(4.5);
+    expect(p?.permissions).toHaveLength(2);
+    expect(p?.permissions[1]).toEqual({ type: 'network', allowedDomains: ['api.example.com'] });
+  });
+
+  it('缺 plugins 字段 → 默认空数组（旧注册表完全兼容）', () => {
+    const json = JSON.stringify({
+      registry: 'https://example.com/registry.json',
+      skills: [],
+      agents: [JSON.parse(makeAgentJson()) as unknown],
+    });
+    const registry = parseMarketRegistry(json);
+    expect(registry.plugins).toEqual([]);
+    expect(registry.agents).toHaveLength(1);
+  });
+
+  it('插件条目权限声明非法 → 抛中文错误（fail-closed）', () => {
+    const json = JSON.stringify({
+      registry: 'https://example.com/registry.json',
+      plugins: [
+        {
+          type: 'plugin',
+          name: 'evil',
+          version: '1.0.0',
+          url: 'https://example.com/evil.mjs',
+          sha256: 'x',
+          permissions: [{ type: 'sudo' }],
+        },
+      ],
+    });
+    expect(() => parseMarketRegistry(json)).toThrow(/结构不符合协议/);
+  });
+});
+
 // ── 内置注册表 ────────────────────────────────────────────────
 
 describe('内置注册表（4 个内置 Agent）', () => {
@@ -165,5 +238,53 @@ describe('内置注册表（4 个内置 Agent）', () => {
       agentNames.push(item.name);
     }
     expect(agentNames).toHaveLength(4);
+  });
+});
+
+// ── 内置插件条目（v4.0 M4 / T4.3）────────────────────────────
+
+describe('内置插件条目（4 个示例插件）', () => {
+  it('BUILTIN_PLUGIN_ITEMS：4 个示例插件（git-status/api-docs/todo-tracker/release-helper）', () => {
+    const names = BUILTIN_PLUGIN_ITEMS.map((p) => p.name).sort();
+    expect(names).toEqual(['api-docs', 'git-status', 'release-helper', 'todo-tracker']);
+    // 全部 sha256='builtin'（内置直装，不下载）
+    for (const p of BUILTIN_PLUGIN_ITEMS) {
+      expect(p.sha256).toBe('builtin');
+    }
+  });
+
+  it('findPluginItem 命中内置条目并返回权限声明', () => {
+    const item = findPluginItem(BUILTIN_REGISTRY, 'release-helper');
+    expect(item?.category).toBe('workflow');
+    expect(item?.permissions).toEqual([
+      { type: 'read', paths: ['package.json'] },
+      { type: 'shell', allowlist: ['npm run verify'] },
+    ]);
+    expect(findPluginItem(BUILTIN_REGISTRY, 'ghost')).toBeUndefined();
+  });
+
+  it('listPluginItems 按名称字典序', () => {
+    const items = listPluginItems(BUILTIN_REGISTRY);
+    expect(items.map((i) => i.name)).toEqual([
+      'api-docs',
+      'git-status',
+      'release-helper',
+      'todo-tracker',
+    ]);
+  });
+
+  it('searchPluginItems：按名称/描述/分类匹配 + 下载量降序', () => {
+    const byName = searchPluginItems(BUILTIN_REGISTRY, 'todo');
+    expect(byName.map((p) => p.name)).toEqual(['todo-tracker']);
+
+    const byDesc = searchPluginItems(BUILTIN_REGISTRY, '文档');
+    expect(byDesc.map((p) => p.name)).toEqual(['api-docs']);
+
+    const byCategory = searchPluginItems(BUILTIN_REGISTRY, 'workflow');
+    expect(byCategory.map((p) => p.name)).toEqual(['release-helper']);
+
+    const all = searchPluginItems(BUILTIN_REGISTRY);
+    expect(all[0]?.name).toBe('git-status'); // downloads 最高（1200）排第一
+    expect(all).toHaveLength(4);
   });
 });

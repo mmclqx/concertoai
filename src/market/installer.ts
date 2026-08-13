@@ -381,3 +381,65 @@ export function compareVersion(a: string, b: string): number {
   }
   return 0;
 }
+
+// ═══ v4.0 M4 / T4.3：市场安装统一分派（ADR-036 / D56）═══
+
+/** 市场条目类型（skill / agent / plugin）。 */
+export type MarketItemType = 'skill' | 'agent' | 'plugin';
+
+/**
+ * 按类型分派安装（v4.0 M4 / T4.3 验收标准：installer 按 type 分派，零破坏旧调用）。
+ *
+ * - plugin → PluginInstaller（src/plugin/installer.ts）
+ * - agent  → AgentInstaller（本文件）
+ * - skill  → installSkillFromRegistry（src/skill/installer.ts，v4.0 抽取，复用 /skill install 同一实现）
+ *
+ * 各安装器返回结构同构（{ ok, name, version, action, dir } / { ok, code, message }），
+ * 调用方无需区分类型即可渲染安装结果。
+ *
+ * @param type 市场条目类型
+ * @param name 要安装的条目名
+ * @param options 注入依赖（fetchRegistry / fetchPackage / fetchSkill / confirm / installDir；缺省走网络 + 用户目录）
+ */
+export async function installByType(
+  type: MarketItemType,
+  name: string,
+  options: {
+    fetchRegistry?: (url?: string) => Promise<MarketRegistry | null>;
+    fetchPackage?: (url: string, sha256: string) => Promise<string | null>;
+    fetchSkill?: (url: string, sha256: string) => Promise<string | null>;
+    confirm?: (permissions: unknown[]) => Promise<boolean> | boolean;
+    installDir?: string;
+  } = {},
+): Promise<
+  | { ok: true; name: string; version: string; action: 'install' | 'update'; dir: string }
+  | { ok: false; code: string; message: string }
+> {
+  switch (type) {
+    case 'plugin': {
+      const { PluginInstaller } = await import('../plugin/installer');
+      const installer = new PluginInstaller(options);
+      return installer.install(name);
+    }
+    case 'agent': {
+      const installer = new AgentInstaller(options);
+      return installer.install(name);
+    }
+    case 'skill': {
+      const { installSkillFromRegistry } = await import('../skill/installer');
+      return installSkillFromRegistry(name, {
+        fetchRegistry: options.fetchRegistry,
+        fetchSkill: options.fetchSkill,
+        installDir: options.installDir,
+      });
+    }
+    default: {
+      const exhaustive: never = type;
+      return {
+        ok: false,
+        code: 'UNKNOWN_TYPE',
+        message: `未知市场条目类型: ${String(exhaustive)}`,
+      };
+    }
+  }
+}

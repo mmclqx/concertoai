@@ -103,6 +103,11 @@ export function globalAgentsDir(): string {
   return path.join(globalDir(), 'agents');
 }
 
+/** 全局插件安装目录：~/.concertoai/plugins/（v4.0 M4 / T4.4）。 */
+export function globalPluginsDir(): string {
+  return path.join(globalDir(), 'plugins');
+}
+
 /** 崩溃日志文件：~/.concertoai/crash.log（v3.1 M3 诊断用）。 */
 export function crashLogPath(): string {
   return path.join(globalDir(), 'crash.log');

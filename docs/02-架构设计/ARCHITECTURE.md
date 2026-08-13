@@ -12,13 +12,13 @@ ConcertoAI 是一款**中文优先**的终端编码助手 CLI（DeepSeek 驱动�
 
 - **技术栈**：TypeScript (strict) + Node ≥22 + ESM，Ink 7 (React 19) 渲染 TUI，commander 解析 CLI，zod 做工具参数校验，vitest 测试，Biome 检查，tsup 打包
 - **运行时依赖**：`ink` / `react` / `commander` / `zod` / `cli-highlight` / `chalk`
-- **测试现状**：103 个测试文件、1187 个用例，`npm run verify` 全绿，`npm audit` 0 漏洞；已用真实 `DEEPSEEK_API_KEY` 完成端到端冒烟
+- **测试现状**：108 个测试文件、1277 个用例，`npm run verify` 全绿，`npm audit` 0 漏洞；已用真实 `DEEPSEEK_API_KEY` 完成端到端冒烟
 - **安全基线**：编辑与命令一律审批（fail-closed）、路径沙箱、结果截断、白名单免审批——无 yolo 模式
 - **v3.1 新增能力**：AI 自我修复闭环（self-heal）/ 多项目管理（project）/ 多租户登录（account）/ Orchestrator CLI（team、/orchestrate、audit export）/ 结构化错误增强（error-codes）；**v3.1 预留功能（已交付）**：`concertoai balance`（余额查询）/ `concertoai doctor`（环境诊断）、配置目录迁移 `~/.lumen → ~/.concertoai`（`src/store/paths.ts` 单一来源 + 幂等迁移）；**v2.2 智能成本控制**（高峰时段模型自动切换，见 §4 D41）
 - **v3.2 新增能力**：跨平台 CI 矩阵与 spawn 审计（ADR-032）/ UNC 路径与 EXDEV 边界（ADR-031）/ self-heal 模块化拆分（ADR-030）/ audit 损坏行统计 + /orchestrate diagnostics / 长任务进度推送（team onProgress + self-heal onPhase）/ project-account 视觉与 doctor 账号完整性 / 启动期缓存（ADR-029）/ Agent 市场版本对比与 `update --all`
 - **v3.3 质量收尾**（审查遗留 W1/W2 + S1-S3，不做新功能面）：lint:fix 失败 break 语义显式化 / 全局正则常量去 `g` 标志（消除 lastIndex 陷阱）/ self-heal 文案 i18n（`selfHeal` 分组 + `--lang en` 全英文）/ `resolveApiKeyCached` 缓存语义注释 / 存量解析测试迁移到 `platform-samples.ts`
 - **v3.4 审查闭环 + VS Code 崩溃防护**：S-C1 `collectKeys` maxDepth（en.test.ts）/ I1 feedback 数据层 i18n（`selfHeal.feedback*` 键组，en 下全英文）/ I2 正则常量去 `g`/`gm` 全项目复核（classifier / edit / read / tokenizer / planner）/ I3 en 字典 CJK 校验 / **`concertoai doctor --vscode`**（`src/cli/vscode-health.ts`：进程数 / 崩溃转储 / AI 扩展 / argv.json 四维诊断，argv.json 字段名复数 `disable-extensions` 校验——踩坑记录 §六）
-- **v4.0 实施中**：架构拐点——从「单体工具」到「插件化平台」。M0-M8 约 32.5h：**M0 已完成**（config v3→v4 迁移器骨架 + 破坏性变更清单）；**M1 已完成**（Reviewer autoFix 闭环 `reviewer/autofix.ts` + `/review --fix`：A/B 分批 → 批量审批 fail-closed → 快照 → 写盘 → 增量 verify → commit/rollback，≤2 次交互）；**M2 已完成**（`concertoai workflow` DAG 工作流引擎 `workflow/`：4 内置模板 + YAML 解析/序列化 + NL 自然语言生成 + TaskScheduler 执行（拓扑/并行/审批/失败恢复 R/S/F/A）+ SnapshotManager 整体回滚 + 依赖推断提示确认 + export/import 分享 + `/workflow` chat 内可用）；**M3 已完成**（多 Provider 抽象层 `model/`：Provider 接口四能力（chat/tokenize/cost/healthCheck）+ DeepSeek/OpenAI/Ollama 三实现 + ProviderRegistry/Router（选择/切换/启动 fallback ≤1 次）+ `--provider` 临时切换 + `provider list/auth/switch` + `config set provider` + config v3→v4 自动迁移（备份 config.v3.bak + `_migrated` 幂等 + doctor 迁移完整性四检测）+ doctor 模型推荐（复杂度×预算×本地 Ollama + 月成本预估）+ StatusBar 成本对比/fallback 提示）；后续：插件系统（Plugin 接口 + 权限六类 + 市场 `plugins[]`）/ LSP 诊断（P2；Web UI + VS Code 扩展骨架延后 v4.1）/ team --parallel（P2）。架构决策见 ADR-033~036（决策表 D53~D56）；详细计划见 [v4.0-dev-plan-final.md](../03-开发计划与任务/v4.0-dev-plan-final.md)，本架构正文随实施进度同步更新
+- **v4.0 实施中**：架构拐点——从「单体工具」到「插件化平台」。M0-M8 约 32.5h：**M0 已完成**（config v3→v4 迁移器骨架 + 破坏性变更清单）；**M1 已完成**（Reviewer autoFix 闭环 `reviewer/autofix.ts` + `/review --fix`：A/B 分批 → 批量审批 fail-closed → 快照 → 写盘 → 增量 verify → commit/rollback，≤2 次交互）；**M2 已完成**（`concertoai workflow` DAG 工作流引擎 `workflow/`：4 内置模板 + YAML 解析/序列化 + NL 自然语言生成 + TaskScheduler 执行（拓扑/并行/审批/失败恢复 R/S/F/A）+ SnapshotManager 整体回滚 + 依赖推断提示确认 + export/import 分享 + `/workflow` chat 内可用）；**M3 已完成**（多 Provider 抽象层 `model/`：Provider 接口四能力（chat/tokenize/cost/healthCheck）+ DeepSeek/OpenAI/Ollama 三实现 + ProviderRegistry/Router（选择/切换/启动 fallback ≤1 次）+ `--provider` 临时切换 + `provider list/auth/switch` + `config set provider` + config v3→v4 自动迁移（备份 config.v3.bak + `_migrated` 幂等 + doctor 迁移完整性四检测）+ doctor 模型推荐（复杂度×预算×本地 Ollama + 月成本预估）+ StatusBar 成本对比/fallback 提示）；**M4 已完成**（插件市场 `plugin/` + `market/plugins[]`：PluginInstaller 全流程（注册表匹配→下载/builtin 直装→sha256→权限清单确认 fail-closed→落盘）+ `plugin install/search/list/remove/browse/recommend/popular` CLI + chat 内 `/plugin` + PluginLoader 双路径扫描（全局 `~/.concertoai/plugins/` + 项目 `.concertoai/plugins/`，ESM 强制）+ PluginRuntime 动态装配（工具注入 ToolRegistry 带 pluginSource/pluginPermission + 调用前权限钩子拦截）+ PermissionEnforcer 六类权限运行时 enforce（声明检查 + network/shell/mcp 白名单细粒度，见 §4 D57）+ 4 内置示例插件（git-status / api-docs / todo-tracker / release-helper）+ installer 按 type 分派（skill/agent/plugin，零破坏）；后续：LSP 诊断（P2；Web UI + VS Code 扩展骨架延后 v4.1）/ team --parallel（P2）。架构决策见 ADR-033~036（决策表 D53~D56）+ D57（权限分层）；详细计划见 [v4.0-dev-plan-final.md](../03-开发计划与任务/v4.0-dev-plan-final.md)，本架构正文随实施进度同步更新
 
 ## 2. 架构全景图
 
@@ -31,6 +31,7 @@ ConcertoAI 是一款**中文优先**的终端编码助手 CLI（DeepSeek 驱动�
 │              concertoai project（v3.1 项目管理）/ concertoai self-heal（v3.1 自我修复）│
 │              concertoai team（v3.1 团队执行）/ concertoai audit export（v3.1 审计导出）│
 │              concertoai workflow list|init|run|export|import|create（v4.0 M2 DAG 工作流）│
+│              concertoai plugin install|search|list|remove|browse|recommend|popular（v4.0 M4 插件市场）│
 │              concertoai login / logout / whoami / account（v3.1 多账号）│
 │   chat.tsx   chat 装配：TUI + loop + store（含 TTY 检查）      │
 │   run.ts     run 一次性执行：loop + stdout 流式 + 存档          │
@@ -44,7 +45,7 @@ ConcertoAI 是一款**中文优先**的终端编码助手 CLI（DeepSeek 驱动�
 │   audit.ts   审计日志导出（v3.1，audit export）               │
 │   account.ts 多账号命令（v3.1，login/logout/whoami/account；whoami 修复提示+active 高亮 v3.2 M4）│
 │   crash-handler.ts 进程级崩溃日志（v3.1）                     │
-│   slash/     /agent（list 版本对比 + update --all v3.2 M5）/skill /mcp /memory /review（--fix v4.0 M1）/self-heal /orchestrate /workflow（v4.0 M2）│
+│   slash/     /agent（list 版本对比 + update --all v3.2 M5）/skill /mcp /memory /review（--fix v4.0 M1）/self-heal /orchestrate /workflow（v4.0 M2）/plugin（v4.0 M4）│
 └──────────────────────┬──────────────────────────────────────┘
                        │ render(<App …>) / runLoop(...)
 ┌──────────────────────▼──────────────────────────────────────┐
@@ -129,6 +130,16 @@ ConcertoAI 是一款**中文优先**的终端编码助手 CLI（DeepSeek 驱动�
 │   qa.ts           QA（verify 沙箱）  download.ts  共享下载    │
 │   protocol.ts     Agent 接口契约（T1.2）                      │
 │   registry.ts     AgentRegistry（T1.2）                       │
+└───────────────────────────┬─────────────────────────────────┘
+┌───────────────────────────▼─────────────────────────────────┐
+│ plugin/ 插件系统（v4.0 M4）                                   │
+│   types.ts      plugin.json schema + Plugin/PluginContext     │
+│   loader.ts     PluginLoader 双路径扫描 + ESM 强制            │
+│   manager.ts    PluginManager 生命周期 + 权限强制器           │
+│   permissions.ts 六类权限 + PermissionEnforcer（声明/白名单） │
+│   runtime.ts    PluginRuntime 动态装配 → 工具注入 + 权限钩子  │
+│   installer.ts  PluginInstaller（下载/sha256/权限确认/落盘）  │
+│   builtin.ts    4 内置示例插件内容                            │
 └───────────────────────────┬─────────────────────────────────┘
 ┌───────────────────────────▼─────────────────────────────────┐
 │ observable/ 可观测性（v3.0 M5）                               │
@@ -295,10 +306,11 @@ MCP 服务故障
 | D50 | **跨平台 CI 矩阵 + spawn 兼容基线**（v3.2 M1 / ADR-032）：ci.yml 三平台矩阵（ubuntu/windows/macos）+ spawn 审计（`.cmd`/`.bat` 必须 `shell: true` 或经 `getPlatformAdapter`）+ 跨平台样本库 `tests/fixtures/platform-samples.ts` | 「事后修补」→「事前防线」；CI 前置拦截跨平台回归；解析类正则双平台样本验证 | `.github/workflows/ci.yml` + `tools/shell.ts` + `tests/fixtures/` |
 | D51 | **VS Code 崩溃防护 doctor --vscode**（v3.4 M3）：`src/cli/vscode-health.ts` 四维只读诊断——进程数（tasklist/ps 阈值 60/40）/ 崩溃转储（Crashpad *.dmp 数量+体积，>5 或 >100MB 告警）/ AI 扩展（code --list-extensions 对照已知清单 >3 告警）/ argv.json（`disable-extensions` **复数**字段名 + 数组或 true 值格式 + 扩展 ID 双引号校验 + Windows 无效位置检测）；纯解析函数 + 依赖注入（exec/readFile/scanDir），检测失败降级「无法检测」不崩溃 | 环境问题（VS Code 崩溃/进程爆炸/转储堆积）必须有自动化检测入口，不依赖人工翻阅日志（踩坑记录 §五/§六：argv.json 位置 + 字段名双坑导致 5 扩展从未禁用）；诊断只读、破坏性动作仅输出建议命令 | `cli/vscode-health.ts` + `cli/doctor.ts` + `cli/index.ts` |
 | D52 | **正则常量标志位模式一致性**（v3.4 T1.2 I2，延续 W2）：全项目正则常量定义一律不带 `g`/`u`（消除 lastIndex 残留），使用处按需 `new RegExp(source, flags)` 显式带；`/i` 单独使用无 lastIndex 陷阱可保留；复核覆盖 `/[gimy]` 全变体 | C 复核盲区教训：搜索 `/g` 结尾漏掉 `/gm` 变体（v3.3）；模式统一后搜索 `const X = /…/[gimy]` 即可全量兜底 | `classifier.ts` / `edit.ts` / `read.ts` / `tokenizer.ts` / `planner/deps.ts` |
-| D53 | **插件权限模型：声明式拦截**（v4.0 规划 / ADR-033）：插件声明 read/write/network/shell/knowledge/mcp 六类权限 + constraints 白名单，安装时审批（展示权限清单）+ 运行时 enforce（未声明 → 拒绝 + 审计）；v4.0 进程内运行 + 权限拦截，子进程沙箱 v4.1 强化 | 与 fail-closed 审批基线一致；复用 audit.ts 可追踪；工时可控（无 IPC 开销）；风险：恶意插件可声明全部权限 → v4.1 沙箱 + 评分缓解 | `src/plugin/`（types/manager/loader/permissions） |
+| D53 | **插件权限模型：声明式拦截**（v4.0 M4 已落地 / ADR-033）：插件声明 read/write/network/shell/knowledge/mcp 六类权限 + constraints 白名单，安装时审批（展示权限清单）+ 运行时 enforce（未声明 → 拒绝 + 审计）；v4.0 进程内运行 + 权限拦截，子进程沙箱 v4.1 强化 | 与 fail-closed 审批基线一致；复用 audit.ts 可追踪；工时可控（无 IPC 开销）；风险：恶意插件可声明全部权限 → v4.1 沙箱 + 评分缓解 | `src/plugin/`（types/manager/loader/permissions） |
 | D54 | **Provider 切换行为差异：文档标注 + 固定 Orchestrator Provider**（v4.0 规划 / ADR-034）：用户侧 `--provider`/config 自由切换（切换前显示成本对比）；Orchestrator/团队闭环内部固定默认 Provider 避免跨模型通信；fallback 仅失败重试（≤1 次）+ 状态条通知 | 用户自由度与系统确定性平衡；跨模型工具调用/输出格式差异不可控 → 团队协作固定模型；成本透明延续 peak-time/model-switcher 哲学 | `src/model/`（provider/registry/router）+ `src/cli/` |
 | D55 | **工作流事务回滚边界：整体快照，任一步失败→全部回滚**（v4.0 M2 已落地 / ADR-035）：工作流开始前 SnapshotManager 登记全部待写文件（steps[].files 合并去重），任一步失败且用户放弃（abort）→ 回滚已写文件；失败恢复 UX（已完成/已回滚/待执行 + 重试/跳过/修复后重试/放弃）；用户显式跳过（skip）视为完成不触发回滚；嵌套工作流快照归属 v4.1 明确 | 工作流语义是「一次完整操作」，部分成功造成中间态混乱；复用既有 SnapshotManager 工时可控 | `src/workflow/`（types/templates/parser/nl-generator/executor）+ `src/cli/workflow.ts` + `src/cli/slash/workflow.ts` |
-| D56 | **市场 schema plugins[] 向后兼容：installer 按 type 分派**（v4.0 规划 / ADR-036）：registry 增加 `plugins[]`（RegistryItemBase + type:'plugin' + manifest），与旧 `skills[]`/`agents[]` 共存；installer 按 type 分派（skill→SKILL.md / agent→AgentDef / plugin→PluginManifest）；版本比较与 sha256 校验复用 installer | 零破坏迁移（旧条目 schema 不变 + 全量回归兜底）；复用既有市场基础设施；插件是 skill/agent 超集，统一市场形态利于用户认知 | `src/market/`（types/installer/registry）+ `src/cli/plugin.ts` |
+| D56 | **市场 schema plugins[] 向后兼容：installer 按 type 分派**（v4.0 M4 已落地 / ADR-036）：registry 增加 `plugins[]`（RegistryItemBase + type:'plugin' + manifest），与旧 `skills[]`/`agents[]` 共存；installer 按 type 分派（skill→SKILL.md / agent→AgentDef / plugin→PluginManifest）；版本比较与 sha256 校验复用 installer | 零破坏迁移（旧条目 schema 不变 + 全量回归兜底）；复用既有市场基础设施；插件是 skill/agent 超集，统一市场形态利于用户认知 | `src/market/`（types/installer/registry）+ `src/cli/plugin.ts` |
+| D57 | **插件权限两层校验：门槛层粗粒度声明检查 + 运行时细粒度白名单**（v4.0 M4 落地）：工具调用门槛（ToolRegistry.permissionCheck）仅检查插件是否声明了该权限类型（fail-closed 于「未声明」），不做白名单匹配——白名单需要具体操作对象（URL/命令/服务），门槛层拿不到；插件运行时 `ctx.guard(type, detail)` 做白名单细粒度匹配（network allowedDomains / shell allowlist / mcp servers）；shell 权限 guard 通过后仍走宿主审批流（approvalCtx 取 mount 时闭包捕获，避免 run 时 ctx 缺失导致审批静默跳过） | 分层职责清晰：门槛层防「模型诱导插件工具调用未声明权限」，运行时防「插件内部越权白名单」；缺 detail 退化声明检查（不误杀）；shell 双保险（权限 + 审批）延续 D5 fail-closed 基线 | `src/plugin/permissions.ts`（guard 分层）+ `src/plugin/runtime.ts`（approvalCtx 闭包）+ `src/tools/registry.ts`（permissionCheck 钩子） |
 
 ## 5. 目录结构说明
 
@@ -331,7 +343,7 @@ concertoai/
 │   │       ├── research.ts 研究型子代理（多角度对比分析，结论 ≤500 字）
 │   │       └── index.ts    registerBuiltinSubagents
 │   ├── cli/
-│   │   ├── index.ts      commander 入口：concertoai（默认 chat）/ chat / run / plan / snapshot / balance / doctor / project / self-heal / team / audit / login / logout / whoami / account / workflow / provider / config；DEEPSEEK_API_KEY 检查（resolveApiKey 链）
+│   │   ├── index.ts      commander 入口：concertoai（默认 chat）/ chat / run / plan / snapshot / balance / doctor / project / self-heal / team / audit / login / logout / whoami / account / workflow / provider / plugin / config；DEEPSEEK_API_KEY 检查（resolveApiKey 链）
 │   │   ├── chat.tsx      chat 装配：TTY 检查、配置加载、注册表、规则加载、项目探测（resolveProjectForCwd）、MCP 启动、resume、render(App)；--provider 临时切换 + 启动 fallback 探测（v4.0 M3）
 │   │   ├── provider.ts   concertoai provider list/auth/switch（v4.0 M3）：状态列表（🟢/🔴/🟡）+ Key 交互验证（0600 存储）+ 持久化切换 defaultProvider
 │   │   ├── provider-runtime.ts Provider 运行时解析（v4.0 M3）：CLI --provider > config defaultProvider > deepseek；-m 映射 defaultProvider.model；三 Provider 统一复用 DeepSeekClient（baseUrl 可配）
@@ -347,6 +359,7 @@ concertoai/
 │   │   ├── audit.ts      concertoai audit export [--out]：审计日志保序 JSON 导出（v3.1 M5；损坏行统计 v3.2 M3）
 │   │   ├── account.ts    多账号命令 login/logout/whoami/account（v3.1 M3；whoami 修复提示 + active 高亮，v3.2 M4）+ account-types.ts
 │   │   ├── workflow.ts   concertoai workflow list/init/run/export/import/create（v4.0 M2：模板生成 / DAG 执行 + 进度推送 + 失败恢复 R/S/F/A / YAML 导出导入 / NL 生成 + 依赖推断提示确认）
+│   │   ├── plugin.ts     concertoai plugin install/search/list/remove/browse/recommend/popular（v4.0 M4：注册表匹配→下载/builtin 直装→sha256→权限清单确认→落盘；browse 分类含下载量+评分；recommend 项目特征启发式；popular Top 10；makePermissionConfirm TTY 交互 + --yes 自动通过，非 TTY 拒绝 fail-closed）
 │   │   ├── crash-handler.ts 进程级崩溃日志（uncaughtException/unhandledRejection → ~/.concertoai/crash.log，v3.1 M3）
 │   │   ├── common.ts     CLI 共享：白名单 / 注册表构建 / OS 提示 / resolveProjectForCwd / mergeAllowlist / resolveApiKey / maskApiKey（轻量加载）；resolveApiKeyCached / loadProjectRegistryCached 启动期缓存（v3.2 M4）
 │   │   └── slash/        斜杠命令处理器
@@ -357,7 +370,8 @@ concertoai/
 │   │       ├── review.ts /review [path|--pr|--severity strict|normal|lenient]（v2.1 + v3.1 M5）
 │   │       ├── self-heal.ts /self-heal 斜杠命令（v3.1 M1；onPhase 阶段进度 + selfHealPhaseLabel，v3.2 M4）
 │   │       ├── orchestrate.ts /orchestrate <任务>：chat 内 team 全链路（v3.1 M5）
-│   │       └── workflow.ts /workflow list|init|run|export|import：chat 内工作流执行（v4.0 M2，进度推送消息 + 审批走统一弹窗）
+│   │       ├── workflow.ts /workflow list|init|run|export|import：chat 内工作流执行（v4.0 M2，进度推送消息 + 审批走统一弹窗）
+│   │       └── plugin.ts   /plugin list|install|remove：chat 内插件管理（v4.0 M4，复用 CLI 实现 + 权限确认）
 │   ├── ui/
 │   │   ├── App.tsx       状态机组件：send/sendPlan/executePlan/审批挂起/消息渲染/错误显示；长任务进度消息推送 + activeTool 阶段更新（v3.2 M4）
 │   │   ├── PromptInput.tsx  光标移动 + 历史浏览 + 多行输入
@@ -437,8 +451,17 @@ concertoai/
 │   │   └── index.ts      barrel（v2.1）
 │   ├── skill/            技能系统（v2.0/v2.1，详见 §4 D26 / D30）
 │   │   ├── loader.ts     SKILL.md 加载 + @skill 递归展开（≤3 层）/ @agent 引用
+│   │   ├── installer.ts  技能市场安装器（v4.0 M4 抽取，/skill install 与 installByType 单一来源，详见 §4 D56）
 │   │   ├── types.ts      SkillDef / SkillFrontmatter / AgentRef 类型
 │   │   └── index.ts      barrel
+│   ├── plugin/           插件系统（v4.0 M4，详见 §4 D53 / D57）
+│   │   ├── types.ts      plugin.json zod schema + Plugin / PluginContext（t 注入/logger/cwd/requestApproval/guard）
+│   │   ├── loader.ts     PluginLoader 双路径扫描（全局 ~/.concertoai/plugins/ + 项目 .concertoai/plugins/）+ ESM 强制（.mjs 或 .js+package.json type=module，非 ESM 拒绝并明确报错）+ 目录名与 name 一致性校验
+│   │   ├── manager.ts    PluginManager 生命周期（register/registerAll/unregister/list/get）+ 每插件 PermissionEnforcer 权限强制器
+│   │   ├── permissions.ts 六类权限（read/write/network/shell/knowledge/mcp）+ PERMISSION_ICONS 彩色图标 + describePermission/formatPermissionList + isDomainAllowed/isShellAllowed/isMcpAllowed 白名单 + PermissionEnforcer.guard（无 detail 退化声明检查，有 detail 白名单细粒度）
+│   │   ├── runtime.ts    PluginRuntime.mount：loadAll → registerAll → 动态 import entry（ESM）→ create(ctx) 提取工具（单工具/多工具兼容）→ 注册 ToolRegistry（pluginSource/pluginPermission）→ setPermissionCheck 钩子（调用前拦截 fail-closed）+ shell 审批闭包（approvalCtx 取 mount 时注入，避免 run ctx 缺失）
+│   │   ├── installer.ts  PluginInstaller：注册表匹配 → 下载/builtin 直装 → sha256 → 权限确认（confirm 回调，拒绝 CANCELED 不落盘）→ 写 plugin.json + ESM 入口；listInstalled/remove/readInstalled + parsePluginPackage
+│   │   └── builtin.ts    4 内置示例插件（git-status/api-docs/todo-tracker/release-helper）内容 + getBuiltinPluginContent
 │   ├── workflow/         工作流引擎（v4.0 M2，详见 §4 D55）
 │   │   ├── types.ts      Workflow / WorkflowStep（run/depends/retry/require:approval/files）/ StepRunState / WorkflowRunResult / InferredDependency
 │   │   ├── templates.ts  4 内置模板：init-ts / upgrade-deps / release（含审批节点）/ precommit（WORKFLOW_TEMPLATES + getWorkflowTemplate 深拷贝）
@@ -462,10 +485,10 @@ concertoai/
 │   │   ├── reviewer.ts   Team Reviewer：ReviewResult（approve/reject 打回，T3.3）
 │   │   ├── qa.ts         QA：子代理沙箱执行 npm run verify + 结构化报告（T3.4）
 │   │   └── index.ts      barrel
-│   ├── market/           Agent 市场（v3.0 M4，详见 §4 D36）
-│   │   ├── types.ts      MarketRegistry / AgentRegistryItem（复用技能 schema + type 区分）
-│   │   ├── registry.ts   市场注册表读写 + 内置 4 Agent 条目（T4.1）
-│   │   ├── installer.ts  AgentInstaller：下载 → sha256 → 接口合规 → 注册（T4.2）
+│   ├── market/           Agent 市场（v3.0 M4，v4.0 M4 扩展 plugins[]，详见 §4 D36 / D56）
+│   │   ├── types.ts      MarketRegistry / AgentRegistryItem / PluginRegistryItem（type 判别联合 + category/downloads/rating/permissions）+ BUILTIN_PLUGIN_ITEMS 4 内置插件条目
+│   │   ├── registry.ts   市场注册表读写（skillItemSchema/agentItemSchema/pluginItemSchema 校验）+ findPluginItem/listPluginItems/searchPluginItems + loadBuiltinRegistry（T4.1 / T4.3）
+│   │   ├── installer.ts  AgentInstaller：下载 → sha256 → 接口合规 → 注册（T4.2）+ installByType 按 type 分派（skill/agent/plugin，v4.0 M4 / ADR-036 / D56）
 │   │   ├── promote.ts    技能 → Agent 脚手架生成器（T4.4）
 │   │   ├── download.ts   共享下载函数（fetchVerifiedContent，T4.2 抽取）
 │   │   └── index.ts      barrel
@@ -486,7 +509,7 @@ concertoai/
 │       ├── zh.ts         中文字典 + fmt()
 │       ├── en.ts         英文字典（键与 zh 同构）
 │       └── index.ts      resolveLocale / setLocale / t() / DICTS
-└── tests/                镜像 src 结构（103 个文件 / 1187 用例，v3.4 基线 + M0 迁移器骨架 + M1 autoFix + M2 workflow + M3 Provider 体系），含 tests/agent/、tests/agents/、tests/balance/、tests/cli/（含 common.test.ts 启动缓存 + workflow.test.ts / slash-workflow.test.ts + provider.test.ts）、tests/core/、tests/e2e/（team-cli/self-heal/project-isolation/platform-e2e）、tests/fixtures/（platform-samples 跨平台样本库）、tests/i18n/、tests/knowledge/、tests/loop/（self-heal/error-reporting）、tests/market/、tests/mcp/、tests/model/（client/models/tokenizer/providers/registry/router/recommend）、tests/observable/、tests/orchestrator/、tests/planner/、tests/reviewer/（含 autofix.test.ts）、tests/skill/、tests/store/（projects/accounts/accounts-exdev/migration/config）、tests/tools/、tests/ui/（含 review-report.test.tsx）、tests/workflow/（templates/parser/nl-generator/executor） 等
+└── tests/                镜像 src 结构（108 个文件 / 1277 用例，v3.4 基线 + M0 迁移器骨架 + M1 autoFix + M2 workflow + M3 Provider 体系 + M4 插件体系），含 tests/agent/、tests/agents/、tests/balance/、tests/cli/（含 common.test.ts 启动缓存 + workflow.test.ts / slash-workflow.test.ts + provider.test.ts + plugin.test.ts）、tests/core/、tests/e2e/（team-cli/self-heal/project-isolation/platform-e2e）、tests/fixtures/（platform-samples 跨平台样本库）、tests/i18n/、tests/knowledge/、tests/loop/（self-heal/error-reporting）、tests/market/、tests/mcp/、tests/model/（client/models/tokenizer/providers/registry/router/recommend）、tests/observable/、tests/orchestrator/、tests/planner/、tests/plugin/（permissions/loader/installer/runtime）、tests/reviewer/（含 autofix.test.ts）、tests/skill/、tests/store/（projects/accounts/accounts-exdev/migration/config）、tests/tools/、tests/ui/（含 review-report.test.tsx）、tests/workflow/（templates/parser/nl-generator/executor） 等
 ```
 
 ## 6. 5分钟快速体验

@@ -6,10 +6,16 @@
  * v2.1 M3：新增 /skill install / search / update 命令（技能市场）。
  */
 
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type { ChatMessage } from '../../loop/types';
 import { fetchVerifiedContent } from '../../market/download';
+import {
+  compareSkillVersion,
+  fetchSkillRegistry,
+  installSkillFromRegistry,
+  readInstalledSkillVersion,
+} from '../../skill/installer';
 import type { SkillLoader } from '../../skill/loader';
 import type { AgentRef } from '../../skill/types';
 import { globalSkillsDir } from '../../store/paths';
@@ -166,72 +172,9 @@ export function executeSkillCommand(
 // ════════════════════════════════════════════════════════════════
 // v2.1 M3：技能市场命令（install / search / update）
 // ════════════════════════════════════════════════════════════════
-
-/** 注册表条目 schema（与 skills/registry.json 一致）。 */
-interface RegistryEntry {
-  name: string;
-  version: string;
-  description: string;
-  author: string;
-  url: string;
-  sha256: string;
-}
-
-interface Registry {
-  registry: string;
-  skills: RegistryEntry[];
-}
-
-/** 从注册表 URL fetch 并解析注册表 JSON。 */
-async function fetchRegistry(): Promise<Registry | null> {
-  try {
-    const resp = await fetch(
-      'https://raw.githubusercontent.com/concertoai/cli/main/skills/registry.json',
-      { signal: AbortSignal.timeout(10_000) },
-    );
-    if (!resp.ok) {
-      return null;
-    }
-    return (await resp.json()) as Registry;
-  } catch {
-    return null;
-  }
-}
-
-/** fetch SKILL.md 内容并校验 sha256。返回内容或 null（复用共享下载函数，T4.2 抽取）。 */
-async function fetchSkill(url: string, expectedSha256: string): Promise<string | null> {
-  return fetchVerifiedContent(url, expectedSha256);
-}
-
-/** 从已安装的技能文件中解析版本号（简单 YAML frontmatter 解析）。 */
-function readInstalledVersion(name: string): string | undefined {
-  const file = path.join(globalSkillsDir(), name, 'SKILL.md');
-  try {
-    const raw = readFileSync(file, 'utf8');
-    const m = raw.match(/^version:\s*(.+)$/m);
-    return m?.[1]?.trim();
-  } catch {
-    return undefined;
-  }
-}
-
-/** 比较两个 semver 版本，返回 1（a>b）、-1（a<b）、0（相等）。 */
-function compareVersion(a: string, b: string): number {
-  const pa = a.split('.').map(Number);
-  const pb = b.split('.').map(Number);
-  const len = Math.max(pa.length, pb.length);
-  for (let i = 0; i < len; i++) {
-    const va = pa[i] ?? 0;
-    const vb = pb[i] ?? 0;
-    if (va > vb) {
-      return 1;
-    }
-    if (va < vb) {
-      return -1;
-    }
-  }
-  return 0;
-}
+// v4.0 M4 T4.3：安装逻辑抽取至 src/skill/installer.ts（installSkillFromRegistry），
+// 供 /skill install 与 market/installer.ts installByType 复用（单一来源）。
+// search/update 复用 installer 的 fetchSkillRegistry / readInstalledSkillVersion / compareSkillVersion。
 
 /**
  * 执行技能市场命令（异步，供 App.tsx 调用）。
@@ -243,71 +186,29 @@ export async function executeSkillMarketCommand(
   cwd: string,
 ): Promise<SkillCommandResult> {
   // ── /skill install <name> ──
+  // v4.0 M4 T4.3：复用 skill/installer.ts（注册表匹配 → 版本比较 → 下载+sha256 → 写入）
   if (cmd.type === 'install') {
-    const reg = await fetchRegistry();
-    if (reg === null) {
-      return {
-        handled: true,
-        message: { role: 'assistant', content: '❌ 无法访问技能注册表，请检查网络连接。' },
-      };
-    }
-    const entry = reg.skills.find((s) => s.name === cmd.name);
-    if (entry === undefined) {
-      const names = reg.skills.map((s) => s.name).join(', ');
-      return {
-        handled: true,
-        message: {
-          role: 'assistant',
-          content: `❌ 注册表中未找到技能: ${cmd.name}。\n\n可用技能: ${names}`,
-        },
-      };
-    }
-
-    // 检查已安装版本
-    const installedVer = readInstalledVersion(cmd.name);
-    if (installedVer !== undefined && compareVersion(installedVer, entry.version) >= 0) {
-      return {
-        handled: true,
-        message: {
-          role: 'assistant',
-          content: `📦 技能 ${cmd.name} 已安装（版本 ${installedVer}），注册表版本 ${entry.version} 未更新。`,
-        },
-      };
-    }
-
-    // 下载 + 校验
-    const content = await fetchSkill(entry.url, entry.sha256);
-    if (content === null) {
-      return {
-        handled: true,
-        message: {
-          role: 'assistant',
-          content: `❌ 下载技能 ${cmd.name} 失败或 sha256 校验不通过。`,
-        },
-      };
-    }
-
-    // 写入 ~/.concertoai/skills/<name>/SKILL.md
-    const dir = path.join(globalSkillsDir(), cmd.name);
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(path.join(dir, 'SKILL.md'), content, 'utf8');
-
-    // 刷新加载器
+    const result = await installSkillFromRegistry(cmd.name);
+    // 刷新加载器（安装/更新后立即可用）
     loader.loadAll(cwd);
-
-    const action = installedVer !== undefined ? `从 ${installedVer} 更新到` : '安装';
+    if (!result.ok) {
+      const content =
+        result.code === 'ALREADY_INSTALLED' ? `📦 ${result.message}` : `❌ ${result.message}`;
+      return { handled: true, message: { role: 'assistant', content } };
+    }
+    const action = result.action === 'update' ? `更新到` : '安装';
     return {
       handled: true,
       message: {
         role: 'assistant',
-        content: `✅ 技能 ${cmd.name} ${action} ${entry.version} 成功！\n\n使用 /skill ${cmd.name} 调用。`,
+        content: `✅ 技能 ${result.name} ${action} ${result.version} 成功！\n\n使用 /skill ${result.name} 调用。`,
       },
     };
   }
 
   // ── /skill search [keyword] ──
   if (cmd.type === 'search') {
-    const reg = await fetchRegistry();
+    const reg = await fetchSkillRegistry();
     if (reg === null) {
       return {
         handled: true,
@@ -327,7 +228,7 @@ export async function executeSkillMarketCommand(
       };
     }
     const lines = matched.map((s) => {
-      const installed = readInstalledVersion(s.name);
+      const installed = readInstalledSkillVersion(s.name);
       const status = installed !== undefined ? ` [已安装 ${installed}]` : '';
       return `- **${s.name}** ${s.version} — ${s.description}${status}`;
     });
@@ -342,7 +243,7 @@ export async function executeSkillMarketCommand(
 
   // ── /skill update [name] ──
   if (cmd.type === 'update') {
-    const reg = await fetchRegistry();
+    const reg = await fetchSkillRegistry();
     if (reg === null) {
       return {
         handled: true,
@@ -354,8 +255,8 @@ export async function executeSkillMarketCommand(
     const targets = cmd.name
       ? reg.skills.filter((s) => s.name === cmd.name)
       : reg.skills.filter((s) => {
-          const iv = readInstalledVersion(s.name);
-          return iv !== undefined && compareVersion(s.version, iv) > 0;
+          const iv = readInstalledSkillVersion(s.name);
+          return iv !== undefined && compareSkillVersion(s.version, iv) > 0;
         });
 
     if (targets.length === 0) {
@@ -367,7 +268,7 @@ export async function executeSkillMarketCommand(
 
     const results: string[] = [];
     for (const entry of targets) {
-      const content = await fetchSkill(entry.url, entry.sha256);
+      const content = await fetchVerifiedContent(entry.url, entry.sha256);
       if (content === null) {
         results.push(`❌ ${entry.name}: 下载失败或校验不通过`);
         continue;

@@ -37,6 +37,9 @@ export const en = {
     workflow: {
       description: 'Workflow management (init/run/export/import, DAG execution)',
     },
+    plugin: {
+      description: 'Plugin marketplace (install/search/list/remove/browse/recommend/popular)',
+    },
   },
   errors: {
     noApiKey: 'DEEPSEEK_API_KEY not found. Set it first, then start again.',
@@ -237,6 +240,63 @@ export const en = {
     inferFound: 'Possible dependencies detected between steps:',
     inferPrompt: 'Add these depends edges? (y/N): ',
     inferSkipped: 'Dependency inference skipped (config unchanged)',
+  },
+  plugin: {
+    // v4.0 M4 T4.1~T4.5: plugin marketplace copy (concertoai plugin + /plugin)
+    usage: 'Usage: concertoai plugin <install|search|list|remove|browse|recommend|popular>',
+    // Categories (browse display: icon + name)
+    categoryTool: '🔧 Tools',
+    categoryWorkflow: '📋 Workflows',
+    categoryAgent: '🤖 Agents',
+    // install
+    installMissing: 'Usage: concertoai plugin install <name>',
+    installSearching: '🔍 Matching registry for: {name}…',
+    installStart: '📦 Installing {name}@{version}…',
+    installOk:
+      '✅ Plugin {name}@{version} installed → {dir}\n\nRun /plugin list in chat to view, or follow the plugin docs.',
+    installUpdated: '✅ Plugin {name} updated to {version} → {dir}',
+    installFailed: '❌ Plugin install failed: {message}',
+    installCanceled: 'Install of {name} cancelled (permission not approved; nothing was written).',
+    installAlready: '📦 {message}',
+    // Permission list (T4.2: colored icons at a glance)
+    permissionTitle: '🔐 Permissions (verified at runtime; undeclared permissions are rejected):',
+    permissionConfirm: 'Install? (y/N): ',
+    permissionEmpty: '(no permissions declared — read-only mode; sensitive operations rejected)',
+    // search
+    searchMissing: 'Usage: concertoai plugin search <keyword>',
+    searchTitle: '🔍 Plugin marketplace ({count}):',
+    searchEmpty: 'No plugins match "{keyword}".',
+    searchHint: '\n\nInstall with `concertoai plugin install <name>`.',
+    searchInstalled: ' [installed {version}]',
+    // list
+    listEmpty: 'No plugins installed yet.',
+    listHint:
+      'Browse the marketplace with `concertoai plugin browse`, or install with `concertoai plugin install <name>`.',
+    listHeader: 'Installed plugins ({count}):',
+    // remove
+    removeMissing: 'Usage: concertoai plugin remove <name>',
+    removeOk: '✅ Plugin {name} removed.',
+    removeNotFound: '❌ Plugin {name} is not installed (cannot remove).',
+    // browse (T4.1a: category browse with downloads + rating)
+    browseMissing: 'Usage: concertoai plugin browse [category] (category: tool / workflow / agent)',
+    browseHeader: '📚 Plugin marketplace ({category}, {count}):',
+    browseAll: 'All',
+    browseLine: '- **{name}** {version} — {description} (⬇ {downloads} ⭐ {rating})',
+    browseEmpty: 'No plugins in this category.',
+    // recommend (T4.1a: project-feature heuristics)
+    recommendHeader: '💡 Detected project traits; recommended for you:',
+    recommendReasonExpress:
+      'Express detected → recommend api-docs (auto-scan routes to generate API docs)',
+    recommendReasonTodo:
+      'TODO/FIXME markers detected → recommend todo-tracker (track tasks into a list)',
+    recommendReasonRelease:
+      'package.json detected → recommend release-helper (version check → gates → release)',
+    recommendReasonGit:
+      'git repo detected → recommend git-status (one-shot branch/staged/untracked summary)',
+    recommendEmpty:
+      'No clear project traits detected; try `concertoai plugin browse` to browse all plugins.',
+    // popular (T4.1a: Top 10)
+    popularHeader: '🔥 Community hot plugins Top {count}:',
   },
   provider: {
     // v4.0 M3 T3.1/T3.2b: provider management copy

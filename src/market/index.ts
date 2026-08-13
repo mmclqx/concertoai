@@ -1,5 +1,5 @@
 /**
- * Agent 市场 barrel（v3.0 M4）。
+ * 市场 barrel（v3.0 M4；v4.0 M4 扩展 plugins[]）。
  */
 
 export { fetchVerifiedContent } from './download';
@@ -30,18 +30,22 @@ export {
   fetchAgentContent,
   fetchMarketRegistry,
   findAgentItem,
+  findPluginItem,
   listAgentItems,
   listAllItems,
+  listPluginItems,
   loadBuiltinRegistry,
   parseAgentItem,
   parseMarketRegistry,
+  searchPluginItems,
 } from './registry';
 export type {
   AgentRegistryItem,
   MarketRegistry,
+  PluginRegistryItem,
   RegistryItem,
   RegistryItemBase,
   RegistryItemType,
   SkillRegistryItem,
 } from './types';
-export { BUILTIN_AGENT_ITEMS, BUILTIN_REGISTRY } from './types';
+export { BUILTIN_AGENT_ITEMS, BUILTIN_PLUGIN_ITEMS, BUILTIN_REGISTRY } from './types';

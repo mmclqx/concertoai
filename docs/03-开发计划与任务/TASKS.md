@@ -73,7 +73,8 @@
 | **V4.0-M0 启动前置** | **P0** | **3** | ✅ 已完成（0ca0524 / 36da80c） |
 | **V4.0-M1 审查完就能修** | **P0** | **6** | ✅ 已完成（b184ed3，92 文件 / 1080 用例） |
 | **V4.0-M2 流程能记住了** | **P0** | **6** | ✅ 已完成（e8466ea，98 文件 / 1127 用例） |
-| **V4.0-M3 模型能换了** | **P0** | **7** | ✅ 已完成（本次提交，103 文件 / 1187 用例） |
+| **V4.0-M3 模型能换了** | **P0** | **7** | ✅ 已完成（968a373，103 文件 / 1187 用例） |
+| **V4.0-M4 生态能扩展了** | **P1** | **6** | ✅ 已完成（本次提交，108 文件 / 1277 用例） |
 
 ---
 
@@ -1280,6 +1281,74 @@
 - [x] **T2.6** CLI + /workflow + i18n + 测试
   - 涉及文件：`src/cli/workflow.ts`（新增）、`src/cli/slash/workflow.ts`（新增）、`src/cli/index.ts`、`src/ui/App.tsx`、`src/i18n/zh.ts`、`src/i18n/en.ts`、`tests/workflow/*.test.ts`、`tests/cli/workflow.test.ts`、`tests/cli/slash-workflow.test.ts`
   - ✅ 2026-08-12 完成：`concertoai workflow list/init/run/export/import/create` 全部可用（run 走 DAG 引擎 + 进度 `▎ 正在执行 step x/y` + 失败恢复交互）；`/workflow` chat 内可用（进度推送消息 + 审批走统一 requestApproval 弹窗 + SnapshotManager 快照）；zh/en `workflow.*` 键组同构（collectKeys + CJK 断言通过）；新增 47 用例（workflow 4 文件 36 + cli 2 文件 11），verify 98 文件 / 1127 用例全绿
+
+---
+
+## V4.0-M3：模型能换了——多 Provider 切换（P0，约 5.5h）✅ 已完成
+
+> 用户故事：想试 OpenAI 的模型，以前只能 DeepSeek。现在 config 加一行或临时 `--provider` 立刻切换，切换前状态条告知成本对比；第一次用 `provider auth` 输 Key 安全存储；Ollama 本地模型自动探测。
+> 复用：accounts/ 存储体系（Key 0600）、core/model-switcher（Ollama 复用）、model/client（重构为 Provider 接口）。
+> 提交：`968a373` · verify 103 文件 / 1187 用例全绿
+
+- [x] **T3.1** 一键切换模型
+  - 涉及文件：`src/cli/index.ts`（--provider）、`src/cli/provider.ts`（新增）、`src/model/registry.ts`（新增 ProviderRegistry）、`src/model/router.ts`（新增 ProviderRouter）
+  - ✅ 2026-08-12 完成：`--provider openai` 临时切换（本次进程生效）+ `config set provider` 持久化（写 defaultProvider）+ `provider list` 状态标记（🟢/🔴/🟡）+ `-m` 兼容（映射 defaultProvider.model）
+
+- [x] **T3.2** 智能模型推荐
+  - 涉及文件：`src/cli/doctor.ts`（模型推荐区块）、`src/model/recommend.ts`（detectComplexity + recommendProvider）
+  - ✅ 2026-08-12 完成：项目复杂度检测（文件/依赖启发式）× 预算 × 本地 Ollama 探测 → 推荐 Provider+模型组合 + 月成本预估（日均 20 次对话）
+
+- [x] **T3.2a** 实时成本提示
+  - 涉及文件：`src/model/cost.ts`（compareCost/estimateMonthlyCost）、`src/ui/StatusBar.tsx`
+  - ✅ 2026-08-12 完成：切换时状态条成本对比（倍率）+ 会话结束实际消费 vs 备选 Provider 估算；OpenAI 定价表独立
+
+- [x] **T3.2b** Provider 认证流程
+  - 涉及文件：`src/cli/provider.ts`（auth <name> / --verify）、`src/store/accounts.ts`（复用 0600 存储）
+  - ✅ 2026-08-12 完成：交互输入 Key（不回显）→ healthCheck 验证 → 保存 accounts/<name>/config.json 0600；`--verify` 仅验证不保存；Key 不落日志/会话/审计
+
+- [x] **T3.3** Provider 实现（DeepSeek/OpenAI/Ollama）
+  - 涉及文件：`src/model/provider.ts`（接口四能力）、`src/model/providers/{deepseek,openai,ollama}.ts`（新增）
+  - ✅ 2026-08-12 完成：Provider 接口 chat/tokenize/cost/healthCheck；DeepSeek 默认 + OpenAI 兼容协议（baseUrl 可配）+ Ollama（/api/tags 探测 + /v1 兼容端点 + 成本 0）
+
+- [x] **T3.4** 无感 fallback
+  - 涉及文件：`src/model/router.ts`（fallback ≤1 次）、`src/ui/StatusBar.tsx`（提示）
+  - ✅ 2026-08-12 完成：主 Provider 故障 → 自动切备选（config 或默认）+ 状态条通知；用户可手动切回
+
+- [x] **T3.5** config v3→v4 自动迁移 + CLI + i18n + 测试
+  - 涉及文件：`src/store/migration.ts`（实现）、`src/store/config.ts`（V4Config schema + loadConfig 迁移）、`src/cli/doctor.ts`（迁移完整性四检测）、`src/cli/config.ts`（config set provider / restore）
+  - ✅ 2026-08-12 完成：字段映射（defaultModel→providers.deepseek.model、ollamaModel+ollamaBaseUrl→providers.ollama）+ 备份 config.v3.bak + `_migrated` 幂等 + 原子写（临时文件 rename EXDEV 回退）+ doctor 四检测 + `config restore` 回滚；zh/en `provider.*`/`migration.*` 键组同构；M3 累计新增用例 ≥ 14
+
+---
+
+## V4.0-M4：生态能扩展了——插件市场（P1，约 5h）✅ 已完成
+
+> 用户故事：团队有人写了「自动生成 API 文档」插件发布到市场。我 `concertoai plugin browse` 分类浏览（4.7 分 / 1.2k 下载），或 `plugin recommend` 自动推荐（检测到 Express+TypeORM → api-docs + migration-helper）。`plugin install api-docs` 输入 y 确认权限安装完成，输入 /api-docs 即用。
+> 复用：market/ registry + installer（sha256/版本比较）、审批流（权限审批）、audit.ts（权限审计）；进程内 + 权限拦截（子进程隔离延后 v4.1，§3.2/§3.6）。
+> 提交：本次 · verify 108 文件 / 1277 用例全绿（M4 新增 83 用例 ≥ 16 验收门）
+
+- [x] **T4.1** 插件安装/搜索/列表/移除
+  - 涉及文件：`src/plugin/installer.ts`（新增）、`src/plugin/loader.ts`（新增）、`src/cli/plugin.ts`（新增）
+  - ✅ 2026-08-12 完成：install 全流程（注册表匹配 → 下载/builtin 直装 → sha256 校验 → 权限清单确认 fail-closed → 落盘 plugin.json + ESM 入口）+ search 模糊搜索（名称/描述/作者/分类，按下载量降序）+ list（已安装字典序）+ remove（删除安装目录）；内置插件（sha256='builtin'）从 builtin.ts 直装不下载；包 name 与注册表条目一致性校验；已安装最新版 ALREADY_INSTALLED 跳过重复下载
+
+- [x] **T4.1a** 插件发现
+  - 涉及文件：`src/cli/plugin.ts`（browse/recommend/popular）、`src/market/registry.ts`（分类/下载量/评分字段）
+  - ✅ 2026-08-12 完成：browse 按分类（tool/workflow/agent）含下载量+评分；recommend 项目特征启发式（Express 路由 / TODO 标记 / package.json / git 仓库 → api-docs / todo-tracker / release-helper / git-status）；popular Top 10（下载量降序）
+
+- [x] **T4.2** 权限一目了然
+  - 涉及文件：`src/plugin/permissions.ts`（新增六类权限 + PermissionEnforcer）、`src/plugin/manager.ts`（新增生命周期）、`src/observable/audit.ts`（复用）
+  - ✅ 2026-08-12 完成：六类权限（read/write/network/shell/knowledge/mcp）+ 彩色图标安装清单；运行时两层校验（调用门槛粗粒度声明检查 fail-closed + `ctx.guard` 白名单细粒度 network allowedDomains / shell allowlist / mcp servers）；shell 权限 guard 通过后仍走宿主审批流（approvalCtx 闭包捕获 mount 注入，插件不可绕过）；权限拒绝写审计日志（plugin-permission-denied）；无 detail 退化声明检查不误杀（D57）
+
+- [x] **T4.3** 插件市场 registry 扩展
+  - 涉及文件：`src/market/types.ts`（plugins[] + PluginRegistryItem + BUILTIN_PLUGIN_ITEMS）、`src/market/registry.ts`（pluginItemSchema + find/list/searchPluginItems）、`src/market/installer.ts`（installByType 分派）
+  - ✅ 2026-08-12 完成：MarketRegistry 增加 plugins[]（type 判别联合，旧 skills[]/agents[] schema 不变零破坏回归）；内置 4 示例插件条目（git-status/api-docs/todo-tracker/release-helper，sha256='builtin'）；installByType 按 type 分派（plugin→PluginInstaller / agent→AgentInstaller / skill→installSkillFromRegistry 抽取 src/skill/installer.ts 单一来源，ADR-036 / D56）
+
+- [x] **T4.4** 插件规范 plugin.json + 加载器
+  - 涉及文件：`src/plugin/types.ts`（新增 Plugin/PluginContext/pluginJsonSchema）、`src/plugin/loader.ts`（新增双路径扫描 + ESM 强制）
+  - ✅ 2026-08-12 完成：plugin.json 解析 + zod schema 校验（entry 必填、strict 未知字段拒绝、permissions 默认 []）；全局 `~/.concertoai/plugins/` + 项目 `.concertoai/plugins/` 双路径扫描（同名项目级覆盖全局级）；ESM 强制（.mjs 或 .js+同目录 package.json type=module，非 ESM 拒绝并明确报错）；目录名与 name 一致性校验；entry 缺失拒绝
+
+- [x] **T4.5** CLI + /plugin + i18n + 测试
+  - 涉及文件：`src/cli/plugin.ts`（命令族接线）、`src/cli/slash/plugin.ts`（新增 /plugin）、`src/cli/index.ts`（注册）、`src/i18n/zh.ts` / `en.ts`（plugin.* 键组）、`tests/plugin/*.test.ts` + `tests/cli/plugin.test.ts`
+  - ✅ 2026-08-12 完成：`concertoai plugin install/search/list/remove/browse/recommend/popular` 全部可用；`/plugin` chat 内可用（list/install/remove）；zh/en `plugin.*` 键组同构（collectKeys + CJK 断言通过）；makePermissionConfirm TTY 交互 + --yes 自动通过，非 TTY 拒绝 fail-closed；集成测试覆盖 install 全链路（下载→sha256→权限→确认→落盘）；M4 新增 83 用例（permissions 20 + loader 12 + installer 23 + runtime 6 + cli 22），verify 108 文件 / 1277 用例全绿
 
 ---
 

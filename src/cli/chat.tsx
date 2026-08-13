@@ -17,6 +17,7 @@ import { McpManager } from '../mcp/manager';
 import type { MCPServerConfig } from '../mcp/types';
 import { preloadTokenizer } from '../model/tokenizer';
 import { AuditLogger, TraceStore } from '../observable';
+import { PluginRuntime } from '../plugin/runtime';
 import { SkillLoader } from '../skill/loader';
 import { loadConfig, resolveConfig } from '../store/config';
 import { MemoryStore } from '../store/memory-store';
@@ -178,6 +179,17 @@ export async function runChat(options: RunChatOptions): Promise<void> {
     cwd: options.cwd,
     allowlistedPrefixes,
   };
+
+  // v4.0 M4：插件运行时装配——加载全局+项目插件 → 动态 import entry → 工具注入 registry
+  // （带 pluginSource/pluginPermission）→ 权限钩子 setPermissionCheck（插件工具调用前 guard）。
+  // await 确保首轮对话前插件工具与权限钩子就绪（插件数量少、import 快，启动开销可接受）。
+  const pluginRuntime = new PluginRuntime({ audit: auditLogger });
+  const pluginMount = await pluginRuntime.mount(registry, options.cwd, ctx);
+  if (pluginMount.rejected.length > 0) {
+    for (const r of pluginMount.rejected) {
+      console.error(`⚠ 插件 ${r.name} 未装配: ${r.reason}`);
+    }
+  }
 
   let sessionId: string;
   let history: ChatMessage[] = [];
