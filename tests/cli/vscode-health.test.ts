@@ -196,7 +196,7 @@ describe('T3.3 AI 扩展', () => {
       exec: async () =>
         cmdResult(['continue.continue@2.0.0', 'anthropic.claude-code@2.1.226'].join('\n')),
       readFile: async () =>
-        JSON.stringify({ 'disable-extensions': ['continue.continue', 'anthropic.claude-code'] }),
+        JSON.stringify({ 'disable-extension': ['continue.continue', 'anthropic.claude-code'] }),
     });
     const d = await detectAiExtensions(env);
     expect(d.ok).toBe(true);
@@ -207,7 +207,7 @@ describe('T3.3 AI 扩展', () => {
   it('AI 扩展 >3 → ❌ + 已装未禁用建议命令', async () => {
     const env = makeEnv({
       exec: async () => cmdResult(AI_EXTENSION_IDS.join('\n')),
-      readFile: async () => JSON.stringify({ 'disable-extensions': [] }),
+      readFile: async () => JSON.stringify({ 'disable-extension': [] }),
     });
     const d = await detectAiExtensions(env);
     expect(d.ok).toBe(false);
@@ -236,49 +236,51 @@ describe('T3.3 argv.json 核对', () => {
     expect(JSON.parse(out)).toEqual({ locale: 'en', path: 'http://x/"y' });
   });
 
-  it('字段名正确（复数 disable-extensions）+ 数组 → ok，返回禁用 ID', () => {
+  it('字段名正确（单数 disable-extension）+ 数组 → ok，返回禁用 ID', () => {
     const raw = JSON.stringify({
-      'disable-extensions': ['openai.chatgpt', 'continue.continue'],
+      'disable-extension': ['openai.chatgpt', 'continue.continue'],
     });
     const check = checkArgvJson(raw);
     expect(check.ok).toBe(true);
-    expect(check.singularFieldUsed).toBe(false);
     expect(check.valueInvalid).toBe(false);
     expect(check.idQuoteInvalid).toBe(false);
+    expect(check.pluralArrayInvalid).toBe(false);
     expect(check.disabledIds).toEqual(['openai.chatgpt', 'continue.continue']);
   });
 
-  it('字段名写成单数 disable-extension → ❌（踩坑记录 §六）', () => {
-    const raw = JSON.stringify({ 'disable-extension': ['openai.chatgpt'] });
+  it('复数 disable-extensions + 数组 → ❌（§七根因：VS Code 类型不匹配静默忽略）', () => {
+    const raw = JSON.stringify({ 'disable-extensions': ['openai.chatgpt'] });
     const check = checkArgvJson(raw);
-    expect(check.singularFieldUsed).toBe(true);
+    expect(check.pluralArrayInvalid).toBe(true);
     expect(check.ok).toBe(false);
   });
 
-  it('值格式错误（字符串而非数组）→ ❌', () => {
-    const raw = JSON.stringify({ 'disable-extensions': 'openai.chatgpt' });
+  it('单数值格式错误（字符串而非数组）→ ❌ valueInvalid', () => {
+    const raw = JSON.stringify({ 'disable-extension': 'openai.chatgpt' });
     const check = checkArgvJson(raw);
     expect(check.valueInvalid).toBe(true);
     expect(check.ok).toBe(false);
   });
 
   it('扩展 ID 无引号（JSONC 解析失败）→ ❌ idQuoteInvalid', () => {
-    const raw = '{ "disable-extensions": [openai.chatgpt] }';
+    const raw = '{ "disable-extension": [openai.chatgpt] }';
     const check = checkArgvJson(raw);
     expect(check.idQuoteInvalid).toBe(true);
     expect(check.ok).toBe(false);
   });
 
-  it('单引号键单数 disable-extension → 仍检测为字段名错误（jsonc 方言）', () => {
-    const raw = "{ 'disable-extension': ['openai.chatgpt'] }";
-    const check = checkArgvJson(raw);
-    expect(check.singularFieldUsed).toBe(true);
-    expect(check.ok).toBe(false);
-  });
-
-  it('值 = true → ok（全禁用）', () => {
+  it('复数 disable-extensions: true = 禁用全部扩展（合法但激进，提示不 fail）', () => {
     const check = checkArgvJson(JSON.stringify({ 'disable-extensions': true }));
     expect(check.ok).toBe(true);
+    expect(check.pluralAllDisabled).toBe(true);
+    expect(check.pluralArrayInvalid).toBe(false);
+    expect(check.valueInvalid).toBe(false);
+  });
+
+  it('两个字段均未配置 → ok（无禁用项，不报字段错误）', () => {
+    const check = checkArgvJson(JSON.stringify({ locale: 'zh-cn' }));
+    expect(check.ok).toBe(true);
+    expect(check.disabledIds).toEqual([]);
     expect(check.valueInvalid).toBe(false);
   });
 
@@ -286,11 +288,11 @@ describe('T3.3 argv.json 核对', () => {
     const env = makeEnv({
       platform: 'win32',
       readFile: async (p: string) => {
-        // 实际读取位置存在且正确；无效位置存在
+        // 实际读取位置存在且正确（单数 disable-extension）；无效位置存在
         if (p.includes('AppData\\Roaming\\Code\\argv.json')) {
-          return JSON.stringify({ 'disable-extensions': ['openai.chatgpt'] });
+          return JSON.stringify({ 'disable-extension': ['openai.chatgpt'] });
         }
-        return JSON.stringify({ 'disable-extensions': ['openai.chatgpt'] });
+        return JSON.stringify({ 'disable-extension': ['openai.chatgpt'] });
       },
     });
     const d = await verifyArgvJson(env);
@@ -347,10 +349,11 @@ describe('doctor --vscode 集成（T3.4）', () => {
         scanDir: async () =>
           Array.from({ length: 12 }, (_, i) => ({ name: `d${i}.dmp`, size: 10 * 1024 * 1024 })),
         readFile: async (p: string) => {
+          // 无效位置（%APPDATA%）存在且正确；实际读取位置（~/.vscode/argv.json）= 复数+数组（§七根因）
           if (p.includes('AppData\\Roaming\\Code\\argv.json')) {
             return JSON.stringify({ 'disable-extension': ['openai.chatgpt'] });
           }
-          return JSON.stringify({ 'disable-extension': ['openai.chatgpt'] });
+          return JSON.stringify({ 'disable-extensions': ['openai.chatgpt'] });
         },
       });
       const code = await runDoctorCommand({
@@ -367,7 +370,7 @@ describe('doctor --vscode 集成（T3.4）', () => {
       expect(out).toContain('崩溃转储');
       expect(out).toContain('AI 扩展');
       expect(out).toContain('argv.json');
-      // 严重项：83 进程 + 12 转储 + 单数字段名 → 全 ❌
+      // 严重项：83 进程 + 12 转储 + 复数+数组（§七根因，VS Code 静默忽略）→ 全 ❌
       expect(out).toContain('83 个');
       expect(out).toContain('12 个');
       expect(out).toContain('字段名错误');

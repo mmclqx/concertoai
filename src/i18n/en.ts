@@ -158,14 +158,16 @@ export const en = {
     vscodeAiExtNotDisabled: 'installed but not disabled: {ids}',
     vscodeAiExtSuggest: 'suggestion: {command} or write to argv.json',
     vscodeArgvLabel: 'argv.json',
-    vscodeArgvOk: '{path} (disable-extensions correct, {count} disabled)',
-    vscodeArgvWarn: '{path} (present but no disable-extensions configured)',
+    vscodeArgvOk: '{path} (disable-extension correct, {count} disabled)',
+    vscodeArgvWarn: '{path} (present but no disable-extension configured)',
     vscodeArgvMissing: '{path} not found (no persistent disable config)',
     vscodeArgvIneffective:
       '⚠️ ineffective location: %APPDATA%\\Code\\argv.json exists but VS Code does not read it (actual: ~/.vscode/argv.json); delete or move it',
     vscodeArgvInvalidField:
-      '❌ wrong field name: use disable-extensions (plural); found disable-extension (singular) — VS Code ignores it, disabling does not take effect',
-    vscodeArgvInvalidValue: '❌ invalid value: disable-extensions must be an array or true',
+      '❌ wrong field name: plural disable-extensions only accepts boolean (true = disable all); use singular disable-extension for an array — VS Code silently ignores mismatched types, disabling does not take effect',
+    vscodeArgvInvalidValue: '❌ invalid value: disable-extension must be an array of strings',
+    vscodeArgvPluralAll:
+      '⚠️ disable-extensions: true = disable ALL extensions (to disable only specific ones, use singular disable-extension array)',
     vscodeArgvInvalidId:
       '❌ invalid extension ID quoting: must be JSON strings (wrapped in "); found unquoted/single-quoted/trailing comma',
     // v4.0 M3 T3.2: model recommendation block

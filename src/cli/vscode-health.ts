@@ -5,9 +5,11 @@
  * - T3.1 进程数：Code.exe（Windows）/ Code（POSIX）进程计数，阈值分级（>60 ❌ / >40 ⚠️ / ≤40 ✅）；
  * - T3.2 崩溃转储：Crashpad reports 目录 *.dmp 数量 + 总体积（>5 个或 >100MB ❌，1~5 个 ⚠️）；
  * - T3.3 AI 扩展 + argv.json：`code --list-extensions` 与已知 AI 扩展清单比对（>3 告警），
- *   读取 `~/.vscode/argv.json` 核对 disable-extensions（**复数**）字段名 / 值格式（数组或 true）/
- *   扩展 ID 引号（以 " 开头和结尾）——踩坑记录 §六：字段名写成单数 `disable-extension`
- *   即使位置正确也不生效，修复验证须覆盖「位置 + 字段名 + 值格式」三要素；
+ *   读取 `~/.vscode/argv.json` 核对 disable-extension（**单数**）字段名 / 值格式（字符串数组）/
+ *   扩展 ID 引号（以 " 开头和结尾）——踩坑记录 §七（更正 §六）：正确字段是**单数**
+ *   `disable-extension`（值 = 字符串数组，禁用指定扩展）；复数 `disable-extensions` 只接受
+ *   布尔值（true = 禁用全部），写成数组 VS Code 类型不匹配会**静默忽略**（本次崩溃根因）；
+ *   修复验证须覆盖「位置 + 字段名 + 值格式」三要素；
  *   无效位置检测（Windows `%APPDATA%\Code\argv.json` 存在但 VS Code 实际读取 `~/.vscode/argv.json`）。
  *
  * 设计：纯解析函数 + 依赖注入（exec / readFile / scanDir / 平台路径），
@@ -81,10 +83,14 @@ export const DUMP_BYTES_WARN = 100 * 1024 * 1024;
 /** 命令执行超时（ms）。 */
 const EXEC_TIMEOUT_MS = 5_000;
 
-/** argv.json 中禁用扩展字段名（**复数**；单数 disable-extension VS Code 不识别）。 */
-export const DISABLE_EXTENSIONS_FIELD = 'disable-extensions';
-/** 常见错误字段名（单数，踩坑记录 §六）。 */
-export const DISABLE_EXTENSION_SINGULAR = 'disable-extension';
+/**
+ * argv.json 中禁用**指定**扩展的字段名（**单数** `disable-extension`，值 = 字符串数组）。
+ * 踩坑记录 §七（更正 §六）：复数 `disable-extensions` 只接受布尔值（true = 禁用全部扩展），
+ * 写成数组 VS Code 类型不匹配会静默忽略 → 禁用不生效（2026-08-13 崩溃复发根因）。
+ */
+export const DISABLE_EXTENSIONS_FIELD = 'disable-extension';
+/** 复数形式字段名（`disable-extensions`，仅接受布尔值；数组为无效用法）。 */
+export const DISABLE_EXTENSIONS_PLURAL = 'disable-extensions';
 
 // ── 平台路径适配 ──────────────────────────────────────────────
 
@@ -389,11 +395,13 @@ export function stripJsonComments(jsonc: string): string {
 export interface ArgvJsonCheck {
   /** 是否全部通过（字段名 / 值格式 / ID 引号）。 */
   ok: boolean;
-  /** 禁用扩展 ID 列表（字段存在且为数组时；true 时为空数组但视为有效）。 */
+  /** 禁用扩展 ID 列表（单数 disable-extension 数组元素）。 */
   disabledIds: string[];
-  /** 字段名是否错误（检测到单数 disable-extension）。 */
-  singularFieldUsed: boolean;
-  /** 字段值是否非法（既非数组也非 true）。 */
+  /** 复数 disable-extensions: true = 禁用全部扩展（合法但激进，提示改用单数精确禁用）。 */
+  pluralAllDisabled: boolean;
+  /** 复数 disable-extensions + 数组 = 无效用法（VS Code 类型不匹配静默忽略，§七根因）。 */
+  pluralArrayInvalid: boolean;
+  /** 字段值非法（单数 + 非数组 / 复数 + 非布尔 / 其他）。 */
   valueInvalid: boolean;
   /** 是否存在未加引号的扩展 ID（JSONC 解析失败或引号残缺）。 */
   idQuoteInvalid: boolean;
@@ -401,78 +409,74 @@ export interface ArgvJsonCheck {
 
 /**
  * 核对 argv.json 原始文本（JSONC）：
- * - 字段名必须为 `disable-extensions`（复数）；检测到单数 → singularFieldUsed；
- * - 字段值必须为数组（元素为字符串）或 true；
- * - 扩展 ID 必须是带双引号的 JSON 字符串（解析失败且含 disable-extensions → idQuoteInvalid）。
+ * - 正确字段名 = **单数** `disable-extension`（值 = 字符串数组，禁用指定扩展，踩坑记录 §七）；
+ * - 复数 `disable-extensions` 只接受布尔值：true = 禁用全部扩展（合法但激进 → pluralAllDisabled）；
+ *   数组 = 无效（VS Code 类型不匹配静默忽略 → pluralArrayInvalid，2026-08-13 崩溃复发根因）；
+ * - 单数 + 非数组 → valueInvalid；
+ * - 扩展 ID 必须是带双引号的 JSON 字符串（解析失败且含字段 → idQuoteInvalid）。
  */
 export function checkArgvJson(raw: string): ArgvJsonCheck {
   // 用完整 JSON 键匹配（兼容单/双引号键，VS Code jsonc 方言允许单引号），避免 includes
   // 把复数键 `disable-extensions` 误判为单数子串（踩坑记录 §六教训：字段名必须逐字符核对，
   // 检测也要精确到键边界——`["']disable-extension["']` 不会匹配 `"disable-extensions"`）。
   const keyRe = (name: string): RegExp => new RegExp(`["']${name}["']\\s*:`);
-  const hasField = keyRe(DISABLE_EXTENSIONS_FIELD).test(raw);
-  const singularFieldUsed = keyRe(DISABLE_EXTENSION_SINGULAR).test(raw);
+  const hasSingular = keyRe(DISABLE_EXTENSIONS_FIELD).test(raw);
+  const hasPlural = keyRe(DISABLE_EXTENSIONS_PLURAL).test(raw);
+  const base: ArgvJsonCheck = {
+    ok: true,
+    disabledIds: [],
+    pluralAllDisabled: false,
+    pluralArrayInvalid: false,
+    valueInvalid: false,
+    idQuoteInvalid: false,
+  };
   let parsed: unknown;
   try {
     parsed = JSON.parse(stripJsonComments(raw)) as unknown;
   } catch {
-    // 解析失败：若文本含 disable-extensions 字段名 → 值格式/引号可能有问题
+    // 解析失败：文本含任一字段 → 值格式/引号可能有问题
     return {
-      ok: !hasField && !singularFieldUsed,
-      disabledIds: [],
-      singularFieldUsed,
-      valueInvalid: hasField,
-      idQuoteInvalid: hasField,
+      ...base,
+      ok: !hasSingular && !hasPlural,
+      valueInvalid: hasSingular || hasPlural,
+      idQuoteInvalid: hasSingular || hasPlural,
     };
   }
   const obj = parsed as Record<string, unknown> | null;
   if (obj === null || typeof obj !== 'object') {
-    return {
-      ok: false,
-      disabledIds: [],
-      singularFieldUsed,
-      valueInvalid: true,
-      idQuoteInvalid: false,
-    };
+    return { ...base, ok: false, valueInvalid: true };
   }
-  const value = obj[DISABLE_EXTENSIONS_FIELD];
-  if (value === undefined) {
-    // 字段不存在 → 视为「未配置」但字段名本身无误（不报字段错误，仅无禁用项）
-    return {
-      ok: !singularFieldUsed,
-      disabledIds: [],
-      singularFieldUsed,
-      valueInvalid: false,
-      idQuoteInvalid: false,
-    };
+  const singular = obj[DISABLE_EXTENSIONS_FIELD];
+  const plural = obj[DISABLE_EXTENSIONS_PLURAL];
+
+  // 复数字段优先检查（数组 = 根因无效用法；true = 禁用全部合法但激进）
+  if (plural !== undefined) {
+    if (plural === true) {
+      return { ...base, pluralAllDisabled: true };
+    }
+    if (Array.isArray(plural)) {
+      return { ...base, ok: false, pluralArrayInvalid: true };
+    }
+    return { ...base, ok: false, valueInvalid: true };
   }
-  if (value === true) {
-    return {
-      ok: true,
-      disabledIds: [],
-      singularFieldUsed,
-      valueInvalid: false,
-      idQuoteInvalid: false,
-    };
+
+  // 单数字段：值必须为字符串数组
+  if (singular !== undefined) {
+    if (Array.isArray(singular)) {
+      const allStrings = singular.every((v) => typeof v === 'string');
+      return {
+        ...base,
+        ok: allStrings,
+        disabledIds: allStrings ? (singular as string[]) : [],
+        valueInvalid: !allStrings,
+        idQuoteInvalid: !allStrings,
+      };
+    }
+    return { ...base, ok: false, valueInvalid: true };
   }
-  if (Array.isArray(value)) {
-    const allStrings = value.every((v) => typeof v === 'string');
-    // 数组内元素均为字符串 → 必然带 JSON 引号（JSON.parse 保证语法）；否则视为引号/格式错误
-    return {
-      ok: allStrings && !singularFieldUsed,
-      disabledIds: allStrings ? (value as string[]) : [],
-      singularFieldUsed,
-      valueInvalid: !allStrings,
-      idQuoteInvalid: !allStrings,
-    };
-  }
-  return {
-    ok: false,
-    disabledIds: [],
-    singularFieldUsed,
-    valueInvalid: true,
-    idQuoteInvalid: false,
-  };
+
+  // 两个字段均未配置 → 视为「未配置」但字段名本身无误（不报字段错误，仅无禁用项）
+  return base;
 }
 
 /** 诊断 argv.json（T3.3）：字段名 / 值格式 / ID 引号 + 无效位置检测。 */
@@ -507,7 +511,8 @@ export async function verifyArgvJson(env: VscodeHealthEnv): Promise<VscodeDiagno
 
   const check = checkArgvJson(raw);
   const label = `${dict.vscodeArgvLabel}: `;
-  if (check.singularFieldUsed) {
+  if (check.pluralArrayInvalid) {
+    // 复数 disable-extensions + 数组 → VS Code 类型不匹配静默忽略（§七根因）
     lines.push(`${dict.fail} ${label}${dict.vscodeArgvInvalidField}`);
     failed = true;
   }
@@ -519,7 +524,11 @@ export async function verifyArgvJson(env: VscodeHealthEnv): Promise<VscodeDiagno
     lines.push(`${dict.fail} ${label}${dict.vscodeArgvInvalidId}`);
     failed = true;
   }
-  if (!check.singularFieldUsed && !check.valueInvalid && !check.idQuoteInvalid) {
+  if (check.pluralAllDisabled) {
+    // 复数 disable-extensions: true = 禁用全部扩展（合法但激进）→ ⚠️ 提示不 fail
+    lines.push(`${dict.ok} ${label}${dict.vscodeArgvPluralAll}`);
+  }
+  if (check.ok && !check.pluralAllDisabled) {
     const detail =
       check.disabledIds.length > 0
         ? fmt(dict.vscodeArgvOk, { path: realPath, count: String(check.disabledIds.length) })
@@ -550,15 +559,20 @@ export async function detectAiExtensions(env: VscodeHealthEnv): Promise<VscodeDi
   const installed = parseExtensions(r.stdout);
   const aiInstalled = installed.filter((id) => AI_EXTENSION_IDS.includes(id));
 
-  // 读取实际 argv.json，计算「已装未禁用」
+  // 读取实际 argv.json，计算「已装未禁用」。
+  // 单数 disable-extension 数组 → 精确禁用列表；复数 disable-extensions: true → 全部禁用
+  // （AI 扩展也在内，不应误报「已装未禁用」）；其余（复数数组无效/未配置）→ 视为未禁用。
   let disabledIds: string[] = [];
+  let allDisabled = false;
   try {
     const raw = await env.readFile(argvJsonPathFor(env));
-    disabledIds = checkArgvJson(raw).disabledIds;
+    const check = checkArgvJson(raw);
+    disabledIds = check.disabledIds;
+    allDisabled = check.pluralAllDisabled;
   } catch {
     disabledIds = [];
   }
-  const notDisabled = aiInstalled.filter((id) => !disabledIds.includes(id));
+  const notDisabled = allDisabled ? [] : aiInstalled.filter((id) => !disabledIds.includes(id));
 
   const label = `${dict.vscodeAiExtLabel}: `;
   const lines: string[] = [];

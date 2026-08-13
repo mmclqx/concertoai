@@ -27,6 +27,11 @@
 - ✅ **多 Provider 切换（M3 已落地）**：DeepSeek / OpenAI（兼容协议，baseUrl 可配）/ Ollama（本地探测 /api/tags）任意切换——`concertoai --provider openai` 临时切换 / `config set provider openai` 持久化 / `provider list` 状态（🟢/🔴/🟡）+ `provider auth <name>` Key 安全存储（0600）+ config v3→v4 自动迁移（备份 + `_migrated` 幂等 + `config restore` 回滚）+ doctor 模型推荐（复杂度×预算×本地 Ollama + 月成本预估）+ 启动 fallback（主 Provider 故障自动切备选 ≤1 次）+ StatusBar 成本对比/会话结束 vs DeepSeek 估算
 - ✅ **插件系统（M4 已落地）**：plugin.json 规范 + PluginLoader 双路径扫描（全局 `~/.concertoai/plugins/` + 项目 `.concertoai/plugins/`，ESM 强制非 ESM 拒绝并明确报错）+ PluginRuntime 动态装配（entry `create(ctx)` 单工具/多工具 → 工具注入 ToolRegistry 带 pluginSource/pluginPermission）+ 六类权限（read/write/network/shell/knowledge/mcp）安装时清单审批（彩色图标，拒绝 CANCELED 不落盘）+ 运行时两层校验（调用门槛粗粒度声明检查 fail-closed + `ctx.guard` 白名单细粒度 network/shell/mcp）+ shell 权限 guard 通过后仍走宿主审批流（插件不可绕过）+ 权限拒绝写审计日志；4 内置示例插件（git-status / api-docs / todo-tracker / release-helper）
 - ✅ **插件市场（M4 已落地）**：MarketRegistry 扩展 `plugins[]`（兼容旧 skills[]/agents[]，installer 按 type 分派零破坏）+ `concertoai plugin install/search/list/remove/browse/recommend/popular`（下载 + sha256 校验 + 权限确认；browse 分类含下载量+评分；recommend 项目特征启发式；popular Top 10）+ chat 内 `/plugin` + 内置注册表 4 示例插件条目
+
+### Fixed — v4.0（规划，M4 收尾落地）
+
+- **argv.json 字段语义修正（更正 v3.4 §六 错误结论，踩坑记录 §七）**：正确字段是**单数** `disable-extension`（值 = 字符串数组，禁用指定扩展）；复数 `disable-extensions` 只接受布尔值（true = 禁用全部），写成数组 VS Code 类型不匹配**静默忽略** → 禁用从未生效 → 崩溃第四次复发。`vscode-health.ts` 校验逻辑同步修正：单数+数组 ✅ 正确；复数+数组 ❌ 无效（本次根因，告警）；复数 true ⚠️ 合法但激进（提示改用单数）；`detectAiExtensions` 识别复数 true = 全部禁用（不误报"已装未禁用"）；i18n zh/en 文案同步 + 测试用例改写（vscode-health.test.ts 28 用例）
+
 - LSP 诊断（P2）：`concertoai lsp --stdio` 三来源诊断（lint/type/self-heal）+ CodeAction（Web UI / VS Code 扩展骨架延后 v4.1）
 - team --parallel（P2）：自然触发并行 + 结果汇总 + 文件冲突提示
 

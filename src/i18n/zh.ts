@@ -155,14 +155,16 @@ export const zh = {
     vscodeAiExtNotDisabled: '已装但未禁用: {ids}',
     vscodeAiExtSuggest: '建议: {command} 或写入 argv.json',
     vscodeArgvLabel: 'argv.json',
-    vscodeArgvOk: '{path}（disable-extensions 正确，禁用 {count} 个扩展）',
-    vscodeArgvWarn: '{path}（存在但未配置 disable-extensions）',
+    vscodeArgvOk: '{path}（disable-extension 正确，禁用 {count} 个扩展）',
+    vscodeArgvWarn: '{path}（存在但未配置 disable-extension）',
     vscodeArgvMissing: '未找到 {path}（无持久禁用配置）',
     vscodeArgvIneffective:
       '⚠️ 无效位置: %APPDATA%\\Code\\argv.json 存在但 VS Code 不读取（实际读取 ~/.vscode/argv.json），建议删除或移走',
     vscodeArgvInvalidField:
-      '❌ 字段名错误: 应为 disable-extensions（复数），检测到 disable-extension（单数）——VS Code 不识别，禁用不生效',
-    vscodeArgvInvalidValue: '❌ 值格式错误: disable-extensions 必须为数组或 true',
+      '❌ 字段名错误: 复数 disable-extensions 只接受布尔值（true=禁用全部）；数组需用单数 disable-extension——VS Code 类型不匹配会静默忽略，禁用不生效',
+    vscodeArgvInvalidValue: '❌ 值格式错误: disable-extension 必须为字符串数组',
+    vscodeArgvPluralAll:
+      '⚠️ disable-extensions: true = 禁用全部扩展（如需仅禁用指定扩展，请改用单数 disable-extension 数组）',
     vscodeArgvInvalidId:
       '❌ 扩展 ID 引号错误: 应为 JSON 字符串（以 " 开头和结尾，当前疑似无引号/单引号/尾逗号）',
     // v4.0 M3 T3.2：模型推荐区块
