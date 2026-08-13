@@ -258,7 +258,7 @@ v3.3.0 发布门检查（当前，2026-08-11）：
 v3.4.0 发布门检查（当前，2026-08-12）：
 
 ☑ npm run verify 全绿（89 文件 / 1044 用例，v3.4 基线）
-☑ 版本号一致性核对（package.json / package-lock.json / src/version.ts / tests/smoke.test.ts = 3.4.0；段标记样本 @concertoai/cli@3.4.0 同步）
+☑ 版本号一致性核对（package.json / package-lock.json / src/version.ts / tests/smoke.test.ts = 4.0.0；段标记样本 @concertoai/cli@4.0.0 同步）
 ☑ S-C1/I1/I2/I3 四项审查闭环 + doctor --vscode 四维诊断全部落地；en.test.ts maxDepth + CJK 断言覆盖
 ☑ 手工测试报告 07.7 + 自我审查报告落盘；执行日志补全
 ☑ npm audit 0 漏洞；npm whoami 令牌有效（mmclqx）→ npm publish 成功（latest=3.4.0）

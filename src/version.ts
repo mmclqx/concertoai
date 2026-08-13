@@ -5,4 +5,4 @@
  * 不必通过 barrel（src/index.ts）加载整个库的模块树（agent/loop/mcp/…）。
  * 库入口 src/index.ts 从这里 re-export，保持公共 API 不变。
  */
-export const VERSION = '3.4.0';
+export const VERSION = '4.0.0';

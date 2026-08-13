@@ -50,7 +50,7 @@ export interface StageParseResult {
 
 // ── 段切分 ────────────────────────────────────────────────────
 
-/** npm 段标记：`> @concertoai/cli@3.4.0 build`（verify 内嵌各脚本）。 */
+/** npm 段标记：`> @concertoai/cli@4.0.0 build`（verify 内嵌各脚本）。 */
 const STAGE_MARKER_RE = /^>\s+@concertoai\/cli@[\d.]+\s+(build|lint|typecheck|test)\s*$/;
 
 const ALL_STAGES: readonly VerifyStage[] = ['build', 'lint', 'type', 'test'];
