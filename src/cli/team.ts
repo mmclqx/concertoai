@@ -26,7 +26,7 @@ import {
   QaAgent,
   TeamReviewerAgent,
 } from '../agents';
-import { resolveLocale, setLocale } from '../i18n';
+import { fmt, resolveLocale, setLocale, t } from '../i18n';
 import type { ModelClient } from '../model/client';
 import { DeepSeekClient } from '../model/client';
 import type { TraceStore } from '../observable';
@@ -38,7 +38,14 @@ import type {
   ReviewerLike,
   TeamLoopResult,
 } from '../orchestrator';
-import { MAX_LOOP_ATTEMPTS, runTeamLoop, SnapshotManager } from '../orchestrator';
+import {
+  detectParallelIntent,
+  MAX_LOOP_ATTEMPTS,
+  type ParallelRunResult,
+  runParallelTeams,
+  runTeamLoop,
+  SnapshotManager,
+} from '../orchestrator';
 import { ReviewerEngine } from '../reviewer/engine';
 import { loadConfig, resolveConfig } from '../store/config';
 import { resolveModel } from './common';
@@ -58,6 +65,8 @@ export interface RunTeamCommandOptions {
   autoApprove?: boolean;
   /** 仅输出拆解清单，不执行任何 Agent。 */
   dryRun?: boolean;
+  /** 并行模式（v4.0 M5）：显式 --parallel，或由拆解前自然语言意图自动触发。 */
+  parallel?: boolean;
   /** CLI --lang。 */
   lang?: string;
   /** 模型客户端（测试注入；缺省 DeepSeekClient）。 */
@@ -80,7 +89,10 @@ export type TeamProgress =
       attempt: number;
       total: number;
       phase: 'implement' | 'review' | 'qa';
+      /** 并行模式（v4.0 M5）：所属任务 id（串行模式缺省）。 */
+      taskId?: string;
     }
+  | { kind: 'parallel-task'; taskId: string; ok: boolean }
   | { kind: 'done'; ok: boolean };
 
 /** 进度中文文案（CLI stdout 与 /orchestrate 聊天消息流共用）。 */
@@ -90,8 +102,14 @@ export function formatTeamProgress(p: TeamProgress): string {
       return `📋 已拆解 ${p.taskCount} 个任务`;
     case 'loop-attempt': {
       const phaseLabel = p.phase === 'implement' ? '实现' : p.phase === 'review' ? '审查' : '验证';
-      return `🔁 第 ${p.attempt}/${p.total} 轮（${phaseLabel}）`;
+      const taskPrefix =
+        p.taskId !== undefined ? fmt(t().team.parallel.taskPrefix, { taskId: p.taskId }) : '';
+      return `🔁 ${taskPrefix}第 ${p.attempt}/${p.total} 轮（${phaseLabel}）`;
     }
+    case 'parallel-task':
+      return fmt(p.ok ? t().team.parallel.taskDone : t().team.parallel.taskFailed, {
+        taskId: p.taskId,
+      });
     case 'done':
       return p.ok ? '✅ 团队执行完成' : '❌ 团队执行未成功';
   }
@@ -110,6 +128,8 @@ export interface TeamCommandResult {
   artifacts: Artifact[];
   /** 对抗性闭环结果（未进入闭环时缺省）。 */
   loop?: TeamLoopResult;
+  /** 并行执行结果（v4.0 M5；并行模式时存在）。 */
+  parallel?: ParallelRunResult;
   /** 拆解失败诊断（v3.2 M3 / T3.3；仅 ok=false 且失败发生在拆解阶段时存在）。 */
   diagnostics?: TeamCommandDiagnostics;
 }
@@ -270,7 +290,80 @@ export async function runTeamCommand(options: RunTeamCommandOptions): Promise<Te
   const qa =
     options.agents?.qa ?? new QaAgent({ runner: new ChildProcessQaRunner({ cwd: options.cwd }) });
 
-  // 5. 事务 + 对抗性闭环（主任务文件清单取自拆解；超限/失败回滚兜底）
+  // 5. 并行模式（v4.0 M5）：显式 --parallel 或自然语言并行意图 → runParallelTeams
+  const parallelMode = options.parallel === true || detectParallelIntent(options.task);
+  if (parallelMode) {
+    // 并行子任务 = 全部 coder 任务（无 coder 任务时兜底全部任务，与串行 mainTask 逻辑一致）
+    const coderTasks = tasks.filter((t) => t.agent === 'coder');
+    const parallelTasks = coderTasks.length > 0 ? coderTasks : tasks;
+    // 每任务独立事务快照（预登记文件清单；实际写盘由 txnWriter 动态登记）
+    for (const task of parallelTasks) {
+      await snapshots.begin(task.id, task.files ?? []);
+    }
+    const parallelResult = await runParallelTeams({
+      tasks: parallelTasks,
+      coder,
+      reviewer,
+      qa,
+      onTaskProgress: (taskId, record) => {
+        options.traceStore?.record({
+          id: `team:parallel:${taskId}:${record.attempt}`,
+          taskId,
+          agentName: 'team-parallel',
+          messageType: 'task',
+          input: { phase: record.phase, attempt: record.attempt },
+          startedAt: Date.now(),
+          durationMs: 0,
+        });
+        options.onProgress?.({
+          kind: 'loop-attempt',
+          taskId,
+          attempt: record.attempt,
+          total: MAX_LOOP_ATTEMPTS,
+          phase: record.phase,
+        });
+      },
+      onRollback: async (rollbackTaskId, reason) => {
+        const rb = await snapshots.rollback(rollbackTaskId);
+        process.stderr.write(
+          `⚠️ 任务 ${rollbackTaskId} 闭环超限/失败，触发事务回滚（${reason}）：${
+            rb.ok
+              ? '已恢复原状'
+              : `回滚失败（${rb.failed.map((f) => f.error).join('; ')}，快照保留）`
+          }\n`,
+        );
+      },
+    });
+    // 成功任务提交快照；失败任务已由 onRollback 回滚
+    for (const [taskId, result] of parallelResult.results) {
+      if (result.ok) {
+        await snapshots.commit(taskId);
+      }
+      options.onProgress?.({ kind: 'parallel-task', taskId, ok: result.ok });
+    }
+    options.onProgress?.({ kind: 'done', ok: parallelResult.ok });
+
+    // 聚合输出：全部任务工件 + 并行汇总（含冲突提示）
+    const artifacts = [...parallelResult.results.values()].flatMap((r) => r.context.artifacts);
+    const artifactLines = artifacts
+      .map(
+        (a) =>
+          `- [${a.type}] ${a.path ?? a.id}: ${a.content.slice(0, 80)}${a.content.length > 80 ? '…' : ''}`,
+      )
+      .join('\n');
+    process.stdout.write(
+      `\n=== 并行团队执行结果 ===\n\n${parallelResult.summary}\n\n=== 工件 ===\n${artifactLines || '（无工件）'}\n`,
+    );
+    return {
+      ok: parallelResult.ok,
+      summary: parallelResult.summary,
+      tasks,
+      artifacts,
+      parallel: parallelResult,
+    };
+  }
+
+  // 6. 事务 + 对抗性闭环（主任务文件清单取自拆解；超限/失败回滚兜底）
   const mainTask = tasks.find((t) => t.agent === 'coder') ?? tasks[0];
   const files = mainTask?.files ?? [];
   await snapshots.begin(taskId, files);

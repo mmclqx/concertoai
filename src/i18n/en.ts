@@ -380,6 +380,18 @@ export const en = {
       '[self-heal] attempt {attempt}: model-fixing type error {code} @ {file}:{line}',
     logRemainingManual: '[self-heal] remaining errors are not auto-fixable; hand off to human',
   },
+  team: {
+    // v4.0 M5: parallel multi-agent execution (team --parallel)
+    parallel: {
+      taskPrefix: 'task {taskId} ',
+      taskDone: '⚡ task {taskId} finished in parallel',
+      taskFailed: '❌ task {taskId} failed in parallel',
+      fallbackSerial: 'Cannot split into parallel tasks; executing sequentially',
+      conflict: '⚠️ {taskA} and {taskB} both modified {file}; please choose which version to keep',
+      summaryOk: '✅ all {count} tasks completed',
+      summaryPartial: '⚠️ {ok} done / {failed} failed ({failedIds})',
+    },
+  },
   ui: {
     thinking: 'Thinking',
     toolRunning: 'Running tool: {name}',

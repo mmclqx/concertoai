@@ -362,6 +362,18 @@ export const zh = {
     logModelFixAttempt: '[self-heal] 第 {attempt} 次尝试：模型修复类型错误 {code} @ {file}:{line}',
     logRemainingManual: '[self-heal] 剩余错误不可自动修复，转人工',
   },
+  team: {
+    // v4.0 M5：多 Agent 并行执行（team --parallel）
+    parallel: {
+      taskPrefix: '任务 {taskId} ',
+      taskDone: '⚡ 任务 {taskId} 并行完成',
+      taskFailed: '❌ 任务 {taskId} 并行失败',
+      fallbackSerial: '无法拆解为可并行任务，已按顺序执行',
+      conflict: '⚠️ {taskA} 和 {taskB} 都修改了 {file}，请检查保留哪个版本',
+      summaryOk: '✅ {count} 个任务全部完成',
+      summaryPartial: '⚠️ 完成 {ok} 个 / 失败 {failed} 个（{failedIds}）',
+    },
+  },
   ui: {
     thinking: '思索中',
     toolRunning: '执行工具: {name}',

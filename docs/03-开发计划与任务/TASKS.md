@@ -75,6 +75,7 @@
 | **V4.0-M2 流程能记住了** | **P0** | **6** | ✅ 已完成（e8466ea，98 文件 / 1127 用例） |
 | **V4.0-M3 模型能换了** | **P0** | **7** | ✅ 已完成（968a373，103 文件 / 1187 用例） |
 | **V4.0-M4 生态能扩展了** | **P1** | **6** | ✅ 已完成（本次提交，108 文件 / 1277 用例） |
+| **V4.0-M5 多 Agent 能并行** | **P2** | **3** | ✅ 已完成（本次提交，109 文件 / 1299 用例） |
 
 ---
 
@@ -1349,6 +1350,26 @@
 - [x] **T4.5** CLI + /plugin + i18n + 测试
   - 涉及文件：`src/cli/plugin.ts`（命令族接线）、`src/cli/slash/plugin.ts`（新增 /plugin）、`src/cli/index.ts`（注册）、`src/i18n/zh.ts` / `en.ts`（plugin.* 键组）、`tests/plugin/*.test.ts` + `tests/cli/plugin.test.ts`
   - ✅ 2026-08-12 完成：`concertoai plugin install/search/list/remove/browse/recommend/popular` 全部可用；`/plugin` chat 内可用（list/install/remove）；zh/en `plugin.*` 键组同构（collectKeys + CJK 断言通过）；makePermissionConfirm TTY 交互 + --yes 自动通过，非 TTY 拒绝 fail-closed；集成测试覆盖 install 全链路（下载→sha256→权限→确认→落盘）；M4 新增 83 用例（permissions 20 + loader 12 + installer 23 + runtime 6 + cli 22），verify 108 文件 / 1277 用例全绿
+
+---
+
+## V4.0-M5：多 Agent 能并行了——team --parallel（P2，约 3h）✅ 已完成
+
+> 用户故事：我让 ConcertoAI「同时修复登录模块的 bug 和重构用户模块的类型定义」。以前它得一个接一个做。现在它并行处理——两个 Agent 同时工作，互不干扰。做完后自动汇总结果给我看。如果有两个 Agent 改了同一个文件，它会提示冲突让我决定。
+> 复用：scheduler 拓扑分层 + detectFileConflicts + SnapshotManager 事务回滚 + runTeamLoop 小闭环（禁止另起炉灶）。
+> 提交：本次 · verify 109 文件 / 1299 用例全绿（M5 新增 22 用例 ≥ 10 验收门）
+
+- [x] **T5.1** 自然触发并行
+  - 涉及文件：`src/orchestrator/parallel.ts`（新增 detectParallelIntent / buildParallelGroups / isParallelizable）、`src/cli/team.ts`（并行分支）、`src/cli/index.ts`（--parallel 选项）
+  - ✅ 2026-08-13 完成：自然语言并行意图识别（同时/并行/分别/各自/并发/多线程强关键词 → 自动进入并行分支）；显式 `--parallel` 开关；拆解任务按依赖分层（复用 topologicalSort，wave 分层同 scheduler 语义）；纯串行链 → 降级串行 + 提示「无法拆解为可并行任务，已按顺序执行」
+
+- [x] **T5.2** 结果自动汇总 + 文件冲突提示
+  - 涉及文件：`src/orchestrator/parallel.ts`（detectGroupConflicts / buildParallelSummary / runParallelTeams）
+  - ✅ 2026-08-13 完成：并行执行后自动汇总「✅ N 个任务全部完成」；组内文件冲突检测（复用 detectFileConflicts）+ 冲突组整组串行化（安全写盘，避免并行写同一文件竞态）+ 汇总报告提示「⚠️ A 和 B 都修改了 src/utils.ts，请检查保留哪个版本」；conflictMode='abort' 可选（报告冲突不执行）
+
+- [x] **T5.3** 审批节点 + 上下文隔离 + i18n + 测试
+  - 涉及文件：`src/cli/team.ts`（每任务独立快照 begin/rollback/commit + onProgress taskId）、`src/i18n/zh.ts` / `en.ts`（team.parallel 键组）、`tests/cli/team-parallel.test.ts`（新增 22 用例）
+  - ✅ 2026-08-13 完成：审批 fail-closed（拆解确认在并行分支前，拒绝不执行任何 Agent）；每任务独立 AgentContext/taskId（artifacts 隔离，测试断言峰值并发=2）；每任务独立 SnapshotManager 事务（成功 commit / 失败 onRollback 回滚）；zh/en `team.parallel` 键组同构（collectKeys + CJK 断言通过）；M5 新增 22 用例（意图识别 2 + 分层 5 + 冲突 3 + 并行执行 6 + 集成 5 + 文案 1），verify 109 文件 / 1299 用例全绿
 
 ---
 

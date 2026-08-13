@@ -26,6 +26,16 @@ export {
   type TeamLoopOptions,
   type TeamLoopResult,
 } from './loop';
+export {
+  buildParallelGroups,
+  buildParallelSummary,
+  detectGroupConflicts,
+  detectParallelIntent,
+  isParallelizable,
+  type ParallelRunOptions,
+  type ParallelRunResult,
+  runParallelTeams,
+} from './parallel';
 export type {
   FileConflict,
   ScheduleResult,

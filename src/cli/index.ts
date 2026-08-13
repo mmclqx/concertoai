@@ -206,11 +206,18 @@ program
   .option('-m, --model <id>', t().cli.model.description)
   .option('--dry-run', '仅输出拆解清单，不执行任何 Agent')
   .option('--auto-approve', '自动批准拆解方案与代码写盘（谨慎使用；默认全部审批）')
+  .option('--parallel', '并行模式：拆解出的独立任务同时执行（也可自然语言触发）')
   .option('--lang <zh|en>', '界面语言')
   .action(
     async (
       task: string,
-      options: { model?: string; dryRun?: boolean; autoApprove?: boolean; lang?: string },
+      options: {
+        model?: string;
+        dryRun?: boolean;
+        autoApprove?: boolean;
+        parallel?: boolean;
+        lang?: string;
+      },
     ) => {
       const { runTeamCommand, formatTeamProgress } = await import('./team');
       const result = await runTeamCommand({
@@ -220,6 +227,7 @@ program
         model: options.model,
         dryRun: options.dryRun,
         autoApprove: options.autoApprove ?? false,
+        parallel: options.parallel,
         lang: options.lang,
         // T4.1：长任务中间进度 → stdout（拆解/轮次/收尾，避免黑盒等待）
         onProgress: (p) => process.stdout.write(`${formatTeamProgress(p)}\n`),

@@ -311,6 +311,7 @@ MCP 服务故障
 | D55 | **工作流事务回滚边界：整体快照，任一步失败→全部回滚**（v4.0 M2 已落地 / ADR-035）：工作流开始前 SnapshotManager 登记全部待写文件（steps[].files 合并去重），任一步失败且用户放弃（abort）→ 回滚已写文件；失败恢复 UX（已完成/已回滚/待执行 + 重试/跳过/修复后重试/放弃）；用户显式跳过（skip）视为完成不触发回滚；嵌套工作流快照归属 v4.1 明确 | 工作流语义是「一次完整操作」，部分成功造成中间态混乱；复用既有 SnapshotManager 工时可控 | `src/workflow/`（types/templates/parser/nl-generator/executor）+ `src/cli/workflow.ts` + `src/cli/slash/workflow.ts` |
 | D56 | **市场 schema plugins[] 向后兼容：installer 按 type 分派**（v4.0 M4 已落地 / ADR-036）：registry 增加 `plugins[]`（RegistryItemBase + type:'plugin' + manifest），与旧 `skills[]`/`agents[]` 共存；installer 按 type 分派（skill→SKILL.md / agent→AgentDef / plugin→PluginManifest）；版本比较与 sha256 校验复用 installer | 零破坏迁移（旧条目 schema 不变 + 全量回归兜底）；复用既有市场基础设施；插件是 skill/agent 超集，统一市场形态利于用户认知 | `src/market/`（types/installer/registry）+ `src/cli/plugin.ts` |
 | D57 | **插件权限两层校验：门槛层粗粒度声明检查 + 运行时细粒度白名单**（v4.0 M4 落地）：工具调用门槛（ToolRegistry.permissionCheck）仅检查插件是否声明了该权限类型（fail-closed 于「未声明」），不做白名单匹配——白名单需要具体操作对象（URL/命令/服务），门槛层拿不到；插件运行时 `ctx.guard(type, detail)` 做白名单细粒度匹配（network allowedDomains / shell allowlist / mcp servers）；shell 权限 guard 通过后仍走宿主审批流（approvalCtx 取 mount 时闭包捕获，避免 run 时 ctx 缺失导致审批静默跳过） | 分层职责清晰：门槛层防「模型诱导插件工具调用未声明权限」，运行时防「插件内部越权白名单」；缺 detail 退化声明检查（不误杀）；shell 双保险（权限 + 审批）延续 D5 fail-closed 基线 | `src/plugin/permissions.ts`（guard 分层）+ `src/plugin/runtime.ts`（approvalCtx 闭包）+ `src/tools/registry.ts`（permissionCheck 钩子） |
+| D58 | **team --parallel 并行安全：意图识别降级串行 + 冲突组整组串行化 + 每任务独立事务**（v4.0 M5 落地）：自然语言并行意图（同时/并行/分别/各自/并发/多线程强关键词）或显式 `--parallel` 进入并行分支；拆解任务按依赖分层（复用 topologicalSort wave 分层）；纯串行链 → 降级串行 + 提示「无法拆解为可并行任务」不产生副作用；组内文件冲突（复用 detectFileConflicts）→ 冲突组整组串行执行（避免并行写同一文件竞态）+ 汇总报告提示「A 和 B 都修改了 X，请检查保留哪个版本」；每任务独立 AgentContext/taskId（artifacts 隔离）+ 独立 SnapshotManager 事务（成功 commit / 失败 rollback）；审批 fail-closed 在并行分支前（拒绝不执行任何 Agent） | 并行 ≠ 无序：依赖约束严格分层；文件冲突宁可串行也不竞态；每任务事务可独立回滚互不污染；意图误报由降级串行兜底（不破坏正确性） | `src/orchestrator/parallel.ts` + `src/cli/team.ts`（并行分支）+ `tests/cli/team-parallel.test.ts` |
 
 ## 5. 目录结构说明
 
@@ -474,6 +475,7 @@ concertoai/
 │   │   ├── state-machine.ts 任务状态机：转换守卫 + onTransition 事件（T2.1）
 │   │   ├── scheduler.ts  DAG 调度：拓扑排序 + 并发池（默认 3）+ 重试 + 冲突检测（T2.2）
 │   │   ├── loop.ts       对抗性闭环编排：runTeamLoop（Coder→Reviewer→QA ≤5 次，T3.5）
+│   │   ├── parallel.ts   多 Agent 并行执行（v4.0 M5）：意图识别/分层/冲突串行化/独立上下文（T5.1~T5.3）
 │   │   ├── transaction.ts SnapshotManager 多文件事务快照/回滚/提交 + registerWrite 动态登记（T3.6 / T6.5）
 │   │   └── index.ts      barrel
 │   ├── agents/           专业 Agent（v3.0 M3，详见 §4 D33/D34）
