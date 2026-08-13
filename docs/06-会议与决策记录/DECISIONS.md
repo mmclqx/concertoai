@@ -565,4 +565,17 @@ interface AgentDef {
 
 ---
 
+## ADR-037：TS7 评估 NO-GO——锁定 TS 5.9，v4.1 再评估
+
+| 字段 | 内容 |
+|------|------|
+| **状态** | ✅ 已采纳（v4.0 M7） |
+| **日期** | 2026-08-14 |
+| **上下文** | TypeScript 7（原生编译器，Go 实现）发布在即，需决策 v4.0 是否迁移。TS7 核心是 10 倍编译提速 + 原生 type stripping；`erasableSyntaxOnly` 默认化将禁止 enum/namespace/参数属性等不可擦除语法。调研报告见 `docs/10-技术评估/ts7-evaluation.md` |
+| **选项** | ① **NO-GO**：锁定 TS 5.9.x，v4.1 再评估（收益趋近 0：构建走 esbuild 不依赖 tsc 产物，build 71ms/typecheck 秒级；成本真实：1 enum + 11 参数属性共 12 处不可擦除语法改造；风险未验证：tsup/vitest/biome 对 TS7 适配声明缺失） ② GO：v4.0 迁移 TS7（提前改造 12 处 + 承担工具链分歧风险） ③ 部分迁移（开 erasableSyntaxOnly 渐进改造，不升 TS7） |
+| **结论** | 采用 ①：package.json 保持 `typescript: ^5.9.3`；tsconfig 不强制开 `erasableSyntaxOnly`（存量 12 处会立即报错且无收益）；**渐进准备**——新代码避免 enum/参数属性/namespace（优先字面量联合 + 显式字段声明），`LspSeverity` enum 记入 v4.1 迁移清单 |
+| **理由** | (a) 收益不对称：构建/类型检查均非瓶颈，TS7 加速对本项目无感；(b) 迁移成本真实存在：12 处「运行时语义语法」改造 + LSP 协议序列化点同步；(c) 生态未验证：TS7 1.0 与 esbuild/biome 语法面可能有细微分歧（历史先例 TS5 vs esbuild）；(d) 渐进准备零成本：新代码规范约束即可，无需工具链变更；(e) 决策门明确：v4.1 满足三触发条件（正式版+适配声明 / 性能瓶颈 / Node ≥22.6 用户占比）任一即重新评估 |
+
+---
+
 *当重要决策做出后，请在此追加新条目。*

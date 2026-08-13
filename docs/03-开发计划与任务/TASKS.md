@@ -76,7 +76,8 @@
 | **V4.0-M3 模型能换了** | **P0** | **7** | ✅ 已完成（968a373，103 文件 / 1187 用例） |
 | **V4.0-M4 生态能扩展了** | **P1** | **6** | ✅ 已完成（本次提交，108 文件 / 1277 用例） |
 | **V4.0-M5 多 Agent 能并行** | **P2** | **3** | ✅ 已完成（c23d5b7，109 文件 / 1299 用例） |
-| **V4.0-M6 IDE 能诊断** | **P2** | **3** | ✅ 已完成（本次提交，112 文件 / 1334 用例） |
+| **V4.0-M6 IDE 能诊断** | **P2** | **3** | ✅ 已完成（4bb3501，112 文件 / 1334 用例） |
+| **V4.0-M7 TS7 评估** | **P2** | **2** | ✅ 已完成（本次提交，NO-GO 决策门） |
 
 ---
 
@@ -1391,6 +1392,21 @@
 - [x] **T6.3** CLI + 跨平台 stdio + i18n + 测试
   - 涉及文件：`src/cli/lsp.ts`（新增 lsp 命令接线）、`src/cli/index.ts`（注册 lsp 命令 + --stdio 必需校验）、`src/i18n/zh.ts` / `en.ts`（cli.lsp 键组）、`tests/lsp/*.test.ts`（新增 framing 7 + diagnostics 20 + server 8 = 35 用例）
   - ✅ 2026-08-13 完成：`concertoai lsp --stdio` 命令可用（缺 --stdio 报错 exit 1）；zh/en `cli.lsp` 键组同构（collectKeys + CJK 断言通过）；M6 新增 35 用例（协议/帧 7 + 诊断纯函数 20 + 服务器集成 8），verify 112 文件 / 1334 用例全绿
+
+---
+
+## V4.0-M7：TypeScript 7 评估（P2，约 1.5h）✅ 已完成
+
+> 用户故事：TS7（原生编译器）发布在即，要不要迁？——先调研，再决策，不盲迁。
+> 提交：本次 · 无代码变更（纯调研 + 决策落盘，verify 112 文件 / 1334 用例保持全绿）
+
+- [x] **T7.1** TS7 调研 → go/no-go 决策门
+  - 涉及文件：`docs/10-技术评估/ts7-evaluation.md`（新增 — 调研报告）
+  - ✅ 2026-08-14 完成：调研覆盖四维度——① 原生 type stripping（Node 22.6+/23.6+/24；本项目发布物是编译后 JS 不受影响）② erasableSyntaxOnly（实证扫描：**1 enum `LspSeverity` + 11 参数属性 = 12 处不可擦除语法**）③ 工具链兼容（tsup/vitest 走 esbuild 不依赖 tsc 产物；biome 自研 parser；TS7 适配声明缺失）④ Node 运行时要求（本项目运行时不需要 type stripping）。**决策门：NO-GO**——收益趋近 0（build 71ms / typecheck 秒级，构建不依赖 tsc 产物）+ 12 处改造成本 + 生态风险未验证
+
+- [x] **T7.2** 决策落盘
+  - 涉及文件：`docs/06-会议与决策记录/DECISIONS.md`（修改 — ADR-037）、`docs/02-架构设计/ARCHITECTURE.md`（修改 — 决策表 D60）
+  - ✅ 2026-08-14 完成：ADR-037「TS7 评估 NO-GO——锁定 TS 5.9，v4.1 再评估」落盘（上下文/选项/结论/理由四段式）；ARCHITECTURE 决策表 D60 同步（含渐进准备约束：新代码避免 enum/参数属性/namespace，`LspSeverity` 记入 v4.1 迁移清单）；v4.1 再评估三触发条件写入调研报告 §5（TS7 正式版+工具链适配 / 性能瓶颈 / Node ≥22.6 用户占比）
 
 ---
 
