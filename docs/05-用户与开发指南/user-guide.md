@@ -207,6 +207,60 @@ $ concertoai audit export --out audit.json
 ✅ 审计日志已导出到 audit.json：共 42 条记录（跳过 0 条损坏行）。
 ```
 
+### `concertoai workflow` —— 工作流引擎（v4.0 M2）
+
+| 子命令 | 说明 |
+| --- | --- |
+| `workflow init` | 交互选模板（init-ts / upgrade-deps / release / precommit）生成 `.concertoai/workflows/<name>.yml` |
+| `workflow run <name>` | DAG 依赖排序执行（并行 where possible + 审批节点暂停 + 失败恢复 R/S/F/A + SnapshotManager 整体回滚） |
+| `workflow list` | 列出已注册工作流 |
+| `workflow export <name>` | 导出 YAML（可重定向分享） |
+| `workflow import <file>` | 导入校验并注册 |
+| `workflow create "<自然语言>"` | 模型生成工作流 YAML（非法降级人工编辑） |
+
+chat 内 `/workflow run <name>` 同样可用。语法参考见 [workflow-syntax.md](./workflow-syntax.md)。
+
+### `concertoai provider` —— 多 Provider 切换（v4.0 M3）
+
+| 子命令 | 说明 |
+| --- | --- |
+| `provider list` | 查看全部 Provider 状态（🟢 可用 / 🔴 不可用 / 🟡 降级） |
+| `provider auth <name> [--verify]` | 认证 Key（0600 存储；`--verify` 仅验证不保存） |
+| `provider switch <name>` | 持久化切换 defaultProvider |
+
+`concertoai --provider openai` 临时切换；`concertoai config set provider openai` 持久化。切换前状态条显示成本对比。DeepSeek（默认）/ OpenAI（兼容协议，baseUrl 可配）/ Ollama（本地探测 /api/tags）。config v3→v4 自动迁移（备份 + `_migrated` 幂等），`config restore` 回滚。详见 [migration-guide-v4.md](./migration-guide-v4.md)。
+
+### `concertoai plugin` —— 插件市场（v4.0 M4）
+
+| 子命令 | 说明 |
+| --- | --- |
+| `plugin install <name>` | 注册表匹配 → 下载/builtin 直装 → sha256 → 权限清单确认 → 落盘 |
+| `plugin search <kw>` | 模糊搜索 |
+| `plugin list` / `plugin remove <name>` | 已安装列表 / 卸载 |
+| `plugin browse` | 分类浏览（🔧工具/📋工作流/🤖Agent，含下载量+评分） |
+| `plugin recommend` | 基于项目特征推荐（「检测到 Express+TypeORM → 推荐 api-docs」） |
+| `plugin popular` | 社区热门 Top 10 |
+
+chat 内 `/plugin list|install|remove` 可用。插件开发见 [plugin-dev-guide.md](./plugin-dev-guide.md)。
+
+### `concertoai lsp --stdio` —— LSP 三来源诊断（v4.0 M6）
+
+启动 Language Server（stdin/stdout Content-Length 帧），VS Code 一行配置即可连接：
+
+```json
+{ "concertoai.lsp.serverPath": "concertoai", "concertoai.lsp.args": ["lsp", "--stdio"] }
+```
+
+保存 .ts/.tsx → Problems 面板三来源诊断：biome lint（Warning）/ tsc type（Error）/ self-heal 静态规则（Information：未使用 import、显式 any、console.log）；CodeAction「🔧 用 ConcertoAI 修复」/「移除未使用的 import」一键修复（服务端只产出 diff，不直接改用户文件）。
+
+### `concertoai review --fix` —— 一键修复（v4.0 M1）
+
+`/review --fix`（chat 内）：审查完成后自动进入修复模式——A/B 类分批 → 批量审批 diff 摘要 → snapshot-guard 快照回滚 → 增量 verify → 报告底部「修复结果」区块（✅已修复 / ⚠需人工 / ❌自动回滚），≤2 次交互。
+
+### `concertoai team --parallel` —— 多 Agent 并行（v4.0 M5）
+
+`concertoai team --parallel "同时修复登录 bug 和重构用户模块"`（或自然语言含「同时/并行/分别」自动触发）：任务按依赖分层并行 → 每任务独立上下文/事务 → 汇总报告（含文件冲突提示「A 和 B 都修改了 X，请检查保留哪个版本」）；意图识别失败降级串行 + 提示。
+
 ### `concertoai login / logout / whoami / account` —— 多账号管理（v3.1）
 
 | 命令 | 说明 |
@@ -530,6 +584,16 @@ v3.2 新增（跨平台可靠 + 长任务可感知 + 代码可维护）：
 - **错误处理强化**：`audit export` 损坏行统计（共 N 条 / 跳过 M 条）、`/orchestrate` 拆解失败 diagnostics、inferErrorCode 英文关键词回归；
 - **用户体验优化**：`team` / `/orchestrate` 进度渐进推送（拆解/轮次/收尾）、`self-heal` 状态条阶段动态更新、`project list` 三列表格 + 当前项目高亮、`whoami` 可复制修复命令、`doctor` 账号完整性检查、启动期缓存（重复命令不再重复读盘）；
 - **Agent 市场版本管理**：`/agent list` 显示已安装 vs 最新版本对比、`/agent update --all` 批量更新。
+
+v4.0 新增（可扩展的插件化 AI 开发平台）：
+
+- **插件市场**：`plugin install/search/list/remove/browse/recommend/popular` + 六类权限（read/write/network/shell/knowledge/mcp）安装时清单审批 + 运行时两层校验（fail-closed）+ 4 内置示例插件；插件开发见 plugin-dev-guide.md；
+- **多 Provider 切换**：DeepSeek/OpenAI/Ollama 任意切换 + `provider auth`（0600）+ config v3→v4 自动迁移（备份 + 幂等 + restore 回滚）+ doctor 模型推荐（月成本预估）；
+- **工作流引擎**：`workflow init/run/export/import/create`，DAG 依赖排序 + 并行 + 审批节点 + 失败恢复 R/S/F/A + 整体回滚；语法参考见 workflow-syntax.md；
+- **`/review --fix` 一键修复**：A/B 类分批 + 批量审批 + 快照回滚 + 增量 verify + 修复报告（≤2 次交互）；
+- **`team --parallel`**：自然语言「同时/并行」自动触发多 Agent 并行 + 文件冲突提示 + 独立事务；
+- **`lsp --stdio`**：三来源诊断（biome/tsc/self-heal）推送到 IDE Problems 面板 + CodeAction 一键修复；
+- **升级迁移**：v3.4 → v4.0 破坏性变更与回滚见 migration-guide-v4.md。
 
 ### 配置目录迁移（~/.lumen → ~/.concertoai）
 

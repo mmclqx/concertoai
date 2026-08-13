@@ -6,11 +6,11 @@
 - 条目按类型分组：`Added`（新增）/ `Changed`（变更）/ `Fixed`（修复）/ `Removed`（移除）；
 - 版本号由 `npm version <patch|minor|major>` 管理（自动 bump + 同步 `src/index.ts` 的 VERSION + git tag）。
 
-## [Unreleased]（v4.0 规划，见 v4.0-dev-plan-final.md）
+## [4.0.0] — 2026-08-14
 
-> v4.0 定位：**可扩展的插件化 AI 开发平台**——架构拐点（major），破坏性变更集中在新增面（config 格式 / CLI --provider / Plugin 接口），旧命令 / 会话 / 技能平滑迁移。以下为 M0 T0.3 破坏性变更清单（≥6 项），随里程碑实施逐项落地。
+> v4.0 定位：**可扩展的插件化 AI 开发平台**——架构拐点（major），破坏性变更集中在新增面（config 格式 / CLI --provider / Plugin 接口），旧命令 / 会话 / 技能平滑迁移。M0~M8 全部落地：112 文件 / 1334 用例全绿，`npm audit` 0 漏洞，CI 三平台（ubuntu/windows/macos）。
 
-### Breaking Changes — v4.0（规划）
+### Breaking Changes — v4.0（已落地）
 
 - **config.json 格式升级**（v3 → v4）：`model` 字段 → `defaultProvider` + `providers` 字典。启动时自动迁移（备份 `config.v3.bak` + `_migrated` 幂等标记），`-m` CLI 参数保持兼容（映射到 defaultProvider.model）；`concertoai config restore` 一键回滚
 - **CLI 新增 `--provider`**：临时切换 Provider（`concertoai --provider openai`）；`concertoai provider list / auth` 子命令（Provider 认证 Key 安全存储）
@@ -20,7 +20,7 @@
 - **`concertoai workflow` 命令族新增**：工作流 YAML（steps/depends/retry/rollback/require:approval）+ 4 内置模板 + `workflow run <name>`（DAG 依赖排序 + SnapshotManager 整体回滚）
 - **会话格式兼容**：JSONL 不变，新增 `session.version: 4` 字段（v3 会话可继续读取）
 
-### Added — v4.0（规划）
+### Added — v4.0（已落地）
 
 - ✅ **`/review --fix`（M1 已落地）**：审查后一键自动修复——A/B 类分批（🟢 suggestion 可定位文件 → A 类尝试模型补丁；🔴 critical / 🟡 medium / 无文件 → B 类需人工判断）+ 一次批量审批 diff 摘要（fail-closed）+ snapshot-guard 快照回滚 + 增量 verify（lint+type 段）+ 报告底部「修复结果」区块（✅已修复 / ⚠需人工 / ❌自动回滚，每条带 diff 摘要），≤2 次交互；`reviewer/autofix.ts` 复用 self-heal snapshot-guard 状态机
 - ✅ **`concertoai workflow`（M2 已落地）**：DAG 工作流引擎——4 内置模板（init-ts / upgrade-deps / release 含审批节点 / precommit）+ `workflow init` 交互选模板生成 `.concertoai/workflows/<name>.yml` + `workflow run <name>`（TaskScheduler 拓扑排序/并行/重试 + 审批节点 require:approval 暂停 + 失败恢复 R/S/F/A + SnapshotManager 整体回滚 + onProgress 进度推送）+ `workflow export/import` 分享（YAML 可提交 Git）+ `workflow create "<自然语言>"` 模型生成（非法降级人工编辑）+ 依赖推断提示确认（不静默写入）+ chat 内 `/workflow`；`src/workflow/` 复用 orchestrator/scheduler + transaction
@@ -29,8 +29,9 @@
 - ✅ **插件市场（M4 已落地）**：MarketRegistry 扩展 `plugins[]`（兼容旧 skills[]/agents[]，installer 按 type 分派零破坏）+ `concertoai plugin install/search/list/remove/browse/recommend/popular`（下载 + sha256 校验 + 权限确认；browse 分类含下载量+评分；recommend 项目特征启发式；popular Top 10）+ chat 内 `/plugin` + 内置注册表 4 示例插件条目
 - ✅ **多 Agent 并行 `team --parallel`（M5 已落地）**：自然语言「同时/并行/分别/各自/并发」自动触发并行分支 + 显式 `--parallel` 开关；拆解任务按依赖分层（复用 topologicalSort wave 分层，层内并行/层间串行）；纯串行链降级串行 + 提示「无法拆解为可并行任务」；组内文件冲突检测（复用 detectFileConflicts）+ 冲突组整组串行化（避免并行写同一文件竞态）+ 汇总报告提示「⚠️ A 和 B 都修改了 X，请检查保留哪个版本」；每任务独立 AgentContext/taskId（上下文/工件隔离）+ 独立 SnapshotManager 事务（成功 commit / 失败 rollback）；审批 fail-closed（拒绝不执行任何 Agent）；`src/orchestrator/parallel.ts` 复用 runTeamLoop 小闭环
 - ✅ **LSP 三来源诊断 `concertoai lsp --stdio`（M6 已落地）**：LSP 3.17 最小闭环（JSON-RPC 2.0 + Content-Length 帧，跨平台 CRLF/LF，零运行时依赖）——VS Code 一行配置即可连接；保存 .ts/.tsx → 三来源诊断推送 Problems 面板：biome lint → Warning / tsc type → Error / self-heal 静态规则（未使用 import、显式 any、console.log）→ Information；CodeAction「🔧 用 ConcertoAI 修复」（biome check --write 临时副本生成整文件替换 diff，服务端不直接改用户文件）与「移除未使用的 import / console.log」行删除，应用后 didChange 触发重新诊断 → 诊断消失闭环；`src/lsp/` 协议/帧/诊断/服务器四模块 + `tests/lsp/` 35 用例；Web UI + VS Code 扩展骨架延后 v4.1
+- ✅ **TS7 评估 NO-GO（M7 已落地）**：调研报告覆盖四维度（原生 type stripping / erasableSyntaxOnly / 工具链兼容 / Node 运行时），实证扫描 12 处不可擦除语法（1 enum + 11 参数属性）；决策：**锁定 TS 5.9，v4.1 再评估**（收益趋近 0——构建走 esbuild 不依赖 tsc 产物；成本真实 + 生态适配未验证）；ADR-037 / 决策表 D60；渐进准备（新代码避免 enum/参数属性/namespace）
 
-### Fixed — v4.0（规划，M4 收尾落地）
+### Fixed — v4.0（M4 收尾落地）
 
 - **argv.json 字段语义修正（更正 v3.4 §六 错误结论，踩坑记录 §七）**：正确字段是**单数** `disable-extension`（值 = 字符串数组，禁用指定扩展）；复数 `disable-extensions` 只接受布尔值（true = 禁用全部），写成数组 VS Code 类型不匹配**静默忽略** → 禁用从未生效 → 崩溃第四次复发。`vscode-health.ts` 校验逻辑同步修正：单数+数组 ✅ 正确；复数+数组 ❌ 无效（本次根因，告警）；复数 true ⚠️ 合法但激进（提示改用单数）；`detectAiExtensions` 识别复数 true = 全部禁用（不误报"已装未禁用"）；i18n zh/en 文案同步 + 测试用例改写（vscode-health.test.ts 28 用例）
 

@@ -1,7 +1,7 @@
 # AGENTS.md - ConcertoAI 项目开发规范
 
-> 最后更新：2026-08-12
-> 版本：v3.4.0
+> 最后更新：2026-08-14
+> 版本：v4.0.0
 
 ---
 
@@ -215,19 +215,23 @@ v3.4.0 已完成（审查建议闭环 + VS Code 崩溃防护）：
 - ✅ `concertoai doctor --vscode`（src/cli/vscode-health.ts）：进程数 / 崩溃转储 / AI 扩展 / argv.json 四维只读诊断，argv.json 字段名复数 disable-extensions 校验（踩坑记录 §六）
 - ✅ 89 文件 / 1044 用例全绿 · v3.4.0 已发布 npm + tag
 
-v4.0 规划方向（终稿 v4.0-dev-plan-final.md，约 32.5h / ≥1120 用例 / ≥95 文件）：
+v4.0 已完成（可扩展的插件化 AI 开发平台，2026-08-14 发布）：
 
-- ✅ 计划终稿已落盘：用户故事驱动 + 工程结构双轨（ADR-033~036 / 决策表 D53~D56）
-- ✅ 任务说明书 v4.0-dev-tasks.md 已生成（M0 已完成，M1~M8 逐任务定义：目标/涉及文件/验收标准/依赖 + 发布门 + 风险速查）
-- M0 启动前置（1h）：基线校准 + config v3→v4 自动迁移设计（备份 config.v3.bak + _migrated 幂等）+ 破坏性变更清单 ≥6 项
-- M1 审查能修了（5h，P0）：/review --fix 一键修复——A/B 类分批 + 批量审批 + 复用 snapshot-guard 快照回滚（≤2 次交互）
-- M2 流程能记住了（6.5h，P0）：concertoai workflow——4 内置模板 + 自然语言生成 YAML（失败人工兜底）+ DAG 执行 + 失败恢复 UX（重试/跳过/修复/放弃）
-- M3 模型能换了（5.5h，P0）：多 Provider（DeepSeek/OpenAI/Ollama）+ --provider 切换 + 成本对比 + provider auth 认证 + config 自动迁移
-- M4 生态能扩展了（5h，P1）：插件市场——plugin browse/recommend/install + 权限清单（六类权限）+ sha256 校验 + 旧 skill/agent 零破坏
-- M5 多 Agent 能并行（3h，P2）：team --parallel——自然触发并行 + 结果汇总 + 文件冲突提示 + 意图识别失败降级串行
-- M6 IDE 能诊断（2.5h，P2）：LSP 三来源诊断（lint/type/self-heal）+ CodeAction 一键修复（Web UI + VS Code 扩展骨架延后 v4.1）
-- M7 TS7 评估（1.5h，P2）：go/no-go 决策门 + ADR 落盘，不盲迁
-- M8 回归发布（2.5h，P0）：≥1120 用例 + 性能基准对比（v3.4 vs v4.0）+ 版本号多文件联动 + publish + tag v4.0.0
+- ✅ 插件市场（M4）：plugin install/search/list/remove/browse/recommend/popular + 六类权限（read/write/network/shell/knowledge/mcp）声明式拦截 + 4 内置示例插件 + 市场 plugins[] 向后兼容（ADR-033/036，D53/D56/D57）
+- ✅ 多 Provider 切换（M3）：DeepSeek/OpenAI/Ollama 三实现 + ProviderRegistry/Router + --provider 切换 + provider auth（0600）+ config v3→v4 自动迁移（备份 + _migrated 幂等 + config restore）+ doctor 模型推荐（ADR-034，D54）
+- ✅ 工作流引擎（M2）：concertoai workflow——4 内置模板 + 自然语言生成 YAML（失败人工兜底）+ DAG 执行 + 审批节点 + 失败恢复 R/S/F/A + SnapshotManager 整体回滚（ADR-035，D55）
+- ✅ /review --fix 一键修复（M1）：A/B 类分批 + 批量审批 fail-closed + snapshot-guard 快照回滚 + 增量 verify + 修复报告（≤2 次交互）
+- ✅ team --parallel（M5）：自然触发并行 + 依赖分层 + 冲突组串行化 + 每任务独立事务（D58）
+- ✅ LSP 三来源诊断（M6）：concertoai lsp --stdio——biome/tsc/self-heal 诊断 + CodeAction 一键修复（D59；Web UI + VS Code 扩展骨架延后 v4.1）
+- ✅ TS7 评估 NO-GO（M7）：锁定 TS 5.9 + v4.1 再评估（ADR-037 / D60）
+- ✅ 112 文件 / 1334 用例全绿 · v4.0.0 已发布 npm + tag
+
+v4.1 规划方向：
+
+- LSP Web UI + VS Code 扩展骨架
+- 插件进程级隔离强化（v4.1 起插件可运行在独立子进程）
+- TS7 再评估（三触发条件：正式版+工具链适配 / 性能瓶颈 / Node ≥22.6 用户占比）
+- 更多内置工作流模板与插件生态
 
 ## 发布门检查清单
 2.0.0 发布前已全部通过：

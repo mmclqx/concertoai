@@ -77,7 +77,8 @@
 | **V4.0-M4 生态能扩展了** | **P1** | **6** | ✅ 已完成（本次提交，108 文件 / 1277 用例） |
 | **V4.0-M5 多 Agent 能并行** | **P2** | **3** | ✅ 已完成（c23d5b7，109 文件 / 1299 用例） |
 | **V4.0-M6 IDE 能诊断** | **P2** | **3** | ✅ 已完成（4bb3501，112 文件 / 1334 用例） |
-| **V4.0-M7 TS7 评估** | **P2** | **2** | ✅ 已完成（本次提交，NO-GO 决策门） |
+| **V4.0-M7 TS7 评估** | **P2** | **2** | ✅ 已完成（34edf8b，NO-GO 决策门） |
+| **V4.0-M8 回归与发布** | **P0** | **5** | ✅ 已完成（本次提交，v4.0.0 已发布 npm + tag） |
 
 ---
 
@@ -1407,6 +1408,33 @@
 - [x] **T7.2** 决策落盘
   - 涉及文件：`docs/06-会议与决策记录/DECISIONS.md`（修改 — ADR-037）、`docs/02-架构设计/ARCHITECTURE.md`（修改 — 决策表 D60）
   - ✅ 2026-08-14 完成：ADR-037「TS7 评估 NO-GO——锁定 TS 5.9，v4.1 再评估」落盘（上下文/选项/结论/理由四段式）；ARCHITECTURE 决策表 D60 同步（含渐进准备约束：新代码避免 enum/参数属性/namespace，`LspSeverity` 记入 v4.1 迁移清单）；v4.1 再评估三触发条件写入调研报告 §5（TS7 正式版+工具链适配 / 性能瓶颈 / Node ≥22.6 用户占比）
+
+---
+
+## V4.0-M8：回归与发布（P0，约 2.5h）✅ 已完成
+
+> 用户故事：v4.0 从「能做什么」到「正式交付」——回归、文档、测试报告、发布。
+> 提交：本次 · verify 112 文件 / 1334 用例全绿（≥1120/≥95 门）· v4.0.0 已发布 npm + tag
+
+- [x] **T8.1** 全量回归
+  - 涉及文件：无（验证动作）
+  - ✅ 2026-08-14 完成：`npm run verify` 全绿（build 94ms / lint / typecheck / test 112 文件 / 1334 用例，≥1120/≥95 门）；`npm audit --omit=dev` 0 漏洞；CI 三平台矩阵（ubuntu/windows/macos + node 22）配置核对；v3.4 遗留收尾（I4 + FILE_REF_RE）M1 T1.6 已覆盖
+
+- [x] **T8.2** 文档同步
+  - 涉及文件：`CHANGELOG.md`（[4.0.0] 条目：Breaking 7 项落地 + Added M1~M7 汇总 + 无 [Unreleased] 残留）、`docs/02-架构设计/ARCHITECTURE.md`（版本头 v4.0 + §1 v4.0 已完成 + 决策表 D60）、`docs/05-用户与开发指南/`（user-guide v4.0 命令 + 新增 migration-guide-v4.md / plugin-dev-guide.md / workflow-syntax.md）、`README.md`（状态行 v4.0 已发布 + 功能摘要）、`AGENTS.md`（版本头 v4.0.0 + 当前开发阶段 v4.0 已完成 + v4.1 规划）、`TASKS.md`（看板）
+  - ✅ 2026-08-14 完成：CHANGELOG Breaking Changes 7 项（≥6 门）全部落地确认 + Added M1~M7 汇总 + [Unreleased] 清零；迁移指南（含升级/回滚/一键降级）齐备；插件开发指南（plugin.json/六类权限/ESM 入口/内置示例）齐备；工作流语法参考（YAML 字段/命令族/执行语义/模板）齐备；用户手册补 v4.0 命令参考；ARCHITECTURE 全景图/目录树/决策表三处同步；README/AGENTS 版本号联动
+
+- [x] **T8.2a** 性能基准对比
+  - 涉及文件：`docs/07.8-手工测试报告-v4.0.md`（性能对比区块）
+  - ✅ 2026-08-14 完成：冷启动 `--version` v3.2 基线 164ms vs v4.0 139ms（未退化，启动期缓存 ADR-029 生效）；dist 体积 1342KB → 2091KB（+56% 功能面扩展但冷启动未随体积退化）；build 耗时 ~71ms（v3.1）→ 94ms（同量级 esbuild 链路）；首响应由流式渲染主导；数据写入 07.8 二、性能基准对比
+
+- [x] **T8.3** 手工测试报告 07.8 + 自我审查报告
+  - 涉及文件：`docs/07.8-手工测试报告-v4.0.md`（新增）、`docs/08-审查记录/REVIEW-v4.0-self-review-2026-08-14.md`（新增）
+  - ✅ 2026-08-14 完成：07.8 报告含测试日期/环境/通过失败项/已知问题（参考 07.7 格式）；用户验收场景全部通过（M1~M7 各里程碑 61 用例 + 性能 3 + 回归 8 = 72 项，0 失败）；自我审查独立完成（重点：插件权限模型完备性 / Provider 切换行为差异 / 工作流事务回滚边界 / 市场 schema 向后兼容 / 破坏性变更清单完整性——5 重点全部通过，0 阻断）
+
+- [x] **T8.4** 发布动作
+  - 涉及文件：`package.json` / `package-lock.json` / `src/version.ts` / `tests/smoke.test.ts` / `README.md`（版本号联动 4.0.0，AGENTS.md 自查第 8 条）
+  - ✅ 2026-08-14 完成：`npm whoami` 验证令牌；`npm version 4.0.0` 后版本号多文件联动一致（package.json + package-lock 顶部 2 处 + src/version.ts + tests/smoke.test.ts + README + AGENTS + self-heal 段标记 `@concertoai/cli@4.0.0`）；`npm run verify` 全绿（prepublishOnly 自动 verify）；`npm publish` 成功（latest=4.0.0）；`git tag v4.0.0` 已打并推送；全项目 `3.\d+.\d+` 搜索排除遗漏
 
 ---
 
