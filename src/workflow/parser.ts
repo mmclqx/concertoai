@@ -321,7 +321,11 @@ function quoteIfNeeded(value: string): string {
 
 // ── 依赖推断（T2.4）────────────────────────────────────────
 
-/** 命令语义启发式规则：子串 → 依赖意图。按顺序匹配（越靠前优先级越高）。 */
+/**
+ * 命令语义启发式规则：子串 → 依赖意图。按顺序匹配（越靠前优先级越高）。
+ * 注意 to 语义 = 被依赖方（依赖边 from 依赖 to，与 InferredDependency 注释一致）：
+ * 规则表达「匹配步骤 X 应依赖目标 T」→ 边 { from: X, to: T } → X.depends += T。
+ */
 const DEPENDENCY_RULES: Array<{ pattern: RegExp; to: string; reason: string }> = [
   { pattern: /\bnpm run publish\b/, to: 'build', reason: 'publish 前通常需要先 build' },
   { pattern: /\bnpm publish\b/, to: 'build', reason: 'publish 前通常需要先 build' },
@@ -330,9 +334,13 @@ const DEPENDENCY_RULES: Array<{ pattern: RegExp; to: string; reason: string }> =
     to: 'build',
     reason: 'test 前通常需要先 build',
   },
+  {
+    pattern: /\bnpm run typecheck\b/,
+    to: 'lint',
+    reason: 'lint 与 typecheck 通常一起做（先 lint 后 typecheck）',
+  },
   { pattern: /\bnpm run typecheck\b/, to: 'build', reason: 'typecheck 前通常需要先 build' },
   { pattern: /\bnpm run build\b/, to: 'lint', reason: 'build 前通常需要先通过 lint' },
-  { pattern: /\bnpm run lint\b/, to: 'typecheck', reason: 'lint 与 typecheck 通常一起做' },
 ];
 
 /**
@@ -355,15 +363,16 @@ export function inferDependencies(steps: WorkflowStep[]): InferredDependency[] {
       if (!rule.pattern.test(step.run)) {
         continue;
       }
-      // 目标步骤存在且未被声明（含反向）且不是自身
+      // 目标步骤存在且未被声明（含反向）且不是自身 → 命中（本步骤只推一条）
       if (
         names.has(rule.to) &&
         rule.to !== step.name &&
         !declared.has(`${step.name}->${rule.to}`)
       ) {
         inferred.push({ from: step.name, to: rule.to, reason: rule.reason });
+        break;
       }
-      break; // 每个步骤只匹配一条最高优先级规则
+      // 目标步骤不存在或已声明 → 继续尝试下一条规则（如 typecheck 无 lint 时落到 build）
     }
   }
   return inferred;

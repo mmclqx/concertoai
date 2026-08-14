@@ -141,6 +141,28 @@ describe('inferDependencies（T2.4 依赖推断）', () => {
     expect(result).toEqual([]);
   });
 
+  it('typecheck 依赖 lint（lint 与 typecheck 一起做，先 lint 后 typecheck）', () => {
+    const result = inferDependencies(
+      steps([
+        { name: 'lint', run: 'npm run lint' },
+        { name: 'typecheck', run: 'npm run typecheck' },
+      ]),
+    );
+    expect(result).toContainEqual({ from: 'typecheck', to: 'lint', reason: expect.any(String) });
+    // 不产生反向边（lint 不依赖 typecheck——避免 lint 被排到 typecheck 之后）
+    expect(result).not.toContainEqual(expect.objectContaining({ from: 'lint', to: 'typecheck' }));
+  });
+
+  it('typecheck 无 lint 时回落到 typecheck 依赖 build', () => {
+    const result = inferDependencies(
+      steps([
+        { name: 'build', run: 'npm run build' },
+        { name: 'typecheck', run: 'npm run typecheck' },
+      ]),
+    );
+    expect(result).toContainEqual({ from: 'typecheck', to: 'build', reason: expect.any(String) });
+  });
+
   it('每个步骤只匹配最高优先级规则（publish 不额外推 lint）', () => {
     const result = inferDependencies(
       steps([

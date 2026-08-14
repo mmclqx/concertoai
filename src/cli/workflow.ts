@@ -136,7 +136,8 @@ export async function confirmInferredDependencies(workflow: Workflow): Promise<W
   console.log('');
   console.log(d.inferFound);
   for (const edge of inferred) {
-    console.log(`  - ${edge.from} → ${edge.to}（${edge.reason}）`);
+    // 语义：from 依赖 to（InferredDependency 注释）。用「依赖」替代箭头，避免箭头被误读为执行顺序
+    console.log(`  - ${edge.from} 依赖 ${edge.to}（${edge.reason}）`);
   }
   const answer = await promptLine(d.inferPrompt);
   if (answer?.toLowerCase() !== 'y' && answer?.toLowerCase() !== 'yes') {
