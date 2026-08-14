@@ -552,6 +552,9 @@ export function App({
                 model,
                 task,
                 confirm: async () => true,
+                // P5 收尾：chat 内 /orchestrate 置 silent——抑制 stdout/stderr 直写，
+                // 进度经 onProgress 推送聊天消息、汇总经返回值转聊天消息，不污染 TUI
+                silent: true,
                 traceStore,
                 // T4.1：拆解/轮次/收尾进度 → 渐进推送聊天消息（长任务可感知，不黑盒等待）
                 onProgress: (p) => {

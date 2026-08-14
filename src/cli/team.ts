@@ -67,6 +67,12 @@ export interface RunTeamCommandOptions {
   dryRun?: boolean;
   /** 并行模式（v4.0 M5）：显式 --parallel，或由拆解前自然语言意图自动触发。 */
   parallel?: boolean;
+  /**
+   * 静默模式（v4.0 M5 收尾，P5）：作为库被 /orchestrate（chat 内）调用时置 true，
+   * 抑制所有 process.stdout/stderr 直写（拆解清单/结果/回滚告警），避免污染 TUI；
+   * 进度与汇总改由 onProgress 回调 + 返回值承载。CLI 入口保持 false（缺省）。
+   */
+  silent?: boolean;
   /** CLI --lang。 */
   lang?: string;
   /** 模型客户端（测试注入；缺省 DeepSeekClient）。 */
@@ -189,6 +195,19 @@ export async function runTeamCommand(options: RunTeamCommandOptions): Promise<Te
   setLocale(resolveLocale(resolved.locale));
   const model = resolveModel(resolved.model);
   const client = options.client ?? new DeepSeekClient({ apiKey: options.apiKey });
+  // P5 收尾：库调用（/orchestrate）静默——stdout/stderr 直写统一走 write/stderrWrite，
+  // silent=true 时全部抑制，改由 onProgress + 返回值承载（CLI 入口保持直写）
+  const silent = options.silent === true;
+  const write = (s: string): void => {
+    if (!silent) {
+      process.stdout.write(s);
+    }
+  };
+  const stderrWrite = (s: string): void => {
+    if (!silent) {
+      process.stderr.write(s);
+    }
+  };
 
   // 1. 拆解（模型输出 Task[]；失败给中文错误 + diagnostics，不静默产出空清单）
   let tasks: OrchestratorTask[];
@@ -231,7 +250,7 @@ export async function runTeamCommand(options: RunTeamCommandOptions): Promise<Te
   // 2. dry-run：仅输出拆解清单并退出，不执行任何 Agent
   if (options.dryRun === true) {
     options.onProgress?.({ kind: 'done', ok: true });
-    process.stdout.write(`=== 任务拆解（dry-run，未执行）===\n\n${formatTaskList(tasks)}\n`);
+    write(`=== 任务拆解（dry-run，未执行）===\n\n${formatTaskList(tasks)}\n`);
     return { ok: true, summary: 'dry-run：仅输出拆解清单，未执行任何 Agent', tasks, artifacts: [] };
   }
 
@@ -239,14 +258,14 @@ export async function runTeamCommand(options: RunTeamCommandOptions): Promise<Te
   const confirm = options.confirm ?? defaultConfirm;
   if (options.autoApprove !== true) {
     if (process.stdin.isTTY !== true) {
-      process.stderr.write('❌ team 命令需要交互式终端确认拆解方案；非交互请加 --auto-approve。\n');
+      stderrWrite('❌ team 命令需要交互式终端确认拆解方案；非交互请加 --auto-approve。\n');
       process.exit(1);
     }
-    process.stdout.write(`=== 任务拆解 ===\n\n${formatTaskList(tasks)}\n\n`);
+    write(`=== 任务拆解 ===\n\n${formatTaskList(tasks)}\n\n`);
     const approved = await confirm('批准该方案并开始执行 (y/n): ');
     if (!approved) {
       options.onProgress?.({ kind: 'done', ok: false });
-      process.stdout.write('用户未确认拆解方案，已取消（未执行任何 Agent）。\n');
+      write('用户未确认拆解方案，已取消（未执行任何 Agent）。\n');
       return { ok: false, summary: '用户未确认拆解方案，已取消', tasks, artifacts: [] };
     }
   }
@@ -256,7 +275,7 @@ export async function runTeamCommand(options: RunTeamCommandOptions): Promise<Te
     options.autoApprove === true
       ? async () => true
       : async () => {
-          process.stdout.write('代码方案生成完毕，批准写盘 (y/n): ');
+          write('代码方案生成完毕，批准写盘 (y/n): ');
           return confirm('');
         };
   // 事务上下文先于 coder 装配创建（T6.5：写盘必须登记快照，回滚保护不依赖预登记清单）
@@ -325,7 +344,7 @@ export async function runTeamCommand(options: RunTeamCommandOptions): Promise<Te
       },
       onRollback: async (rollbackTaskId, reason) => {
         const rb = await snapshots.rollback(rollbackTaskId);
-        process.stderr.write(
+        stderrWrite(
           `⚠️ 任务 ${rollbackTaskId} 闭环超限/失败，触发事务回滚（${reason}）：${
             rb.ok
               ? '已恢复原状'
@@ -351,7 +370,7 @@ export async function runTeamCommand(options: RunTeamCommandOptions): Promise<Te
           `- [${a.type}] ${a.path ?? a.id}: ${a.content.slice(0, 80)}${a.content.length > 80 ? '…' : ''}`,
       )
       .join('\n');
-    process.stdout.write(
+    write(
       `\n=== 并行团队执行结果 ===\n\n${parallelResult.summary}\n\n=== 工件 ===\n${artifactLines || '（无工件）'}\n`,
     );
     return {
@@ -400,7 +419,7 @@ export async function runTeamCommand(options: RunTeamCommandOptions): Promise<Te
     },
     onRollback: async (reason) => {
       const rb = await snapshots.rollback(taskId);
-      process.stderr.write(
+      stderrWrite(
         `⚠️ 闭环超限/失败，触发事务回滚（${reason}）：${rb.ok ? '已恢复原状' : `回滚失败（${rb.failed.map((f) => f.error).join('; ')}，快照保留）`}\n`,
       );
     },
@@ -419,7 +438,7 @@ export async function runTeamCommand(options: RunTeamCommandOptions): Promise<Te
         `- [${a.type}] ${a.path ?? a.id}: ${a.content.slice(0, 80)}${a.content.length > 80 ? '…' : ''}`,
     )
     .join('\n');
-  process.stdout.write(
+  write(
     `\n=== 团队执行结果 ===\n\n${loop.summary}\n\n=== 工件 ===\n${artifactLines || '（无工件）'}\n`,
   );
 

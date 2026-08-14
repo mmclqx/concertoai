@@ -1,6 +1,6 @@
 {
   "name": "@concertoai/cli",
-  "version": "4.0.0",
+  "version": "4.0.1",
   "description": "ConcertoAI —— 面向个人开发者的中文优先终端编码助手 CLI（DeepSeek 驱动）",
   "type": "module",
   "license": "MIT",
@@ -50,8 +50,8 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.7",
-    "@types/node": "^22.0.0",
+    "@biomejs/biome": "^2.5.8",
+    "@types/node": "^22.20.1",
     "@types/react": "^19.2.0",
     "ink-testing-library": "^4.0.0",
     "tsup": "^8.5.1",

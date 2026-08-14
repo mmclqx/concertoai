@@ -11,9 +11,12 @@
  * - CodeAction 构建（R1/R3 有修复，R2 无）。
  */
 
-import { describe, expect, it } from 'vitest';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+import { afterAll, describe, expect, it } from 'vitest';
 import {
   applyTextEdits,
+  biomeFixEdits,
   consoleLogDiagnostics,
   explicitAnyDiagnostics,
   extractNamedImports,
@@ -268,6 +271,56 @@ describe('selfHealCodeActions', () => {
     expect(lines).toEqual([0, 2]);
     for (const e of edits ?? []) {
       expect(e.newText).toBe('');
+    }
+  });
+});
+
+describe('biomeFixEdits（集成，真实 biome 子进程）', () => {
+  // 临时副本目录（主仓库 src/ 下：npx 向上找到主仓库 biome + includes 覆盖 src/**）
+  const tmpBases: string[] = [];
+
+  afterAll(() => {
+    for (const dir of tmpBases) {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('副本落在项目内（src/）→ biome 修复生效，返回整文件替换 edit（修复 includes 忽略问题）', async () => {
+    // 真实端到端发现回归：旧实现 tmp 副本放 os.tmpdir()，被主仓库 biome.json
+    // `files.includes: ['src/**']` 忽略 → biome 处理 0 文件 → 修复无效。
+    const base = mkdtempSync(path.join(process.cwd(), 'src', '.lsp-fix-itest-'));
+    tmpBases.push(base);
+    const file = path.join(base, 'bad.ts');
+    // format 问题（biome --write 安全修复）+ console.log（unsafe fix 需 --unsafe，不依赖）
+    const content = 'export  function  f(){return 1}\n';
+    writeFileSync(file, content, 'utf8');
+    try {
+      const edits = await biomeFixEdits(file, process.cwd());
+      expect(edits).toBeDefined();
+      expect(edits?.length).toBeGreaterThan(0);
+      const newText = edits?.[0]?.newText;
+      expect(newText).toBeDefined();
+      // 整文件替换 edit：range 覆盖全文、newText 已格式化（空格归一）
+      expect(newText).not.toBe(content);
+      expect(newText).toContain('export function f()');
+      // 服务端不修改用户文件：磁盘内容保持原样
+      expect(readFileSync(file, 'utf8')).toBe(content);
+    } finally {
+      rmSync(base, { recursive: true, force: true });
+    }
+  });
+
+  it('无变化文件 → 返回 undefined（不产生空修复）', async () => {
+    const base = mkdtempSync(path.join(process.cwd(), 'src', '.lsp-fix-itest-'));
+    tmpBases.push(base);
+    const file = path.join(base, 'ok.ts');
+    const content = 'export function f() {\n  return 1;\n}\n';
+    writeFileSync(file, content, 'utf8');
+    try {
+      const edits = await biomeFixEdits(file, process.cwd());
+      expect(edits).toBeUndefined();
+    } finally {
+      rmSync(base, { recursive: true, force: true });
     }
   });
 });

@@ -2,7 +2,7 @@
 
 > 版本：v4.0（含 v2.2 / v3.1 / v3.2 / v3.3 / v3.4 全部已交付功能）· 2026-08-14
 > 本文档基于当前代码实现编写，作为后续维护与扩展的技术参考。
-> 配套文档：[v3.0 开发任务](../03-开发计划与任务/v3.0-dev-tasks.md)、[v3.1 开发计划](../03-开发计划与任务/v3.1-dev-plan-ai.md)、[v3.3 开发计划](../03-开发计划与任务/v3.3-dev-plan.md)、[v3.4 开发计划](../03-开发计划与任务/v3.4-dev-plan.md)、[v4.0 开发计划终稿](../03-开发计划与任务/v4.0-dev-plan-final.md)（规划中，未实施）、[任务看板](../03-开发计划与任务/TASKS.md)
+> 配套文档：[v3.0 开发任务](../03-开发计划与任务/v3.0-dev-tasks.md)、[v3.1 开发计划](../03-开发计划与任务/v3.1-dev-plan-ai.md)、[v3.3 开发计划](../03-开发计划与任务/v3.3-dev-plan.md)、[v3.4 开发计划](../03-开发计划与任务/v3.4-dev-plan.md)、[v4.0 开发计划终稿](../03-开发计划与任务/v4.0-dev-plan-final.md)（已实施）、[任务看板](../03-开发计划与任务/TASKS.md)
 
 ---
 
@@ -11,13 +11,13 @@
 ConcertoAI 是一款**中文优先**的终端编码助手 CLI（DeepSeek 驱动）。在项目目录里启动后，它读取代码、提出 diff 方案、征求命令许可、跑验证，并留下可续接的会话记录。
 
 - **技术栈**：TypeScript (strict) + Node ≥22 + ESM，Ink 7 (React 19) 渲染 TUI，commander 解析 CLI，zod 做工具参数校验，vitest 测试，Biome 检查，tsup 打包
-- **运行时依赖**：`ink` / `react` / `commander` / `zod` / `cli-highlight` / `chalk`
+- **运行时依赖**：`ink` / `react` / `commander` / `zod` / `cli-highlight` / `chalk` / `tiktoken`（v2.0 BPE 精确 Token 计数）
 - **测试现状**：112 个测试文件、1334 个用例，`npm run verify` 全绿，`npm audit` 0 漏洞；已用真实 `DEEPSEEK_API_KEY` 完成端到端冒烟
 - **安全基线**：编辑与命令一律审批（fail-closed）、路径沙箱、结果截断、白名单免审批——无 yolo 模式
 - **v3.1 新增能力**：AI 自我修复闭环（self-heal）/ 多项目管理（project）/ 多租户登录（account）/ Orchestrator CLI（team、/orchestrate、audit export）/ 结构化错误增强（error-codes）；**v3.1 预留功能（已交付）**：`concertoai balance`（余额查询）/ `concertoai doctor`（环境诊断）、配置目录迁移 `~/.lumen → ~/.concertoai`（`src/store/paths.ts` 单一来源 + 幂等迁移）；**v2.2 智能成本控制**（高峰时段模型自动切换，见 §4 D41）
 - **v3.2 新增能力**：跨平台 CI 矩阵与 spawn 审计（ADR-032）/ UNC 路径与 EXDEV 边界（ADR-031）/ self-heal 模块化拆分（ADR-030）/ audit 损坏行统计 + /orchestrate diagnostics / 长任务进度推送（team onProgress + self-heal onPhase）/ project-account 视觉与 doctor 账号完整性 / 启动期缓存（ADR-029）/ Agent 市场版本对比与 `update --all`
 - **v3.3 质量收尾**（审查遗留 W1/W2 + S1-S3，不做新功能面）：lint:fix 失败 break 语义显式化 / 全局正则常量去 `g` 标志（消除 lastIndex 陷阱）/ self-heal 文案 i18n（`selfHeal` 分组 + `--lang en` 全英文）/ `resolveApiKeyCached` 缓存语义注释 / 存量解析测试迁移到 `platform-samples.ts`
-- **v3.4 审查闭环 + VS Code 崩溃防护**：S-C1 `collectKeys` maxDepth（en.test.ts）/ I1 feedback 数据层 i18n（`selfHeal.feedback*` 键组，en 下全英文）/ I2 正则常量去 `g`/`gm` 全项目复核（classifier / edit / read / tokenizer / planner）/ I3 en 字典 CJK 校验 / **`concertoai doctor --vscode`**（`src/cli/vscode-health.ts`：进程数 / 崩溃转储 / AI 扩展 / argv.json 四维诊断，argv.json 字段名复数 `disable-extensions` 校验——踩坑记录 §六）
+- **v3.4 审查闭环 + VS Code 崩溃防护**：S-C1 `collectKeys` maxDepth（en.test.ts）/ I1 feedback 数据层 i18n（`selfHeal.feedback*` 键组，en 下全英文）/ I2 正则常量去 `g`/`gm` 全项目复核（classifier / edit / read / tokenizer / planner）/ I3 en 字典 CJK 校验 / **`concertoai doctor --vscode`**（`src/cli/vscode-health.ts`：进程数 / 崩溃转储 / AI 扩展 / argv.json 四维诊断，argv.json 字段名**单数** `disable-extension` 校验（复数 `disable-extensions` = 无效用法告警，踩坑记录 §六/§七）
 - **v4.0 已完成**：架构拐点——从「单体工具」到「插件化平台」。M0-M8 约 32.5h 全部落地：**M0 已完成**（config v3→v4 迁移器骨架 + 破坏性变更清单）；**M1 已完成**（Reviewer autoFix 闭环 `reviewer/autofix.ts` + `/review --fix`：A/B 分批 → 批量审批 fail-closed → 快照 → 写盘 → 增量 verify → commit/rollback，≤2 次交互）；**M2 已完成**（`concertoai workflow` DAG 工作流引擎 `workflow/`：4 内置模板 + YAML 解析/序列化 + NL 自然语言生成 + TaskScheduler 执行（拓扑/并行/审批/失败恢复 R/S/F/A）+ SnapshotManager 整体回滚 + 依赖推断提示确认 + export/import 分享 + `/workflow` chat 内可用）；**M3 已完成**（多 Provider 抽象层 `model/`：Provider 接口四能力（chat/tokenize/cost/healthCheck）+ DeepSeek/OpenAI/Ollama 三实现 + ProviderRegistry/Router（选择/切换/启动 fallback ≤1 次）+ `--provider` 临时切换 + `provider list/auth/switch` + `config set provider` + config v3→v4 自动迁移（备份 config.v3.bak + `_migrated` 幂等 + doctor 迁移完整性四检测）+ doctor 模型推荐（复杂度×预算×本地 Ollama + 月成本预估）+ StatusBar 成本对比/fallback 提示）；**M4 已完成**（插件市场 `plugin/` + `market/plugins[]`：PluginInstaller 全流程（注册表匹配→下载/builtin 直装→sha256→权限清单确认 fail-closed→落盘）+ `plugin install/search/list/remove/browse/recommend/popular` CLI + chat 内 `/plugin` + PluginLoader 双路径扫描（全局 `~/.concertoai/plugins/` + 项目 `.concertoai/plugins/`，ESM 强制）+ PluginRuntime 动态装配（工具注入 ToolRegistry 带 pluginSource/pluginPermission + 调用前权限钩子拦截）+ PermissionEnforcer 六类权限运行时 enforce（声明检查 + network/shell/mcp 白名单细粒度，见 §4 D57）+ 4 内置示例插件（git-status / api-docs / todo-tracker / release-helper）+ installer 按 type 分派（skill/agent/plugin，零破坏）；**M5 已完成**（`team --parallel` 多 Agent 并行 `orchestrator/parallel.ts`：自然语言/显式 `--parallel` 并行意图识别 → 任务按依赖分层 wave（复用 topologicalSort）→ 层内 Promise.all 并行 + 文件冲突组整组串行化 → 每任务独立 AgentContext/taskId/SnapshotManager 事务 → 汇总报告（成功/失败 + 冲突提示 + 降级提示），意图识别失败降级串行不产生副作用，见 §4 D58）；**M6 已完成**（LSP 三来源诊断 `lsp/`：`concertoai lsp --stdio`——LSP 3.17 最小闭环（JSON-RPC 2.0 + Content-Length 帧，跨平台 CRLF/LF）→ initialize 能力声明 + didOpen/didChange/didSave → 三来源诊断（biome lint → Warning / tsc type → Error / self-heal 静态规则：未使用 import、显式 any、console.log → Information）→ publishDiagnostics 推送 Problems 面板 + CodeAction「🔧 用 ConcertoAI 修复」（biome check --write 副本 diff，不直接改用户文件）与「移除未使用的 import / console.log」行删除，修复后 didChange 自动刷新诊断消失；Web UI + VS Code 扩展骨架延后 v4.1，见 §4 D59）；**M7 已完成**（TS7 评估 NO-GO：调研报告 `docs/10-技术评估/ts7-evaluation.md` 覆盖四维度（type stripping / erasableSyntaxOnly / 工具链 / Node 运行时）→ 锁定 TS 5.9 + v4.1 再评估，ADR-037 / 决策表 D60——收益趋近 0（esbuild 构建不依赖 tsc 产物）+ 12 处不可擦除语法改造成本 + 工具链适配未验证）。架构决策见 ADR-033~037（决策表 D53~D60）；详细计划见 [v4.0-dev-plan-final.md](../03-开发计划与任务/v4.0-dev-plan-final.md)，本架构正文随实施进度同步更新
 
 ## 2. 架构全景图
@@ -188,7 +188,9 @@ cli/index.ts（无子命令或 chat）
       高峰时段（工作日 9-12 / 14-18）按 peakTimeStrategy 决策：
       ask=交互确认 / switch=直接切本地模型 / ignore=保持主模型；非高峰不打扰
   → chat.tsx：TTY 检查（非交互终端友好报错）
-  → 组装：DeepSeekClient（本地模型按 ollamaBaseUrl 构建）+ ToolRegistry(5 工具) + ToolContext{白名单}
+  → 组装：ProviderRouter（v4.0 M3：CLI --provider > config defaultProvider > deepseek；resolveProvider 三实现
+      DeepSeek/OpenAI/Ollama，启动 healthCheck + fallback ≤1 次；-m 映射 defaultProvider.model）
+      + ToolRegistry(5 工具) + ToolContext{白名单}
   → loadProjectRules(cwd)：AGENTS.md 优先 / CARBON.md 兜底，注入系统提示
   → SessionStore：resume 则读历史，否则 create 新会话
   → render(<App …/>)（本地模型成本按 0 展示，避免 costFor 未知模型抛错）
@@ -366,7 +368,7 @@ concertoai/
 │   │   ├── snapshot.ts   concertoai snapshot [list|clean]：快照残留列出/清理（v3.0 M3）
 │   │   ├── balance.ts    concertoai balance：余额查询（fetchBalance，v3.1）
 │   │   ├── doctor.ts     concertoai doctor：环境诊断（Node/Key/配置/会话/模型/余额/账号完整性，v3.1 + v3.2 M4；--vscode 追加 VS Code 四维，v3.4 M3；模型推荐 + 配置迁移完整性四检测，v4.0 M3）
-│   ├── vscode-health.ts VS Code 健康诊断（v3.4 M3）：进程数（tasklist/ps）/ 崩溃转储（Crashpad *.dmp）/ AI 扩展（code --list-extensions + argv.json 核对）/ argv.json 字段名复数与值格式校验（disable-extensions）；纯解析函数 + 依赖注入（exec/readFile/scanDir），检测失败降级不崩溃
+│   ├── vscode-health.ts VS Code 健康诊断（v3.4 M3）：进程数（tasklist/ps）/ 崩溃转储（Crashpad *.dmp）/ AI 扩展（code --list-extensions + argv.json 核对）/ argv.json 字段名单数与值格式校验（disable-extension）；纯解析函数 + 依赖注入（exec/readFile/scanDir），检测失败降级不崩溃
 │   │   ├── project.ts    concertoai project add/list/remove/info/switch（v3.1 M2；list 三列表格 + 当前项目 ★ 高亮，v3.2 M4）
 │   │   ├── self-heal.ts  concertoai self-heal：verify 失败自动分类→修复→验证→回滚（v3.1 M1）
 │   │   ├── team.ts       concertoai team "<任务>"：Orchestrator 全链路（拆解→对抗性闭环→回滚兜底，v3.1 M5；onProgress 进度推送，v3.2 M4；--parallel 并行 v4.0 M5）
@@ -531,7 +533,7 @@ concertoai/
 │       ├── zh.ts         中文字典 + fmt()
 │       ├── en.ts         英文字典（键与 zh 同构）
 │       └── index.ts      resolveLocale / setLocale / t() / DICTS
-└── tests/                镜像 src 结构（112 个文件 / 1334 用例，v3.4 基线 + M0 迁移器骨架 + M1 autoFix + M2 workflow + M3 Provider 体系 + M4 插件体系 + M5 team-parallel + M6 lsp），含 tests/agent/、tests/agents/、tests/balance/、tests/cli/（含 common.test.ts 启动缓存 + workflow.test.ts / slash-workflow.test.ts + provider.test.ts + plugin.test.ts + team-parallel.test.ts）、tests/core/、tests/e2e/（team-cli/self-heal/project-isolation/platform-e2e）、tests/fixtures/（platform-samples 跨平台样本库）、tests/i18n/、tests/knowledge/、tests/loop/（self-heal/error-reporting）、tests/lsp/（framing/diagnostics/server）、tests/market/、tests/mcp/、tests/model/（client/models/tokenizer/providers/registry/router/recommend）、tests/observable/、tests/orchestrator/、tests/planner/、tests/plugin/（permissions/loader/installer/runtime）、tests/reviewer/（含 autofix.test.ts）、tests/skill/、tests/store/（projects/accounts/accounts-exdev/migration/config）、tests/tools/、tests/ui/（含 review-report.test.tsx）、tests/workflow/（templates/parser/nl-generator/executor） 等
+└── tests/                镜像 src 结构（112 个文件 / 1337 用例，v3.4 基线 + M0 迁移器骨架 + M1 autoFix + M2 workflow + M3 Provider 体系 + M4 插件体系 + M5 team-parallel + M6 lsp + 发布后收尾 3 回归），含 tests/agent/、tests/agents/、tests/balance/、tests/cli/（含 common.test.ts 启动缓存 + workflow.test.ts / slash-workflow.test.ts + provider.test.ts + plugin.test.ts + team-parallel.test.ts）、tests/core/、tests/e2e/（team-cli/self-heal/project-isolation/platform-e2e）、tests/fixtures/（platform-samples 跨平台样本库）、tests/i18n/、tests/knowledge/、tests/loop/（self-heal/error-reporting）、tests/lsp/（framing/diagnostics/server）、tests/market/、tests/mcp/、tests/model/（client/models/tokenizer/providers/registry/router/recommend）、tests/observable/、tests/orchestrator/、tests/planner/、tests/plugin/（permissions/loader/installer/runtime）、tests/reviewer/（含 autofix.test.ts）、tests/skill/、tests/store/（projects/accounts/accounts-exdev/migration/config）、tests/tools/、tests/ui/（含 review-report.test.tsx）、tests/workflow/（templates/parser/nl-generator/executor） 等
 ```
 
 ## 6. 5分钟快速体验

@@ -138,6 +138,7 @@ describe('E2E：team CLI 全链路（拆解 → 闭环 → 真实写盘 → 聚�
       cwd: tmp,
       apiKey: 'sk-test',
       task: '实现 TODO 模块',
+      silent: true, // P5：静音避免污染 vitest --silent 输出
       autoApprove: true,
       client: new FakeModel([{ content: DECOMPOSE_JSON }]),
       agents: { coder, reviewer: makeApproveReviewer(), qa: makeQa(true) },
@@ -164,6 +165,7 @@ describe('E2E：team CLI 全链路（拆解 → 闭环 → 真实写盘 → 聚�
       cwd: tmp,
       apiKey: 'sk-test',
       task: '实现 TODO 模块',
+      silent: true, // P5：静音避免污染 vitest --silent 输出
       autoApprove: true,
       client: new FakeModel([{ content: DECOMPOSE_JSON }]),
       agents: { coder, reviewer: makeApproveReviewer(), qa: makeQa(true) },
@@ -206,6 +208,7 @@ describe('E2E：team CLI 全链路（拆解 → 闭环 → 真实写盘 → 聚�
       cwd: tmp,
       apiKey: 'sk-test',
       task: '实现 TODO 模块',
+      silent: true, // P5：静音避免污染 vitest --silent 输出
       autoApprove: true,
       client: new FakeModel([{ content: DECOMPOSE_JSON }]),
       agents: { coder, reviewer: makeApproveReviewer(), qa: makeQa(false) }, // QA 永远失败
@@ -244,6 +247,7 @@ describe('E2E：team CLI 全链路（拆解 → 闭环 → 真实写盘 → 聚�
       cwd: tmp,
       apiKey: 'sk-test',
       task: '实现 TODO 模块',
+      silent: true, // P5：静音避免污染 vitest --silent 输出
       autoApprove: true,
       client: new FakeModel(script),
       // 不注入 coder → team.ts 装配真实 CoderAgent + txnWriter（DiskFileWriter 写盘前 registerWrite）

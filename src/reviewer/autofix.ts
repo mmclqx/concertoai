@@ -324,6 +324,9 @@ export async function runAutoFix(
           status === 'fixed' ? 'fixed' : status === 'rolledback' ? 'rolledback' : 'manual';
         if (p.item.status === 'fixed') {
           p.item.reason = undefined;
+        } else if (p.item.status === 'rolledback') {
+          // 修正 reason 语义：写盘后 verify 失败被回滚，而非「待批量审批」（真实端到端发现）
+          p.item.reason = t().reviewer.reasonVerifyFailed;
         }
         done += 1;
         options.onProgress?.(done, total);

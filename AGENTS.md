@@ -135,6 +135,7 @@ UI 测试：Ink 组件需用 ink-testing-library 覆盖
 10. **解析类正则多平台样本**：解析第三方工具输出（Biome/tsc/vitest）的正则，必须用 Windows（反斜杠路径/盘符冒号）与 POSIX 两种样本验证，且覆盖类别/行列变体（教训：lint/ 前缀正则漏掉 format/assist 类别，见 09-踩坑记录/2026-08-11-Biome解析漏掉format与assist类别错误.md）
 11. **执行日志落盘**：每次任务必须有 docs/execution-log-*.md 落盘，含任务交代 + 关键步骤（读文件/搜索/生成方案/编辑/测试）+ 时间戳；提交时随任务文件一并提交（v3.2 T5.5）
 12. **发布前自我审查 + 对照 C 学习**：发布前，AI 先自我审查（独立完成，不参考 C 的审查报告），再与 C 的审查对比，学习差距（语义追问/边界模式/国际化盲区等），持续提升代码质量（v3.2 双视角审查经验，见 09-踩坑记录/2026-08-11-自我审查与C审查视角差距.md）
+13. **发布后工作区立即归零**：发布 commit 落盘后立即 `git status` 确认无 modified/untracked；任何发布后发现的新修复（真实端到端 bug）须立即 commit + 补回归用例 + 踩坑记录 + 发 patch 版，严禁修复滞留在工作区（教训：v4.0.0 发布后 autofix reason / LSP 双 bug 滞留工作区，npm 包携带 bug，见 09-踩坑记录/2026-08-14-端到端测试暴露三处自动化未覆盖bug.md）
 
 ## 命名与包
 项目	内容
@@ -258,7 +259,7 @@ v3.3.0 发布门检查（当前，2026-08-11）：
 v3.4.0 发布门检查（当前，2026-08-12）：
 
 ☑ npm run verify 全绿（89 文件 / 1044 用例，v3.4 基线）
-☑ 版本号一致性核对（package.json / package-lock.json / src/version.ts / tests/smoke.test.ts = 4.0.0；段标记样本 @concertoai/cli@4.0.0 同步）
+☑ 版本号一致性核对（package.json / package-lock.json / src/version.ts / tests/smoke.test.ts = 4.0.1；段标记样本 @concertoai/cli@4.0.1 同步）
 ☑ S-C1/I1/I2/I3 四项审查闭环 + doctor --vscode 四维诊断全部落地；en.test.ts maxDepth + CJK 断言覆盖
 ☑ 手工测试报告 07.7 + 自我审查报告落盘；执行日志补全
 ☑ npm audit 0 漏洞；npm whoami 令牌有效（mmclqx）→ npm publish 成功（latest=3.4.0）

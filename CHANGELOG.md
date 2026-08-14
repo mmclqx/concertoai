@@ -6,6 +6,22 @@
 - 条目按类型分组：`Added`（新增）/ `Changed`（变更）/ `Fixed`（修复）/ `Removed`（移除）；
 - 版本号由 `npm version <patch|minor|major>` 管理（自动 bump + 同步 `src/index.ts` 的 VERSION + git tag）。
 
+## [4.0.1] — 2026-08-15
+
+> v4.0.0 发布后专业审核（8.5/10）收尾补丁：修复 2 个真实端到端 bug（npm v4.0.0 携带）+ 文档/统计/归档同步 + team 静音回归。112 文件 / 1337 用例全绿。
+
+### Fixed
+
+- **`/review --fix` 回滚项 reason 语义**：A 类写盘后 verify 失败被回滚的项，修复报告 reason 仍显示「待批量审批」而非「修复后验证失败，已自动撤销」（语义误导；真实端到端发现）→ `rolledback` 分支显式写 `reasonVerifyFailed` + 回归断言
+- **LSP CodeAction「🔧 用 ConcertoAI 修复」在配置 `files.includes` 的项目中缺失**：biomeFixEdits 临时副本放系统临时目录被 biome.json includes 忽略（biome 处理 0 文件）→ 副本优先放项目 `src/`（无 src 回退 tmp）+ 2 个真实 biome 集成测试
+- **Windows 下 LSP 真实诊断静默为空**：`execFileAsync('npx.cmd')` 抛 EINVAL（Node 无法直接 spawn .cmd）→ 改 `spawn(cmd, { shell: true })`（与 tools/shell.ts 跨平台策略一致）
+
+### Changed
+
+- `runTeamCommand` 新增 `silent` 选项：/orchestrate（chat 内）调用置 true，抑制 stdout/stderr 直写污染 TUI（进度经 onProgress、汇总经返回值承载）
+- `docs/10-手工测试/07.5-快速执行卡` 归档至 `docs/03-开发计划与任务/archive/`（完整版在 docs 根）
+- TASKS.md 总览同步 v4.0（161→214 任务）、ARCHITECTURE.md 5 处过期同步、07.8 统计 61→62 + 用例 1334→1337
+
 ## [4.0.0] — 2026-08-14
 
 > v4.0 定位：**可扩展的插件化 AI 开发平台**——架构拐点（major），破坏性变更集中在新增面（config 格式 / CLI --provider / Plugin 接口），旧命令 / 会话 / 技能平滑迁移。M0~M8 全部落地：112 文件 / 1334 用例全绿，`npm audit` 0 漏洞，CI 三平台（ubuntu/windows/macos）。

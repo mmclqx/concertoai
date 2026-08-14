@@ -18,18 +18,95 @@
  * 子进程执行（ChildProcessDiagnosticRunner）可注入 Fake runner。
  */
 
-import { execFile } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { type ChildProcess, spawn } from 'node:child_process';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { promisify } from 'node:util';
 import { parseLintErrors } from '../loop/self-heal/classifier';
 import { DIAGNOSTIC_SOURCE, type LspDiagnostic, LspSeverity, type TextEdit } from './protocol';
 
 // 重新导出（兼容 barrel/server 直接引用；实现位于 protocol.ts）
 export { CODE_ACTION_KIND } from './protocol';
 
-const execFileAsync = promisify(execFile);
+/** 终止子进程树（Windows taskkill / POSIX 进程组），与 tools/shell.ts killTree 一致。 */
+function killTree(child: ChildProcess): void {
+  if (child.pid === undefined) {
+    return;
+  }
+  if (process.platform === 'win32') {
+    spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], {
+      windowsHide: true,
+      stdio: 'ignore',
+    });
+    return;
+  }
+  try {
+    process.kill(-child.pid, 'SIGKILL');
+  } catch {
+    try {
+      child.kill('SIGKILL');
+    } catch {
+      // 进程已退出
+    }
+  }
+}
+
+/** 给 shell 参数加引号（含空格路径；Windows cmd 双引号 / POSIX 单引号语义兼容）。 */
+function quoteShellArg(arg: string): string {
+  if (/[\s"']/.test(arg)) {
+    return `"${arg.replace(/"/g, '\\"')}"`;
+  }
+  return arg;
+}
+
+/**
+ * 以 shell 方式执行命令并捕获输出（跨平台）。
+ *
+ * 修复（真实端到端发现）：旧实现 `execFileAsync('npx.cmd', args)` 在 Windows 上
+ * 直接 spawn .cmd 文件会抛 EINVAL（Node 无法直接执行 .cmd），导致 biome/tsc 诊断
+ * 静默返回空。改为 `spawn(command, { shell: true })`——Windows 走 cmd.exe、
+ * POSIX 走 sh，与 tools/shell.ts 的跨平台策略一致（npx→npx.cmd 由 cmd 解析）。
+ */
+function execShellCapture(
+  command: string,
+  cwd: string,
+  timeoutMs: number,
+): Promise<{ code: number; stdout: string; stderr: string }> {
+  return new Promise((resolve) => {
+    const child = spawn(command, { shell: true, cwd, windowsHide: true });
+    let stdout = '';
+    let stderr = '';
+    let done = false;
+    let timer: NodeJS.Timeout | undefined;
+    const finish = (code: number): void => {
+      if (done) {
+        return;
+      }
+      done = true;
+      if (timer !== undefined) {
+        clearTimeout(timer);
+      }
+      resolve({ code, stdout, stderr });
+    };
+    timer = setTimeout(() => {
+      killTree(child);
+      finish(-1);
+    }, timeoutMs);
+    child.stdout?.on('data', (chunk: Buffer) => {
+      stdout += chunk.toString();
+    });
+    child.stderr?.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString();
+    });
+    child.on('error', () => finish(-1));
+    child.on('close', (code) => finish(code ?? -1));
+  });
+}
+
+/** 构造 `npx <subcommand> <args>` 命令字符串（含空格参数加引号）。 */
+function npxCommand(subcommand: string, args: string[]): string {
+  return ['npx', subcommand, ...args.map(quoteShellArg)].join(' ');
+}
 
 // ── URI / 路径工具 ───────────────────────────────────────────
 
@@ -275,43 +352,26 @@ export interface DiagnosticRunner {
   type(file: string, cwd: string): Promise<LspDiagnostic[]>;
 }
 
-/** 子进程执行器：npx biome check <file> + npx tsc --noEmit（跨平台 npx.cmd）。 */
+/** 子进程执行器：npx biome check <file> + npx tsc --noEmit（跨平台，shell 方式执行）。 */
 export class ChildProcessDiagnosticRunner implements DiagnosticRunner {
-  private readonly npxCommand: string;
-
-  constructor(platform: NodeJS.Platform = process.platform) {
-    this.npxCommand = platform === 'win32' ? 'npx.cmd' : 'npx';
-  }
-
   /** 运行 biome 单文件检查；解析为 Warning 诊断（复用 parseLintErrors）。 */
   async lint(file: string, cwd: string): Promise<LspDiagnostic[]> {
-    try {
-      const { stdout, stderr } = await execFileAsync(this.npxCommand, ['biome', 'check', file], {
-        cwd,
-        timeout: 30000,
-        windowsHide: true,
-      });
-      return parseBiomeLintOutput(`${stdout}\n${stderr}`);
-    } catch (err) {
-      // biome 退出码非 0 = 有错误；stdout/stderr 已包含在错误对象（execFile 抛错带 stdout/stderr）
-      const e = err as { stdout?: string; stderr?: string };
-      return parseBiomeLintOutput(`${e.stdout ?? ''}\n${e.stderr ?? ''}`);
-    }
+    const { stdout, stderr } = await execShellCapture(
+      npxCommand('biome', ['check', file]),
+      cwd,
+      30_000,
+    );
+    return parseBiomeLintOutput(`${stdout}\n${stderr}`);
   }
 
   /** 运行 tsc --noEmit；过滤当前文件错误为 Error 诊断。 */
   async type(file: string, cwd: string): Promise<LspDiagnostic[]> {
-    try {
-      const { stdout, stderr } = await execFileAsync(this.npxCommand, ['tsc', '--noEmit'], {
-        cwd,
-        timeout: 120000,
-        windowsHide: true,
-      });
-      return parseTscOutput(`${stdout}\n${stderr}`, file);
-    } catch (err) {
-      const e = err as { stdout?: string; stderr?: string };
-      return parseTscOutput(`${e.stdout ?? ''}\n${e.stderr ?? ''}`, file);
-    }
+    const { stdout, stderr } = await execShellCapture(
+      npxCommand('tsc', ['--noEmit']),
+      cwd,
+      120_000,
+    );
+    return parseTscOutput(`${stdout}\n${stderr}`, file);
   }
 }
 
@@ -381,24 +441,20 @@ export function parseTscOutput(output: string, targetFile: string): LspDiagnosti
 export async function biomeFixEdits(
   file: string,
   cwd: string,
-  platform: NodeJS.Platform = process.platform,
+  _platform: NodeJS.Platform = process.platform,
 ): Promise<TextEdit[] | undefined> {
-  const tmpDir = mkdtempSync(path.join(os.tmpdir(), 'concertoai-lsp-fix-'));
+  // 临时副本必须落在项目 biome.json includes 覆盖范围内（真实端到端发现）：
+  // 旧实现放 os.tmpdir()，被 `files.includes: ['src/**']` 等项目配置忽略 → biome 处理 0 文件
+  // → 修复无效、CodeAction 缺失。优先项目 src/（常见 TS 项目）；无 src 目录回退系统临时目录。
+  const srcDir = path.join(cwd, 'src');
+  const tmpRoot = existsSync(srcDir) ? srcDir : os.tmpdir();
+  const tmpDir = mkdtempSync(path.join(tmpRoot, '.concertoai-lsp-fix-'));
   const ext = path.extname(file);
   const tmpFile = path.join(tmpDir, `fix${ext}`);
   try {
     const content = readFileSync(file, 'utf8');
     writeFileSync(tmpFile, content, 'utf8');
-    const npxCommand = platform === 'win32' ? 'npx.cmd' : 'npx';
-    try {
-      await execFileAsync(npxCommand, ['biome', 'check', '--write', tmpFile], {
-        cwd,
-        timeout: 30000,
-        windowsHide: true,
-      });
-    } catch {
-      // biome 退出码非 0 = 有错误（fix 后仍有）→ 仍尝试读回修复后内容
-    }
+    await execShellCapture(npxCommand('biome', ['check', '--write', tmpFile]), cwd, 30_000);
     const fixed = readFileSync(tmpFile, 'utf8');
     if (fixed === content) {
       return undefined; // 无变化 → 无修复

@@ -389,6 +389,7 @@ describe('runTeamCommand 并行分支', () => {
       apiKey: 'sk-test',
       task: '同时修复登录模块的 bug 和重构用户模块的类型定义',
       autoApprove: true,
+      silent: true, // P5：测试断言只依赖返回值，静音避免污染 vitest --silent 输出
       client: new FakeModel([{ content: DECOMPOSE_TWO_TASKS }]),
       agents: { coder, reviewer: makeReviewer(), qa: makeQa() },
     });
@@ -408,6 +409,7 @@ describe('runTeamCommand 并行分支', () => {
       task: '修复登录模块的 bug 和重构用户模块',
       parallel: true,
       autoApprove: true,
+      silent: true, // P5：静音避免污染 vitest --silent 输出
       client: new FakeModel([{ content: DECOMPOSE_TWO_TASKS }]),
       agents: { coder, reviewer: makeReviewer(), qa: makeQa() },
     });
@@ -423,6 +425,7 @@ describe('runTeamCommand 并行分支', () => {
       apiKey: 'sk-test',
       task: '同时处理这个串行流程',
       autoApprove: true,
+      silent: true, // P5：静音避免污染 vitest --silent 输出
       client: new FakeModel([{ content: DECOMPOSE_SERIAL }]),
       agents: { coder, reviewer: makeReviewer(), qa: makeQa() },
     });
@@ -440,6 +443,7 @@ describe('runTeamCommand 并行分支', () => {
       apiKey: 'sk-test',
       task: '同时修复登录模块的 bug 和重构用户模块',
       parallel: true,
+      silent: true, // P5：静音避免污染 vitest --silent 输出
       client: new FakeModel([{ content: DECOMPOSE_TWO_TASKS }]),
       confirm: async () => false,
       agents: { coder, reviewer: makeReviewer(), qa: makeQa() },
@@ -466,6 +470,7 @@ describe('runTeamCommand 并行分支', () => {
       task: '实现 TODO',
       parallel: true,
       autoApprove: true,
+      silent: true, // P5：静音避免污染 vitest --silent 输出
       client: new FakeModel([{ content: single }]),
       agents: { coder, reviewer: makeReviewer(), qa: makeQa() },
     });

@@ -42,7 +42,7 @@ function verifyOutput(segments: Array<[stage: string, body: string]>): {
   stderr: string;
 } {
   const stdout = segments
-    .map(([stage, body]) => `> @concertoai/cli@4.0.0 ${stage}\n${body}`)
+    .map(([stage, body]) => `> @concertoai/cli@4.0.1 ${stage}\n${body}`)
     .join('\n');
   return { stdout, stderr: '' };
 }
@@ -256,7 +256,7 @@ describe('self-heal 分类器（T1.1）', () => {
   it('lint 段多个不同类别错误（lint/assist/format）→ 全部识别', () => {
     const r = parseVerifyReport(
       [
-        '> @concertoai/cli@4.0.0 lint',
+        '> @concertoai/cli@4.0.1 lint',
         'src/a.ts:1:1  lint/style/noUnusedVariables  FIXABLE  ━━━',
         'src/b.ts:2:1  assist/source/organizeImports  FIXABLE  ━━━',
         'src/c.ts format ━━━',
@@ -281,7 +281,7 @@ describe('self-heal 分类器（T1.1）', () => {
       ['win', BIOME_LINT_ERROR_WIN],
       ['posix', BIOME_LINT_ERROR_POSIX],
     ] as const) {
-      const r = parseVerifyReport(`> @concertoai/cli@4.0.0 lint\n${sample}\n`, '');
+      const r = parseVerifyReport(`> @concertoai/cli@4.0.1 lint\n${sample}\n`, '');
       expect(r.passed).toBe(false);
       expect(r.parseFailed.lint).toBe(false);
       expect(r.errors).toHaveLength(1);
@@ -295,7 +295,7 @@ describe('self-heal 分类器（T1.1）', () => {
   });
 
   it('样本库：Windows format 无行列错误 / POSIX assist 错误均识别为 lint', () => {
-    const win = parseVerifyReport(`> @concertoai/cli@4.0.0 lint\n${BIOME_FORMAT_ERROR_WIN}\n`, '');
+    const win = parseVerifyReport(`> @concertoai/cli@4.0.1 lint\n${BIOME_FORMAT_ERROR_WIN}\n`, '');
     expect(win.parseFailed.lint).toBe(false);
     expect(win.errors[0]).toMatchObject({
       stage: 'lint',
@@ -305,7 +305,7 @@ describe('self-heal 分类器（T1.1）', () => {
     expect(win.errors[0]?.line).toBeUndefined();
 
     const posix = parseVerifyReport(
-      `> @concertoai/cli@4.0.0 lint\n${BIOME_ASSIST_ERROR_POSIX}\n`,
+      `> @concertoai/cli@4.0.1 lint\n${BIOME_ASSIST_ERROR_POSIX}\n`,
       '',
     );
     expect(posix.parseFailed.lint).toBe(false);
@@ -322,7 +322,7 @@ describe('self-heal 分类器（T1.1）', () => {
       ['win', TSC_ERROR_WIN],
       ['posix', TSC_ERROR_PRETTY_POSIX],
     ] as const) {
-      const r = parseVerifyReport(`> @concertoai/cli@4.0.0 typecheck\n${sample}\n`, '');
+      const r = parseVerifyReport(`> @concertoai/cli@4.0.1 typecheck\n${sample}\n`, '');
       expect(r.passed).toBe(false);
       expect(r.parseFailed.type).toBe(false);
       expect(r.errors).toHaveLength(1);
@@ -345,13 +345,13 @@ describe('self-heal 分类器（T1.1）', () => {
   it('tsc 错误写入 stderr → 识别为 type 段错误（T6.5：undefinedVariable 未检测回归）', () => {
     // stdout 4 段全部正常（含段标记），tsc 错误在 stderr（Windows 反斜杠相对路径）
     const stdout = [
-      '> @concertoai/cli@4.0.0 build',
+      '> @concertoai/cli@4.0.1 build',
       'CLI Build success: 408 modules',
-      '> @concertoai/cli@4.0.0 lint',
+      '> @concertoai/cli@4.0.1 lint',
       'Checked 408 files in 2.3s. No errors found.',
-      '> @concertoai/cli@4.0.0 typecheck',
+      '> @concertoai/cli@4.0.1 typecheck',
       '> tsc --noEmit',
-      '> @concertoai/cli@4.0.0 test',
+      '> @concertoai/cli@4.0.1 test',
       'Test Files  88 passed (88)',
       'Tests  1004 passed (1004)',
     ].join('\n');
@@ -370,11 +370,11 @@ describe('self-heal 分类器（T1.1）', () => {
 
   it('stderr 混合 tsc/Biome/vitest 错误 → 各自归段（T6.5）', () => {
     const stdout = [
-      '> @concertoai/cli@4.0.0 build',
+      '> @concertoai/cli@4.0.1 build',
       'Build success.',
-      '> @concertoai/cli@4.0.0 lint',
-      '> @concertoai/cli@4.0.0 typecheck',
-      '> @concertoai/cli@4.0.0 test',
+      '> @concertoai/cli@4.0.1 lint',
+      '> @concertoai/cli@4.0.1 typecheck',
+      '> @concertoai/cli@4.0.1 test',
     ].join('\n');
     const stderr = [
       'src\\a.ts:1:5  lint/suspicious/noExplicitAny  FIXABLE  ━━━',

@@ -12,6 +12,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { SubagentSpawner } from '../../src/agent/spawner';
 import { parseReviewCommand } from '../../src/cli/slash/review';
+import { t } from '../../src/i18n';
 import type { ModelClient } from '../../src/model/client';
 import { SnapshotManager } from '../../src/orchestrator/transaction';
 import {
@@ -195,6 +196,10 @@ describe('runAutoFix（执行引擎）', () => {
     expect(result.fixed).toBe(0);
     expect(result.rolledBack).toBe(1);
     expect(result.items[0]?.status).toBe('rolledback');
+    // P1 回归（真实端到端发现）：回滚后 reason 必须是「修复后验证失败」，
+    // 而非旧实现的「待批量审批」残留（npm v4.0.0 携带该 bug）
+    expect(result.items[0]?.reason).toBe(t().reviewer.reasonVerifyFailed);
+    expect(result.items[0]?.reason).not.toContain('待批量审批');
     // 回滚后文件恢复
     expect(readFileSync(file, 'utf8')).toBe('const old = 1;');
   });

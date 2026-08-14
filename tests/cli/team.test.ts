@@ -389,4 +389,35 @@ describe('runTeamCommand', () => {
     }
     stdout.mockRestore();
   });
+
+  // ── P5 收尾：silent 模式（/orchestrate 库调用不污染 TUI）──
+
+  it('silent=true → 不写 stdout/stderr，结果仅经返回值承载', async () => {
+    Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
+    const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const progress: TeamProgress[] = [];
+    const result = await runTeamCommand({
+      cwd: tmp,
+      apiKey: 'sk-test',
+      task: '实现 TODO',
+      silent: true,
+      client: new FakeModel([{ content: DECOMPOSE_JSON }]),
+      confirm: async () => true,
+      agents: {
+        coder: makeCoder([{ path: 'src/todo.ts', content: 'export const todo = 1;' }]),
+        reviewer: makeReviewer('approve'),
+        qa: makeQa(true),
+      },
+      onProgress: (p) => progress.push(p),
+    });
+    expect(result.ok).toBe(true);
+    // 进度回调仍工作（/orchestrate 靠它推送聊天消息）
+    expect(progress.length).toBeGreaterThan(0);
+    // 但 stdout/stderr 零直写（不污染 TUI）
+    expect(stdout.mock.calls).toHaveLength(0);
+    expect(stderr.mock.calls).toHaveLength(0);
+    stdout.mockRestore();
+    stderr.mockRestore();
+  });
 });
