@@ -93,7 +93,7 @@ export const defaultRunCommand: CommandRunner = async (command, cwd) => {
  * F（fix-and-retry）语义：仅重跑失败步骤，不包含 AI 自动修复——用户需先手动
  * 修改代码再按 F。选 F 后打印提示（v4.0.1 修复：消除「F 会自动修」的误解）。
  */
-async function promptRecovery(failedStep: string, error: string): Promise<RecoveryChoice> {
+export async function promptRecovery(failedStep: string, error: string): Promise<RecoveryChoice> {
   console.log('');
   console.log(t().workflow.failureHeader);
   console.log(fmt(t().workflow.failureStep, { step: failedStep, error }));

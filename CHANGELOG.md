@@ -8,7 +8,7 @@
 
 ## [Unreleased]
 
-> 用户实测 workflow 失败恢复链路：Ctrl+C 崩溃误判 + F 选项 UX 模糊 + precommit 模板前置说明。114 文件 / 1346 用例全绿。
+> 用户实测 workflow 失败恢复链路：Ctrl+C 崩溃误判 + F 选项 UX 模糊 + precommit 模板前置说明。114 文件 / 1349 用例全绿。
 
 ### Fixed
 

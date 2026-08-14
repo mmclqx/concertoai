@@ -8,12 +8,19 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import os from 'node:os';
 import path from 'node:path';
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+// mock 共享 promptLine：使 promptRecovery 的输入可控（默认返回 undefined = 无输入，与原非 TTY 行为一致）
+vi.mock('../../src/cli/prompt', () => ({
+  promptLine: vi.fn(),
+}));
+
+import { promptLine } from '../../src/cli/prompt';
 import {
   confirmInferredDependencies,
   listWorkflows,
   loadWorkflow,
+  promptRecovery,
   saveWorkflow,
 } from '../../src/cli/workflow';
 import { parseWorkflowYaml, serializeWorkflowYaml } from '../../src/workflow/parser';
@@ -98,5 +105,38 @@ describe('confirmInferredDependencies（T2.4 提示确认）', () => {
     const result = await confirmInferredDependencies(wf);
     expect(result.steps[1]?.depends).toBeUndefined();
     expect(result).toEqual(wf);
+  });
+});
+
+describe('promptRecovery（v4.0.1 F 选项提示路径）', () => {
+  const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  afterAll(() => {
+    logSpy.mockRestore();
+  });
+
+  it('选 F → 打印 failureFixHint 提示 + 返回 fix-and-retry（不静默重跑）', async () => {
+    vi.mocked(promptLine).mockResolvedValueOnce('f');
+    const choice = await promptRecovery('lint', 'biome format error');
+    expect(choice).toBe('fix-and-retry');
+    const out = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(out).toContain('F 仅重跑失败步骤');
+    expect(out).toContain('不会自动修复');
+  });
+
+  it('非法输入 → abort（fail-closed，安全兜底）', async () => {
+    vi.mocked(promptLine).mockResolvedValueOnce('zz');
+    const choice = await promptRecovery('lint', 'err');
+    expect(choice).toBe('abort');
+  });
+
+  it('无输入（Ctrl+C → undefined）→ abort（fail-closed）', async () => {
+    vi.mocked(promptLine).mockResolvedValueOnce(undefined);
+    const choice = await promptRecovery('lint', 'err');
+    expect(choice).toBe('abort');
   });
 });
