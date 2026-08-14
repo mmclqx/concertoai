@@ -108,6 +108,24 @@ describe('runProviderAuth（T3.2b）', () => {
       '未知 Provider',
     );
   });
+
+  it('交互输入被 Ctrl+C 取消（promptLine→undefined）→ authCanceled + 返回 1（v4.0.1）', async () => {
+    process.stdin.isTTY = true;
+    vi.resetModules();
+    vi.doMock('../../src/cli/prompt', () => ({
+      promptLine: async () => undefined,
+    }));
+    const { runProviderAuth: authDynamic } = await import('../../src/cli/provider');
+    const code = await authDynamic({
+      name: 'openai',
+      accountsRoot: accountsRoot(),
+      fetchImpl: okFetch(),
+    });
+    expect(code).toBe(1);
+    expect((errLog?.mock.calls ?? []).map((c: unknown[]) => String(c[0])).join('\n')).toContain(
+      '已取消认证',
+    );
+  });
 });
 
 describe('runProviderSwitch（T3.1/T3.5）', () => {

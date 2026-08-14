@@ -6,6 +6,20 @@
 - 条目按类型分组：`Added`（新增）/ `Changed`（变更）/ `Fixed`（修复）/ `Removed`（移除）；
 - 版本号由 `npm version <patch|minor|major>` 管理（自动 bump + 同步 `src/index.ts` 的 VERSION + git tag）。
 
+## [Unreleased]
+
+> 用户实测 workflow 失败恢复链路：Ctrl+C 崩溃误判 + F 选项 UX 模糊 + precommit 模板前置说明。114 文件 / 1346 用例全绿。
+
+### Fixed
+
+- **Ctrl+C 被误判为崩溃**（用户实测）：workflow / plugin / provider 三处 `readline/promises` 的 `question()` 在 Ctrl+C 时抛 AbortError 未被捕获 → crash-handler 的 unhandledRejection 写 crash.log + exit(1)（用户主动取消被当崩溃，污染 crash.log 误导排查）→ 抽共享 `src/cli/prompt.ts`（promptLine 捕获 AbortError → undefined，Ctrl+C 视为正常取消，非 TTY → undefined，其他错误原样上抛）+ crash-handler 兜底（AbortError 不写 crash.log、退出码 130 SIGINT 惯例）
+
+### Changed
+
+- **失败恢复 [F] 选项提示**：选 F 后打印「F 仅重跑失败步骤（不会自动修复），请先手动修改代码」——消除「F 会自动修」误解（i18n zh/en 新增 `workflow.failureFixHint`）
+- **provider auth 取消提示**：Ctrl+C 取消认证时打印「已取消认证」而非误报「API Key 不能为空」（i18n zh/en 新增 `provider.authCanceled`）
+- **precommit 模板前置说明**：description + lint 步骤 description 补「需项目已配置 lint/typecheck/test 脚本与格式约定（biome.json）」（覆盖「Missing script: lint」与 Windows CRLF/空格缩进 vs biome LF/Tab 默认冲突）
+
 ## [4.0.1] — 2026-08-15
 
 > v4.0.0 发布后专业审核（8.5/10）收尾补丁：修复 2 个真实端到端 bug（npm v4.0.0 携带）+ 文档/统计/归档同步 + team 静音回归。112 文件 / 1337 用例全绿。

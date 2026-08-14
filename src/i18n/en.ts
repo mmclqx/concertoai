@@ -241,6 +241,8 @@ export const en = {
     failureStep: 'Step {step} failed: {error}',
     failureOptions: '[R]etry [S]kip [F]ix and retry [A]bort',
     failurePrompt: 'Choose (R/S/F/A): ',
+    failureFixHint:
+      'Note: F only re-runs the failed step (no auto-fix). Fix the code manually, then press F; or press A to abort (full rollback).',
     approveStep: '⏸ Step requires approval. Command: {command}',
     approvePrompt: 'Approve execution? (y/N): ',
     inferFound: 'Possible dependencies detected between steps:',
@@ -320,6 +322,7 @@ export const en = {
     authPrompt: 'Enter {name} API Key (hidden):',
     authNoTty: 'Non-interactive terminal cannot hide input; use --key <key> instead',
     authEmpty: 'API Key must not be empty',
+    authCanceled: 'Authentication cancelled (Ctrl+C)',
     authFailed: '❌ Key verification failed: ',
     authOk: '✅ Key verified',
     authVerifyOnly: '(--verify only; not saved)',

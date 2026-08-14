@@ -1,0 +1,34 @@
+/**
+ * 共享行输入工具（v4.0.1 修复：Ctrl+C 崩溃链路）。
+ *
+ * 背景：workflow / plugin / provider 三处此前各自用 readline/promises 的
+ * question() 读输入；用户按 Ctrl+C 时 question() 抛 AbortError，若未被捕获
+ * 会触发 crash-handler 的 unhandledRejection → 误写 crash.log + exit(1)
+ * （用户主动中断不是崩溃）。
+ *
+ * 语义：AbortError（Ctrl+C）→ 返回 undefined，由调用方按「无输入」处理
+ * （恢复选择走 abort = fail-closed，审批走拒绝 = fail-closed，均为既有安全路径）；
+ * 非 TTY → undefined；其他错误原样上抛（不吞真实异常）。
+ */
+
+import readline from 'node:readline/promises';
+
+/** 读一行输入（TTY 交互；非 TTY / Ctrl+C 返回 undefined 由调用方降级）。 */
+export async function promptLine(prompt: string): Promise<string | undefined> {
+  if (!process.stdin.isTTY) {
+    return undefined;
+  }
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const answer = await rl.question(prompt);
+    return answer.trim();
+  } catch (err) {
+    // 用户 Ctrl+C：question() 抛 AbortError，是正常取消而非崩溃 → 返回 undefined
+    if (err instanceof Error && err.name === 'AbortError') {
+      return undefined;
+    }
+    throw err;
+  } finally {
+    rl.close();
+  }
+}

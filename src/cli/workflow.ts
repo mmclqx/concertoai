@@ -14,7 +14,6 @@
 import { exec } from 'node:child_process';
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import readline from 'node:readline/promises';
 import { promisify } from 'node:util';
 
 import { fmt, t } from '../i18n';
@@ -26,6 +25,7 @@ import { generateWorkflowFromNl } from '../workflow/nl-generator';
 import { inferDependencies, parseWorkflowYaml, serializeWorkflowYaml } from '../workflow/parser';
 import { getWorkflowTemplate, WORKFLOW_TEMPLATE_NAMES } from '../workflow/templates';
 import type { Workflow } from '../workflow/types';
+import { promptLine } from './prompt';
 
 const execAsync = promisify(exec);
 
@@ -87,21 +87,12 @@ export const defaultRunCommand: CommandRunner = async (command, cwd) => {
 
 // ── 交互工具 ──────────────────────────────────────────────────
 
-/** 读一行输入（TTY 交互；非 TTY 返回 undefined 由调用方降级）。 */
-async function promptLine(prompt: string): Promise<string | undefined> {
-  if (!process.stdin.isTTY) {
-    return undefined;
-  }
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  try {
-    const answer = await rl.question(prompt);
-    return answer.trim();
-  } finally {
-    rl.close();
-  }
-}
-
-/** 失败恢复交互：展示选项并读取 R/S/F/A。非 TTY 或非法输入 → abort（fail-closed）。 */
+/**
+ * 失败恢复交互：展示选项并读取 R/S/F/A。非 TTY 或非法输入 → abort（fail-closed）。
+ *
+ * F（fix-and-retry）语义：仅重跑失败步骤，不包含 AI 自动修复——用户需先手动
+ * 修改代码再按 F。选 F 后打印提示（v4.0.1 修复：消除「F 会自动修」的误解）。
+ */
 async function promptRecovery(failedStep: string, error: string): Promise<RecoveryChoice> {
   console.log('');
   console.log(t().workflow.failureHeader);
@@ -111,7 +102,10 @@ async function promptRecovery(failedStep: string, error: string): Promise<Recove
   const choice = answer?.toLowerCase();
   if (choice === 'r') return 'retry';
   if (choice === 's') return 'skip';
-  if (choice === 'f') return 'fix-and-retry';
+  if (choice === 'f') {
+    console.log(t().workflow.failureFixHint);
+    return 'fix-and-retry';
+  }
   return 'abort'; // 非 TTY / 非法输入 → 放弃（安全）
 }
 

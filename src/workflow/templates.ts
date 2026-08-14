@@ -64,9 +64,15 @@ export const WORKFLOW_TEMPLATES: Record<string, Workflow> = {
   },
   precommit: {
     name: 'precommit',
-    description: '提交前检查：lint + type + test',
+    description:
+      '提交前检查：lint + type + test（前提：项目需已配置 lint/typecheck/test 脚本与格式约定，如 biome.json）',
     steps: [
-      { name: 'lint', run: 'npm run lint' },
+      {
+        name: 'lint',
+        run: 'npm run lint',
+        description:
+          '前置：项目需配置 lint 脚本（如 biome check .）与格式约定 biome.json（indentStyle/lineEnding 与团队一致，避免 Windows CRLF 误报）',
+      },
       { name: 'typecheck', run: 'npm run typecheck' },
       { name: 'test', run: 'npm run test -- --silent', depends: ['lint', 'typecheck'] },
     ],

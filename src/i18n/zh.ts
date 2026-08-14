@@ -234,6 +234,8 @@ export const zh = {
     failureStep: '步骤 {step} 失败：{error}',
     failureOptions: '[R]重试 [S]跳过 [F]修复后重试 [A]放弃',
     failurePrompt: '选择 (R/S/F/A): ',
+    failureFixHint:
+      'ℹ️ F 仅重跑失败步骤（不会自动修复）。请先手动修改代码，再按 F；或按 A 放弃（整体回滚）。',
     approveStep: '⏸ 步骤需要审批，命令: {command}',
     approvePrompt: '批准执行? (y/N): ',
     inferFound: '检测到步骤间可能存在依赖关系：',
@@ -307,6 +309,7 @@ export const zh = {
     authPrompt: '输入 {name} API Key（不回显）:',
     authNoTty: '非交互终端无法回显隐藏输入，请用 --key <key> 非交互注入',
     authEmpty: 'API Key 不能为空',
+    authCanceled: '已取消认证（Ctrl+C）',
     authFailed: '❌ Key 验证失败：',
     authOk: '✅ Key 验证通过',
     authVerifyOnly: '（--verify 仅验证，未保存）',

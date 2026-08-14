@@ -13,7 +13,10 @@
  *
  * 限制：
  * - 仅诊断用，不恢复执行（未捕获异常后的进程状态不可信）；
- * - SIGINT / SIGTERM 不拦截（由 Ink / 调用方正常处理退出流程）。
+ * - SIGINT / SIGTERM 不拦截（由 Ink / 调用方正常处理退出流程）；
+ * - unhandledRejection 收到 AbortError（用户主动 Ctrl+C 中断）视为正常取消：
+ *   不写 crash.log、退出码 130（SIGINT 惯例），保证 crash.log 只记录真实异常
+ *   （v4.0.1 修复：readline question() 的 AbortError 曾误判为崩溃）。
  */
 
 import { appendFileSync, existsSync, mkdirSync } from 'node:fs';
@@ -76,6 +79,13 @@ export function installCrashHandlers(): void {
   // Promise 被拒绝但没有 .catch() 处理器。
   process.on('unhandledRejection', (reason: unknown) => {
     const err = reason instanceof Error ? reason : new Error(String(reason));
+    // 用户主动中断（Ctrl+C 等 → AbortError）不是崩溃：不写 crash.log、退出码 130（SIGINT 惯例）。
+    // 兜底：promptLine 等交互入口已捕获 AbortError，此处防其他位置漏捕获污染 crash.log。
+    if (err.name === 'AbortError') {
+      process.stderr.write('[ConcertoAI] 已中断\n');
+      process.exit(130);
+      return;
+    }
     const entry = [
       `类型: unhandledRejection`,
       `错误: ${err.message}`,

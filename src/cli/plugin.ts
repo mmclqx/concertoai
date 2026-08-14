@@ -17,7 +17,6 @@
 
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
-import readline from 'node:readline/promises';
 
 import { fmt, t } from '../i18n';
 import { fetchMarketRegistry, searchPluginItems } from '../market/registry';
@@ -25,22 +24,9 @@ import type { MarketRegistry, PluginRegistryItem } from '../market/types';
 import { PluginInstaller } from '../plugin/installer';
 import { formatPermissionList } from '../plugin/permissions';
 import type { PluginPermission } from '../plugin/types';
+import { promptLine } from './prompt';
 
 // ── 交互工具 ──────────────────────────────────────────────────
-
-/** 读一行输入（TTY 交互；非 TTY 返回 undefined 由调用方降级）。 */
-async function promptLine(prompt: string): Promise<string | undefined> {
-  if (!process.stdin.isTTY) {
-    return undefined;
-  }
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  try {
-    const answer = await rl.question(prompt);
-    return answer.trim();
-  } finally {
-    rl.close();
-  }
-}
 
 /** 权限确认回调：展示彩色权限清单 → 读 y/N。非 TTY 且未 --yes → 拒绝（fail-closed）。 */
 export function makePermissionConfirm(
