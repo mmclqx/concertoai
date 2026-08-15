@@ -8,6 +8,7 @@
  *
  * 用法：node scripts/pty-drive.mjs [c1|c2|c3|c4|c5|all]
  * 依赖：node-pty@1.1.0（本机已验证 Node v22 兼容，ConPTY 原生模块完整）
+ * 安装：npm install --no-save node-pty@1.1.0（不入 package.json；若被 npm ci/prune 清掉需重装）
  * 注意：C1 会真实 `npm install -D @biomejs/biome`（需网络，可能 1-3 分钟）。
  *
  * 输出：每场景 ✅ PASS / ❌ FAIL + 捕获输出；全部 PASS 即真实 TTY 交互验证完成。
