@@ -6,19 +6,33 @@
 - 条目按类型分组：`Added`（新增）/ `Changed`（变更）/ `Fixed`（修复）/ `Removed`（移除）；
 - 版本号由 `npm version <patch|minor|major>` 管理（自动 bump + 同步 `src/index.ts` 的 VERSION + git tag）。
 
-## [Unreleased]
+## [4.1.0] — 2026-08-15
 
-> 用户实测 workflow 失败恢复链路：Ctrl+C 崩溃误判 + F 选项 UX 模糊 + precommit 模板前置说明。114 文件 / 1349 用例全绿。
+> v4.1 定位：**体验打磨轮（Last-Mile UX）**——客户视角评价 5 个问题闭环（Missing script / F 假按钮 / 进度刷屏 / 输出淹没）+ 专家 5 建议 + 用户 3 反馈落地 + 发布前评审 4 条建议（loadWorkflow 错误传播 / retry:0 roundtrip / 安全模型 / CHANGELOG 确认），不做架构重构。117 文件 / 1390 用例全绿。
 
-### Fixed
+### Added
 
-- **Ctrl+C 被误判为崩溃**（用户实测）：workflow / plugin / provider 三处 `readline/promises` 的 `question()` 在 Ctrl+C 时抛 AbortError 未被捕获 → crash-handler 的 unhandledRejection 写 crash.log + exit(1)（用户主动取消被当崩溃，污染 crash.log 误导排查）→ 抽共享 `src/cli/prompt.ts`（promptLine 捕获 AbortError → undefined，Ctrl+C 视为正常取消，非 TTY → undefined，其他错误原样上抛）+ crash-handler 兜底（AbortError 不写 crash.log、退出码 130 SIGINT 惯例）
+- **智能错误摘要 + 步骤输出截断**（`src/utils/error-summary.ts` + `truncate.ts`）：`extractErrorSummary` 识别 tsc（`error TS…`）/ biome（`× Found N errors`）/ npm（`npm error`）/ vitest（`FAIL`）关键行，兜底首行非空；`truncateMiddle` 头尾保留 + 中间省略标注；`workflow run` 失败先显示「💡 摘要：…」一行，再显示截断详情（4000 字符上限），消除 6 文件完整 diff 淹没提示
+- **preflight 环境预检 + 轻量自动初始化**（`src/workflow/preflight.ts`）：`workflow run` 前三维预检（脚本缺失 / 依赖未装 `node_modules/.bin/<tool>` / 缺配置 biome.json）→ 打印报告 + 自动初始化操作计划 → 一次 y/N 审批 → 装 `@biomejs/biome`/`typescript` + 写 biome.json + `tsc --init` + 注入 scripts.lint/typecheck；test 无法猜框架仅提示；package.json JSON 读写 + 写入后校验，失败不落盘；非 TTY fail-closed 直接报清单退出
+- **错误「下一步」指引 + CLI 风格统一**：workflow runFailed / workflowNotFound / safeAction 兜底统一「💡 下一步：…」具体命令（i18n zh/en 新增 `workflow.runFailedNext` / `cli.fatalNextStep`）
+- **--help 增强 + 首次运行欢迎引导**：commander 自定义 help（开始使用 / 对话 / 项目 / 团队 / 运维 / 市场分组 + 每命令示例 + 新手三步「doctor 检查环境 → chat 开聊 → workflow 跑流程」）；chat 首次启动打印 3 行常用命令欢迎（`~/.concertoai/.welcome-seen` 标记文件，仅一次，mkdirSync 兜底）
 
 ### Changed
 
-- **失败恢复 [F] 选项提示**：选 F 后打印「F 仅重跑失败步骤（不会自动修复），请先手动修改代码」——消除「F 会自动修」误解（i18n zh/en 新增 `workflow.failureFixHint`）
-- **provider auth 取消提示**：Ctrl+C 取消认证时打印「已取消认证」而非误报「API Key 不能为空」（i18n zh/en 新增 `provider.authCanceled`）
-- **precommit 模板前置说明**：description + lint 步骤 description 补「需项目已配置 lint/typecheck/test 脚本与格式约定（biome.json）」（覆盖「Missing script: lint」与 Windows CRLF/空格缩进 vs biome LF/Tab 默认冲突）
+- **F 选项等待态闭环 + 60s 超时**：选 F 后进入等待循环——「请手动修改代码…Enter 重试 / a 放弃（60s 超时自动放弃回滚）」；超时 / Ctrl+C / 非 TTY → abort（fail-closed）；`promptLine` 扩展可选 `timeoutMs`（AbortController 竞速，缺省不超时，现有调用不变）
+- **进度刷屏根因修复**：executor 创建 `TaskScheduler({ maxRetries: 0 })` 禁止内部静默重试（与失败恢复 UI R/S/F/A 架构冲突的根因）；步骤 `retry` 字段语义重定义为「用户通过 R/S/F/A 恢复后的重试次数上限」（缺省不限 = 旧行为不变，向后兼容；0 = 不允许恢复；N = 第 N+1 次恢复强制转 abort）
+- **i18n 键重构**：`workflow.failureFixHint` → `failureFixWait` / `failureFixPrompt` / `failureFixInvalid`（en/zh 同构 317/317 一致）
+
+### Fixed — v4.1（发布前专家评审建议，2026-08-15）
+
+- **workflow 解析失败误报「工作流不存在」**（专家评审建议 1）：`loadWorkflow` catch 吞掉解析错误 → 手写 YAML 语法错（如内联列表 `depends: [lint]`）显示「工作流不存在」误导用户以为文件放错位置 → 新增 `loadWorkflowResult` 区分「文件不存在（ENOENT）vs 解析失败（真实错误 + 行号）」，CLI run/export 与 `/workflow` run/export 全部改用；解析失败展示「工作流 precommit 解析失败：第 7 行：depends 必须是列表…💡 请检查 YAML 语法（块状列表）」+ i18n `workflowParseError`（zh/en 同构）+ 3 回归测试
+- **`retry: 0` export/import 后静默变「不限」**（专家评审建议 2）：`serializeWorkflowYaml` 此前 `retry > 0` 才输出 → `retry: 0`（= 不允许恢复）导出导入后语义静默变化 → 保留 `retry: 0` 输出，roundtrip 等价 + 回归测试
+
+### 测试（v4.1）
+
+- 新增 `tests/utils/error-summary.test.ts`（12 用例：四类摘要 + 截断边界）、`tests/workflow/preflight.test.ts`（10 用例）、`tests/cli/help.test.ts`（3 用例）；扩展 workflow F 等待态 7 用例、executor retry 语义 5 用例、loadWorkflowResult 3 用例、retry:0 roundtrip 1 用例、i18n 补键断言
+- **真实 TTY 交互验证**（发布门补齐，2026-08-15）：`scripts/pty-drive.mjs`（node-pty ConPTY 驱动真实伪终端，子进程 `stdin.isTTY=true`）5 场景 C1-C5 全 PASS——preflight 自动初始化（y→计划→y→真实 `npm install` → lint 跑通）/ F 等待 Enter 重试 / F 等待 a 放弃回滚 / F 等待 60s 超时自动放弃 / 审批节点 y 继续；一键复现 `node scripts/pty-drive.mjs all`（C1 需网络、C4 需等 60s）
+- **基线校准**：117 文件 / 1390 用例全绿（`npm run verify`）+ TTY 交互 5 场景全 PASS
 
 ## [4.0.1] — 2026-08-15
 
@@ -26,12 +40,16 @@
 
 ### Fixed
 
+- **Ctrl+C 被误判为崩溃**（用户实测）：workflow / plugin / provider 三处 `readline/promises` 的 `question()` 在 Ctrl+C 时抛 AbortError 未被捕获 → crash-handler 的 unhandledRejection 写 crash.log + exit(1)（用户主动取消被当崩溃，污染 crash.log 误导排查）→ 抽共享 `src/cli/prompt.ts`（promptLine 捕获 AbortError → undefined，Ctrl+C 视为正常取消，非 TTY → undefined，其他错误原样上抛）+ crash-handler 兜底（AbortError 不写 crash.log、退出码 130 SIGINT 惯例）
 - **`/review --fix` 回滚项 reason 语义**：A 类写盘后 verify 失败被回滚的项，修复报告 reason 仍显示「待批量审批」而非「修复后验证失败，已自动撤销」（语义误导；真实端到端发现）→ `rolledback` 分支显式写 `reasonVerifyFailed` + 回归断言
 - **LSP CodeAction「🔧 用 ConcertoAI 修复」在配置 `files.includes` 的项目中缺失**：biomeFixEdits 临时副本放系统临时目录被 biome.json includes 忽略（biome 处理 0 文件）→ 副本优先放项目 `src/`（无 src 回退 tmp）+ 2 个真实 biome 集成测试
 - **Windows 下 LSP 真实诊断静默为空**：`execFileAsync('npx.cmd')` 抛 EINVAL（Node 无法直接 spawn .cmd）→ 改 `spawn(cmd, { shell: true })`（与 tools/shell.ts 跨平台策略一致）
 
 ### Changed
 
+- **失败恢复 [F] 选项提示**：选 F 后打印「F 仅重跑失败步骤（不会自动修复），请先手动修改代码」——消除「F 会自动修」误解（i18n zh/en 新增 `workflow.failureFixHint`；v4.1 进一步升级为等待态闭环）
+- **provider auth 取消提示**：Ctrl+C 取消认证时打印「已取消认证」而非误报「API Key 不能为空」（i18n zh/en 新增 `provider.authCanceled`）
+- **precommit 模板前置说明**：description + lint 步骤 description 补「需项目已配置 lint/typecheck/test 脚本与格式约定（biome.json）」（覆盖「Missing script: lint」与 Windows CRLF/空格缩进 vs biome LF/Tab 默认冲突；v4.1 preflight 自动初始化闭环）
 - `runTeamCommand` 新增 `silent` 选项：/orchestrate（chat 内）调用置 true，抑制 stdout/stderr 直写污染 TUI（进度经 onProgress、汇总经返回值承载）
 - `docs/10-手工测试/07.5-快速执行卡` 归档至 `docs/03-开发计划与任务/archive/`（完整版在 docs 根）
 - TASKS.md 总览同步 v4.0（161→214 任务）、ARCHITECTURE.md 5 处过期同步、07.8 统计 61→62 + 用例 1334→1337

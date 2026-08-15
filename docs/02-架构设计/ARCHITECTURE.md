@@ -1,6 +1,6 @@
 # ConcertoAI 架构文档
 
-> 版本：v4.0（含 v2.2 / v3.1 / v3.2 / v3.3 / v3.4 全部已交付功能）· 2026-08-14
+> 版本：v4.1（含 v2.2 / v3.1 / v3.2 / v3.3 / v3.4 / v4.0 全部已交付功能）· 2026-08-15
 > 本文档基于当前代码实现编写，作为后续维护与扩展的技术参考。
 > 配套文档：[v3.0 开发任务](../03-开发计划与任务/v3.0-dev-tasks.md)、[v3.1 开发计划](../03-开发计划与任务/v3.1-dev-plan-ai.md)、[v3.3 开发计划](../03-开发计划与任务/v3.3-dev-plan.md)、[v3.4 开发计划](../03-开发计划与任务/v3.4-dev-plan.md)、[v4.0 开发计划终稿](../03-开发计划与任务/v4.0-dev-plan-final.md)（已实施）、[任务看板](../03-开发计划与任务/TASKS.md)
 
@@ -12,13 +12,14 @@ ConcertoAI 是一款**中文优先**的终端编码助手 CLI（DeepSeek 驱动�
 
 - **技术栈**：TypeScript (strict) + Node ≥22 + ESM，Ink 7 (React 19) 渲染 TUI，commander 解析 CLI，zod 做工具参数校验，vitest 测试，Biome 检查，tsup 打包
 - **运行时依赖**：`ink` / `react` / `commander` / `zod` / `cli-highlight` / `chalk` / `tiktoken`（v2.0 BPE 精确 Token 计数）
-- **测试现状**：114 个测试文件、1349 个用例，`npm run verify` 全绿，`npm audit` 0 漏洞；已用真实 `DEEPSEEK_API_KEY` 完成端到端冒烟
+- **测试现状**：117 个测试文件、1390 个用例，`npm run verify` 全绿，`npm audit` 0 漏洞；已用真实 `DEEPSEEK_API_KEY` 完成端到端冒烟
 - **安全基线**：编辑与命令一律审批（fail-closed）、路径沙箱、结果截断、白名单免审批——无 yolo 模式
 - **v3.1 新增能力**：AI 自我修复闭环（self-heal）/ 多项目管理（project）/ 多租户登录（account）/ Orchestrator CLI（team、/orchestrate、audit export）/ 结构化错误增强（error-codes）；**v3.1 预留功能（已交付）**：`concertoai balance`（余额查询）/ `concertoai doctor`（环境诊断）、配置目录迁移 `~/.lumen → ~/.concertoai`（`src/store/paths.ts` 单一来源 + 幂等迁移）；**v2.2 智能成本控制**（高峰时段模型自动切换，见 §4 D41）
 - **v3.2 新增能力**：跨平台 CI 矩阵与 spawn 审计（ADR-032）/ UNC 路径与 EXDEV 边界（ADR-031）/ self-heal 模块化拆分（ADR-030）/ audit 损坏行统计 + /orchestrate diagnostics / 长任务进度推送（team onProgress + self-heal onPhase）/ project-account 视觉与 doctor 账号完整性 / 启动期缓存（ADR-029）/ Agent 市场版本对比与 `update --all`
 - **v3.3 质量收尾**（审查遗留 W1/W2 + S1-S3，不做新功能面）：lint:fix 失败 break 语义显式化 / 全局正则常量去 `g` 标志（消除 lastIndex 陷阱）/ self-heal 文案 i18n（`selfHeal` 分组 + `--lang en` 全英文）/ `resolveApiKeyCached` 缓存语义注释 / 存量解析测试迁移到 `platform-samples.ts`
 - **v3.4 审查闭环 + VS Code 崩溃防护**：S-C1 `collectKeys` maxDepth（en.test.ts）/ I1 feedback 数据层 i18n（`selfHeal.feedback*` 键组，en 下全英文）/ I2 正则常量去 `g`/`gm` 全项目复核（classifier / edit / read / tokenizer / planner）/ I3 en 字典 CJK 校验 / **`concertoai doctor --vscode`**（`src/cli/vscode-health.ts`：进程数 / 崩溃转储 / AI 扩展 / argv.json 四维诊断，argv.json 字段名**单数** `disable-extension` 校验（复数 `disable-extensions` = 无效用法告警，踩坑记录 §六/§七）
 - **v4.0 已完成**：架构拐点——从「单体工具」到「插件化平台」。M0-M8 约 32.5h 全部落地：**M0 已完成**（config v3→v4 迁移器骨架 + 破坏性变更清单）；**M1 已完成**（Reviewer autoFix 闭环 `reviewer/autofix.ts` + `/review --fix`：A/B 分批 → 批量审批 fail-closed → 快照 → 写盘 → 增量 verify → commit/rollback，≤2 次交互）；**M2 已完成**（`concertoai workflow` DAG 工作流引擎 `workflow/`：4 内置模板 + YAML 解析/序列化 + NL 自然语言生成 + TaskScheduler 执行（拓扑/并行/审批/失败恢复 R/S/F/A）+ SnapshotManager 整体回滚 + 依赖推断提示确认 + export/import 分享 + `/workflow` chat 内可用）；**M3 已完成**（多 Provider 抽象层 `model/`：Provider 接口四能力（chat/tokenize/cost/healthCheck）+ DeepSeek/OpenAI/Ollama 三实现 + ProviderRegistry/Router（选择/切换/启动 fallback ≤1 次）+ `--provider` 临时切换 + `provider list/auth/switch` + `config set provider` + config v3→v4 自动迁移（备份 config.v3.bak + `_migrated` 幂等 + doctor 迁移完整性四检测）+ doctor 模型推荐（复杂度×预算×本地 Ollama + 月成本预估）+ StatusBar 成本对比/fallback 提示）；**M4 已完成**（插件市场 `plugin/` + `market/plugins[]`：PluginInstaller 全流程（注册表匹配→下载/builtin 直装→sha256→权限清单确认 fail-closed→落盘）+ `plugin install/search/list/remove/browse/recommend/popular` CLI + chat 内 `/plugin` + PluginLoader 双路径扫描（全局 `~/.concertoai/plugins/` + 项目 `.concertoai/plugins/`，ESM 强制）+ PluginRuntime 动态装配（工具注入 ToolRegistry 带 pluginSource/pluginPermission + 调用前权限钩子拦截）+ PermissionEnforcer 六类权限运行时 enforce（声明检查 + network/shell/mcp 白名单细粒度，见 §4 D57）+ 4 内置示例插件（git-status / api-docs / todo-tracker / release-helper）+ installer 按 type 分派（skill/agent/plugin，零破坏）；**M5 已完成**（`team --parallel` 多 Agent 并行 `orchestrator/parallel.ts`：自然语言/显式 `--parallel` 并行意图识别 → 任务按依赖分层 wave（复用 topologicalSort）→ 层内 Promise.all 并行 + 文件冲突组整组串行化 → 每任务独立 AgentContext/taskId/SnapshotManager 事务 → 汇总报告（成功/失败 + 冲突提示 + 降级提示），意图识别失败降级串行不产生副作用，见 §4 D58）；**M6 已完成**（LSP 三来源诊断 `lsp/`：`concertoai lsp --stdio`——LSP 3.17 最小闭环（JSON-RPC 2.0 + Content-Length 帧，跨平台 CRLF/LF）→ initialize 能力声明 + didOpen/didChange/didSave → 三来源诊断（biome lint → Warning / tsc type → Error / self-heal 静态规则：未使用 import、显式 any、console.log → Information）→ publishDiagnostics 推送 Problems 面板 + CodeAction「🔧 用 ConcertoAI 修复」（biome check --write 副本 diff，不直接改用户文件）与「移除未使用的 import / console.log」行删除，修复后 didChange 自动刷新诊断消失；Web UI + VS Code 扩展骨架延后 v4.1，见 §4 D59）；**M7 已完成**（TS7 评估 NO-GO：调研报告 `docs/10-技术评估/ts7-evaluation.md` 覆盖四维度（type stripping / erasableSyntaxOnly / 工具链 / Node 运行时）→ 锁定 TS 5.9 + v4.1 再评估，ADR-037 / 决策表 D60——收益趋近 0（esbuild 构建不依赖 tsc 产物）+ 12 处不可擦除语法改造成本 + 工具链适配未验证）。架构决策见 ADR-033~037（决策表 D53~D60）；详细计划见 [v4.0-dev-plan-final.md](../03-开发计划与任务/v4.0-dev-plan-final.md)，本架构正文随实施进度同步更新
+- **v4.1 已完成（体验打磨轮 Last-Mile UX，2026-08-15）**：不做架构重构，只打磨「用户第一次跑 / 失败时 / 退出时」三条边缘路径。T1.1 **步骤输出截断 + 智能错误摘要**（`src/utils/truncate.ts` `truncateMiddle` 头尾保留 + `src/utils/error-summary.ts` `extractErrorSummary` 识别 tsc/biome/npm/vitest 关键行 + workflow 步骤输出 4000 字符截断 + 失败先摘要后详情）；T1.2 **F 选项等待态闭环 + 60s 超时**（`promptLine` 扩展可选 timeoutMs（AbortController 竞速，缺省不超时）+ `promptRecoveryFix` 等待循环 Enter 重试 / a 放弃 / 超时自动放弃回滚 / 非 TTY fail-closed）；T1.3 **进度刷屏根因修复**（executor `TaskScheduler({ maxRetries: 0 })` 禁止内部静默重试 + 步骤 `retry` 语义重定义为「恢复后重试上限」缺省不限向后兼容）；T1.4 **preflight 环境预检 + 轻量自动初始化**（`src/workflow/preflight.ts`：脚本/依赖/配置三维预检 + y/N 自动装 biome/tsc + 写 biome.json + 注入 scripts，test 仅提示，非 TTY fail-closed，package.json JSON 读写写入后校验失败不落盘）；T2.1 **错误「下一步」指引 + CLI 风格统一**（runFailedNext / fatalNextStep / workflowNotFound 统一「💡 下一步：…」）；T2.2 **--help 分组示例 + 首次欢迎引导**（`~/.concertoai/.welcome-seen` 标记文件）；T3.1 **AGENTS.md 边缘路径强制覆盖规范**。详细计划见 [v4.1-dev-plan.md](../03-开发计划与任务/v4.1-dev-plan.md)，任务书见 [v4.1-dev-tasks.md](../03-开发计划与任务/v4.1-dev-tasks.md)
 
 ## 2. 架构全景图
 
@@ -156,6 +157,12 @@ ConcertoAI 是一款**中文优先**的终端编码助手 CLI（DeepSeek 驱动�
 │ observable/ 可观测性（v3.0 M5）                               │
 │   trace.ts   TraceStore 调用链追踪（LRU 5000）                │
 │   audit.ts   AuditLogger JSONL 审计日志（单条 <10ms）         │
+└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│ utils/ 通用工具（v4.1 T1.1）                                 │
+│   truncate.ts       truncateMiddle 头尾保留 + 中间省略标注    │
+│   error-summary.ts  extractErrorSummary 工具链错误摘要        │
+│                    （tsc/biome/npm/vitest 关键行，兜底首行）  │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -327,6 +334,9 @@ MCP 服务故障
 | D58 | **team --parallel 并行安全：意图识别降级串行 + 冲突组整组串行化 + 每任务独立事务**（v4.0 M5 落地）：自然语言并行意图（同时/并行/分别/各自/并发/多线程强关键词）或显式 `--parallel` 进入并行分支；拆解任务按依赖分层（复用 topologicalSort wave 分层）；纯串行链 → 降级串行 + 提示「无法拆解为可并行任务」不产生副作用；组内文件冲突（复用 detectFileConflicts）→ 冲突组整组串行执行（避免并行写同一文件竞态）+ 汇总报告提示「A 和 B 都修改了 X，请检查保留哪个版本」；每任务独立 AgentContext/taskId（artifacts 隔离）+ 独立 SnapshotManager 事务（成功 commit / 失败 rollback）；审批 fail-closed 在并行分支前（拒绝不执行任何 Agent） | 并行 ≠ 无序：依赖约束严格分层；文件冲突宁可串行也不竞态；每任务事务可独立回滚互不污染；意图误报由降级串行兜底（不破坏正确性） | `src/orchestrator/parallel.ts` + `src/cli/team.ts`（并行分支）+ `tests/cli/team-parallel.test.ts` |
 | D59 | **LSP 最小闭环 + 三来源诊断分级 + 服务端不直接改文件**（v4.0 M6 落地）：`concertoai lsp --stdio` 实现 LSP 3.17 最小子集（JSON-RPC 2.0 + Content-Length 帧，跨平台 CRLF/LF，零运行时依赖不引入 LSP SDK）；诊断三来源分级——biome lint → Warning / tsc type → Error / self-heal 静态规则（未使用 import、显式 any、console.log）→ Information；lint 修复用「临时副本跑 biome check --write 生成整文件替换 diff」（服务端不直接修改用户文件，客户端应用后 didChange 触发重新诊断 → 诊断消失闭环）；同 uri 诊断任务合并（进行中标记 pending，完成后用最新缓存再跑一次，避免高频 didChange 排队子进程）；diagnostics 子进程与 runner 接口解耦（测试注入 Fake） | 保存即诊断（T6.1）与一键修复（T6.2）的最小闭环；零依赖协议层可独立单测；修复 diff 而非直接写盘延续安全基线（D5）；异步诊断不阻塞帧主循环（慢 tsc 不阻塞 exit） | `src/lsp/{protocol,framing,diagnostics,server}.ts` + `src/cli/lsp.ts` + `tests/lsp/` |
 | D60 | **TS7 评估 NO-GO：锁定 TS 5.9，v4.1 再评估**（v4.0 M7 / ADR-037）：收益趋近 0（构建走 esbuild 不依赖 tsc 产物，build 71ms/typecheck 秒级）；成本真实（1 enum `LspSeverity` + 11 参数属性 = 12 处不可擦除语法，erasableSyntaxOnly 默认化将强制改造）；风险未验证（tsup/vitest/biome 对 TS7 原生编译器适配声明缺失）。**渐进准备**：新代码避免 enum/参数属性/namespace，优先字面量联合 + 显式字段声明；v4.1 满足三触发条件（TS7 正式版 + 工具链适配 / 性能瓶颈 / Node ≥22.6 用户占比）任一即重新评估 | 收益/风险不对称：不盲迁；低成本前瞻约束（新代码可擦除语法友好）为未来迁移铺路 | `docs/10-技术评估/ts7-evaluation.md` + `DECISIONS.md ADR-037` |
+| D61 | **失败先摘要后详情 + 输出截断**（v4.1 T1.1）：`extractErrorSummary` 按工具链提取关键行（tsc `error TS…` / biome `× Found N errors` / npm `npm error` / vitest `FAIL`，兜底首行非空）+ `truncateMiddle` 头尾保留中间省略标注；workflow 步骤 stdout/stderr 各 4000 字符上限（`MAX_WORKFLOW_OUTPUT_CHARS`），失败恢复界面先显示一行 💡 摘要再截断详情 | 用户失败时第一眼看到「可操作的那一行」而非 6 文件完整 diff 淹没；摘要只做展示（详情截断仍在），提取不准由兜底首行兜住 | `src/utils/{truncate,error-summary}.ts` + `src/cli/workflow.ts` + `tests/utils/error-summary.test.ts` |
+| D62 | **失败恢复 F 等待态 + 内部重试归零 + retry 语义重定义**（v4.1 T1.2/T1.3）：`promptLine` 扩展可选 `timeoutMs`（AbortController 竞速，缺省不超时）；F 等待循环 Enter 重试 / a 放弃 / 60s 超时自动放弃回滚 / 非 TTY fail-closed；executor `TaskScheduler({ maxRetries: 0 })` 禁止内部静默重试（进度刷屏根因：内部重试与外部 R/S/F/A 架构冲突）；步骤 `retry` 字段 = 用户恢复后重试上限（缺省不限向后兼容 / 0 不允许 / N 第 N+1 次强制 abort） | 进度刷屏根因修复优先于表面修补；F 真等用户修完再跑；超时防挂起（fail-closed 安全）；retry 缺省不限 = 旧行为不变 | `src/cli/prompt.ts` + `src/cli/workflow.ts` + `src/workflow/{executor,types}.ts` + `tests/workflow/executor.test.ts` |
+| D63 | **preflight 环境预检 + 自动初始化保守边界**（v4.1 T1.4）：`workflow run` 前三维预检（脚本缺失 / 依赖未装 `node_modules/.bin/<tool>` / 缺配置 biome.json）→ 报告 + 操作计划 → 一次 y/N 审批 → 只做事实标准（lint→biome、typecheck→tsc，test 无法猜框架仅提示）→ package.json JSON 读写 + 写入后校验失败不落盘；非 TTY fail-closed 报清单退出 | 「自动装依赖 + 改用户 package.json」有侵入性：只做事实标准 + 完整计划二次审批 + 写入失败回滚不落盘；杜绝「Missing script: lint」裸失败 | `src/workflow/preflight.ts` + `src/cli/workflow.ts` + `tests/workflow/preflight.test.ts` |
 
 ## 5. 目录结构说明
 
@@ -378,7 +388,7 @@ concertoai/
 │   │   ├── workflow.ts   concertoai workflow list/init/run/export/import/create（v4.0 M2：模板生成 / DAG 执行 + 进度推送 + 失败恢复 R/S/F/A / YAML 导出导入 / NL 生成 + 依赖推断提示确认）
 │   │   ├── plugin.ts     concertoai plugin install/search/list/remove/browse/recommend/popular（v4.0 M4：注册表匹配→下载/builtin 直装→sha256→权限清单确认→落盘；browse 分类含下载量+评分；recommend 项目特征启发式；popular Top 10；makePermissionConfirm TTY 交互 + --yes 自动通过，非 TTY 拒绝 fail-closed）
 │   │   ├── crash-handler.ts 进程级崩溃日志（uncaughtException/unhandledRejection → ~/.concertoai/crash.log，v3.1 M3；v4.0.1 AbortError（用户 Ctrl+C）不写 crash.log、退出码 130 兜底）
-│   │   ├── prompt.ts    共享行输入（v4.0.1）：promptLine 捕获 AbortError → undefined（Ctrl+C 视为正常取消），非 TTY → undefined，其他错误原样上抛；workflow/plugin/provider 三处统一
+│   │   ├── prompt.ts    共享行输入（v4.0.1 + v4.1 T1.2）：promptLine 捕获 AbortError → undefined（Ctrl+C 视为正常取消），非 TTY → undefined，其他错误原样上抛；可选 timeoutMs（AbortController 竞速，缺省不超时）供 F 等待态 60s 超时；workflow/plugin/provider 三处统一
 │   │   ├── common.ts     CLI 共享：白名单 / 注册表构建 / OS 提示 / resolveProjectForCwd / mergeAllowlist / resolveApiKey / maskApiKey（轻量加载）；resolveApiKeyCached / loadProjectRegistryCached 启动期缓存（v3.2 M4）
 │   │   └── slash/        斜杠命令处理器
 │   │       ├── agent.ts  /agent list / install / remove / promote / update（v3.0 M4 + v3.1 M5）
@@ -486,12 +496,13 @@ concertoai/
 │   │   ├── diagnostics.ts 三来源诊断纯函数 + 子进程 runner：uriToPath/pathToUri（Windows 盘符+POSIX）/ selfHealStaticDiagnostics（未使用 import、显式 any、console.log → Information）/ parseBiomeLintOutput（→ Warning）/ parseTscOutput（→ Error，std+pretty 双格式）/ applyTextEdits / selfHealCodeActions（行删除）/ biomeFixEdits（副本 --write 整文件替换 diff）/ ChildProcessDiagnosticRunner（npx.cmd 跨平台）
 │   │   ├── server.ts     LspServer 主循环：帧分派 → initialize/didOpen/didChange/didSave/codeAction/shutdown/exit；文档缓存 + 诊断合并（同 uri 进行中标记 pending）+ 异步不阻塞 + 注入 input/output/runner/lintFix 测试友好
 │   │   └── index.ts      barrel
-│   ├── workflow/         工作流引擎（v4.0 M2，详见 §4 D55）
-│   │   ├── types.ts      Workflow / WorkflowStep（run/depends/retry/require:approval/files）/ StepRunState / WorkflowRunResult / InferredDependency
+│   ├── workflow/         工作流引擎（v4.0 M2 + v4.1 T1.3/T1.4，详见 §4 D55/D62/D63）
+│   │   ├── types.ts      Workflow / WorkflowStep（run/depends/retry=恢复后重试上限（缺省不限）/require:approval/files）/ StepRunState / WorkflowRunResult / InferredDependency
 │   │   ├── templates.ts  4 内置模板：init-ts / upgrade-deps / release（含审批节点）/ precommit（WORKFLOW_TEMPLATES + getWorkflowTemplate 深拷贝）
 │   │   ├── parser.ts     轻量 YAML 子集解析（无 yaml 依赖，行号报错 + 注释剥离 + 引号转义）+ zod schema 校验 + serializeWorkflowYaml roundtrip + inferDependencies 命令语义依赖推断（T2.4）
 │   │   ├── nl-generator.ts 自然语言 → 工作流 YAML（调模型 + ```yaml 围栏剥离 + 校验失败降级人工编辑，T2.2）
-│   │   └── executor.ts   runWorkflow 执行引擎（复用 TaskScheduler 拓扑/并行/重试 + SnapshotManager 整体回滚；审批节点暂停；失败恢复 R/S/F/A；onProgress 进度推送）
+│   │   ├── executor.ts   runWorkflow 执行引擎（复用 TaskScheduler 拓扑/并行；v4.1 maxRetries: 0 禁止内部静默重试 + SnapshotManager 整体回滚；审批节点暂停；失败恢复 R/S/F/A 按步骤 retry 上限；onProgress 进度推送）
+│   │   └── preflight.ts  run 前环境预检（v4.1 T1.4）：checkPrerequisites 三维（脚本缺失/依赖未装/缺配置）+ summarizeAutoInit 去重 + applyAutoInitWrites 原子写 + binExists Windows 兼容；y/N 审批 + 非 TTY fail-closed
 │   ├── orchestrator/     多 Agent 编排核心（v3.0 M1-M3，详见 §4 D33/D35）
 │   │   ├── types.ts      AgentMessage / AgentContext / AgentDef / AgentState / Artifact（T1.1）
 │   │   ├── context.ts    显式上下文：serialize/deserialize/extractSubset/mergeContexts（≤64KB，T1.3）
@@ -534,7 +545,7 @@ concertoai/
 │       ├── zh.ts         中文字典 + fmt()
 │       ├── en.ts         英文字典（键与 zh 同构）
 │       └── index.ts      resolveLocale / setLocale / t() / DICTS
-└── tests/                镜像 src 结构（114 个文件 / 1349 用例，v3.4 基线 + M0 迁移器骨架 + M1 autoFix + M2 workflow + M3 Provider 体系 + M4 插件体系 + M5 team-parallel + M6 lsp + 发布后收尾 3 回归 + v4.0.1 Ctrl+C 崩溃链路 10 用例），含 tests/agent/、tests/agents/、tests/balance/、tests/cli/（含 common.test.ts 启动缓存 + workflow.test.ts / slash-workflow.test.ts + provider.test.ts + plugin.test.ts + team-parallel.test.ts + prompt.test.ts / crash-handler.test.ts）、tests/core/、tests/e2e/（team-cli/self-heal/project-isolation/platform-e2e）、tests/fixtures/（platform-samples 跨平台样本库）、tests/i18n/、tests/knowledge/、tests/loop/（self-heal/error-reporting）、tests/lsp/（framing/diagnostics/server）、tests/market/、tests/mcp/、tests/model/（client/models/tokenizer/providers/registry/router/recommend）、tests/observable/、tests/orchestrator/、tests/planner/、tests/plugin/（permissions/loader/installer/runtime）、tests/reviewer/（含 autofix.test.ts）、tests/skill/、tests/store/（projects/accounts/accounts-exdev/migration/config）、tests/tools/、tests/ui/（含 review-report.test.tsx）、tests/workflow/（templates/parser/nl-generator/executor） 等
+└── tests/                镜像 src 结构（117 个文件 / 1390 用例，v3.4 基线 + M0 迁移器骨架 + M1 autoFix + M2 workflow + M3 Provider 体系 + M4 插件体系 + M5 team-parallel + M6 lsp + v4.0.1 Ctrl+C 崩溃链路 10 用例 + v4.1 体验打磨轮 35 用例），含 tests/agent/、tests/agents/、tests/balance/、tests/cli/（含 common.test.ts 启动缓存 + workflow.test.ts / slash-workflow.test.ts + provider.test.ts + plugin.test.ts + team-parallel.test.ts + prompt.test.ts / crash-handler.test.ts / help.test.ts）、tests/core/、tests/e2e/（team-cli/self-heal/project-isolation/platform-e2e）、tests/fixtures/（platform-samples 跨平台样本库）、tests/i18n/、tests/knowledge/、tests/loop/（self-heal/error-reporting）、tests/lsp/（framing/diagnostics/server）、tests/market/、tests/mcp/、tests/model/（client/models/tokenizer/providers/registry/router/recommend）、tests/observable/、tests/orchestrator/、tests/planner/、tests/plugin/（permissions/loader/installer/runtime）、tests/reviewer/（含 autofix.test.ts）、tests/skill/、tests/store/（projects/accounts/accounts-exdev/migration/config）、tests/tools/、tests/ui/（含 review-report.test.tsx）、tests/utils/（error-summary.test.ts）、tests/workflow/（templates/parser/nl-generator/executor/preflight） 等
 ```
 
 ## 6. 5分钟快速体验

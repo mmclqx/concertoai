@@ -4,7 +4,7 @@ ConcertoAI —— 面向个人开发者的**中文优先**终端编码助手 CLI
 
 在项目目录里启动：读取代码 → 提出 diff 方案 → 征求命令许可 → 跑验证 → 留下可续接的会话记录。
 
-> 状态：**v4.0 已发布**（`npm run verify` 全绿，1337 用例 / 112 测试文件；`npm audit` 0 漏洞；CI 三平台；4.0.1 收尾审查修复：autofix reason 语义 / LSP 双修复 / team 静音）。
+> 状态：**v4.1 已发布**（`npm run verify` 全绿，1390 用例 / 117 测试文件；`npm audit` 0 漏洞；CI 三平台；4.1.0 体验打磨轮：智能错误摘要 + 步骤输出截断 / F 等待态 60s 超时 / preflight 环境预检自动初始化 / 错误「下一步」指引 / --help 分组示例 / 首次欢迎引导）。
 > v4.0 新增：**插件市场**（`plugin install/search/browse/recommend` + 六类权限 + 4 内置插件）/ **多 Provider 切换**（DeepSeek/OpenAI/Ollama + `--provider` + config v3→v4 自动迁移）/ **工作流引擎**（`workflow init/run/export/import`，DAG + 审批节点 + 失败恢复）/ **`/review --fix` 一键修复**（A/B 分批 + 快照回滚 + 修复报告）/ **`team --parallel` 多 Agent 并行**（自然触发 + 冲突提示）/ **`lsp --stdio` 三来源诊断**（biome/tsc/self-heal + CodeAction 一键修复）。
 > v3.4 新增：审查建议闭环（collectKeys maxDepth / feedback 数据层 i18n / 正则去 gm 全项目复核 / en 字典 CJK 校验）+ `concertoai doctor --vscode`（进程数 / 崩溃转储 / AI 扩展 / argv.json 四维健康诊断）。
 > v3.3 新增：消化 v3.2 审查遗留（lint:fix 失败语义显式化 / 全局正则去 g / self-heal 文案 i18n / 缓存语义注释 / 解析测试样本统一）。
