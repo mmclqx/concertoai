@@ -19,7 +19,12 @@ export interface WorkflowStep {
   run: string;
   /** 依赖步骤名列表（必须先成功完成）。 */
   depends?: string[];
-  /** 失败重试次数（默认 0 不重试；复用 scheduler 重试语义）。 */
+  /**
+   * 失败恢复重试上限（v4.1 T1.3 语义重定义）：用户在 R/S/F/A 恢复流程中重试该
+   * 步骤的次数上限。缺省 = 不限制（用户主动 R/F 可任意重试）；retry: N = 最多
+   * 恢复 N 次，第 N+1 次失败后强制 abort（整体回滚）；retry: 0 = 不允许重试
+   * （首次失败即转 abort）。注意：不再是调度器内部自动重试（已归零，见 executor）。
+   */
   retry?: number;
   /** 审批要求（默认 none）。 */
   require?: StepRequirement;

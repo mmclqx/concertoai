@@ -61,6 +61,9 @@ export const en = {
     invalidSessionId: 'Invalid session id: {id}',
     sessionNotFound: 'Session not found: {id}',
     projectRulesReadFailed: 'Failed to read project rules',
+    // v4.1 T2.1: next-step guidance for unknown exceptions (safeAction fallback)
+    fatalNextStep:
+      '💡 Next: run `concertoai doctor` to check the environment; if it is a software defect, report the error above.',
   },
   approval: {
     editTitle: 'Edit file',
@@ -224,8 +227,12 @@ export const en = {
     runProgress: 'Running step {current}/{total}: {step}…',
     runOk: 'Workflow {name} completed successfully',
     runFailed: 'Workflow {name} failed (failed step: {step}, {skipped} skipped)',
+    runFailedNext:
+      '💡 Next: fix the failed step and re-run:\n   concertoai workflow run {name}\nChanges rolled back on A are restored.',
     workflowNotFound:
       'Workflow not found: {name} (generate one with `workflow init` or import a file)',
+    workflowParseError:
+      'Workflow {name} failed to parse: {message}\n💡 Check YAML syntax (use block-style lists for depends/files:\n   depends:\n     - lint)',
     exportMissing: 'Usage: concertoai workflow export <name>',
     exportTitle: 'Workflow {name} definition:',
     importMissing: 'Usage: concertoai workflow import <file>',
@@ -238,11 +245,34 @@ export const en = {
     createDone: 'Workflow {name} saved → {file}',
     createAborted: 'Save cancelled',
     failureHeader: '⚠️ Workflow execution failed',
-    failureStep: 'Step {step} failed: {error}',
+    failureSummary: '💡 Summary: {summary}',
+    failureStep: '❌ Step {step} failed',
     failureOptions: '[R]etry [S]kip [F]ix and retry [A]bort',
     failurePrompt: 'Choose (R/S/F/A): ',
-    failureFixHint:
-      'Note: F only re-runs the failed step (no auto-fix). Fix the code manually, then press F; or press A to abort (full rollback).',
+    failureFixWait:
+      'ℹ️ Step {step} needs a manual fix. Edit the code, then press Enter to retry; type a to abort (full rollback). Auto-aborts after {seconds}s without input.',
+    failureFixPrompt: 'Waiting for fix (Enter to retry / a to abort): ',
+    failureFixInvalid: 'Invalid input (Enter to retry / a to abort).',
+    // v4.1 T1.4: pre-run environment preflight + lightweight auto-init
+    preflightMissing: '⚠️ Environment not ready ({count} item(s) missing):',
+    preflightItemScript: '  - Missing script {name} (can be auto-initialized)',
+    preflightItemDep: '  - Dependency not installed: {name} (can be auto-installed)',
+    preflightItemConfig: '  - Config file missing: {name} (can be auto-generated)',
+    preflightItemManual:
+      '  - Missing script {name} (cannot be auto-initialized; configure manually)',
+    preflightAskInit: 'Auto-initialize the fixable items above? [Y/n]: ',
+    preflightPlanTitle: 'The following initialization steps will run (all require your approval):',
+    preflightPlanCmd: '  $ {command}',
+    preflightPlanWrite: '  ✎ write {file}',
+    preflightPlanScript: '  ✎ package.json scripts.{name} = {command}',
+    preflightConfirm: 'Confirm initialization? (y/N): ',
+    preflightInitDone: '✅ Environment initialized',
+    preflightInitFailed: '❌ Initialization failed: {error} (stopped; fix and retry)',
+    preflightSkipped:
+      'Skipped initialization; continuing with current config (missing steps may fail)',
+    preflightContinue: 'Some items cannot be auto-fixed. Continue anyway? (y/N): ',
+    preflightNoTty:
+      'Non-interactive environment and prerequisites missing; stopped. Configure the missing items first.',
     approveStep: '⏸ Step requires approval. Command: {command}',
     approvePrompt: 'Approve execution? (y/N): ',
     inferFound: 'Possible dependencies detected between steps:',
@@ -404,6 +434,25 @@ export const en = {
     toolRunning: 'Running tool: {name}',
     toolDone: 'Tool finished: {name}',
     quit: 'Exited. Session saved.',
+  },
+  welcome: {
+    // v4.1 T2.2: first-run welcome guide (user feedback 3: beginners don't know the flow)
+    title: '🎉 Welcome to ConcertoAI!',
+    line1: '  Type a request to start; /help shows slash commands',
+    line2: '  Common: /plan plan-first · /review code review · /workflow run workflows',
+    line3: '  Health check: concertoai doctor · Quit: Ctrl+C (session saved)',
+  },
+  help: {
+    // v4.1 T2.2: --help grouping + 3-step starter path (user feedback 3)
+    gettingStarted: 'Getting started (3 steps)',
+    step1: '  ① Health check: concertoai doctor',
+    step2: '  ② Start a chat: concertoai chat (or just concertoai)',
+    step3: '  ③ Run a workflow: concertoai workflow init && concertoai workflow run <name>',
+    commands: 'Command overview',
+    exampleChat: '  e.g. concertoai chat · concertoai run "fix this bug" (one-shot)',
+    exampleProject: '  e.g. concertoai project add demo . · concertoai team "..." (agent team)',
+    exampleOps: '  e.g. concertoai balance · doctor · self-heal · audit export',
+    exampleMarket: '  e.g. concertoai plugin browse · provider list · config set provider <name>',
   },
 } as const;
 

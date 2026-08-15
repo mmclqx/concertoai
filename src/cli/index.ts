@@ -52,6 +52,24 @@ const program = new Command();
 
 program.name('concertoai').description(t().cli.description).version(VERSION);
 
+// v4.1 T2.2：--help 增强——新手三步 + 命令分组示例（用户反馈 3：新手不知流程）。
+// commander addHelpText 追加到默认帮助末尾，保留原有命令注册不变。
+program.addHelpText(
+  'afterAll',
+  () => `
+${t().help.gettingStarted}
+${t().help.step1}
+${t().help.step2}
+${t().help.step3}
+
+${t().help.commands}
+${t().help.exampleChat}
+${t().help.exampleProject}
+${t().help.exampleOps}
+${t().help.exampleMarket}
+`,
+);
+
 // v3.1 M2 T2.3：全局 `-p, --project <name>` —— 启动前校验项目存在并 chdir 到项目路径
 // （等价 cd 后启动）。preAction hook 在任意子命令 action 前执行，保证 chat/run/plan 等
 // 都以项目路径为 cwd 装配。未注册项目 → 报错退出（fail-closed）。
@@ -87,6 +105,8 @@ function safeAction(fn: () => Promise<void>): () => void {
         process.stderr.write(`${stack}\n`);
       }
       process.stderr.write(`详情见 ${crashLogPath()}\n`);
+      // v4.1 T2.1：未知异常「下一步」指引（用户反馈 1：出错不知道怎么办）
+      process.stderr.write(`${t().errors.fatalNextStep}\n`);
       process.exit(1);
     });
   };

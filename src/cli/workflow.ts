@@ -19,10 +19,18 @@ import { promisify } from 'node:util';
 import { fmt, t } from '../i18n';
 import type { ModelClient } from '../model/client';
 import { SnapshotManager } from '../orchestrator/transaction';
+import { extractErrorSummary } from '../utils/error-summary';
+import { truncateMiddle } from '../utils/truncate';
 import type { CommandRunner, RecoveryChoice } from '../workflow/executor';
 import { runWorkflow } from '../workflow/executor';
 import { generateWorkflowFromNl } from '../workflow/nl-generator';
 import { inferDependencies, parseWorkflowYaml, serializeWorkflowYaml } from '../workflow/parser';
+import {
+  type AutoInitAction,
+  applyAutoInitWrites,
+  checkPrerequisites,
+  summarizeAutoInit,
+} from '../workflow/preflight';
 import { getWorkflowTemplate, WORKFLOW_TEMPLATE_NAMES } from '../workflow/templates';
 import type { Workflow } from '../workflow/types';
 import { promptLine } from './prompt';
@@ -51,14 +59,42 @@ export function listWorkflows(cwd: string): string[] {
   }
 }
 
-/** 加载工作流（文件不存在 / 解析失败返回 undefined）。 */
-export function loadWorkflow(cwd: string, name: string): Workflow | undefined {
+/** 加载工作流结果（v4.1 发布前修复：区分「文件不存在」与「解析失败」，消除误导）。 */
+export type LoadWorkflowResult =
+  | { ok: true; workflow: Workflow }
+  | { ok: false; reason: 'not-found' | 'parse-error'; message?: string };
+
+/**
+ * 加载工作流并区分失败原因（专家建议，2026-08-15 提升到 v4.1）：
+ * - 文件不存在（ENOENT）→ { ok: false, reason: 'not-found' }（用户放错位置）
+ * - 文件存在但 YAML 解析失败 → { ok: false, reason: 'parse-error', message }（真实报错 + 行号）
+ * 此前 catch 吞错误导致「解析失败」显示为「工作流不存在」——误导用户以为文件没放对。
+ */
+export function loadWorkflowResult(cwd: string, name: string): LoadWorkflowResult {
+  let text: string;
   try {
-    const text = readFileSync(workflowFile(cwd, name), 'utf8');
-    return parseWorkflowYaml(text);
-  } catch {
-    return undefined;
+    text = readFileSync(workflowFile(cwd, name), 'utf8');
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      return { ok: false, reason: 'not-found' };
+    }
+    return { ok: false, reason: 'parse-error', message: `读取失败: ${String(err)}` };
   }
+  try {
+    return { ok: true, workflow: parseWorkflowYaml(text) };
+  } catch (err) {
+    return {
+      ok: false,
+      reason: 'parse-error',
+      message: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+/** 加载工作流（文件不存在 / 解析失败返回 undefined，兼容旧调用；新代码优先用 loadWorkflowResult）。 */
+export function loadWorkflow(cwd: string, name: string): Workflow | undefined {
+  const result = loadWorkflowResult(cwd, name);
+  return result.ok ? result.workflow : undefined;
 }
 
 /** 保存工作流到项目 workflows 目录（含 name 校验）。 */
@@ -69,7 +105,10 @@ export function saveWorkflow(cwd: string, workflow: Workflow): string {
   return file;
 }
 
-/** 真实命令执行器（exec 包装，跨平台 shell 语义）。 */
+/** 工作流单步输出各自回填的最大字符数（v4.1 T1.1：防 6 文件完整 diff 淹没提示）。 */
+export const MAX_WORKFLOW_OUTPUT_CHARS = 4_000;
+
+/** 真实命令执行器（exec 包装，跨平台 shell 语义；stdout/stderr 超长截断）。 */
 export const defaultRunCommand: CommandRunner = async (command, cwd) => {
   try {
     const { stdout, stderr } = await execAsync(command, {
@@ -78,35 +117,192 @@ export const defaultRunCommand: CommandRunner = async (command, cwd) => {
       maxBuffer: 16 * 1024 * 1024,
       env: process.env,
     });
-    return { ok: true, stdout, stderr };
+    const truncated =
+      stdout.length > MAX_WORKFLOW_OUTPUT_CHARS || stderr.length > MAX_WORKFLOW_OUTPUT_CHARS;
+    return {
+      ok: true,
+      stdout: stdout.slice(0, MAX_WORKFLOW_OUTPUT_CHARS),
+      stderr: stderr.slice(0, MAX_WORKFLOW_OUTPUT_CHARS),
+      truncated,
+    };
   } catch (err) {
     const e = err as { stdout?: string; stderr?: string; message?: string };
-    return { ok: false, stdout: e.stdout ?? '', stderr: e.stderr ?? e.message ?? String(err) };
+    const stderr = e.stderr ?? e.message ?? String(err);
+    return {
+      ok: false,
+      stdout: e.stdout ?? '',
+      stderr: stderr.slice(0, MAX_WORKFLOW_OUTPUT_CHARS),
+      truncated: stderr.length > MAX_WORKFLOW_OUTPUT_CHARS,
+    };
   }
 };
 
 // ── 交互工具 ──────────────────────────────────────────────────
 
+/** 失败详情截断展示上限（v4.1 T1.1：先摘要后截断详情，防完整 diff 淹没）。 */
+const MAX_FAILURE_DETAIL_CHARS = 2_000;
+
 /**
  * 失败恢复交互：展示选项并读取 R/S/F/A。非 TTY 或非法输入 → abort（fail-closed）。
  *
+ * 展示顺序（v4.1 T1.1）：先一行智能摘要（tsc/biome/npm 关键行），再截断详情——
+ * 消除客户评价问题 5（6 文件完整 diff 淹没提示）。
+ *
  * F（fix-and-retry）语义：仅重跑失败步骤，不包含 AI 自动修复——用户需先手动
- * 修改代码再按 F。选 F 后打印提示（v4.0.1 修复：消除「F 会自动修」的误解）。
+ * 修改代码再按 F。选 F 后进入等待态（v4.1 T1.2，见 promptRecoveryFix）。
  */
 export async function promptRecovery(failedStep: string, error: string): Promise<RecoveryChoice> {
   console.log('');
   console.log(t().workflow.failureHeader);
-  console.log(fmt(t().workflow.failureStep, { step: failedStep, error }));
+  const summary = extractErrorSummary(error);
+  if (summary.line !== '') {
+    console.log(fmt(t().workflow.failureSummary, { summary: summary.line }));
+  }
+  console.log(fmt(t().workflow.failureStep, { step: failedStep }));
+  if (error.trim() !== '') {
+    console.log(truncateMiddle(error.trim(), MAX_FAILURE_DETAIL_CHARS));
+  }
   console.log(t().workflow.failureOptions);
   const answer = await promptLine(t().workflow.failurePrompt);
   const choice = answer?.toLowerCase();
   if (choice === 'r') return 'retry';
   if (choice === 's') return 'skip';
   if (choice === 'f') {
-    console.log(t().workflow.failureFixHint);
-    return 'fix-and-retry';
+    return promptRecoveryFix(failedStep);
   }
   return 'abort'; // 非 TTY / 非法输入 → 放弃（安全）
+}
+
+/**
+ * F 选项等待态（v4.1 T1.2，专家建议 1）：用户选 F 后不立即重跑，等待手动修复。
+ *
+ * 交互：打印提示 → 读取输入（60s 超时）：
+ * - Enter / 空 → fix-and-retry（重跑失败步骤）
+ * - a → abort（整体回滚，fail-closed）
+ * - 其他 → 重新提示
+ * - 超时无输入 → abort（防止用户切去编辑器后忘记终端挂起等待）
+ * - 非 TTY（promptLine 返回 undefined 且非超时）→ abort（fail-closed）
+ */
+export async function promptRecoveryFix(failedStep: string): Promise<RecoveryChoice> {
+  const d = t().workflow;
+  console.log(fmt(d.failureFixWait, { step: failedStep, seconds: FIX_WAIT_TIMEOUT_SECONDS }));
+  for (;;) {
+    const answer = await promptLine(d.failureFixPrompt, {
+      timeoutMs: FIX_WAIT_TIMEOUT_SECONDS * 1000,
+    });
+    if (answer === undefined) {
+      // Ctrl+C / 非 TTY / 超时：fail-closed 放弃（超时自动放弃防挂起，专家建议 1）
+      return 'abort';
+    }
+    const choice = answer.toLowerCase();
+    if (choice === '') {
+      // Enter 直接回车 → 重试（用户已手动修复完成）
+      return 'fix-and-retry';
+    }
+    if (choice === 'a') {
+      return 'abort';
+    }
+    console.log(d.failureFixInvalid);
+  }
+}
+
+/** F 等待态超时（秒）：超时无输入自动放弃回滚（专家建议 1）。 */
+export const FIX_WAIT_TIMEOUT_SECONDS = 60;
+
+/**
+ * 运行前环境预检 + 轻量自动初始化（v4.1 T1.4，客户评价问题 1）。
+ *
+ * 流程：checkPrerequisites → 无缺失直接通过；有缺失展示报告 →
+ * 询问是否自动初始化可修复项（y）→ 展示操作计划 → 二次确认 →
+ * 执行安装命令 + 写文件/scripts；拒绝/非 TTY → fail-closed 退出。
+ *
+ * @returns true = 环境就绪可继续执行；false = 停止（环境未就绪且未初始化）
+ */
+export async function preflightAndInit(workflow: Workflow, cwd: string): Promise<boolean> {
+  const d = t().workflow;
+  const preflight = checkPrerequisites(workflow, cwd);
+  if (preflight.ok) {
+    return true;
+  }
+
+  console.log('');
+  console.log(fmt(d.preflightMissing, { count: preflight.missing.length }));
+  const autoActions: AutoInitAction[] = [];
+  for (const m of preflight.missing) {
+    if (m.fix === undefined) {
+      console.log(fmt(d.preflightItemManual, { name: m.name }));
+      continue;
+    }
+    autoActions.push(m.fix);
+    if (m.kind === 'script') {
+      console.log(fmt(d.preflightItemScript, { name: m.name }));
+    } else if (m.kind === 'dep') {
+      console.log(fmt(d.preflightItemDep, { name: m.name }));
+    } else {
+      console.log(fmt(d.preflightItemConfig, { name: m.name }));
+    }
+  }
+
+  // 全部不可自动修复（如仅 test 缺失）→ 由用户决定是否继续
+  if (autoActions.length === 0) {
+    const answer = await promptLine(d.preflightContinue);
+    if (answer?.toLowerCase() === 'y' || answer?.toLowerCase() === 'yes') {
+      return true;
+    }
+    return false;
+  }
+
+  const ask = await promptLine(d.preflightAskInit);
+  if (ask === undefined) {
+    // 非 TTY / Ctrl+C → fail-closed：停止执行
+    console.log(d.preflightNoTty);
+    return false;
+  }
+  if (ask.toLowerCase() !== 'y' && ask.toLowerCase() !== 'yes') {
+    console.log(d.preflightSkipped);
+    return true; // 用户显式选择继续（可能失败）
+  }
+
+  // 展示初始化计划 + 二次确认（编辑与命令一律审批）
+  const plan = summarizeAutoInit(autoActions);
+  console.log(d.preflightPlanTitle);
+  for (const command of plan.commands) {
+    console.log(fmt(d.preflightPlanCmd, { command }));
+  }
+  for (const file of plan.writes) {
+    console.log(fmt(d.preflightPlanWrite, { file }));
+  }
+  for (const a of plan.unique) {
+    if (a.addScript !== undefined) {
+      console.log(
+        fmt(d.preflightPlanScript, { name: a.addScript.name, command: a.addScript.command }),
+      );
+    }
+  }
+  const confirm = await promptLine(d.preflightConfirm);
+  if (confirm === undefined || (confirm.toLowerCase() !== 'y' && confirm.toLowerCase() !== 'yes')) {
+    console.log(d.preflightSkipped);
+    return true;
+  }
+
+  // 执行：先安装依赖（真实命令，经上方 y/N 审批），再写文件/scripts
+  for (const command of plan.commands) {
+    try {
+      await execAsync(command, { cwd, timeout: 300_000, maxBuffer: 4 * 1024 * 1024 });
+    } catch (err) {
+      console.log(
+        fmt(d.preflightInitFailed, { error: err instanceof Error ? err.message : String(err) }),
+      );
+      return false;
+    }
+  }
+  const writeErr = applyAutoInitWrites(plan.unique, cwd);
+  if (writeErr !== undefined) {
+    console.log(fmt(d.preflightInitFailed, { error: writeErr }));
+    return false;
+  }
+  console.log(d.preflightInitDone);
+  return true;
 }
 
 /** 审批交互：显示命令 + y/n。非 TTY → 拒绝（fail-closed）。 */
@@ -224,9 +420,20 @@ export async function runWorkflowCli(options: WorkflowCliOptions): Promise<numbe
         console.log(d.runMissing);
         return 1;
       }
-      const workflow = loadWorkflow(cwd, name);
-      if (workflow === undefined) {
-        console.log(fmt(d.workflowNotFound, { name }));
+      const loaded = loadWorkflowResult(cwd, name);
+      if (!loaded.ok) {
+        // v4.1 发布前修复：区分「文件不存在」与「解析失败」，解析失败展示真实错误（含行号）
+        if (loaded.reason === 'parse-error') {
+          console.log(fmt(d.workflowParseError, { name, message: loaded.message ?? '' }));
+        } else {
+          console.log(fmt(d.workflowNotFound, { name }));
+        }
+        return 1;
+      }
+      const workflow = loaded.workflow;
+      // v4.1 T1.4：运行前环境预检（缺失脚本/依赖/配置 → 可自动初始化）
+      const ready = await preflightAndInit(workflow, cwd);
+      if (!ready) {
         return 1;
       }
       console.log(fmt(d.runStart, { name, steps: workflow.steps.length }));
@@ -254,6 +461,8 @@ export async function runWorkflowCli(options: WorkflowCliOptions): Promise<numbe
         console.log(
           `❌ ${fmt(d.runFailed, { name, step: result.failedStep ?? '?', skipped: result.skipped.length })}`,
         );
+        // v4.1 T2.1：失败后「下一步」行动指引（用户反馈 1：出错不知道怎么办）
+        console.log(fmt(d.runFailedNext, { name }));
       }
       return result.ok ? 0 : 1;
     }
@@ -264,12 +473,17 @@ export async function runWorkflowCli(options: WorkflowCliOptions): Promise<numbe
         console.log(d.exportMissing);
         return 1;
       }
-      const workflow = loadWorkflow(cwd, name);
-      if (workflow === undefined) {
-        console.log(fmt(d.workflowNotFound, { name }));
+      const loaded = loadWorkflowResult(cwd, name);
+      if (!loaded.ok) {
+        // v4.1 发布前修复：export 同样区分失败原因（与 run 分支一致）
+        if (loaded.reason === 'parse-error') {
+          console.log(fmt(d.workflowParseError, { name, message: loaded.message ?? '' }));
+        } else {
+          console.log(fmt(d.workflowNotFound, { name }));
+        }
         return 1;
       }
-      process.stdout.write(serializeWorkflowYaml(workflow));
+      process.stdout.write(serializeWorkflowYaml(loaded.workflow));
       return 0;
     }
 

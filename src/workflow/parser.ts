@@ -295,7 +295,9 @@ export function serializeWorkflowYaml(workflow: Workflow): string {
         lines.push(`      - ${quoteIfNeeded(dep)}`);
       }
     }
-    if (step.retry !== undefined && step.retry > 0) {
+    // v4.1 发布前修复（专家建议）：retry: 0 也保留输出——此前 `> 0` 判断导致
+    // retry: 0（= 不允许恢复）export/import 后静默变「不限」，roundtrip 不等价
+    if (step.retry !== undefined) {
       lines.push(`    retry: ${step.retry}`);
     }
     if (step.require !== undefined && step.require !== 'none') {

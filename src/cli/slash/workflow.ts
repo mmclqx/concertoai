@@ -16,7 +16,7 @@ import { runWorkflow } from '../../workflow/executor';
 import { parseWorkflowYaml, serializeWorkflowYaml } from '../../workflow/parser';
 import { getWorkflowTemplate, WORKFLOW_TEMPLATE_NAMES } from '../../workflow/templates';
 import type { WorkflowProgress } from '../../workflow/types';
-import { loadWorkflow, saveWorkflow } from '../workflow';
+import { loadWorkflow, loadWorkflowResult, saveWorkflow } from '../workflow';
 
 // ── 命令解析 ──────────────────────────────────────────────────
 
@@ -144,21 +144,20 @@ export async function runWorkflowSlash(
   }
 
   if (cmd.type === 'export') {
-    const wf = loadWorkflow(cwd, cmd.name);
-    if (wf === undefined) {
-      return {
-        handled: true,
-        message: {
-          role: 'assistant',
-          content: `❌ ${fmt(d.workflowNotFound, { name: cmd.name })}`,
-        },
-      };
+    const loaded = loadWorkflowResult(cwd, cmd.name);
+    if (!loaded.ok) {
+      // v4.1 发布前修复：区分「文件不存在」与「解析失败」（与 CLI run/export 一致）
+      const content =
+        loaded.reason === 'parse-error'
+          ? `❌ ${fmt(d.workflowParseError, { name: cmd.name, message: loaded.message ?? '' })}`
+          : `❌ ${fmt(d.workflowNotFound, { name: cmd.name })}`;
+      return { handled: true, message: { role: 'assistant', content } };
     }
     return {
       handled: true,
       message: {
         role: 'assistant',
-        content: `📄 ${fmt(d.exportTitle, { name: cmd.name })}\n\n\`\`\`yaml\n${serializeWorkflowYaml(wf).trimEnd()}\n\`\`\``,
+        content: `📄 ${fmt(d.exportTitle, { name: cmd.name })}\n\n\`\`\`yaml\n${serializeWorkflowYaml(loaded.workflow).trimEnd()}\n\`\`\``,
       },
     };
   }
@@ -188,13 +187,16 @@ export async function runWorkflowSlash(
   }
 
   // ── run：异步执行工作流 ──
-  const workflow = loadWorkflow(cwd, cmd.name);
-  if (workflow === undefined) {
-    return {
-      handled: true,
-      message: { role: 'assistant', content: `❌ ${fmt(d.workflowNotFound, { name: cmd.name })}` },
-    };
+  const loadedRun = loadWorkflowResult(cwd, cmd.name);
+  if (!loadedRun.ok) {
+    // v4.1 发布前修复：区分「文件不存在」与「解析失败」
+    const content =
+      loadedRun.reason === 'parse-error'
+        ? `❌ ${fmt(d.workflowParseError, { name: cmd.name, message: loadedRun.message ?? '' })}`
+        : `❌ ${fmt(d.workflowNotFound, { name: cmd.name })}`;
+    return { handled: true, message: { role: 'assistant', content } };
   }
+  const workflow = loadedRun.workflow;
   options.onProgress?.({
     done: 0,
     total: workflow.steps.length,

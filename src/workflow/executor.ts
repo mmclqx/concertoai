@@ -37,7 +37,13 @@ export type RecoveryChoice = 'retry' | 'skip' | 'fix-and-retry' | 'abort';
 export type CommandRunner = (
   command: string,
   cwd: string,
-) => Promise<{ ok: boolean; stdout: string; stderr: string }>;
+) => Promise<{
+  ok: boolean;
+  stdout: string;
+  stderr: string;
+  /** 输出是否被截断（v4.1 T1.1：超长输出截断，UI 据此标注「已截断」）。 */
+  truncated?: boolean;
+}>;
 
 /** 失败恢复回调（由 CLI 层交互实现；缺省 abort，fail-closed）。 */
 export interface FailureInfo {
@@ -163,10 +169,15 @@ export async function runWorkflow(
     }));
   };
 
-  const scheduler = new TaskScheduler({ fileConflict: 'serialize', maxRetries: 2 });
+  // v4.1 T1.3：内部重试归零——工作流步骤失败直接交回外层 R/S/F/A 恢复 UI，
+  // 禁止调度器静默自动重试（否则 lint 连跑 3 遍刷屏 + 外层恢复 UI 失去意义）。
+  // 步骤级 retry 语义重定义为「恢复后重试上限」，在下方恢复循环中按步骤计数。
+  const scheduler = new TaskScheduler({ fileConflict: 'serialize', maxRetries: 0 });
   let failedStep: string | undefined;
   let failedError: string | undefined;
   let aborted = false;
+  /** 步骤恢复次数（retry 语义：用户在 R/S/F/A 恢复中重试该步骤的次数）。 */
+  const recoveryCount = new Map<string, number>();
 
   // 失败恢复主循环
   for (let round = 0; round < MAX_RECOVERY_ROUNDS && !aborted; round += 1) {
@@ -207,6 +218,18 @@ export async function runWorkflow(
     if (choice === 'abort') {
       aborted = true;
       break;
+    }
+    if (choice === 'retry' || choice === 'fix-and-retry') {
+      // v4.1 T1.3：retry 语义 = 恢复后重试上限（缺省不限；N = 最多 N 次，超限强制 abort）
+      const step = workflow.steps.find((s) => s.name === failedStep);
+      const n = (recoveryCount.get(failedStep) ?? 0) + 1;
+      recoveryCount.set(failedStep, n);
+      const limit = step?.retry;
+      if (limit !== undefined && n > limit) {
+        log(`[workflow] 步骤 ${failedStep} 已达 retry 上限（${limit}），强制放弃（整体回滚）`);
+        aborted = true;
+        break;
+      }
     }
     if (choice === 'skip') {
       userSkippedSet.add(failedStep);

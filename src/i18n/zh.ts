@@ -60,6 +60,9 @@ export const zh = {
     invalidSessionId: '非法的会话 id: {id}',
     sessionNotFound: '会话不存在: {id}',
     projectRulesReadFailed: '项目规则读取失败',
+    // v4.1 T2.1：未知异常「下一步」指引（safeAction 兜底）
+    fatalNextStep:
+      '💡 下一步：运行 `concertoai doctor` 检查环境；若为软件缺陷请附带上方错误报告反馈。',
   },
   approval: {
     editTitle: '编辑文件',
@@ -218,7 +221,11 @@ export const zh = {
     runProgress: '正在执行 step {current}/{total}: {step}…',
     runOk: '工作流 {name} 执行成功',
     runFailed: '工作流 {name} 执行失败（失败步骤: {step}，跳过 {skipped} 个）',
+    runFailedNext:
+      '💡 下一步：修复失败步骤后重跑：\n   concertoai workflow run {name}\n按 A 放弃的改动已自动回滚。',
     workflowNotFound: '工作流不存在: {name}（请先 workflow init 生成或 import 导入）',
+    workflowParseError:
+      '工作流 {name} 解析失败：{message}\n💡 请检查 YAML 语法（depends/files 请使用块状列表：\n   depends:\n     - lint）',
     exportMissing: '用法: concertoai workflow export <name>',
     exportTitle: '工作流 {name} 定义：',
     importMissing: '用法: concertoai workflow import <file>',
@@ -231,11 +238,31 @@ export const zh = {
     createDone: '已保存工作流 {name} → {file}',
     createAborted: '已取消保存',
     failureHeader: '⚠️ 工作流执行失败',
-    failureStep: '步骤 {step} 失败：{error}',
+    failureSummary: '💡 摘要：{summary}',
+    failureStep: '❌ 步骤 {step} 失败',
     failureOptions: '[R]重试 [S]跳过 [F]修复后重试 [A]放弃',
     failurePrompt: '选择 (R/S/F/A): ',
-    failureFixHint:
-      'ℹ️ F 仅重跑失败步骤（不会自动修复）。请先手动修改代码，再按 F；或按 A 放弃（整体回滚）。',
+    failureFixWait:
+      'ℹ️ 步骤 {step} 需手动修复。请修改代码后按 Enter 重试；输入 a 放弃（整体回滚）。{seconds} 秒无输入将自动放弃。',
+    failureFixPrompt: '等待修复完成 (Enter 重试 / a 放弃): ',
+    failureFixInvalid: '无效输入（Enter 重试 / a 放弃）。',
+    // v4.1 T1.4：运行前环境预检 + 轻量自动初始化
+    preflightMissing: '⚠️ 环境未就绪（{count} 项缺失）：',
+    preflightItemScript: '  - 缺少脚本 {name}（可自动初始化）',
+    preflightItemDep: '  - 依赖未安装: {name}（可自动安装）',
+    preflightItemConfig: '  - 配置文件缺失: {name}（可自动生成）',
+    preflightItemManual: '  - 缺少脚本 {name}（不可自动初始化，请手动配置）',
+    preflightAskInit: '是否自动初始化以上可修复项? [Y/n]: ',
+    preflightPlanTitle: '将执行以下初始化操作（全部需你确认）：',
+    preflightPlanCmd: '  $ {command}',
+    preflightPlanWrite: '  ✎ 写入 {file}',
+    preflightPlanScript: '  ✎ package.json scripts.{name} = {command}',
+    preflightConfirm: '确认执行初始化? (y/N): ',
+    preflightInitDone: '✅ 环境初始化完成',
+    preflightInitFailed: '❌ 初始化失败：{error}（未继续执行，请修复后重试）',
+    preflightSkipped: '已跳过初始化，按现有配置继续执行（缺失步骤可能失败）',
+    preflightContinue: '仍有不可自动修复的缺失项。是否继续执行? (y/N): ',
+    preflightNoTty: '非交互环境且环境未就绪，已停止执行。请先配置缺失项后重试。',
     approveStep: '⏸ 步骤需要审批，命令: {command}',
     approvePrompt: '批准执行? (y/N): ',
     inferFound: '检测到步骤间可能存在依赖关系：',
@@ -386,6 +413,26 @@ export const zh = {
     toolRunning: '执行工具: {name}',
     toolDone: '工具完成: {name}',
     quit: '已退出。会话已保存。',
+  },
+  welcome: {
+    // v4.1 T2.2：首次运行欢迎引导（用户反馈 3：新手不知流程）
+    title: '🎉 欢迎使用 ConcertoAI！',
+    line1: '  直接输入需求开始对话；/help 查看斜杠命令',
+    line2: '  常用：/plan 先生成计划再执行 · /review 代码审查 · /workflow 运行工作流',
+    line3: '  环境检查：concertoai doctor · 退出：Ctrl+C（会话已保存）',
+  },
+  help: {
+    // v4.1 T2.2：--help 分组 + 新手三步（用户反馈 3）
+    gettingStarted: '开始使用（新手三步）',
+    step1: '  ① 环境检查：concertoai doctor',
+    step2: '  ② 开始对话：concertoai chat（或直接 concertoai）',
+    step3: '  ③ 运行工作流：concertoai workflow init && concertoai workflow run <name>',
+    commands: '命令速览',
+    exampleChat: '  示例：concertoai chat（对话） · concertoai run "修复这个 bug"（一次性任务）',
+    exampleProject:
+      '  示例：concertoai project add demo .（注册项目） · concertoai team "..."（团队执行）',
+    exampleOps: '  示例：concertoai balance · doctor · self-heal · audit export',
+    exampleMarket: '  示例：concertoai plugin browse · provider list · config set provider <name>',
   },
 } as const;
 

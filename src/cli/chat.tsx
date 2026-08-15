@@ -2,6 +2,9 @@
  * chat 命令装配：TUI + loop + store 组装。
  */
 
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+
 import { render } from 'ink';
 
 import { registerBuiltinSubagents } from '../agent/builtin';
@@ -21,7 +24,7 @@ import { PluginRuntime } from '../plugin/runtime';
 import { SkillLoader } from '../skill/loader';
 import { loadConfig, resolveConfig } from '../store/config';
 import { MemoryStore } from '../store/memory-store';
-import { projectKeyFor, projectSessionsDir } from '../store/paths';
+import { globalDir, projectKeyFor, projectSessionsDir } from '../store/paths';
 import { loadProjectRules } from '../store/project-rules';
 import { SessionStore } from '../store/session';
 import { createKnowledgeTools } from '../tools/knowledge';
@@ -205,6 +208,8 @@ export async function runChat(options: RunChatOptions): Promise<void> {
     console.log(fmt(t().session.resumed, { id: sessionId, count: messages.length }));
   } else {
     sessionId = await store.create([]);
+    // v4.1 T2.2：新会话首次启动 → 欢迎引导（仅一次，标记文件控制）
+    maybePrintWelcome();
   }
 
   render(
@@ -240,6 +245,34 @@ export async function runChat(options: RunChatOptions): Promise<void> {
   // 性能优化：首帧渲染完成后后台预加载 tokenizer（WASM ~100ms），
   // 使首轮对话的 token 计数不再阻塞在编码器加载上。
   preloadTokenizer();
+}
+
+/** 欢迎标记文件名（v4.1 T2.2：仅首次运行打印欢迎引导）。 */
+const WELCOME_SEEN_FILE = '.welcome-seen';
+
+/**
+ * 首次运行欢迎引导（v4.1 T2.2，用户反馈 3：新手不知流程）。
+ * 首次 chat 启动打印 3 行常用命令 + 新手路径；标记文件存在后不再打印。
+ * 标记文件写入失败不阻塞（静默降级，最多每次启动多打一次欢迎）。
+ */
+export function maybePrintWelcome(): void {
+  const marker = path.join(globalDir(), WELCOME_SEEN_FILE);
+  if (existsSync(marker)) {
+    return;
+  }
+  const w = t().welcome;
+  console.log('');
+  console.log(w.title);
+  console.log(w.line1);
+  console.log(w.line2);
+  console.log(w.line3);
+  console.log('');
+  try {
+    mkdirSync(globalDir(), { recursive: true }); // 全局目录可能尚不存在（首次运行）
+    writeFileSync(marker, new Date().toISOString(), 'utf8');
+  } catch {
+    // 静默降级：写入失败下次再显示
+  }
 }
 
 /** 打印历史会话列表（-l）：id、时间、消息数、首条摘要。 */
