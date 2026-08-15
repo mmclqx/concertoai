@@ -20,6 +20,7 @@ import {
   confirmInferredDependencies,
   listWorkflows,
   loadWorkflow,
+  loadWorkflowResult,
   promptRecovery,
   saveWorkflow,
 } from '../../src/cli/workflow';
@@ -77,6 +78,46 @@ describe('workflow 文件存储（T2.5）', () => {
     expect(loadWorkflow(tmp, 'bad')).toBeUndefined();
   });
 
+  it('loadWorkflowResult：文件不存在 → not-found（区别于解析失败，v4.1 发布前修复）', () => {
+    const r = loadWorkflowResult(tmp, 'missing');
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.reason).toBe('not-found');
+      expect(r.message).toBeUndefined();
+    }
+  });
+
+  it('loadWorkflowResult：非法 YAML → parse-error + 真实错误信息（不再误导为「不存在」）', () => {
+    mkdirSync(path.join(tmp, '.concertoai', 'workflows'), { recursive: true });
+    // 内联列表 `depends: [lint]`（用户自然写法）→ parser 只支持块状列表 → 解析失败
+    writeFileSync(
+      path.join(tmp, '.concertoai', 'workflows', 'bad.yml'),
+      'name: bad\nsteps:\n  - name: lint\n    run: npm run lint\n  - name: typecheck\n    run: npm run typecheck\n    depends: [lint]\n',
+      'utf8',
+    );
+    const r = loadWorkflowResult(tmp, 'bad');
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.reason).toBe('parse-error');
+      // 真实错误信息应含「必须是列表」类提示（不再显示「工作流不存在」）
+      expect(r.message).toBeTruthy();
+    }
+  });
+
+  it('loadWorkflowResult：合法 YAML → ok + workflow', () => {
+    saveWorkflow(tmp, {
+      name: 'okwf',
+      description: 'd',
+      steps: [{ name: 'lint', run: 'npm run lint' }],
+    });
+    const r = loadWorkflowResult(tmp, 'okwf');
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.workflow.name).toBe('okwf');
+      expect(r.workflow.steps).toHaveLength(1);
+    }
+  });
+
   it('已保存文件为合法 YAML（readFileSync 内容可解析）', () => {
     saveWorkflow(tmp, { name: 'demo', steps: [{ name: 'a', run: 'echo hi' }] });
     const raw = readFileSync(path.join(tmp, '.concertoai', 'workflows', 'demo.yml'), 'utf8');
@@ -108,7 +149,7 @@ describe('confirmInferredDependencies（T2.4 提示确认）', () => {
   });
 });
 
-describe('promptRecovery（v4.0.1 F 选项提示路径）', () => {
+describe('promptRecovery（v4.1 F 等待态 + 智能摘要）', () => {
   const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
   afterEach(() => {
@@ -119,13 +160,48 @@ describe('promptRecovery（v4.0.1 F 选项提示路径）', () => {
     logSpy.mockRestore();
   });
 
-  it('选 F → 打印 failureFixHint 提示 + 返回 fix-and-retry（不静默重跑）', async () => {
-    vi.mocked(promptLine).mockResolvedValueOnce('f');
-    const choice = await promptRecovery('lint', 'biome format error');
+  it('失败信息先显示智能摘要（tsc 行）再显示步骤（不淹没提示）', async () => {
+    vi.mocked(promptLine).mockResolvedValueOnce('r');
+    const error = [
+      'src/a.ts(10,5): error TS2322: Type "x" is not assignable.',
+      'npm error code ELIFECYCLE',
+    ].join('\n');
+    const choice = await promptRecovery('typecheck', error);
+    expect(choice).toBe('retry');
+    const out = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(out).toContain('💡 摘要：src/a.ts(10,5): error TS2322');
+    expect(out).toContain('❌ 步骤 typecheck 失败');
+  });
+
+  it('选 F → 进入等待态 → Enter（空输入）→ fix-and-retry', async () => {
+    vi.mocked(promptLine).mockResolvedValueOnce('f').mockResolvedValueOnce('');
+    const choice = await promptRecovery('lint', 'err');
     expect(choice).toBe('fix-and-retry');
     const out = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
-    expect(out).toContain('F 仅重跑失败步骤');
-    expect(out).toContain('不会自动修复');
+    expect(out).toContain('需手动修复');
+  });
+
+  it('选 F → 等待态输入 a → abort（整体回滚）', async () => {
+    vi.mocked(promptLine).mockResolvedValueOnce('f').mockResolvedValueOnce('a');
+    const choice = await promptRecovery('lint', 'err');
+    expect(choice).toBe('abort');
+  });
+
+  it('选 F → 等待态超时（undefined）→ abort（防挂起）', async () => {
+    vi.mocked(promptLine).mockResolvedValueOnce('f').mockResolvedValueOnce(undefined);
+    const choice = await promptRecovery('lint', 'err');
+    expect(choice).toBe('abort');
+  });
+
+  it('选 F → 等待态非法输入 → 重新提示后 Enter 重试', async () => {
+    vi.mocked(promptLine)
+      .mockResolvedValueOnce('f')
+      .mockResolvedValueOnce('zz')
+      .mockResolvedValueOnce('');
+    const choice = await promptRecovery('lint', 'err');
+    expect(choice).toBe('fix-and-retry');
+    const out = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(out).toContain('无效输入');
   });
 
   it('非法输入 → abort（fail-closed，安全兜底）', async () => {

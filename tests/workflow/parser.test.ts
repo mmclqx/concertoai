@@ -99,6 +99,17 @@ describe('serializeWorkflowYaml（T2.5 export）', () => {
     expect(parsed).toEqual(wf);
   });
 
+  it('retry: 0 保留输出（export/import 后语义不变，v4.1 发布前修复）', () => {
+    const wf: Workflow = {
+      name: 'no-retry',
+      steps: [{ name: 'lint', run: 'npm run lint', retry: 0 }],
+    };
+    const yaml = serializeWorkflowYaml(wf);
+    expect(yaml).toContain('    retry: 0');
+    const round = parseWorkflowYaml(yaml);
+    expect(round.steps[0]?.retry).toBe(0);
+  });
+
   it('含特殊字符值自动加引号（冒号/空格/井号）', () => {
     const yaml = serializeWorkflowYaml({
       name: 'demo',

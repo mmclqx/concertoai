@@ -274,3 +274,108 @@ describe('runWorkflow（T2.3 执行引擎）', () => {
     ).rejects.toThrow('循环依赖');
   });
 });
+
+describe('runWorkflow 内部重试归零 + retry 语义（v4.1 T1.3）', () => {
+  it('失败步骤只执行 1 次（无调度器内部自动重试，直接交回外层恢复）', async () => {
+    const executed: string[] = [];
+    let failRuns = 0;
+    const wf: Workflow = {
+      name: 'no-internal-retry',
+      steps: [{ name: 'lint', run: 'lint' }],
+    };
+    let failureCalls = 0;
+    const result = await runWorkflow(wf, {
+      cwd: tmp,
+      runCommand: fakeRunner(async (cmd) => {
+        executed.push(cmd);
+        if (cmd === 'lint') {
+          failRuns += 1;
+          return { ok: false, stderr: 'boom' };
+        }
+        return { ok: true };
+      }),
+      onFailure: async (): Promise<RecoveryChoice> => {
+        failureCalls += 1;
+        return 'abort';
+      },
+    });
+    // 内部不再自动重试：lint 只跑 1 次，失败后立即进入恢复流程
+    expect(failRuns).toBe(1);
+    expect(failureCalls).toBe(1);
+    expect(result.ok).toBe(false);
+    expect(result.failedStep).toBe('lint');
+  });
+
+  it('retry: 1 → 第一次恢复放行，第二次恢复强制 abort（整体回滚）', async () => {
+    const wf: Workflow = {
+      name: 'retry-limit',
+      steps: [{ name: 'flaky', run: 'flaky', retry: 1 }],
+    };
+    const logs: string[] = [];
+    const result = await runWorkflow(wf, {
+      cwd: tmp,
+      runCommand: fakeRunner(async () => ({ ok: false, stderr: 'still failing' })),
+      onFailure: async (): Promise<RecoveryChoice> => 'retry',
+      log: (msg) => logs.push(msg),
+    });
+    expect(result.ok).toBe(false);
+    expect(logs.some((l) => l.includes('已达 retry 上限'))).toBe(true);
+  });
+
+  it('retry: 0 → 首次失败即强制 abort（不允许重试）', async () => {
+    const wf: Workflow = {
+      name: 'retry-zero',
+      steps: [{ name: 'x', run: 'x', retry: 0 }],
+    };
+    let failureCalls = 0;
+    const result = await runWorkflow(wf, {
+      cwd: tmp,
+      runCommand: fakeRunner(async () => ({ ok: false, stderr: 'boom' })),
+      onFailure: async (): Promise<RecoveryChoice> => {
+        failureCalls += 1;
+        return 'retry';
+      },
+    });
+    // 第一次 onFailure 返回 retry，但 retry: 0 → 强制 abort
+    expect(failureCalls).toBe(1);
+    expect(result.ok).toBe(false);
+    expect(result.failedStep).toBe('x');
+  });
+
+  it('retry 缺省（undefined）→ 不限恢复次数（用户主动 R 可任意重试）', async () => {
+    const wf: Workflow = {
+      name: 'retry-unlimited',
+      steps: [{ name: 'flaky', run: 'flaky' }],
+    };
+    let runs = 0;
+    const result = await runWorkflow(wf, {
+      cwd: tmp,
+      runCommand: fakeRunner(async () => {
+        runs += 1;
+        // 第 4 次尝试成功（缺省不限，恢复 3 次后成功）
+        return runs >= 4 ? { ok: true } : { ok: false, stderr: 'fail' };
+      }),
+      onFailure: async (): Promise<RecoveryChoice> => 'retry',
+    });
+    expect(result.ok).toBe(true);
+    expect(runs).toBe(4);
+  });
+
+  it('retry: 1 在恢复后成功 → 正常完成（上限内）', async () => {
+    const wf: Workflow = {
+      name: 'retry-within-limit',
+      steps: [{ name: 'flaky', run: 'flaky', retry: 1 }],
+    };
+    let runs = 0;
+    const result = await runWorkflow(wf, {
+      cwd: tmp,
+      runCommand: fakeRunner(async () => {
+        runs += 1;
+        return runs === 1 ? { ok: false, stderr: 'fail once' } : { ok: true };
+      }),
+      onFailure: async (): Promise<RecoveryChoice> => 'retry',
+    });
+    expect(result.ok).toBe(true);
+    expect(runs).toBe(2);
+  });
+});
