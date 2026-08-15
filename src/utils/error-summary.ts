@@ -31,6 +31,18 @@ export function extractErrorSummary(stderr: string): ErrorSummary {
   if (tsc !== undefined) {
     return { line: tsc.slice(0, 200), tool: 'tsc' };
   }
+  // v4.1.1 P0-C：tsc 无 tsconfig.json 时不检查文件、打印 help（`tsc: The TypeScript Compiler -
+  // Version …` + `COMMON COMMANDS`/`tsc --init`），没有 error TS 行 → 兜底会拿到最无用的
+  // npm 包装首行（`> xxx@1.0.0 typecheck`）。识别 help 特征 → 给出可操作提示。
+  const tscHelp =
+    lines.some((l) => /tsc: The TypeScript Compiler - Version/i.test(l)) &&
+    (lines.some((l) => /COMMON COMMANDS/i.test(l)) || lines.some((l) => /\btsc --init\b/.test(l)));
+  if (tscHelp) {
+    return {
+      line: '缺少 tsconfig.json（tsc 打印了帮助而非检查文件），请运行 npx tsc --init 生成后重试',
+      tool: 'tsc',
+    };
+  }
 
   // biome: `×` 开头（格式错误列表）或 `Found N errors` 汇总或 `error[xxx]`
   // v4.1 P1-3：biome format 错误的标题行 `<file> format ━━━`（文件级）比
@@ -45,10 +57,14 @@ export function extractErrorSummary(stderr: string): ErrorSummary {
       /^[^\s].* lint ━+/.test(l),
   );
   if (biome !== undefined) {
-    // v4.1 P1-3：format/lint 文件级标题（含 ━ 分隔线）→ 附带修复建议命令
-    if (/ format ━+/.test(biome) || / lint ━+/.test(biome)) {
+    // v4.1.1 P1-3：format/lint 文件级标题（`<file> format ━━━`）→ 提取文件名 +
+    // 人性化措辞 + 修复建议（去掉 ━ 分隔线噪音；v4.1 初版残留整行标题过长）
+    const fileMatch = /^(\S+?)\s+(format|lint)\s+━+/.exec(biome);
+    if (fileMatch !== null) {
+      const file = (fileMatch[1] ?? biome).slice(0, 100);
+      const kind = fileMatch[2] === 'format' ? '需要格式化' : '存在 lint 问题';
       return {
-        line: `${biome.slice(0, 120)} → 建议运行 biome check --write . 自动修复`,
+        line: `${file} ${kind} → 建议运行 biome check --write . 自动修复`,
         tool: 'biome',
       };
     }
