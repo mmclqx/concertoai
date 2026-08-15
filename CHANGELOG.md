@@ -8,7 +8,7 @@
 
 ## [Unreleased]
 
-> v4.1.0 发布后热修（未发布，待用户手工测试确认后 bump 为 v4.1.1 或并入下版）。117 文件 / 1400 用例全绿（+10）。
+> v4.1.0 发布后热修（未发布，待用户手工测试确认后 bump 为 v4.1.1 或并入下版）。117 文件 / 1402 用例全绿（+12）。
 
 ### Fixed
 
@@ -16,11 +16,14 @@
 - **Windows 下 `npm run <script>` 失败真实错误丢失**：npm 包装脚本把子命令（tsc/biome 等）错误透传到 **stdout**、`err.stderr` 为空 → 摘要只显示无用的「Command failed: npm run typecheck」。`defaultRunCommand` 失败时合并 stdout+stderr，两者皆空才退回 err.message。4 回归测试
 - **biome format/lint 错误摘要无操作性**：此前命中 diff 头 `× Formatter would have printed…`（不知道哪个文件/怎么办）→ 改为识别 `<file> format/lint ━` 文件标题行 + 附「建议运行 biome check --write . 自动修复」。2 回归测试
 - **preflight 用户拒绝（n）/非 TTY 静默退出**：`preflightAndInit` 拒绝继续时无任何输出直接返回 → 补「已停止执行，请先配置缺失项后重试」（i18n `preflightStopped` zh/en）。2 回归测试
+- **preflight 自动初始化「装好了但跑不通」——biome 2.x 不兼容 + tsc 无 tsconfig 打印 help**（专家手工测试 mt43 暴露，证据 `docs/11-手工测试结果/v4.1.1-test-result.md`）：① `defaultBiomeJson()` 模板写死 1.9.4 schema + deprecated `recommended: true`，而 preflight 安装 `@biomejs/biome` 无版本上限 → npm 装到 2.5.8 → lint 报 `schema version does not match（Expected 2.5.8 / Found 1.9.4）` 必败 → 模板升 2.x（`$schema` 2.5.8 + `linter.rules.preset: 'recommended'`）；② typecheck 自动初始化只装 typescript + 注入 `tsc --noEmit`，裸项目无 tsconfig.json → tsc 不检查文件而是打印 help（exit 1）→ 新增 `defaultTsconfigJson()`（esnext/nodenext/strict/noEmit/skipLibCheck/verbatimModuleSyntax）+ autoInit 写文件 + checkPrerequisites 缺失检测（可自动修复）；③ error-summary 识别 tsc help 特征 → 摘要给出「缺少 tsconfig.json，npx tsc --init」可操作提示；biome 摘要由整行 ━ 标题改为「文件名 + 需要格式化/存在 lint 问题 + biome check --write .」。回归 3 用例 + `scripts/pty-drive-p0.mjs` 端到端 TTY 驱动（裸项目 → 自动初始化 → lint+typecheck 全过）
 
 ### 测试（v4.1 热修）
 
 - 新增 10 用例：`tests/workflow/executor.test.ts`（循环依赖友好失败改断言）、`tests/workflow/parser.test.ts`（直接/间接环跳过 2）、`tests/utils/error-summary.test.ts`（format/lint 文件标题 2）、`tests/cli/workflow.test.ts`（stdout 合并 4 + preflight 停止 2）
-- **基线校准**：117 文件 / 1400 用例全绿（`npm run verify`）
+- **v4.1.1 P0 追加 2 用例**：`tests/utils/error-summary.test.ts`（tsc help 特征 → 「缺少 tsconfig.json」提示 + biome 摘要去 ━ 断言 2）、`tests/workflow/preflight.test.ts`（tsconfig.json 缺失检测 + 默认 biome.json 2.x schema/preset + typecheck autoInit 写 tsconfig）
+- **端到端验证**：`scripts/pty-drive-p0.mjs`（node-pty 真实 TTY：裸项目 → preflight 自动初始化 y→y → 断言「✅ 工作流 precommit 执行成功」+ failIf biome schema 报错 / tsc help）；`scripts/_ts7-check.mjs`（TS7 无 tsconfig help 行为实证）
+- **基线校准**：117 文件 / 1402 用例全绿（`npm run verify`）
 
 ## [4.1.0] — 2026-08-15
 

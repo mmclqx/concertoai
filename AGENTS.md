@@ -150,6 +150,7 @@ UI 测试：Ink 组件需用 ink-testing-library 覆盖
 12. **发布前自我审查 + 对照 C 学习**：发布前，AI 先自我审查（独立完成，不参考 C 的审查报告），再与 C 的审查对比，学习差距（语义追问/边界模式/国际化盲区等），持续提升代码质量（v3.2 双视角审查经验，见 09-踩坑记录/2026-08-11-自我审查与C审查视角差距.md）
 13. **发布后工作区立即归零**：发布 commit 落盘后立即 `git status` 确认无 modified/untracked；任何发布后发现的新修复（真实端到端 bug）须立即 commit + 补回归用例 + 踩坑记录 + 发 patch 版，严禁修复滞留在工作区（教训：v4.0.0 发布后 autofix reason / LSP 双 bug 滞留工作区，npm 包携带 bug，见 09-踩坑记录/2026-08-14-端到端测试暴露三处自动化未覆盖bug.md）
 14. **生成物方向/箭头语义自查**：任何「边/依赖/指向」类结构（工作流 depends、插件权限 allowlist、快照回滚、LSP 编辑方向）在规则表/常量旁必须注释「from 依赖 to / to 是被依赖方」；面向用户的提示用「X 依赖 Y」措辞，禁止用「X → Y」箭头（会被误读为执行顺序）；测试须同时断言「有边」与「无反向边」（教训：workflow 依赖推断方向反了——lint→typecheck 写成 lint 依赖 typecheck，见 09-踩坑记录/2026-08-15-workflow依赖推断方向反了.md）
+15. **自动生成模板/配置文件版本前瞻**：自动初始化/模板生成的配置文件（biome.json / tsconfig.json 等）不得绑定写死的旧工具版本假设（schema URL / 已废弃字段）；须用「npm install 最新版」的真实用户环境端到端验证「装完直接 run 能跑通」，存在性检查（依赖/scripts/配置文件）≠ 跑通（教训：preflight 自动初始化用 biome 1.9.4 schema 模板 + 不生成 tsconfig.json → 用户侧 biome 2.5.8 lint 必败 + tsc 打印 help，见 09-踩坑记录/2026-08-16-preflight自动初始化装好但跑不通.md）
 
 ## 命名与包
 项目	内容
