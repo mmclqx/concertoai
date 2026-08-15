@@ -35,8 +35,9 @@ describe('extractErrorSummary（v4.1 T1.1 智能摘要）', () => {
     expect(s.line).toContain('Found 2 errors');
   });
 
-  // v4.1 P1-3：biome format 错误摘要显示文件标题 + 建议修复命令（而非 diff 头）
-  it('biome format → 提取文件标题行 + 建议 biome check --write .', () => {
+  // v4.1.1 P1-3：biome format 错误摘要显示「文件名 + 人性化措辞 + 建议命令」，
+  // 去掉 ━ 分隔线噪音（v4.1 初版残留整行标题过长）
+  it('biome format → 「文件名 需要格式化 + 建议 biome check --write .」', () => {
     const err = [
       'tsconfig.json format ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
       '',
@@ -47,22 +48,52 @@ describe('extractErrorSummary（v4.1 T1.1 智能摘要）', () => {
     ].join('\n');
     const s = extractErrorSummary(err);
     expect(s.tool).toBe('biome');
-    // 命中文件标题行（而非 diff 头）
-    expect(s.line).toContain('tsconfig.json format');
+    // 命中文件标题行（而非 diff 头），且去掉 ━ 噪音
+    expect(s.line).toContain('tsconfig.json 需要格式化');
+    expect(s.line).not.toContain('━');
     expect(s.line).not.toContain('Formatter would have printed');
     // 附带建议命令
     expect(s.line).toContain('biome check --write .');
   });
 
-  it('biome lint 文件标题 → 同样附带建议命令', () => {
+  it('biome lint 文件标题 → 「文件名 存在 lint 问题 + 建议命令」', () => {
     const err = [
       'src/a.ts lint ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
       '  × [lint/suspicious/noDebugger]: unexpected debugger statement.',
     ].join('\n');
     const s = extractErrorSummary(err);
     expect(s.tool).toBe('biome');
-    expect(s.line).toContain('src/a.ts lint');
+    expect(s.line).toContain('src/a.ts 存在 lint 问题');
+    expect(s.line).not.toContain('━');
     expect(s.line).toContain('biome check --write .');
+  });
+
+  // v4.1.1 P0-C：tsc 无 tsconfig.json 时打印 help（而非 error TS 行）→ 摘要给出可操作提示
+  it('tsc 打印 help（无 tsconfig.json）→ 提示缺少 tsconfig.json + npx tsc --init', () => {
+    const err = [
+      '> mt43@1.0.0 typecheck',
+      '> tsc --noEmit',
+      '',
+      'Version 7.0.2',
+      'tsc: The TypeScript Compiler - Version 7.0.2',
+      '',
+      'COMMON COMMANDS',
+      '',
+      '  tsc',
+      '  Compiles the current project (tsconfig.json in the working directory.)',
+      '  tsc --init',
+      '  Creates a tsconfig.json with the recommended settings in the working directory.',
+      '',
+      'COMMAND LINE FLAGS',
+      '--init',
+      'Initializes a TypeScript project and creates a tsconfig.json file.',
+    ].join('\n');
+    const s = extractErrorSummary(err);
+    expect(s.tool).toBe('tsc');
+    // 不再是最无用的 npm 包装首行
+    expect(s.line).not.toContain('> mt43@1.0.0 typecheck');
+    expect(s.line).toContain('缺少 tsconfig.json');
+    expect(s.line).toContain('npx tsc --init');
   });
 
   it('npm → 提取 npm error 行', () => {

@@ -71,8 +71,14 @@ describe('checkPrerequisites', () => {
     // 依赖缺失（biome / tsc 均未装）
     expect(result.missing.some((m) => m.kind === 'dep' && m.name === 'biome')).toBe(true);
     expect(result.missing.some((m) => m.kind === 'dep' && m.name === 'typescript')).toBe(true);
-    // 配置缺失（biome.json）
+    // 配置缺失（biome.json + tsconfig.json）
     expect(result.missing.some((m) => m.kind === 'config' && m.name === 'biome.json')).toBe(true);
+    expect(result.missing.some((m) => m.kind === 'config' && m.name === 'tsconfig.json')).toBe(
+      true,
+    );
+    // tsconfig.json 缺失项可自动修复（写入默认 tsconfig）
+    const tsconfig = result.missing.find((m) => m.name === 'tsconfig.json');
+    expect(tsconfig?.fix?.writeFile?.file).toBe('tsconfig.json');
   });
 
   it('脚本已配置但依赖未装 → 只报依赖缺失（可自动安装）', () => {
@@ -117,6 +123,7 @@ describe('checkPrerequisites', () => {
     writeFileSync(path.join(tmp, 'node_modules', '.bin', 'biome.cmd'), '@echo off', 'utf8');
     writeFileSync(path.join(tmp, 'node_modules', '.bin', 'tsc.cmd'), '@echo off', 'utf8');
     writeFileSync(path.join(tmp, 'biome.json'), '{}', 'utf8');
+    writeFileSync(path.join(tmp, 'tsconfig.json'), '{}', 'utf8');
     const result = checkPrerequisites(precommit, tmp);
     expect(result.ok).toBe(true);
     expect(result.missing).toEqual([]);
@@ -137,10 +144,35 @@ describe('autoInitForScript', () => {
     expect(fix?.addScript).toEqual({ name: 'lint', command: 'biome check .' });
   });
 
-  it('typecheck → typescript 安装 + scripts.typecheck', () => {
+  it('默认 biome.json 使用 biome 2.x schema + preset（v4.1.1 P0，不再 deprecated recommended）', () => {
+    const fix = autoInitForScript('lint');
+    const biomeJson = JSON.parse(fix?.writeFile?.content ?? '{}') as {
+      $schema?: string;
+      linter?: { rules?: Record<string, unknown> };
+    };
+    // 2.x schema URL（1.9.4 在 biome 2.5.8 下报 schema 不匹配）
+    expect(biomeJson.$schema).toMatch(
+      /^https:\/\/biomejs\.dev\/schemas\/2\.\d+\.\d+\/schema\.json$/,
+    );
+    expect(biomeJson.$schema).not.toContain('1.9.4');
+    // preset 替代 deprecated 的 recommended: true
+    expect(biomeJson.linter?.rules?.preset).toBe('recommended');
+    expect(biomeJson.linter?.rules?.recommended).toBeUndefined();
+  });
+
+  it('typecheck → typescript 安装 + scripts.typecheck + tsconfig.json 生成（v4.1.1 P0）', () => {
     const fix = autoInitForScript('typecheck');
     expect(fix?.install).toBe('typescript');
     expect(fix?.addScript?.command).toBe('tsc --noEmit');
+    // v4.1.1 P0：裸项目无 tsconfig.json 时 tsc 打印 help → 自动初始化必须生成
+    expect(fix?.writeFile?.file).toBe('tsconfig.json');
+    const tsconfig = JSON.parse(fix?.writeFile?.content ?? '{}') as {
+      compilerOptions?: Record<string, unknown>;
+      include?: string[];
+    };
+    expect(tsconfig.compilerOptions?.noEmit).toBe(true);
+    expect(tsconfig.compilerOptions?.strict).toBe(true);
+    expect(tsconfig.include).toContain('**/*.ts');
   });
 
   it('test → 不可自动（无法猜框架）', () => {
