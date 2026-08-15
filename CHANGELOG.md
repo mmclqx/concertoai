@@ -6,6 +6,22 @@
 - 条目按类型分组：`Added`（新增）/ `Changed`（变更）/ `Fixed`（修复）/ `Removed`（移除）；
 - 版本号由 `npm version <patch|minor|major>` 管理（自动 bump + 同步 `src/index.ts` 的 VERSION + git tag）。
 
+## [Unreleased]
+
+> v4.1.0 发布后热修（未发布，待用户手工测试确认后 bump 为 v4.1.1 或并入下版）。117 文件 / 1400 用例全绿（+10）。
+
+### Fixed
+
+- **release 模板依赖推断叠加生成环 → workflow run 崩溃**（真实手工测试复现，证据 `docs/11-手工测试结果/v4.0-test-result.md`）：模板预置 `build depends: [test]` + 推断新增 `test 依赖 build` → `CyclicDependencyError: test → build → test` unhandledRejection 进 crash.log。双层修复——① 根因层 `inferDependencies` 推断每条边前 `hasDependencyPath` 环检测（目标已依赖来源则跳过，不再生成环）；② 防御层 `executor` 捕获 `CyclicDependencyError` 转友好失败结果（`WorkflowRunResult.cycle` 环路径 + CLI `runFailedCycle` 文案「💡 编辑 release.yml 移除互相依赖的 depends」），不再崩溃；③ 兜底层 `safeAction` 泛型化包住 workflow action，未预期异常统一「命令执行失败 + 💡 下一步」出口。回归测试 executor 改断言 + parser 2 用例（直接环/间接环）
+- **Windows 下 `npm run <script>` 失败真实错误丢失**：npm 包装脚本把子命令（tsc/biome 等）错误透传到 **stdout**、`err.stderr` 为空 → 摘要只显示无用的「Command failed: npm run typecheck」。`defaultRunCommand` 失败时合并 stdout+stderr，两者皆空才退回 err.message。4 回归测试
+- **biome format/lint 错误摘要无操作性**：此前命中 diff 头 `× Formatter would have printed…`（不知道哪个文件/怎么办）→ 改为识别 `<file> format/lint ━` 文件标题行 + 附「建议运行 biome check --write . 自动修复」。2 回归测试
+- **preflight 用户拒绝（n）/非 TTY 静默退出**：`preflightAndInit` 拒绝继续时无任何输出直接返回 → 补「已停止执行，请先配置缺失项后重试」（i18n `preflightStopped` zh/en）。2 回归测试
+
+### 测试（v4.1 热修）
+
+- 新增 10 用例：`tests/workflow/executor.test.ts`（循环依赖友好失败改断言）、`tests/workflow/parser.test.ts`（直接/间接环跳过 2）、`tests/utils/error-summary.test.ts`（format/lint 文件标题 2）、`tests/cli/workflow.test.ts`（stdout 合并 4 + preflight 停止 2）
+- **基线校准**：117 文件 / 1400 用例全绿（`npm run verify`）
+
 ## [4.1.0] — 2026-08-15
 
 > v4.1 定位：**体验打磨轮（Last-Mile UX）**——客户视角评价 5 个问题闭环（Missing script / F 假按钮 / 进度刷屏 / 输出淹没）+ 专家 5 建议 + 用户 3 反馈落地 + 发布前评审 4 条建议（loadWorkflow 错误传播 / retry:0 roundtrip / 安全模型 / CHANGELOG 确认），不做架构重构。117 文件 / 1390 用例全绿。
