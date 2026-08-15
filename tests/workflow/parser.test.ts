@@ -183,4 +183,37 @@ describe('inferDependencies（T2.4 依赖推断）', () => {
     );
     expect(result).toEqual([expect.objectContaining({ from: 'publish', to: 'build' })]);
   });
+
+  // v4.1 P0-1：循环依赖——推断边若与已声明边成环则跳过
+  it('不推断会成环的依赖（release 模板：build 依赖 test，不推 test 依赖 build）', () => {
+    const result = inferDependencies(
+      steps([
+        { name: 'lint', run: 'npm run lint' },
+        { name: 'test', run: 'npm run test -- --silent', depends: ['lint', 'build'] },
+        { name: 'build', run: 'npm run build', depends: ['test', 'lint'] },
+        { name: 'changelog', run: 'node scripts/update-changelog.mjs', depends: ['build'] },
+        { name: 'publish', run: 'npm publish', depends: ['changelog', 'build'] },
+      ]),
+    );
+    // 关键：不产生 test→build（会与 build→test 成环）
+    expect(result).not.toContainEqual(expect.objectContaining({ from: 'test', to: 'build' }));
+    // 也不产生 build→test（已声明跳过）
+    expect(result).not.toContainEqual(expect.objectContaining({ from: 'build', to: 'test' }));
+    // publish 依赖 build 已声明 → 不重复推；changelog 无匹配规则
+    // 全量断言：无任何推断边（全部已声明/成环被跳过）
+    expect(result).toEqual([]);
+  });
+
+  it('间接成环也跳过（a 依赖 b，b 依赖 c，不推 c 依赖 a）', () => {
+    const result = inferDependencies(
+      steps([
+        { name: 'a', run: 'npm run build', depends: ['b'] },
+        { name: 'b', run: 'npm run test', depends: ['c'] },
+        { name: 'c', run: 'npm run typecheck' },
+      ]),
+    );
+    // a 的 run 匹配 build→lint 规则（目标 lint 不存在）；c 的 run 匹配 typecheck→lint（lint 不存在）
+    // 但 c 若推 typecheck 依赖 build（build 存在且 = a）→ 会成环（c→a→b→c），应跳过
+    expect(result).not.toContainEqual(expect.objectContaining({ from: 'c', to: 'a' }));
+  });
 });

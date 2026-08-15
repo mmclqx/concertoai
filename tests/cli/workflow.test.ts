@@ -18,6 +18,7 @@ vi.mock('../../src/cli/prompt', () => ({
 import { promptLine } from '../../src/cli/prompt';
 import {
   confirmInferredDependencies,
+  defaultRunCommand,
   listWorkflows,
   loadWorkflow,
   loadWorkflowResult,
@@ -214,5 +215,99 @@ describe('promptRecovery（v4.1 F 等待态 + 智能摘要）', () => {
     vi.mocked(promptLine).mockResolvedValueOnce(undefined);
     const choice = await promptRecovery('lint', 'err');
     expect(choice).toBe('abort');
+  });
+});
+
+describe('defaultRunCommand（v4.1 P0-2 Windows stderr 丢失修复）', () => {
+  // Windows 下 `npm run <script>` 失败时，子命令真实错误常进 stdout（npm 透传），stderr 为空。
+  // 用 node -e 模拟「失败但错误进 stdout」的子进程，验证 defaultRunCommand 合并 stdout。
+  it('失败时 stdout 含错误、stderr 为空 → stderr 合并 stdout（真实错误不丢失）', async () => {
+    // 命令：打印错误到 stdout 后 exit(1)（模拟 tsc 错误进 stdout 的 npm 场景）
+    const cmd =
+      process.execPath +
+      ' -e "console.log(\'error TS1287: top-level export in CJS\'); process.exit(1)"';
+    const out = await defaultRunCommand(cmd, tmp);
+    expect(out.ok).toBe(false);
+    // 关键断言：stderr 合并了 stdout 的错误行（此前只取 err.message「Command failed」）
+    expect(out.stderr).toContain('error TS1287');
+  });
+
+  it('失败时 stdout 为空、stderr 有错误 → stderr 保留（不回归）', async () => {
+    const cmd = `${process.execPath} -e "console.error('npm error code ELIFECYCLE'); process.exit(1)"`;
+    const out = await defaultRunCommand(cmd, tmp);
+    expect(out.ok).toBe(false);
+    expect(out.stderr).toContain('npm error code ELIFECYCLE');
+  });
+
+  it('成功时 stdout/stderr 分离（不合并，回归）', async () => {
+    const cmd = `${process.execPath} -e "console.log('out-line'); console.error('err-line')"`;
+    const out = await defaultRunCommand(cmd, tmp);
+    expect(out.ok).toBe(true);
+    expect(out.stdout).toContain('out-line');
+    expect(out.stderr).toContain('err-line');
+  });
+
+  it('失败且 stdout/stderr 皆空 → 退回命令错误信息（不丢错误）', async () => {
+    // 命令本身不存在 → exec 报 ENOENT，stdout/stderr 空 → 退回 err.message
+    const out = await defaultRunCommand('definitely-not-a-real-cmd-xyz', tmp);
+    expect(out.ok).toBe(false);
+    expect(out.stderr.length).toBeGreaterThan(0);
+  });
+});
+
+describe('preflightAndInit（v4.1 P1-4 不可修复项拒绝反馈）', () => {
+  it('不可修复项存在 + 用户拒绝继续（n）→ 打印「已停止执行」并返回 false', async () => {
+    // 构造一个只缺 test/build（均可自动修复项之外的）的项目：lint/typecheck 可自动，
+    // 但 test/build 不可自动 → 需全部不可自动才走 preflightContinue 分支。
+    // 用仅含 test 的工作流（autoInitForScript('test') = undefined，全部不可自动）。
+    writeFileSync(
+      path.join(tmp, 'package.json'),
+      JSON.stringify({ name: 'p', version: '1.0.0', scripts: {} }),
+      'utf8',
+    );
+    const wf: Workflow = {
+      name: 'release',
+      steps: [
+        { name: 'test', run: 'npm run test' },
+        { name: 'build', run: 'npm run build', depends: ['test'] },
+      ],
+    };
+    // 模拟用户输入 n（拒绝继续）
+    vi.mocked(promptLine).mockResolvedValueOnce('n');
+    const { preflightAndInit } = await import('../../src/cli/workflow');
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      const ready = await preflightAndInit(wf, tmp);
+      expect(ready).toBe(false);
+      const out = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+      // P1-4：明确停止文案（不再静默退出）
+      expect(out).toContain('已停止执行');
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  it('不可修复项存在 + 用户选择继续（y）→ 返回 true（继续执行）', async () => {
+    writeFileSync(
+      path.join(tmp, 'package.json'),
+      JSON.stringify({ name: 'p2', version: '1.0.0', scripts: {} }),
+      'utf8',
+    );
+    const wf: Workflow = {
+      name: 'release',
+      steps: [
+        { name: 'test', run: 'npm run test' },
+        { name: 'build', run: 'npm run build', depends: ['test'] },
+      ],
+    };
+    vi.mocked(promptLine).mockResolvedValueOnce('y');
+    const { preflightAndInit } = await import('../../src/cli/workflow');
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      const ready = await preflightAndInit(wf, tmp);
+      expect(ready).toBe(true);
+    } finally {
+      logSpy.mockRestore();
+    }
   });
 });

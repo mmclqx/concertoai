@@ -35,6 +35,36 @@ describe('extractErrorSummary（v4.1 T1.1 智能摘要）', () => {
     expect(s.line).toContain('Found 2 errors');
   });
 
+  // v4.1 P1-3：biome format 错误摘要显示文件标题 + 建议修复命令（而非 diff 头）
+  it('biome format → 提取文件标题行 + 建议 biome check --write .', () => {
+    const err = [
+      'tsconfig.json format ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+      '',
+      '  × Formatter would have printed the following content:',
+      '',
+      '     1    │ - {␍',
+      '     2    │ - ··// Visit https://aka.ms/tsconfig',
+    ].join('\n');
+    const s = extractErrorSummary(err);
+    expect(s.tool).toBe('biome');
+    // 命中文件标题行（而非 diff 头）
+    expect(s.line).toContain('tsconfig.json format');
+    expect(s.line).not.toContain('Formatter would have printed');
+    // 附带建议命令
+    expect(s.line).toContain('biome check --write .');
+  });
+
+  it('biome lint 文件标题 → 同样附带建议命令', () => {
+    const err = [
+      'src/a.ts lint ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+      '  × [lint/suspicious/noDebugger]: unexpected debugger statement.',
+    ].join('\n');
+    const s = extractErrorSummary(err);
+    expect(s.tool).toBe('biome');
+    expect(s.line).toContain('src/a.ts lint');
+    expect(s.line).toContain('biome check --write .');
+  });
+
   it('npm → 提取 npm error 行', () => {
     const err = 'npm error code ELIFECYCLE\nnpm error errno 1\n';
     const s = extractErrorSummary(err);

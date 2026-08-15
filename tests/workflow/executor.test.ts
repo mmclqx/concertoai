@@ -261,7 +261,8 @@ describe('runWorkflow（T2.3 执行引擎）', () => {
     expect(await snapshots.list()).toEqual([]);
   });
 
-  it('循环依赖 → 抛错（CyclicDependencyError）', async () => {
+  // v4.1 P0-1：循环依赖不再抛错/崩溃，转为友好失败结果（含环路径）
+  it('循环依赖 → 友好失败结果（不抛错、含 cycle 路径、未执行任何步骤）', async () => {
     const wf: Workflow = {
       name: 'cycle',
       steps: [
@@ -269,9 +270,21 @@ describe('runWorkflow（T2.3 执行引擎）', () => {
         { name: 'b', run: 'b', depends: ['a'] },
       ],
     };
-    await expect(
-      runWorkflow(wf, { cwd: tmp, runCommand: fakeRunner(async () => ({ ok: true })) }),
-    ).rejects.toThrow('循环依赖');
+    const executed: string[] = [];
+    const result = await runWorkflow(wf, {
+      cwd: tmp,
+      runCommand: fakeRunner(async (cmd) => {
+        executed.push(cmd);
+        return { ok: true };
+      }),
+    });
+    expect(result.ok).toBe(false);
+    expect(result.failedStep).toBeUndefined(); // 无具体失败步骤（结构性问题）
+    expect(result.cycle).toBeDefined();
+    expect(result.cycle?.join(' → ')).toContain('a');
+    expect(result.cycle?.join(' → ')).toContain('b');
+    // 任何步骤都不执行（调度前即检测到环）
+    expect(executed).toEqual([]);
   });
 });
 
