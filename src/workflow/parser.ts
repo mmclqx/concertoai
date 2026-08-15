@@ -9,6 +9,7 @@
 
 import { z } from 'zod';
 
+import { hasDependencyPath } from '../orchestrator/scheduler';
 import type { InferredDependency, Workflow, WorkflowStep } from './types';
 
 // ── zod schema（T2.2 校验）──────────────────────────────────
@@ -350,6 +351,11 @@ const DEPENDENCY_RULES: Array<{ pattern: RegExp; to: string; reason: string }> =
  *
  * 规则：对每个步骤命令匹配规则 → 若「被依赖目标」是已存在步骤名 → 建议加边。
  * 已显式声明依赖的跳过；结果由调用方提示用户确认，**不静默写入**。
+ *
+ * v4.1 修复（P0-1 循环依赖）：推断前检查「加边后是否成环」——若目标 `to` 已经
+ * （直接或间接）依赖 `from`，则加 `from → to` 边会形成环，跳过该推断。
+ * 场景：release 模板已声明 build 依赖 test，推断规则又建议 test 依赖 build →
+ * 生成环 → workflow run 崩溃。环检测复用 scheduler.hasDependencyPath。
  */
 export function inferDependencies(steps: WorkflowStep[]): InferredDependency[] {
   const inferred: InferredDependency[] = [];
@@ -360,6 +366,12 @@ export function inferDependencies(steps: WorkflowStep[]): InferredDependency[] {
       declared.add(`${step.name}->${dep}`);
     }
   }
+  // v4.1 P0-1：用于环检测的任务列表（含已声明依赖边；仅含名字和依赖，够 hasDependencyPath 用）
+  const tasks = steps.map((s) => ({
+    id: s.name,
+    dependencies: s.depends ?? [],
+    run: () => ({ ok: true }),
+  }));
   for (const step of steps) {
     for (const rule of DEPENDENCY_RULES) {
       if (!rule.pattern.test(step.run)) {
@@ -371,6 +383,10 @@ export function inferDependencies(steps: WorkflowStep[]): InferredDependency[] {
         rule.to !== step.name &&
         !declared.has(`${step.name}->${rule.to}`)
       ) {
+        // v4.1 P0-1 环检测：若 to 已（直接/间接）依赖 from，则 from→to 成环 → 跳过
+        if (hasDependencyPath(tasks, rule.to, step.name)) {
+          continue; // 不推断这条边（会成环）；尝试下一条规则
+        }
         inferred.push({ from: step.name, to: rule.to, reason: rule.reason });
         break;
       }

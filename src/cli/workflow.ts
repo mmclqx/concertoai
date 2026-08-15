@@ -127,12 +127,24 @@ export const defaultRunCommand: CommandRunner = async (command, cwd) => {
     };
   } catch (err) {
     const e = err as { stdout?: string; stderr?: string; message?: string };
-    const stderr = e.stderr ?? e.message ?? String(err);
+    // v4.1 P0-2：Windows 下 npm run <script> 失败时，子命令（tsc/biome 等）的真实错误
+    // 常输出到 **stdout**（npm 包装脚本把子进程 stdout 透传），而 err.stderr 为空
+    // → 此前 `e.stderr ?? e.message` 得到无用的「Command failed: npm run typecheck」，
+    // 真实错误（error TS1287…）完全丢失，摘要不可操作。
+    // 修复：失败时优先合并 stdout + stderr（两者都可能含关键错误行），
+    // 仅当两者皆空才退回 err.message。
+    const stdout = e.stdout ?? '';
+    const stderr = e.stderr ?? '';
+    const combined = `${stderr}\n${stdout}`.trim();
+    const errorText = combined !== '' ? combined : (e.message ?? String(err));
     return {
       ok: false,
-      stdout: e.stdout ?? '',
-      stderr: stderr.slice(0, MAX_WORKFLOW_OUTPUT_CHARS),
-      truncated: stderr.length > MAX_WORKFLOW_OUTPUT_CHARS,
+      stdout: stdout.slice(0, MAX_WORKFLOW_OUTPUT_CHARS),
+      stderr: errorText.slice(0, MAX_WORKFLOW_OUTPUT_CHARS),
+      truncated:
+        stdout.length > MAX_WORKFLOW_OUTPUT_CHARS ||
+        stderr.length > MAX_WORKFLOW_OUTPUT_CHARS ||
+        errorText.length > MAX_WORKFLOW_OUTPUT_CHARS,
     };
   }
 };
@@ -249,6 +261,8 @@ export async function preflightAndInit(workflow: Workflow, cwd: string): Promise
     if (answer?.toLowerCase() === 'y' || answer?.toLowerCase() === 'yes') {
       return true;
     }
+    // v4.1 P1-4：用户拒绝继续（n）/ 非 TTY / Ctrl+C → 明确说明已停止，不再静默退出
+    console.log(d.preflightStopped);
     return false;
   }
 
@@ -457,6 +471,11 @@ export async function runWorkflowCli(options: WorkflowCliOptions): Promise<numbe
       console.log('');
       if (result.ok) {
         console.log(`✅ ${fmt(d.runOk, { name })}`);
+      } else if (result.failedStep === undefined) {
+        // v4.1 P0-1：循环依赖（failedStep 为空 + 未成功）→ 专用友好提示（不再 crash.log）
+        const cycleText = result.cycle?.join(' → ') ?? '';
+        console.log(`❌ ${fmt(d.runFailedCycle, { name, cycle: cycleText })}`);
+        console.log(fmt(d.runFailedNext, { name }));
       } else {
         console.log(
           `❌ ${fmt(d.runFailed, { name, step: result.failedStep ?? '?', skipped: result.skipped.length })}`,

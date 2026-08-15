@@ -221,6 +221,9 @@ export const zh = {
     runProgress: '正在执行 step {current}/{total}: {step}…',
     runOk: '工作流 {name} 执行成功',
     runFailed: '工作流 {name} 执行失败（失败步骤: {step}，跳过 {skipped} 个）',
+    // v4.1 P0-1：循环依赖友好提示（不再 crash.log；提示环路径与修复建议）
+    runFailedCycle:
+      '工作流 {name} 检测到循环依赖（{cycle}）\n💡 请编辑 {name}.yml，移除互相依赖的 depends（如 A 依赖 B 且 B 依赖 A）后重跑。',
     runFailedNext:
       '💡 下一步：修复失败步骤后重跑：\n   concertoai workflow run {name}\n按 A 放弃的改动已自动回滚。',
     workflowNotFound: '工作流不存在: {name}（请先 workflow init 生成或 import 导入）',
@@ -262,6 +265,8 @@ export const zh = {
     preflightInitFailed: '❌ 初始化失败：{error}（未继续执行，请修复后重试）',
     preflightSkipped: '已跳过初始化，按现有配置继续执行（缺失步骤可能失败）',
     preflightContinue: '仍有不可自动修复的缺失项。是否继续执行? (y/N): ',
+    // v4.1 P1-4：用户拒绝继续（n）时明确说明已停止，不再静默退出
+    preflightStopped: '已停止执行，请先配置缺失项后重试。',
     preflightNoTty: '非交互环境且环境未就绪，已停止执行。请先配置缺失项后重试。',
     approveStep: '⏸ 步骤需要审批，命令: {command}',
     approvePrompt: '批准执行? (y/N): ',

@@ -95,9 +95,12 @@ program.hook('preAction', async () => {
 });
 
 /** 包装异步 action，捕获异常并输出到 stderr + crash.log。 */
-function safeAction(fn: () => Promise<void>): () => void {
-  return () => {
-    fn().catch((err: unknown) => {
+// v4.1 P0-1：支持带参 action（workflow <action> [param]）——commander 会把
+// action 参数（含 options）依次传入；泛型保留回调参数类型（TS strict 下
+// unknown[] 与具体参数类型不兼容）。
+function safeAction<A extends unknown[]>(fn: (...args: A) => Promise<void>): (...args: A) => void {
+  return (...args: A) => {
+    fn(...args).catch((err: unknown) => {
       const msg = err instanceof Error ? err.message : String(err);
       const stack = err instanceof Error ? err.stack : undefined;
       process.stderr.write(`\n[ConcertoAI] 命令执行失败: ${msg}\n`);
@@ -382,35 +385,39 @@ program
   });
 
 // v4.0 M2 T2.6：工作流命令族（DAG 执行引擎）
+// v4.1 P0-1：包 safeAction——workflow run 内部异常（含未预期错误）不再 unhandledRejection 进 crash.log，
+// 而是输出「命令执行失败 + 堆栈 + 💡 下一步」后退出（与 chat/run/plan 兜底一致）。
 program
   .command('workflow <action> [param]')
   .description(t().cli.workflow.description)
   .option('--lang <zh|en>', '界面语言')
-  .action(async (action: string, param?: string) => {
-    const { runWorkflowCli } = await import('./workflow');
-    // 解析 API Key（仅 create 需要模型；失败不阻断 list/init/run/export/import）
-    let client: import('../model/client').ModelClient | undefined;
-    let model: string | undefined;
-    if (action === 'create') {
-      const { DeepSeekClient } = await import('../model/client');
-      try {
-        model = await resolveStartupModel();
-        client = new DeepSeekClient({ apiKey: await getApiKey() });
-      } catch {
-        client = undefined;
+  .action(
+    safeAction(async (action: string, param?: string) => {
+      const { runWorkflowCli } = await import('./workflow');
+      // 解析 API Key（仅 create 需要模型；失败不阻断 list/init/run/export/import）
+      let client: import('../model/client').ModelClient | undefined;
+      let model: string | undefined;
+      if (action === 'create') {
+        const { DeepSeekClient } = await import('../model/client');
+        try {
+          model = await resolveStartupModel();
+          client = new DeepSeekClient({ apiKey: await getApiKey() });
+        } catch {
+          client = undefined;
+        }
       }
-    }
-    const code = await runWorkflowCli({
-      cwd: process.cwd(),
-      action,
-      param,
-      client,
-      model,
-    });
-    if (code !== 0) {
-      process.exitCode = code;
-    }
-  });
+      const code = await runWorkflowCli({
+        cwd: process.cwd(),
+        action,
+        param,
+        client,
+        model,
+      });
+      if (code !== 0) {
+        process.exitCode = code;
+      }
+    }),
+  );
 
 // v4.0 M4 T4.1/T4.1a/T4.5：插件命令族（install / search / list / remove / browse / recommend / popular）
 program

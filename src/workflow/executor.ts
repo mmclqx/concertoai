@@ -18,7 +18,7 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { SchedulerTask } from '../orchestrator/scheduler';
-import { TaskScheduler, topologicalSort } from '../orchestrator/scheduler';
+import { CyclicDependencyError, TaskScheduler, topologicalSort } from '../orchestrator/scheduler';
 import type { SnapshotManager } from '../orchestrator/transaction';
 import type {
   Workflow,
@@ -176,6 +176,8 @@ export async function runWorkflow(
   let failedStep: string | undefined;
   let failedError: string | undefined;
   let aborted = false;
+  /** v4.1 P0-1：循环依赖环路径（供 CLI 友好提示）。 */
+  let cycle: string[] | undefined;
   /** 步骤恢复次数（retry 语义：用户在 R/S/F/A 恢复中重试该步骤的次数）。 */
   const recoveryCount = new Map<string, number>();
 
@@ -187,7 +189,22 @@ export async function runWorkflow(
     if (remaining.length === 0) {
       break;
     }
-    const result = await scheduler.schedule(buildTasks());
+    // v4.1 P0-1：循环依赖 YAML → 不崩溃，转为友好失败结果（不再 unhandledRejection 进 crash.log）。
+    // 用户手写/依赖推断生成环时，提示环路径 + 修复建议（由 CLI 层 i18n 渲染）。
+    let result: Awaited<ReturnType<typeof scheduler.schedule>>;
+    try {
+      result = await scheduler.schedule(buildTasks());
+    } catch (err) {
+      if (err instanceof CyclicDependencyError) {
+        failedStep = undefined;
+        failedError = `循环依赖: ${err.cycle.join(' → ')}`;
+        cycle = err.cycle;
+        aborted = true;
+        log(`[workflow] 检测到循环依赖，停止执行: ${failedError}`);
+        break;
+      }
+      throw err; // 其他异常继续上抛（由调用方处理）
+    }
     for (const id of result.completed.keys()) {
       doneSet.add(id);
       record(id, 'done');
@@ -256,7 +273,7 @@ export async function runWorkflow(
     }
   }
 
-  return toRunResult(workflow, doneSet, userSkippedSet, stepStates, failedStep, aborted);
+  return toRunResult(workflow, doneSet, userSkippedSet, stepStates, failedStep, aborted, cycle);
 }
 
 /** 汇总执行结果（按整体拓扑序排列步骤结果）。 */
@@ -267,6 +284,7 @@ function toRunResult(
   stepStates: Map<string, WorkflowStepResult>,
   failedStep: string | undefined,
   aborted: boolean,
+  cycle?: string[],
 ): WorkflowRunResult {
   const order = topologicalSort(
     workflow.steps.map((s) => ({
@@ -298,5 +316,6 @@ function toRunResult(
     steps,
     failedStep,
     skipped: order.filter((name) => skippedSet.has(name)),
+    cycle,
   };
 }

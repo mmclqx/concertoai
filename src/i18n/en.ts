@@ -227,6 +227,9 @@ export const en = {
     runProgress: 'Running step {current}/{total}: {step}…',
     runOk: 'Workflow {name} completed successfully',
     runFailed: 'Workflow {name} failed (failed step: {step}, {skipped} skipped)',
+    // v4.1 P0-1: friendly message for cyclic dependency (no more crash.log)
+    runFailedCycle:
+      'Workflow {name} has a cyclic dependency ({cycle})\n💡 Edit {name}.yml and remove the mutual depends (e.g. A depends on B and B depends on A), then re-run.',
     runFailedNext:
       '💡 Next: fix the failed step and re-run:\n   concertoai workflow run {name}\nChanges rolled back on A are restored.',
     workflowNotFound:
@@ -271,6 +274,8 @@ export const en = {
     preflightSkipped:
       'Skipped initialization; continuing with current config (missing steps may fail)',
     preflightContinue: 'Some items cannot be auto-fixed. Continue anyway? (y/N): ',
+    // v4.1 P1-4: explicit stop message when user declines to continue (no silent exit)
+    preflightStopped: 'Stopped. Configure the missing items first, then retry.',
     preflightNoTty:
       'Non-interactive environment and prerequisites missing; stopped. Configure the missing items first.',
     approveStep: '⏸ Step requires approval. Command: {command}',

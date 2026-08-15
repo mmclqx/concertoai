@@ -33,10 +33,25 @@ export function extractErrorSummary(stderr: string): ErrorSummary {
   }
 
   // biome: `×` 开头（格式错误列表）或 `Found N errors` 汇总或 `error[xxx]`
+  // v4.1 P1-3：biome format 错误的标题行 `<file> format ━━━`（文件级）比
+  // `× Formatter would have printed the following content:`（diff 头）更有操作性——
+  // 用户看到「哪个文件 + 建议 biome check --write .」才知道怎么办。
   const biome = lines.find(
-    (l) => /^×/.test(l) || /Found \d+ error/i.test(l) || /^error\[/i.test(l),
+    (l) =>
+      /^×/.test(l) ||
+      /Found \d+ error/i.test(l) ||
+      /^error\[/i.test(l) ||
+      /^[^\s].* format ━+/.test(l) ||
+      /^[^\s].* lint ━+/.test(l),
   );
   if (biome !== undefined) {
+    // v4.1 P1-3：format/lint 文件级标题（含 ━ 分隔线）→ 附带修复建议命令
+    if (/ format ━+/.test(biome) || / lint ━+/.test(biome)) {
+      return {
+        line: `${biome.slice(0, 120)} → 建议运行 biome check --write . 自动修复`,
+        tool: 'biome',
+      };
+    }
     return { line: biome.slice(0, 200), tool: 'biome' };
   }
 

@@ -100,6 +100,8 @@ export interface WorkflowRunResult {
   failedStep?: string;
   /** 被跳过步骤名列表。 */
   skipped: string[];
+  /** 循环依赖环路径（failedStep 为空且检测到环时；v4.1 P0-1）。 */
+  cycle?: string[];
 }
 
 // ── 依赖推断（T2.4）────────────────────────────────────────
