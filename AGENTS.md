@@ -1,6 +1,6 @@
 # AGENTS.md - ConcertoAI 项目开发规范
 
-> 最后更新：2026-08-15
+> 最后更新：2026-08-16
 > 版本：v4.1.0
 
 ---
@@ -151,6 +151,7 @@ UI 测试：Ink 组件需用 ink-testing-library 覆盖
 13. **发布后工作区立即归零**：发布 commit 落盘后立即 `git status` 确认无 modified/untracked；任何发布后发现的新修复（真实端到端 bug）须立即 commit + 补回归用例 + 踩坑记录 + 发 patch 版，严禁修复滞留在工作区（教训：v4.0.0 发布后 autofix reason / LSP 双 bug 滞留工作区，npm 包携带 bug，见 09-踩坑记录/2026-08-14-端到端测试暴露三处自动化未覆盖bug.md）
 14. **生成物方向/箭头语义自查**：任何「边/依赖/指向」类结构（工作流 depends、插件权限 allowlist、快照回滚、LSP 编辑方向）在规则表/常量旁必须注释「from 依赖 to / to 是被依赖方」；面向用户的提示用「X 依赖 Y」措辞，禁止用「X → Y」箭头（会被误读为执行顺序）；测试须同时断言「有边」与「无反向边」（教训：workflow 依赖推断方向反了——lint→typecheck 写成 lint 依赖 typecheck，见 09-踩坑记录/2026-08-15-workflow依赖推断方向反了.md）
 15. **自动生成模板/配置文件版本前瞻**：自动初始化/模板生成的配置文件（biome.json / tsconfig.json 等）不得绑定写死的旧工具版本假设（schema URL / 已废弃字段）；须用「npm install 最新版」的真实用户环境端到端验证「装完直接 run 能跑通」，存在性检查（依赖/scripts/配置文件）≠ 跑通（教训：preflight 自动初始化用 biome 1.9.4 schema 模板 + 不生成 tsconfig.json → 用户侧 biome 2.5.8 lint 必败 + tsc 打印 help，见 09-踩坑记录/2026-08-16-preflight自动初始化装好但跑不通.md）
+16. **手工测试隔离目录验证**：手工测试必须在独立目录进行，切换目录后立即验证 cd 生效（跨盘符用 `cd /d` 或 `pushd`；Windows 下 `cd C:\tmp\xxx` 从 F: 盘切过去不生效，所有写操作会落到当前目录污染项目）。验证方式：`cd /d <测试目录>` 后 `cd`（或 pwd）确认路径正确；测试记录须记录「实际执行目录」而非仅命令（教训：v4.1.1 手工测试 cd 跨盘符未生效，package.json 被 mt44 模板整体覆盖导致 npm run dev 丢失，见 09-踩坑记录/2026-08-16-手工测试cd跨盘符未生效污染项目根目录.md）
 
 ## 命名与包
 项目	内容
@@ -309,9 +310,10 @@ v3.4.0 发布门检查（当前，2026-08-12）：
 
 ### 命令执行规则
 1. 所有 `run_command` 执行的命令，在执行前必须检测操作系统
-2. 优先使用跨平台命令（如 `npm`、`node`），避免使用系统特有命令
-3. 必须使用系统特有命令时，用 `process.platform` 判断并分别实现
-4. Windows 下 spawn `.cmd`/`.bat` 文件必须 `shell: true`（或显式 `cmd.exe /c`），禁止 `shell: false` 直接执行（会 ENOENT；教训见 09-踩坑记录/2026-08-11-Windows下spawn执行npm.cmd报ENOENT.md）
+2. 手工测试时：测试目录必须与项目目录分离；进入测试目录后立即确认当前路径（Windows 跨盘符必须 `cd /d` 或 `pushd` + `cd` 验证；教训见 09-踩坑记录/2026-08-16-手工测试cd跨盘符未生效污染项目根目录.md）
+3. 优先使用跨平台命令（如 `npm`、`node`），避免使用系统特有命令
+4. 必须使用系统特有命令时，用 `process.platform` 判断并分别实现
+5. Windows 下 spawn `.cmd`/`.bat` 文件必须 `shell: true`（或显式 `cmd.exe /c`），禁止 `shell: false` 直接执行（会 ENOENT；教训见 09-踩坑记录/2026-08-11-Windows下spawn执行npm.cmd报ENOENT.md）
 
 ### 路径处理规则
 1. 使用 `path.join()` 和 `path.resolve()`，不使用硬编码分隔符
