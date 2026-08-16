@@ -27,12 +27,24 @@ const WF_DIR = path.join(TESTDIR, '.concertoai', 'workflows');
 function setup() {
   fs.rmSync(TESTDIR, { recursive: true, force: true });
   fs.mkdirSync(WF_DIR, { recursive: true });
+  // v4.1.1 发布门修复（2026-08-17）：必须加 "type": "module"——tsconfig 模板用
+  // nodenext + verbatimModuleSyntax，无 type:module 的项目按 CJS 处理，而 index.ts 的
+  // `export const` 是 ESM 语法 → tsc 报 TS1287，typecheck 必败（failIf 里 'error TS1287'
+  // 正是此风险）。mt44 通过是因为污染后实跑项目根（package.json 有 type:module）。
+  // 模拟现代 ESM 项目，与 index.ts 自洽，验证目标仍是「preflight 自动初始化 → 跑通」。
   fs.writeFileSync(
     path.join(TESTDIR, 'package.json'),
-    JSON.stringify({ name: 'p0', version: '1.0.0', scripts: {} }, null, 2),
+    JSON.stringify(
+      { name: 'p0', version: '1.0.0', scripts: {}, type: 'module' },
+      null,
+      2,
+    ),
   );
-  // 模拟专家 mt43：CRLF + 无尾换行，lint 会报 format（验证 schema 不报错且 format 可被摘要识别）
-  fs.writeFileSync(path.join(TESTDIR, 'index.ts'), 'export const test: number = 1;\r\n');
+  // v4.1.1 修复（2026-08-17 实测）：此前故意 CRLF → lint 必然报 format → expect
+  // 「✅ 工作流 precommit 执行成功」永不匹配，脚本从未真正跑通。
+  // 本脚本目的是验证「preflight 自动初始化 → lint/typecheck 跑通」（配置正确性），
+  // index.ts 应格式良好（LF），format 噪音由 411 场景 A 的完整通过路径另行覆盖。
+  fs.writeFileSync(path.join(TESTDIR, 'index.ts'), 'export const test: number = 1;\n');
   fs.writeFileSync(
     path.join(WF_DIR, 'precommit.yml'),
     [
@@ -119,6 +131,7 @@ async function p0() {
       'deserialize',                   // biome 配置解析失败
       'tsc: The TypeScript Compiler - Version', // tsc 打印 help（无 tsconfig）
       'Missing script',                // scripts 未注入
+      'error TS1287',                  // tsconfig 模板回归 nodenext+verbatimModuleSyntax
       '❌ 初始化失败',
       '已停止执行',
     ],
