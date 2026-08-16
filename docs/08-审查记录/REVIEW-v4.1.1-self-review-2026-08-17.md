@@ -196,12 +196,12 @@ if (answer?.toLowerCase() !== 'y' && …) {
 | 回归测试 | 断言与实现逐条对照，非空转；直接环 + 间接环 + 真实 TS7 help 样本 + biome 2.x 字段断言 + stdout 合并 4 用例 |
 | 测试事故恢复 | 完整（工作区干净 / verify 全绿 / 防再犯规范落盘） |
 | 非阻塞建议 | 3 项（快照悬挂边界 / biome 标题正则空格路径 / exit flush）→ v4.2 |
-| 发布门 | verify 全绿（build+lint+typecheck+全量测试）；**待办：版本号 bump 4.1.1（8 处联动）、手工测试报告 07.8、npm whoami/audit、publish + tag + 工作区归零** |
+| 发布门 | verify 全绿（build+lint+typecheck+全量测试）；手工测试报告 `docs/07.10-手工测试报告-v4.1.1.md` 已完成；**待办：版本号 bump 4.1.1（8 处联动）、npm whoami/audit、publish + tag + 工作区归零** |
 
 ## 八、发布前待办（按顺序）
 
 1. 版本号联动 bump `4.1.0 → 4.1.1`：package.json + package-lock.json（顶部 2 处）+ src/version.ts + tests/smoke.test.ts + 硬编码 `@concertoai/cli@4.1.1` 段标记 + README 状态行 → 一次改完立即提交
-2. 手工测试报告 `docs/07.8-手工测试报告-v4.1.1.md`（含客户 5 问题闭环 + 新增 4 P0/P1 验证 + 测试事故说明 + test 脚本补全后 precommit 全绿路径）→ **用户确认**
+2. 手工测试报告 `docs/07.10-手工测试报告-v4.1.1.md` —— **已完成**（2026-08-16：C1-C3 真实终端实测 + P0 修复前后对照 mt43 vs mt44 + 测试事故恢复 + test 脚本补全后 precommit 全绿路径；C5 审批节点待补脚本后复测，见报告已知问题 #1）→ **用户确认**
 3. `npm whoami` + `npm audit` → `npm publish`（prepublishOnly=verify）→ `git tag v4.1.1` → 发布后 `git status` 归零（自查 #13）
 
 ---
