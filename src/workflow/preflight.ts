@@ -116,22 +116,34 @@ export function defaultBiomeJson(): string {
  * 保证「装完模板直接 run」typecheck 可跑通；用户后续可自行调整。
  */
 export function defaultTsconfigJson(): string {
-  return `${JSON.stringify(
-    {
-      compilerOptions: {
-        target: 'esnext',
-        module: 'nodenext',
-        moduleResolution: 'nodenext',
-        strict: true,
-        noEmit: true,
-        skipLibCheck: true,
-        verbatimModuleSyntax: true,
-      },
-      include: ['**/*.ts'],
-    },
-    null,
-    2,
-  )}\n`;
+  // v4.1.1 手工测试实测发现（2026-08-17）：不能用 JSON.stringify 生成——它对
+  // 单元素数组输出多行（`"include": [\n  "**/*.ts"\n]`），而 biome 2.x formatter
+  // 会把单元素数组压成单行 → `biome check .`（lint）报 tsconfig.json format 错误
+  // → preflight 自动初始化后 lint 必败，「装完直接 run」承诺被破坏。
+  // 修复：手工构造模板（2 空格缩进 + LF + include 单行），与 biome formatter 完全兼容。
+  // 注意：此模板本身也是 lint 目标（biome check 检查 tsconfig.json），改动后必须用
+  // 真实 biome 校验（tests/workflow/preflight.test.ts 集成断言），禁止只做 JSON.parse 断言。
+  //
+  // v4.1.1 第二轮实测（2026-08-17 pty-drive-p0 发布门复跑）：module: nodenext +
+  // verbatimModuleSyntax: true 组合对**无 "type": "module" 的裸项目**是 CJS 语义 →
+  // index.ts 顶层 `export` 报 TS1287（error TS1287: ... CommonJS module when
+  // 'verbatimModuleSyntax' is enabled）→ typecheck 必败。仓库自身用 ESNext + Bundler
+  // （Bundler 模式不做 CJS/ESM 判定），对任意 package.json 兼容。模板对齐仓库配置。
+  return `${[
+    '{',
+    '  "compilerOptions": {',
+    '    "target": "esnext",',
+    '    "module": "esnext",',
+    '    "moduleResolution": "bundler",',
+    '    "strict": true,',
+    '    "noEmit": true,',
+    '    "skipLibCheck": true,',
+    '    "verbatimModuleSyntax": true',
+    '  },',
+    '  "include": ["**/*.ts"]',
+    '}',
+    '',
+  ].join('\n')}`;
 }
 
 /** 为缺失脚本生成自动初始化动作（lint/typecheck 可自动；test 无法猜框架 → undefined）。 */

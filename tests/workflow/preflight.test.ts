@@ -6,6 +6,7 @@
  * package.json + 配置文件 / binExists Windows 兼容。
  */
 
+import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -173,6 +174,63 @@ describe('autoInitForScript', () => {
     expect(tsconfig.compilerOptions?.noEmit).toBe(true);
     expect(tsconfig.compilerOptions?.strict).toBe(true);
     expect(tsconfig.include).toContain('**/*.ts');
+  });
+
+  it('tsconfig 模板与 biome 2.x formatter 兼容——include 单行（v4.1.1 实测修复）', () => {
+    // 2026-08-17 手工测试实测：JSON.stringify 生成的多行 include 数组
+    // （`"include": [\n  "**/*.ts"\n]`）被 biome formatter 压成单行 → lint 必败。
+    // 断言模板输出为单行（biome 兼容），禁止回归到 JSON.stringify 多行数组。
+    const fix = autoInitForScript('typecheck');
+    const content = fix?.writeFile?.content ?? '';
+    expect(content).toContain('"include": ["**/*.ts"]');
+    // 防御：不得出现「include 独立行 + 元素独立行」的多行数组形态
+    expect(content).not.toMatch(/"include": \[\n\s+"\*\*\/\*\.ts"\n\s+\]/);
+    // 2 空格缩进 + LF（与 biome.json 模板一致，规避 CRLF 误报）
+    expect(content.startsWith('{\n  "compilerOptions"')).toBe(true);
+  });
+
+  it('自动生成文件组合通过真实 biome check + tsc --noEmit（存在性 ≠ 跑通，v4.1.1 实测修复）', () => {
+    // 落实「自动初始化承诺装完直接 run，必须端到端验证真实命令」教训：
+    // defaultBiomeJson + defaultTsconfigJson + index.ts 组合必须通过真实 biome check
+    // 与真实 tsc --noEmit——两类真实命令都曾漏网：JSON.parse 断言全绿但 biome check
+    // 报 format（08-17 上午）；biome check 通过但 tsc 报 TS1287（08-17 发布门复跑，
+    // nodenext+verbatimModuleSyntax 对无 "type": "module" 裸项目是 CJS 语义）。
+    const lintFix = autoInitForScript('lint');
+    const typeFix = autoInitForScript('typecheck');
+    // 无 "type": "module" 的裸项目（tsconfig 模板 esnext+bundler 对 CJS/ESM 不敏感，
+    // 但 package.json 本身也是 biome check 的 lint 目标——必须符合 formatter 格式：
+    // biome 2.x 要求 JSON 文件以换行结尾，JSON.stringify 无尾换行 → 必报 format）
+    writeFileSync(
+      path.join(tmp, 'package.json'),
+      `${JSON.stringify({ name: 'p0', version: '1.0.0' }, null, 2)}\n`,
+    );
+    writeFileSync(path.join(tmp, 'biome.json'), lintFix?.writeFile?.content ?? '');
+    writeFileSync(path.join(tmp, 'tsconfig.json'), typeFix?.writeFile?.content ?? '');
+    writeFileSync(path.join(tmp, 'index.ts'), 'export const test: number = 1;\n');
+    const biomeBin = path.join(process.cwd(), 'node_modules', '@biomejs', 'biome', 'bin', 'biome');
+    const tscBin = path.join(process.cwd(), 'node_modules', 'typescript', 'bin', 'tsc');
+    let output = '';
+    try {
+      output = execFileSync(process.execPath, [biomeBin, 'check', '.'], {
+        cwd: tmp,
+        encoding: 'utf8',
+      });
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      throw new Error(`自动生成文件未通过真实 biome check（修复 tsconfig 模板）:\n${detail}`);
+    }
+    expect(output).not.toMatch(/Found \d+ error/);
+    try {
+      execFileSync(process.execPath, [tscBin, '--noEmit'], {
+        cwd: tmp,
+        encoding: 'utf8',
+      });
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      throw new Error(
+        `自动生成文件未通过真实 tsc --noEmit（无 type:module 裸项目 + verbatimModuleSyntax，修复 tsconfig 模板）:\n${detail}`,
+      );
+    }
   });
 
   it('test → 不可自动（无法猜框架）', () => {
