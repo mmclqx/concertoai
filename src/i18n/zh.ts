@@ -35,6 +35,10 @@ export const zh = {
       description: '检查并升级到最新版本（--yes 跳过确认）',
       yes: '跳过确认直接升级',
     },
+    init: {
+      description: '分析项目并生成两份指南（AGENTS.md 给 AI + PROJECT_GUIDE.md 给人）',
+      force: '覆盖已存在的文件（默认不覆盖，交互询问）',
+    },
     doctor: {
       description: '环境诊断（含 DeepSeek 账户余额）',
     },
@@ -78,6 +82,20 @@ export const zh = {
     configTitle: '3. 写入配置文件（目录不存在时需先创建）',
     getKeyLabel: '获取 API Key：',
     nextStep: '💡 配置完成后运行 `concertoai doctor` 验证环境。',
+  },
+  // v5.0 T5：init 命令（双输出）
+  init: {
+    scanning: '🔍 正在分析项目（package.json / 源码 / 配置 / TODO）…',
+    truncated: '⚠️  已达扫描上限 {count} 个文件，结果可能不完整',
+    skippedFiles: 'ℹ️  跳过 {count} 个文件（超大或读取失败）',
+    overwritePrompt: '{file} 已存在，是否覆盖？[y/N] ',
+    existsNonTty: 'ℹ️  {file} 已存在，非交互环境不覆盖（如需覆盖用 --force）',
+    writeFailed: '❌ 写入 {file} 失败：{error}',
+    nothingWritten: '未写入任何文件（已存在且未覆盖）。如需重新生成请加 --force。',
+    partiallySkipped: 'ℹ️  已跳过（保持原文件）：{files}',
+    notAProject:
+      '⚠️  当前目录看起来不是项目根目录（未找到 package.json / src / pyproject.toml / Cargo.toml / go.mod）',
+    notAProjectHint: '💡 请在项目根目录运行 `concertoai init`，不会生成空文件污染目录。',
   },
   // v5.0 T2：update 命令
   update: {

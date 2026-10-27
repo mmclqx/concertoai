@@ -1,7 +1,7 @@
 # ConcertoAI 开发任务看板
 
 > 最后更新：2026-10-27
-> 当前里程碑：**🔵 v5.0 开发中（M1 基线承接：T1 ✅ 完成，2026-10-27）**（v5.0: M1 1/7 · 计划与任务书已定稿 D1-B/D2-A/D3-B/D4-B/D5-B/D6-5.0.0 · 120 文件 / 1426 用例全绿）
+> 当前里程碑：**🔵 v5.0 开发中（M1 基线承接：T1-T5 ✅ 完成，2026-10-27）**（v5.0: M1 5/7 · 计划与任务书已定稿 D1-B/D2-A/D3-B/D4-B/D5-B/D6-5.0.0 · 125 文件 / 1506 用例全绿）
 > 基于：[v5.0 开发计划](./v5.0-dev-plan.md) · [v5.0 开发任务](./v5.0-dev-tasks.md) · 历史：[v4.2 开发任务（已并入 v5.0 M1）](./v4.2-dev-tasks.md) · [v4.1 开发任务](./v4.1-dev-tasks.md) · [v4.0 开发任务](./v4.0-dev-tasks.md)
 
 ---
@@ -12,7 +12,7 @@
 
 | 里程碑 | 任务 | 进度 | 状态 |
 |--------|------|------|------|
-| **M1 基线承接**（v4.2 并入） | T1 npx 实测 · T2 update · T3 ccai · T4 THIRD_PARTY · T5 init 双输出 · T6 model auto · T7 价格表 | **1/7** | 🔵 进行中 |
+| **M1 基线承接**（v4.2 并入） | T1 npx 实测 · T2 update · T3 ccai · T4 THIRD_PARTY · T5 init 双输出 · T6 model auto · T7 价格表 | **5/7** | 🔵 进行中（余 T7 价格表 → T6 model auto） |
 | M2 审批透明化 | T8 风险引擎 · T9 审批 UI · T10 复盘记录 · T11 配置降级 | 0/4 | ⬜ 待开始 |
 | M3 场景可发现 | T12 触发表引擎 · T13 三场景 UI · T14 首次引导 | 0/3 | ⬜ 待开始 |
 | M4 CLI 动词化 | T15 check · T16 fix · T17 commit · T18 review · T19 护栏 | 0/5 | ⬜ 待开始 |
@@ -24,12 +24,12 @@
 | 任务 | 状态 | 说明 |
 |------|------|------|
 | **T1 npx 零安装实测 + 缺 Key 引导** | ✅ **完成**（2026-10-27） | ① 实测 v4.1.1 `npx` 零安装通过（**隔离目录**，`4.1.1` / `--help` exit 0）② 缺 Key 中文引导（三种**均真实生效**的配置方式 + 获取链接）③ **修复真实缺口**：入口 `getApiKey()` 此前不读 `config.json` 的 `providers.deepseek.apiKey`（方式 3 原本是空承诺）④ 新增 Node 版本中文提示（engines>=22，Node 20 不再只看到英文 EBADENGINE 刷屏；TTY-only + `CONCERTOAI_NO_NODE_WARN=1` 可静默）⑤ **修复存量 flaky**：`observability-panel` 性能断言改 3 次取最小值（verify 连跑 3 次全绿）· 新增 19 用例 |
-| T2 update | ⬜ 待开始 | — |
-| T3 ccai 短命令 | ⬜ 待开始 | — |
-| T4 THIRD_PARTY_NOTICES | ⬜ 待开始 | — |
-| T5 init 双输出 | ⬜ 待开始 | — |
-| T6 model auto | ⬜ 待开始 | 依赖 T7 |
-| T7 价格表 + 官方时段 | ⬜ 待开始 | — |
+| **T2 update** | ✅ **完成**（dc867ea） | 版本对比（fetch 可注入，测试不打网络）/ 确认升级 + `--yes` / npx 场景拒绝误升级 / 非 TTY fail-closed / 错误截断 · 19 用例 |
+| **T3 ccai 短命令** | ✅ **完成**（0215457） | `bin` 双入口指向同一 `dist/cli/index.js`，与 `concertoai` 完全等价 · 3 用例 |
+| **T4 THIRD_PARTY_NOTICES** | ✅ **完成**（0215457） | 脚本化生成（`npm run notices`）+ 修正 `cli-highlight`=ISC + 补 highlight.js BSD-3 + 如实记录 tiktoken 缺 LICENSE · 9 用例 |
+| **T5 init 双输出** | ✅ **完成**（2026-10-27） | 一次扫描 `ProjectProfile` → 双文件输出（`AGENTS.md` 给 AI + `PROJECT_GUIDE.md` 给人）· **G7 证据硬约束**（每条结论带 `文件:行号`，无证据写「未检测到」）· 覆盖 fail-closed（默认不覆盖 / 非 TTY 不覆盖 / `--force`）· 有界扫描（400 文件 / 200KB / 跳过构建产物）· 非项目目录友好退出 · **实测修复 3 处误报**（动态 import、导出聚合行 `{ canAccess }`、模板字符串 lint）· **护栏用例**：生成内容只推荐真实注册的 CLI 命令 · 49 用例 |
+| T7 价格表 + 官方时段 | ⬜ 待开始 | M1 剩余 P2 |
+| T6 model auto | ⬜ 待开始 | 依赖 T7（价格数据） |
 
 ---
 

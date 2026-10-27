@@ -343,6 +343,22 @@ program
     }
   });
 
+// v5.0 T5：init 命令（一次分析、双文件输出：AGENTS.md 给 AI + PROJECT_GUIDE.md 给人）
+program
+  .command('init')
+  .description(t().cli.init.description)
+  .option('-f, --force', t().cli.init.force)
+  .action(async (options: { force?: boolean }) => {
+    const { runInitCommand } = await import('./init');
+    const result = await runInitCommand({
+      cwd: process.cwd(),
+      overwrite: options.force === true ? 'yes' : 'ask',
+    });
+    if (result.code !== 0) {
+      process.exitCode = result.code;
+    }
+  });
+
 // v5.0 T2：update 命令（检查 npm 最新版并升级）
 program
   .command('update')

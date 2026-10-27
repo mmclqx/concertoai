@@ -35,6 +35,11 @@ export const en = {
       description: 'Check for updates and upgrade (--yes skips confirmation)',
       yes: 'Skip confirmation and upgrade',
     },
+    init: {
+      description:
+        'Analyze the project and generate two guides (AGENTS.md for AI + PROJECT_GUIDE.md for humans)',
+      force: 'Overwrite existing files (default: never overwrite, ask interactively)',
+    },
     doctor: {
       description: 'Environment diagnostics (includes DeepSeek account balance)',
     },
@@ -79,6 +84,22 @@ export const en = {
     configTitle: '3. Write the config file (create the directory first if missing)',
     getKeyLabel: 'Get an API key:',
     nextStep: '💡 After configuring, run `concertoai doctor` to verify the environment.',
+  },
+  // v5.0 T5: init command (dual output)
+  init: {
+    scanning: '🔍 Analyzing project (package.json / sources / config / TODO)…',
+    truncated: '⚠️  Reached scan limit of {count} files; results may be incomplete',
+    skippedFiles: 'ℹ️  Skipped {count} files (too large or unreadable)',
+    overwritePrompt: '{file} already exists. Overwrite? [y/N] ',
+    existsNonTty:
+      'ℹ️  {file} already exists; non-interactive environment will not overwrite (use --force)',
+    writeFailed: '❌ Failed to write {file}: {error}',
+    nothingWritten: 'No files written (existing files kept). Use --force to regenerate.',
+    partiallySkipped: 'ℹ️  Skipped (kept original): {files}',
+    notAProject:
+      '⚠️  This directory does not look like a project root (no package.json / src / pyproject.toml / Cargo.toml / go.mod)',
+    notAProjectHint:
+      '💡 Run `concertoai init` in the project root; no empty files will be created.',
   },
   // v5.0 T2: update command
   update: {
