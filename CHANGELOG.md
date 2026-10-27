@@ -8,6 +8,35 @@
 
 ## [Unreleased]
 
+### Added — v5.0 M3 场景可发现 T14：`--help` 首屏精简（2026-10-28 完成）
+
+> 定位：**首屏只给动词，不给 21 条命令的平铺清单。** 新手打开 `--help` 面对一屏 46 行命令列表，等于没有帮助（v4.0「输出淹没」同类问题）。146 文件 / 1990 用例全绿（+14 用例）。
+
+- **分层首屏（`src/cli/index.ts`）**：`renderGroupedHelp` 输出四段——**快速开始（3 步）→ 常用命令 → 交互（斜杠）→ 高级（其余命令折叠成一行）**，实测 **33 行**（预算 ≤ 40）
+- **`COMMON_COMMAND_ORDER` 是顺序表而不是文案表**：首屏每行的命令名与描述都从 `program.commands` **现取**，本表只决定谁排前面 → 命令改名 / 删除 / 描述改动时首屏自动跟随，不存在「手写的第二份文案忘记同步」
+- **`findCommand`：查不到 = 不渲染**——把「不打空头支票」（T10 / T12 两次踩坑，ADR-044）从人工核对变成代码保证：表里写了但没注册的命令，一个字都不会出现在用户眼前
+- **`program.configureHelp({ visibleCommands })`**：默认隐藏 commander 的命令平铺，**`--all` 时才显示完整 21 条**（`concertoai --help --all`）；`visibleCommands` 读 `process.argv` 而非 `program.opts()`——`--help` 被解析即打印退出，同批 `--all` 此刻可能尚未进 opts
+- **M4 预留位**：`check` / `fix` / `commit` / `review` 属 M4（T15-T19），**当前未注册故首屏一个字不出现**；M4 落地后只改 `COMMON_COMMAND_ORDER` 一个数组即可（顺序即产品主张：提交前主路径）
+- **i18n**：`help.*` 新增 `fastStart` / `fast1` / `fast2` / `fast3` / `common` / `commonHint` / `slash` / `slashPlan` / `slashReview` / `slashWorkflow` / `slashHints` / `advanced` / `advancedHint`（zh/en 同构）
+- **首次进入引导**：复用 T13 已有 `missing-project-rules` 提示（**不新增第二套**），「第一次有、第二次无」由 T12/T13 用例覆盖
+
+### Fixed — v5.0 T14：三个「verify 说全绿、实则不成立」的问题
+
+- **`visibleCommands` 类型错被 build 掩盖**：返回 `readonly Command[]` 与 commander 签名（`Command[]`）不符，**esbuild/tsup 不做类型检查所以 `npm run build` 全绿，只有 `npm run typecheck` 会红** → 改为 `[...cmd.commands]`。教训：build 通过不等于类型正确
+- **旧测试断言已删除的 i18n 键**：`tests/cli/help.test.ts` 还在断言 `help.gettingStarted` / `step1-3` / `example*`（T14 已替换为 `fast*`），必然红 → 测试随文案重写
+- **`tests/cli/slash-skill.test.ts` 污染真实 home 并制造 flaky**：`/skill install` 写入的是**全局**目录 `~/.concertoai/skills`（由 `os.homedir()` 推导），原先只隔离了 `tmp`（cwd），于是 ① 开发者真实 home 累积 **191 个 `install-test-*` 残留目录**（AGENTS 第 17 条：临时资源必须清理）② 与 `tests/skill/loader.test.ts` 并行时，后者「先 `loadAll` 再数全局技能数量」两次读取之间被插入新技能 → 计数不等 → **`npm run verify` 偶发红（首轮全量实测仅此一处失败、单跑必绿）**。改为 `vi.spyOn(os, 'homedir')` 落进用例 `tmp` + `vi.restoreAllMocks()`，实测跑测试前后 191 → 191 不再泄漏
+
+### 测试（v5.0 T14）
+
+- `tests/cli/help.test.ts` **重写为 17 用例**：用 tsx 起**真实进程**跑 `--help` / `--help --all`，再从 `Commands:` 段解析出「注册表」反查首屏——**拿注册表校验首屏，而不是拿首屏自证首屏**
+  - 行数预算（≥ 25 且 ≤ 40，防淹没也防空壳）/ 四段顺序 / `configureHelp` 真的生效（首屏无 `Commands:`，`--all` 有）
+  - **常用命令段每一行都真实注册，且描述与注册值逐字相同**（不漂移、不手写）
+  - 快速开始三步引用的命令都真存在 / `workflow`·`plugin`·`team` 归入「高级」/ **常用 ∪ 高级 = 全部注册命令**（防某个命令在首屏彻底消失）/ 首屏两段名字反向必须都在注册表
+  - **M4 四动词双向不变量**：未注册 → 首屏一个字不许出现；已注册 → 必须上首屏（M4 改 `COMMON_COMMAND_ORDER` 时会立刻被盯住）
+  - i18n 死文案检测（每个 `help.*` 键都必须真被渲染出来）/ 斜杠命令走真实解析器（`/review` `/workflow` `/hints`）/ `/plan` 查 TUI 分派分支
+- **变异测试三次自证护栏有牙**：① 摘掉 `configureHelp` → **2 红** ② 往 `COMMON_COMMAND_ORDER` 塞未注册的 `check` → **不红且行为正确**（`findCommand` 按设计过滤，用户看不到假命令）③ 硬写一行 `check` 到首屏 → **3 红**
+- **基线校准**：146 文件 / 1990 用例全绿（`npm run verify`）
+
 ### Added — v5.0 M3 场景可发现 T12：场景提示引擎（2026-10-28 完成）
 
 > 定位：用户「卡住」时，在输入框上方给**一行灰字 + 一条可直接复制执行的命令**。**默认开启但极保守**（用户拍板）——任何可能频繁触发的东西都是负资产（v4.0「进度刷屏 / 输出淹没」教训）。141 文件 / 1914 用例全绿（+1 文件 / +45 用例）。

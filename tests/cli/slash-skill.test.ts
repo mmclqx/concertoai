@@ -180,6 +180,27 @@ describe('parseSkillCommand — 技能市场', () => {
 // ── v2.1 M3: 技能市场命令执行 ──────────────────────────────
 
 describe('executeSkillMarketCommand', () => {
+  // ═══ 隔离全局目录（v5.0 T14 收尾实测发现） ═══
+  //
+  // `/skill install` / `update` 会写到 **全局** 技能目录 `~/.concertoai/skills`
+  // （`globalDir()` 由 `os.homedir()` 推导），原先这里只隔离了 `tmp`（cwd），
+  // 于是有两个后果：
+  // 1. **测试垃圾堆在开发者真实 home**，且从不清理——实测已累积 300+ 个
+  //    `install-test-<时间戳>` 目录（AGENTS 第 17 条：临时资源必须清理）；
+  // 2. **与 tests/skill/loader.test.ts 并行互相干扰**：那个用例先 `loadAll` 再数
+  //    全局技能数量，两次之间有新技能被装进真实 home → 计数不等 → `npm run verify`
+  //    偶发红（首轮全量实测复现：仅此一处失败，单独跑必绿）。
+  //
+  // 打桩 `os.homedir` → `globalDir()` 落到本用例的 `tmp`，外层 `afterEach` 的
+  // `rmSync` 顺手清干净，两个问题一起消失。
+  beforeEach(() => {
+    vi.spyOn(os, 'homedir').mockReturnValue(tmp);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   /** 构造一份注册表 JSON 字符串（含 sha256）。 */
   function makeRegistry(skills: Array<{ name: string; version: string; content: string }>): string {
     const entries = skills.map((s) => ({

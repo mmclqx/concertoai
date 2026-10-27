@@ -609,17 +609,21 @@ export const zh = {
     line3: '  环境检查：concertoai doctor · 退出：Ctrl+C（会话已保存）',
   },
   help: {
-    // v4.1 T2.2：--help 分组 + 新手三步（用户反馈 3）
-    gettingStarted: '开始使用（新手三步）',
-    step1: '  ① 环境检查：concertoai doctor',
-    step2: '  ② 开始对话：concertoai chat（或直接 concertoai）',
-    step3: '  ③ 运行工作流：concertoai workflow init && concertoai workflow run <name>',
-    commands: '命令速览',
-    exampleChat: '  示例：concertoai chat（对话） · concertoai run "修复这个 bug"（一次性任务）',
-    exampleProject:
-      '  示例：concertoai project add demo .（注册项目） · concertoai team "..."（团队执行）',
-    exampleOps: '  示例：concertoai balance · doctor · self-heal · audit export',
-    exampleMarket: '  示例：concertoai plugin browse · provider list · config set provider <name>',
+    // v5.0 T14：首屏精简——分层只留「快速开始 → 常用 → 交互 → 高级折叠」，
+    // 不再平铺命令清单（21 条平铺实测 46 行，新手直接被淹没）。
+    fastStart: '快速开始（3 步）',
+    fast1: '  ① 检查环境    concertoai doctor',
+    fast2: '  ② 生成规则    concertoai init      （生成 AGENTS.md 给 AI + PROJECT_GUIDE.md 给你）',
+    fast3: '  ③ 开始对话    concertoai chat      （或直接 concertoai；/help 看斜杠命令）',
+    common: '常用命令',
+    commonHint: '（完整清单：concertoai --help --all）',
+    slash: '交互（chat 内以 / 开头）',
+    slashPlan: '先生成计划再执行',
+    slashReview: '代码审查（可指定文件）',
+    slashWorkflow: '运行工作流',
+    slashHints: '场景提示开关（on / off / status）',
+    advanced: '高级',
+    advancedHint: '  以上命令均可用 concertoai <命令> --help 查看详细用法',
   },
 } as const;
 

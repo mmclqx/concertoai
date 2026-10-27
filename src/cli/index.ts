@@ -74,23 +74,123 @@ const program = new Command();
 
 program.name('concertoai').description(t().cli.description).version(VERSION);
 
-// v4.1 T2.2：--help 增强——新手三步 + 命令分组示例（用户反馈 3：新手不知流程）。
-// commander addHelpText 追加到默认帮助末尾，保留原有命令注册不变。
-program.addHelpText(
-  'afterAll',
-  () => `
-${t().help.gettingStarted}
-${t().help.step1}
-${t().help.step2}
-${t().help.step3}
+// ═══ v5.0 T14：--help 首屏精简（分层，不再平铺 21 条命令） ═══
 
-${t().help.commands}
-${t().help.exampleChat}
-${t().help.exampleProject}
-${t().help.exampleOps}
-${t().help.exampleMarket}
-`,
-);
+/**
+ * 「常用命令」的展示顺序（v5.0 T14）。
+ *
+ * ## 为什么这是**顺序表**而不是文案表
+ *
+ * 首屏里的每一行都从 `program.commands` 现取（命令名与描述都取真实注册值），
+ * 本表只决定**谁排前面**。这样有两层保护：
+ *
+ * 1. **不漂移**：命令改名 / 删除 / 描述改动，首屏自动跟随，不需要改两份；
+ * 2. **不打空头支票**：表里写了但没注册的命令，会被 `findCommand` 过滤掉，
+ *    一个字都不会出现在用户眼前（T10 / T12 两次踩过的坑，见 ADR-044）。
+ *
+ * ## M4 四动词的预留位（用户 2026-10-28 拍板：「绝对不允许打空头支票」）
+ *
+ * `check` / `fix` / `commit` / `review` 属 M4（T15-T19），**当前未注册**，因此
+ * 首屏一个字都不许出现。等 M4 落地后，**只改这一个数组**（把它们插到最前面）即可
+ * 自动出现在「常用命令」，渲染逻辑不用动。
+ * 顺序即产品主张：`check`（提交前能不能提交）→ `fix`（报错自动修）→
+ * `commit`（提交）→ `review`（审一遍）是 v5.0 的「提交前主路径」。
+ */
+const COMMON_COMMAND_ORDER: readonly string[] = [
+  // ← M4 落地后在此插入 'check' / 'fix' / 'commit' / 'review'（它们应排在最前）
+  'init', // 生成规则文件（也是 T13 场景提示指向的命令）
+  'self-heal', // 跑 verify，失败自动修
+  'doctor', // 环境诊断
+  'chat', // 进入对话
+  'run', // 一次性任务
+];
+
+/**
+ * 「交互」段展示的斜杠命令（v5.0 T14）。
+ *
+ * 这些**不是** commander 子命令，无法从 `program.commands` 校验，
+ * 所以存在性由测试护栏保证：每条都用**真实解析器**断言可接受
+ * （`parseReviewCommand` / `parseWorkflowCommand` … 见 `tests/cli/help.test.ts`）。
+ * 描述走 i18n `help.slash*`。
+ */
+const SLASH_COMMAND_ENTRIES: ReadonlyArray<{
+  name: string;
+  descKey: 'slashPlan' | 'slashReview' | 'slashWorkflow' | 'slashHints';
+}> = [
+  { name: '/plan', descKey: 'slashPlan' },
+  { name: '/review', descKey: 'slashReview' },
+  { name: '/workflow', descKey: 'slashWorkflow' },
+  { name: '/hints', descKey: 'slashHints' },
+];
+
+/**
+ * 从已注册命令里查一条（查不到返回 `undefined`）。
+ *
+ * **查不到 = 不渲染**：这是「不许打空头支票」的落地点，而不是靠人工核对。
+ */
+function findCommand(prog: Command, name: string): Command | undefined {
+  return prog.commands.find((command) => command.name() === name);
+}
+
+/**
+ * 渲染分组首屏（v5.0 T14）。
+ *
+ * 结构：快速开始（3 步）→ 常用命令 → 交互（斜杠）→ 高级（其余命令折叠成一行）。
+ *
+ * 行数预算 ≤ 40（T14 验收，防淹没）：实测约 33 行。
+ */
+function renderGroupedHelp(prog: Command): string {
+  const dict = t();
+  const lines: string[] = [];
+
+  // ① 快速开始（三步都是真实存在的命令：doctor / init / chat）
+  lines.push('', dict.help.fastStart, dict.help.fast1, dict.help.fast2, dict.help.fast3);
+
+  // ② 常用命令：按顺序表取，**只渲染真实注册的**，描述用注册值（不手写）
+  const common = COMMON_COMMAND_ORDER.map((name) => findCommand(prog, name)).filter(
+    (command): command is Command => command !== undefined,
+  );
+  if (common.length > 0) {
+    lines.push('', `${dict.help.common} ${dict.help.commonHint}`);
+    const width = Math.max(...common.map((command) => command.name().length));
+    for (const command of common) {
+      lines.push(`  ${command.name().padEnd(width)}  ${command.description()}`);
+    }
+  }
+
+  // ③ 交互（斜杠命令，存在性由测试护栏保证）
+  lines.push('', dict.help.slash);
+  for (const entry of SLASH_COMMAND_ENTRIES) {
+    lines.push(`  ${entry.name.padEnd(10)} ${dict.help[entry.descKey]}`);
+  }
+
+  // ④ 高级：其余命令折叠成一行（点名不点名都行——它们是「查得到但不该抢位置」的）
+  const hidden = prog.commands
+    .map((command) => command.name())
+    .filter((name) => !COMMON_COMMAND_ORDER.includes(name));
+  if (hidden.length > 0) {
+    lines.push('', dict.help.advanced, `  ${hidden.join(' · ')}`);
+  }
+  // 末尾不加 `''`：commander 自己会补换行，多推一个会留一行空行（首屏更短更干净）
+  lines.push(dict.help.advancedHint);
+
+  return lines.join('\n');
+}
+
+// v5.0 T14：隐藏 commander 默认的「全部命令平铺」，改由 renderGroupedHelp 分组呈现。
+//
+// `visibleCommands` 里读 `process.argv` 而不是 `program.opts()`：`--help` 一旦被解析
+// commander 就**立即打印并退出**，此刻同批的 `--all` 很可能还没进 opts
+// （`concertoai --help --all` 与 `--all --help` 行为会不一致）。argv 判断两者等价，
+// 这是唯一可靠的时机。只影响帮助渲染，不参与任何业务判断。
+program.configureHelp({
+  // `cmd.commands` 是 `readonly Command[]`，commander 签名要可变数组 → 展开一份副本
+  // （不就地改原数组，只为了满足类型；esbuild 不做类型检查，只有 tsc 会报）。
+  visibleCommands: (cmd) => (process.argv.includes('--all') ? [...cmd.commands] : []),
+});
+
+// v4.1 T2.2：--help 增强（v5.0 T14 改为动态分组，命令与描述一律从已注册命令取）
+program.addHelpText('afterAll', () => renderGroupedHelp(program));
 
 // v3.1 M2 T2.3：全局 `-p, --project <name>` —— 启动前校验项目存在并 chdir 到项目路径
 // （等价 cd 后启动）。preAction hook 在任意子命令 action 前执行，保证 chat/run/plan 等

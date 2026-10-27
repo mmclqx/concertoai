@@ -640,16 +640,22 @@ export const en = {
     line3: '  Health check: concertoai doctor · Quit: Ctrl+C (session saved)',
   },
   help: {
-    // v4.1 T2.2: --help grouping + 3-step starter path (user feedback 3)
-    gettingStarted: 'Getting started (3 steps)',
-    step1: '  ① Health check: concertoai doctor',
-    step2: '  ② Start a chat: concertoai chat (or just concertoai)',
-    step3: '  ③ Run a workflow: concertoai workflow init && concertoai workflow run <name>',
-    commands: 'Command overview',
-    exampleChat: '  e.g. concertoai chat · concertoai run "fix this bug" (one-shot)',
-    exampleProject: '  e.g. concertoai project add demo . · concertoai team "..." (agent team)',
-    exampleOps: '  e.g. concertoai balance · doctor · self-heal · audit export',
-    exampleMarket: '  e.g. concertoai plugin browse · provider list · config set provider <name>',
+    // v5.0 T14: slim first screen — Quick start → Common → Interactive → Advanced.
+    // No more flat list of all commands (21 lines = 46 total, beginners drowned).
+    fastStart: 'Quick start (3 steps)',
+    fast1: '  ① Health check   concertoai doctor',
+    fast2:
+      '  ② Project rules  concertoai init      (AGENTS.md for the AI + PROJECT_GUIDE.md for you)',
+    fast3: '  ③ Start chatting concertoai chat      (or just concertoai; /help for slash commands)',
+    common: 'Common commands',
+    commonHint: '(full list: concertoai --help --all)',
+    slash: 'Interactive (inside chat, start with /)',
+    slashPlan: 'plan first, then execute',
+    slashReview: 'code review (optionally on given files)',
+    slashWorkflow: 'run a workflow',
+    slashHints: 'scene hints switch (on / off / status)',
+    advanced: 'Advanced',
+    advancedHint: '  Run concertoai <command> --help for full usage of any command above',
   },
 } as const;
 
