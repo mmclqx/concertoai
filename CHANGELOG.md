@@ -8,6 +8,32 @@
 
 ## [Unreleased]
 
+### Added — v5.0 M3 场景可发现 T12：场景提示引擎（2026-10-28 完成）
+
+> 定位：用户「卡住」时，在输入框上方给**一行灰字 + 一条可直接复制执行的命令**。**默认开启但极保守**（用户拍板）——任何可能频繁触发的东西都是负资产（v4.0「进度刷屏 / 输出淹没」教训）。141 文件 / 1914 用例全绿（+1 文件 / +45 用例）。
+
+- **`src/core/suggestion.ts`（新增）**：纯判定层 + IO 层**严格分离**（对齐 `reflection-store.ts`）。三条确定性规则（**只认数出来的事实，禁止耗时 / Token / 消息长度 / 模型自评等间接信号**）：
+  | 规则 id | 触发条件（连续 / 确定） | priority | 提示命令 |
+  |---|---|---|---|
+  | `missing-project-rules` | 无 AGENTS.md 且无 CARBON.md，**且已有 ≥1 轮用户输入**（不抢开场欢迎语） | 10 | `concertoai init` |
+  | `repeated-verify-failure` | **连续 2 轮** verify / self-heal 失败 | 20 | `concertoai self-heal` |
+  | `repeated-edit-rejection` | **同一文件连续 2 次**被拒 | 30 | `/review <file>` |
+- **七条硬约束在引擎内实现，不靠调用方自觉**：① 同时最多 **1 条**（priority 最高）② 同 id **每会话 1 次** ③ 同 id **全局 10 分钟冷却**（持久化 `~/.concertoai/hint-state.json`，重启仍生效）④ **每会话总计 ≤ 3 条**（跨 id）⑤ **Esc / 忽略 → 本会话立刻全静默**（且不清全局冷却）⑥ `hints: 'off'`（或 `CONCERTOAI_HINTS=off`）→ 恒 `null` ⑦ **纯函数：判定层无 IO、不调 `Date.now()`**（时间一律注入 `now`，源码护栏用例看住）
+- **`config.hints`（新增配置项）**：`on`（默认）/ `off`；`config set hints on|off` + 环境变量 `CONCERTOAI_HINTS`（非法值 **fail-closed 不写盘**；env 写错值**回落配置文件**而非静默推翻用户设置）
+- **`src/store/paths.ts`**：新增 `hintStatePath()`（单一来源）；`hint-state.json` 原子写（临时文件 + rename）+ 写前淘汰过期/超量记录（≤50 条），**读坏 / 写失败一律不抛错**（提示功能不得让对话崩掉）
+- **i18n `hints.*`（zh/en）**：文案本体入字典（Ink 与引擎零文案字面量）；`repeatedEditRejectionNoFile` 为「拿不到可用路径」的降级文案，配合 `/review` auto 模式
+
+### Changed — v5.0 T12：命名 `tips` → `hints`（全链路统一）
+
+- 用户 2026-10-28 拍板：提示的是「下一步该做什么」，`hints` 比 `tips`（小技巧）语义更准，且避免与未来「使用技巧」功能撞名
+- 联动五处：`config.hints` / `CONCERTOAI_HINTS` / `~/.concertoai/hint-state.json` / `/hints off` / i18n `hints.*`；任务书 T12-T13 与开发计划同步修订
+
+### Fixed — v5.0 T12：清掉一处「空头支票」隐患（任务书级）
+
+- 任务书 T13 原规则表把命令写成 `concertoai fix` 与 `concertoai review <file> --fix`，**这两个命令至今未注册**（`fix` 属 M4 T15-T19）——若照抄进提示就是 T10 已踩过的「文案承诺不存在的命令」坑。已改为真实存在的 `concertoai self-heal` 与 `/review <file>`；**护栏用例实跑 `--help` 断言动词真注册**（不是断言文案里有这个字符串）+ 用真实 `parseReviewCommand` 断言斜杠命令可解析。等 M4 落地 `fix` 后**下个版本**再加规则
+- **占位符永不出门**：文件路径含空格时（`/review` 按空格拆参数会被拆坏）→ 降级为不含 `{file}` 的文案 + `/review` auto 模式；用例断言终态文案与命令均无 `{}`/`<>` 残留
+- **`tests/setup.ts` 隔离**：测试进程默认 `CONCERTOAI_HINTS=off`，防止 `npm test` 把冷却时间戳写进开发者真实 `hint-state.json`（后果是**开发者自己用 CLI 时提示被莫名静音 10 分钟**，比 T10 那次复盘污染更难排查）
+
 ### Added — v5.0 M1 基线承接（T1-T7，2026-10-27 全部完成）
 
 > v5.0 定位：**从「黑盒引擎」到「透明驾驶舱」**——让用户看得见、看得懂、管得住每一步（含花钱）。M1 为「日常可用」基线承接（v4.2 计划并入）。128 文件 / 1609 用例全绿。

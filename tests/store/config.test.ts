@@ -14,6 +14,7 @@ import {
   DEFAULT_PEAK_TIME_STRATEGY,
   emptyConfig,
   isApprovalInsightMode,
+  isHintsMode,
   isReflectionsMode,
   loadConfig,
   resolveConfig,
@@ -454,5 +455,79 @@ describe('v5.0 T11：审批配置项', () => {
     expect(isReflectionsMode('on')).toBe(true);
     expect(isReflectionsMode('off')).toBe(true);
     expect(isReflectionsMode('OFF')).toBe(false);
+  });
+});
+
+/**
+ * v5.0 T12：场景提示开关（config.hints）的读写与解析。
+ *
+ * 三件事必须有覆盖（遗留半成品在这三处全是缺口）：
+ * 1. round-trip 写入读回不变；
+ * 2. `resolveConfig` **合并环境变量**（消费者只读 `resolved.hints`，不自己读 env）；
+ * 3. `validateConfigValues` 认得出非法值（写错字要提示，不能静默）。
+ */
+describe('v5.0 T12：场景提示开关 hints', () => {
+  beforeEach(() => {
+    // 显式声明意图：本组要测「默认 on」，不能被全局测试环境的 off 干扰
+    vi.stubEnv('CONCERTOAI_HINTS', '');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('round-trip：写入 hints=off 后读回一致', async () => {
+    const file = path.join(tmp, 'config.json');
+    await writeConfig(
+      { schemaVersion: CONFIG_SCHEMA_VERSION, hints: 'off' } as Parameters<typeof writeConfig>[0],
+      file,
+    );
+    const loaded = await loadConfig(file);
+    expect(loaded.hints).toBe('off');
+    expect(validateConfigValues(loaded)).toEqual([]);
+  });
+
+  it('resolveConfig 默认 on（用户拍板的默认值），旧配置缺字段也返回 on', () => {
+    expect(resolveConfig(emptyConfig()).hints).toBe('on');
+    expect(
+      resolveConfig({ schemaVersion: CONFIG_SCHEMA_VERSION, defaultModel: 'deepseek-v4-flash' })
+        .hints,
+    ).toBe('on');
+  });
+
+  it('环境变量优先于配置文件，且写错值回落 config（不静默推翻用户设置）', () => {
+    const base = { schemaVersion: CONFIG_SCHEMA_VERSION, hints: 'on' as const };
+    vi.stubEnv('CONCERTOAI_HINTS', 'off');
+    expect(resolveConfig(base).hints).toBe('off');
+
+    vi.stubEnv('CONCERTOAI_HINTS', 'ofl'); // 手滑
+    expect(resolveConfig(base).hints).toBe('on'); // 回落配置文件
+  });
+
+  it('非法值：不抛错但必须提示（与 approvalInsight / reflections 同口径）', async () => {
+    const file = path.join(tmp, 'config.json');
+    await writeConfig(
+      { schemaVersion: CONFIG_SCHEMA_VERSION, hints: 'maybe' } as unknown as Parameters<
+        typeof writeConfig
+      >[0],
+      file,
+    );
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const loaded = await loadConfig(file);
+      const told = err.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(told).toContain('hints');
+      expect(resolveConfig(loaded).hints).toBe('on'); // 回落默认
+    } finally {
+      err.mockRestore();
+    }
+  });
+
+  it('isHintsMode 只认合法值', () => {
+    expect(isHintsMode('on')).toBe(true);
+    expect(isHintsMode('off')).toBe(true);
+    expect(isHintsMode('OFF')).toBe(false);
+    expect(isHintsMode(undefined)).toBe(false);
+    expect(isHintsMode(true)).toBe(false);
   });
 });

@@ -6,7 +6,7 @@
  * peakTimeStrategy（高峰时段模型切换策略）、ollamaModel / ollamaBaseUrl
  * （本地模型接入，v2.2 智能成本控制）、pricingHolidays（计价用法定节假日表，v5.0 T7）、
  * approvalInsight / riskRules（审批卡形态与规则开关，v5.0 T8-T11）、
- * reflections（拒绝复盘开关，v5.0 T10）。
+ * reflections（拒绝复盘开关，v5.0 T10）、hints（场景提示开关，v5.0 T12）。
  *
  * 优先级：CLI 参数 > 环境变量（LUMEN_*）> 配置文件 > 默认值。
  * 文件不存在 / JSON 损坏 / schema 版本不匹配 → 返回空配置（不抛错）。
@@ -17,6 +17,7 @@ import path from 'node:path';
 
 import { configureHolidayCalendar } from '../core/holidays';
 import { isReflectionsEnabled } from '../core/reflection-store';
+import { isHintsEnabled } from '../core/suggestion';
 import { configPath } from './paths';
 import { DEFAULT_SESSION_DIR } from './session';
 
@@ -53,6 +54,19 @@ export type ReflectionsMode = 'on' | 'off';
 
 /** 复盘记录默认值（on：功能默认可用，但纯本地零上传，见 ADR-042）。 */
 export const DEFAULT_REFLECTIONS: ReflectionsMode = 'on';
+
+/**
+ * 场景提示开关（v5.0 T12）：`on` = 卡住时给一条可执行命令（默认）；`off` = 恒不提示。
+ *
+ * **默认开启但极保守**（用户拍板，见 `docs/03-开发计划与任务/v5.0-M3-kickoff.md`）：
+ * 三条确定性规则 + 每会话总量上限 3 条 + 全局 10 分钟冷却 + Esc 即静默。
+ * 用户嫌烦可 `concertoai config set hints off` 或 chat 内 `/hints off` 一键静音。
+ * （两处入口均已实现——提示里承诺的命令必须真能用，见 ADR-044。）
+ */
+export type HintsMode = 'on' | 'off';
+
+/** 场景提示默认值（on：默认可用；噪音风险由引擎侧七条硬约束兜住，不靠「默认关」回避）。 */
+export const DEFAULT_HINTS: HintsMode = 'on';
 
 /** 高峰时段切换策略默认值：ask（询问用户）。 */
 export const DEFAULT_PEAK_TIME_STRATEGY: PeakTimeStrategy = 'ask';
@@ -122,6 +136,13 @@ export interface ConcertoAIConfig {
    */
   reflections?: ReflectionsMode;
   /**
+   * 场景提示开关（v5.0 T12，用户拍板命名 `hints`——提示的是「下一步该做什么」，
+   * 比 `tips`（小技巧）语义更准）：`on`（默认）/ `off`。
+   *
+   * 关掉后 chat 界面**完全不渲染**提示行；也可用环境变量 `CONCERTOAI_HINTS=off` 临时关。
+   */
+  hints?: HintsMode;
+  /**
    * 计价用中国法定节假日表（v5.0 T7 修订）。
    *
    * 高峰/空闲双档计价必须排除法定节假日、并纳入调休上班日（见 `core/holidays.ts`）。
@@ -161,6 +182,13 @@ export interface ResolvedConfig {
   approvalInsight: ApprovalInsightMode;
   /** 拒绝复盘开关（v5.0 T10/T11）：已合并环境变量的最终值。 */
   reflections: ReflectionsMode;
+  /**
+   * 场景提示开关（v5.0 T12）：**已合并环境变量**的最终值。
+   *
+   * 与 `approvalInsight` / `reflections` 同口径：消费者（App）只读这个字段，
+   * 不要自己再读 `config.hints` 或环境变量——否则优先级会被各入口实现成两套。
+   */
+  hints: HintsMode;
 }
 
 /** 一条配置值非法记录（供 `loadConfig` 统一提示 + 单测断言，不抛错）。 */
@@ -196,6 +224,10 @@ export function validateConfigValues(config: ConcertoAIConfig): ConfigValidation
   ) {
     issues.push({ key: 'reflections', value: config.reflections, expected: 'on | off' });
   }
+  // v5.0 T12：提示开关（同样是枚举，写错字必须让用户看见）
+  if (config.hints !== undefined && !isHintsMode(config.hints)) {
+    issues.push({ key: 'hints', value: config.hints, expected: 'on | off' });
+  }
   const disabled = config.riskRules?.disabled;
   if (
     disabled !== undefined &&
@@ -217,6 +249,11 @@ export function isApprovalInsightMode(value: unknown): value is ApprovalInsightM
 
 /** 是否为合法复盘开关。 */
 export function isReflectionsMode(value: unknown): value is ReflectionsMode {
+  return value === 'on' || value === 'off';
+}
+
+/** 是否为合法提示开关（v5.0 T12）。 */
+export function isHintsMode(value: unknown): value is HintsMode {
   return value === 'on' || value === 'off';
 }
 
@@ -418,6 +455,15 @@ export function resolveConfig(
     ? 'on'
     : 'off';
 
+  // v5.0 T12：场景提示开关（环境变量 CONCERTOAI_HINTS 优先于 config）
+  //
+  // 与 approvalInsight / reflections 同一套「非法值回落下一层」语义：
+  // 手滑写 `CONCERTOAI_HINTS=ofl` 时若按默认 on 处理，等于用一次手滑**静默推翻**
+  // 用户配置里明确写的 `off`（用户以为静音了，实际一直在提示）。
+  const hints: HintsMode = isHintsEnabled(file.hints, env('CONCERTOAI_HINTS') ?? env('LUMEN_HINTS'))
+    ? 'on'
+    : 'off';
+
   return {
     model,
     allowlist,
@@ -430,5 +476,6 @@ export function resolveConfig(
     ollamaBaseUrl,
     approvalInsight,
     reflections,
+    hints,
   };
 }

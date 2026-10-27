@@ -258,6 +258,20 @@ export const en = {
       '📝 Recorded to local retrospectives (see concertoai reflect list; disable with concertoai config set reflections off)',
     recordFailed: '📝 Failed to record the retrospective (ignored; approval result unaffected)',
   },
+  // v5.0 T12: scenario hints (M3). Rendered as one dim line above the prompt:
+  // never a modal, never in the message stream, never interrupting streaming.
+  hints: {
+    missingProjectRules:
+      '💡 This project has no rules file yet; concertoai init generates AGENTS.md (for the AI) + PROJECT_GUIDE.md (for you)',
+    repeatedVerifyFailure:
+      '💡 Build or tests failed 2 turns in a row; let the AI locate and fix it automatically (rolls back on failure)',
+    // {file} is filled in by the engine; when the path contains spaces the engine falls back to the next message
+    repeatedEditRejection:
+      '💡 You rejected changes to {file} twice in a row; let the Reviewer Agent scan it before retrying',
+    // Fallback when no usable file path is available (pairs with `/review` auto mode, no placeholder)
+    repeatedEditRejectionNoFile:
+      '💡 You rejected AI changes twice in a row; let the Reviewer Agent scan recently modified files before retrying',
+  },
   balance: {
     available: 'Account available',
     unavailable: 'Account unavailable',

@@ -249,6 +249,20 @@ export const zh = {
       '📝 已记录到本地复盘（concertoai reflect list 查看，concertoai config set reflections off 可关闭）',
     recordFailed: '📝 复盘记录写入失败（已忽略，不影响审批结果）',
   },
+  // v5.0 T12：场景提示（M3 场景可发现）。渲染在输入框上方单行灰字：
+  // 不弹框、不进消息流、不打断流式；命令必须完整可直接复制执行（禁占位符）。
+  hints: {
+    missingProjectRules:
+      '💡 这个项目还没有规则文件，concertoai init 可以生成 AGENTS.md（给 AI）+ PROJECT_GUIDE.md（给你）',
+    repeatedVerifyFailure:
+      '💡 构建或测试连续 2 轮没通过，可以让 AI 尝试自动定位并修复（失败会自动回滚）',
+    // {file} 由引擎填充为具体文件路径；路径含空格时引擎会降级到下面那条文案
+    repeatedEditRejection:
+      '💡 你已经连续 2 次拒绝 {file} 的改动，可以让 Reviewer Agent 全面扫一遍再重试',
+    // 拿不到可用文件路径时的降级文案（配合 `/review` auto 模式，不含占位符）
+    repeatedEditRejectionNoFile:
+      '💡 你已经连续 2 次拒绝了 AI 的改动，可以让 Reviewer Agent 扫一遍最近修改的文件再重试',
+  },
   balance: {
     available: '账户可用',
     unavailable: '账户不可用',

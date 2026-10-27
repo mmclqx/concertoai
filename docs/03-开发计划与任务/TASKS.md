@@ -1,7 +1,7 @@
 # ConcertoAI 开发任务看板
 
 > 最后更新：2026-10-28
-> 当前里程碑：**🟡 v5.0 开发中（M1 7/7 ✅ + M2 审批透明化 4/4 ✅ 已封板，2026-10-28）**（v5.0: M1 **7/7** ✅ · M2 **4/4** ✅ · 下一步 **M3 T12 触发引擎** · 140 文件 / 1869 用例全绿）
+> 当前里程碑：**🟡 v5.0 开发中（M1 7/7 ✅ + M2 审批透明化 4/4 ✅ 已封板 + M3 T12 ✅，2026-10-28）**（v5.0: M1 **7/7** ✅ · M2 **4/4** ✅ · M3 **1/3** · 下一步 **M3 T13 三场景 UI** · 141 文件 / 1914 用例全绿）
 > 基于：[v5.0 开发计划](./v5.0-dev-plan.md) · [v5.0 开发任务](./v5.0-dev-tasks.md) · 历史：[v4.2 开发任务（已并入 v5.0 M1）](./v4.2-dev-tasks.md) · [v4.1 开发任务](./v4.1-dev-tasks.md) · [v4.0 开发任务](./v4.0-dev-tasks.md)
 
 ---
@@ -14,7 +14,7 @@
 |--------|------|------|------|
 | **M1 基线承接**（v4.2 并入） | T1 npx 实测 · T2 update · T3 ccai · T4 THIRD_PARTY · T5 init 双输出 · T6 model auto · T7 价格表 | **7/7** | ✅ **完成**（2026-10-27） |
 | M2 审批透明化 | T8 风险引擎 ✅ · T9 审批 UI ✅ · T10 复盘记录 ✅ · T11 配置降级 ✅ | **4/4** | ✅ **完成·已封板**（2026-10-28） |
-| M3 场景可发现 | T12 触发表引擎 · T13 三场景 UI · T14 首次引导 | 0/3 | ⬜ 待开始 |
+| M3 场景可发现 | T12 触发表引擎 ✅ · T13 三场景 UI · T14 首次引导 | 1/3 | 🟡 进行中（T12 完成 2026-10-28） |
 | M4 CLI 动词化 | T15 check · T16 fix · T17 commit · T18 review · T19 护栏 | 0/5 | ⬜ 待开始 |
 | M5 收敛与度量 | T20 功能冻结 · T21 本地指标 · T22 定位重写 | 0/3 | ⬜ 待开始 |
 | 收尾 | T23.1 回归 · T23.2 文档 · T23.3 手工测试 · T23.4 自审+发布 | 0/4 | ⬜ 待开始 |
@@ -38,6 +38,13 @@
 | **T9 审批 UI 升级** | ✅ **完成**（2026-10-28） | 审批框从「一行 summary + diff」变成**风险教学卡**（标题/操作意图/改动性质/影响面/风险点/建议重点关注行/折叠 diff/按键四件套 + `[?]` 内联说明），**架构铁律：纯字符串优先、Ink 只做着色与边框**（ADR-041 / §4 D70-D71）：`src/ui/approval-text.ts`（`renderApprovalLines` 唯一文案来源，返回带语义角色的行，**零 Ink/React 依赖**，护栏测试扫源码）+ `src/ui/toggle-throttle.ts`（`createToggleThrottle` 80ms 展示态节流，**丢弃中间态**，可注入时钟、无 `setInterval`、`dispose()` 清 pending）+ `src/utils/text-width.ts`（`displayWidth`/`truncateToWidth`/`wrapToWidth`，**禁止 `.length` 判宽度**）· `ApprovalModal` 改为「角色→颜色」纯外壳（**组件内零用户可见文案字面量**，`PlanProgressView` 硬编码中文一并入 i18n）；high 红 / medium 黄 / **low 绿不标红** · `App.tsx` **先弹 plain 框再异步补 insight**（G2，`approvalSeq` 丢弃迟到结果）、`y`/`n` 走 `finishApproval` 且**决议不节流**、`[v]`/`[?]` 意图用 **ref** 维护 · `ApprovalRequest.insightHint`（`edit` 传目标文件+意图 / shell **刻意不传** → 影响面「不适用」而非白扫全库）· **三条红线逐条护栏**：medium 全文无「危险」、未分析绝不说「0 个引用」（timeout/skipped/error/ok-zero 四态各自文案）、默认 diff ≤12 行 + `[v]` ≤500 行 · **实测抓到并修掉两处真实缺陷**：散文按宽度截断砍掉「不是结论」（改折行）+ 连按 `v` 读到渲染快照导致停在展开态（改 ref，意图与节流分开测）· **发布门实测**（`scripts/bench-approval-ui.mjs`）：端到端 P95 **8.83ms** / 预算 150ms、文案 P95 ≤0.54ms、Ink 首帧 P95 ≤8.61ms · 新增 5 个测试文件 / **91 用例**（approval-text 44 + approval-modal 13 + approval-integration 12 + toggle-throttle 10 + text-width 12），**136 文件 / 1805 用例全绿** |
 | **T10 拒绝复盘记录** | ✅ **完成**（2026-10-28） | 拒绝编辑时留一条可回看的本地记录（ADR-042 / §4 D72）· `core/reflection-store.ts`（`buildReflection` 纯函数去重+截断+**未分析写 unknown 非 low** / `appendReflection` **O_APPEND 且永不抛错** / `readReflections` 倒序+损坏行跳过计数 / `clearReflections` 幂等 / `isReflectionsEnabled` 双轨开关）+ `cli/reflect.ts`（`list [--limit]` 倒序表格按**显示宽度**对齐 / `clear [--yes]` **非 TTY 无 --yes fail-closed**）+ `ui/App.tsx`（`finishApproval(false, …)` → `recordRejection` **fire-and-forget**，决议先 resolve 再写盘）+ 新增 `notice` 中性灰提示行（拒绝是正常操作，不复用 error 红字）+ `config set reflections on\|off`（兑现提示里的承诺命令，非法值 fail-closed）· **G8 零网络护栏**（源码断言无 fetch/http/net/axios）+ **写盘失败不阻塞**（只读目录 / 路径被占用两种失败均 `{ok:false}` 且 Promise 不 reject，UI 层断言模型第二轮照常继续）· `tests/core/reflection-store.test.ts`(22) + `tests/cli/reflect.test.ts`(15) + `tests/ui/approval-reflect.test.tsx`(8) · **实测抓两处真实缺陷**：① `npm test` 污染开发者真实复盘文件（16 条垃圾记录 → `tests/setup.ts` 全局 env 隔离 + App 缺省读 env + 护栏用例）② 降级时 `insight.level` 恒为 `low` 导致复盘全校「✅ 低」（判据改 `degraded`） |
 | **T11 配置与降级收尾** | ✅ **完成**（2026-10-28） | `store/config.ts` 新增 `ApprovalInsightMode` / `ReflectionsMode` + `validateConfigValues`（非法值**提示一次不抛错**，与 pricingHolidays 同口径）+ 类型守卫；`ResolvedConfig.approvalInsight/reflections`（**环境变量在解析层合并**，入口不再各读一份）· `config set approvalInsight` / `config set reflections`（非法值 fail-closed 不写盘）· **`plain` 与 v4.1.1 逐字节一致**（三行文案 + detail 不截断 + shell/model 标题；快照断言）· **降级判定单一来源**（源码护栏：App 不读 `process.stdout.isTTY` / `process.env.CI`，只透传 `insightEnv`；`approval-insight.ts` 集中五类降级原因）· **顺带修 T8/T9 存量缺陷**：`ImpactSummary` 新增第五态 `not-needed`——低风险不扫影响面时此前复用 `skipped` 被渲染成「项目过大，文件数超过 2000」（单文件项目也这么说 = 假话）· `tests/ui/approval-degrade.test.tsx`(12) + `tests/store/config.test.ts`(+5) · M2 **4/4 封板** |
+
+### M3 任务明细
+
+| 任务 | 状态 | 说明 |
+|------|------|------|
+| **T12 触发表引擎** | ✅ **完成**（2026-10-28） | 「用户卡住时给一条能直接用的命令」的纯逻辑内核（ADR-044 / §4 D74-D75）· `core/suggestion.ts`（**纯判定层 + IO 层严格分离**，对齐 `reflection-store.ts`）：`SUGGESTION_RULES` 三条确定性规则（`missing-project-rules` 10 / `repeated-verify-failure` 20 / `repeated-edit-rejection` 30，**priority 大者优先**）+ `evaluateSuggestion({state, history, now})` + `recordSuggestionShown` / `dismissHints` / `pruneCooldowns` / `isCoolingDown` / `isHintsEnabled`（双轨开关）+ `readHintCooldowns` / `writeHintCooldowns`（原子写 `hint-state.json`，**永不抛错**）· **七条硬约束逐条在引擎内实现**（同时 ≤1 条 / 同 id 每会话 1 次 / 同 id 全局 10 分钟冷却 / **每会话总计 ≤3 条** / **Esc 即本会话全静默** / `hints off` 恒 null / **时间必须注入**）· **命名 `tips` → `hints` 全链路统一**（`config.hints` / `CONCERTOAI_HINTS` / `hint-state.json` / i18n `hints.*`）· **不打空头支票**：三条命令全部当场核实（`concertoai init` / `concertoai self-heal` / `/review <file>`），并落**护栏用例**——实跑 `--help` 断言动词真注册 + 用真实 `parseReviewCommand` 断言斜杠命令可解析；**任务书原写的 `concertoai fix` 至今不存在（属 M4），已按用户拍板改掉并记录** · **占位符永不出门**：路径含空格 → 降级 `repeatedEditRejectionNoFile` 文案 + `/review` auto 模式（不给一条会被拆坏的命令）· `config.ts` 四处接线（`HintsMode` / `hints?` / `isHintsMode` / `validateConfigValues` / `resolveConfig` 合并 env）+ `config set hints on\|off`（非法值 fail-closed）+ `paths.ts` `hintStatePath()` + zh/en `hints.*`（en 无 CJK 由 `en.test.ts` 看住）· `tests/core/suggestion.test.ts`(40) + `tests/store/config.test.ts`(+5) + `tests/setup.ts`（测试环境默认 `CONCERTOAI_HINTS=off`，防污染真实 `hint-state.json`）· **端到端实测**（隔离 HOME）：`config set hints off` 真写盘 / 非法值 exit 1 / `hints on` 回滚均通过 · **141 文件 / 1914 用例全绿** |
+
 
 ---
 

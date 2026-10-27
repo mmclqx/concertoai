@@ -10,6 +10,7 @@
  * - Agent 安装：~/.concertoai/agents/
  * - Reviewer 全局知识库：~/.concertoai/reviewer/knowledge/
  * - 拒绝复盘记录：~/.concertoai/reflections.jsonl（v5.0 T10）
+ * - 场景提示冷却状态：~/.concertoai/hint-state.json（v5.0 T12）
  *
  * 首次启动（CLI 入口）调用 migrateLegacyHome() 自动迁移旧目录（幂等）：
  * 1. ~/.lumen 不存在 → 无操作（新安装直接用新版目录）；
@@ -122,6 +123,19 @@ export function crashLogPath(): string {
  */
 export function reflectionsPath(): string {
   return path.join(globalDir(), 'reflections.jsonl');
+}
+
+/**
+ * 场景提示冷却状态文件：~/.concertoai/hint-state.json（v5.0 T12）。
+ *
+ * 存「每条提示上次出现的毫秒时间戳」，用于 10 分钟**全局**冷却——跨进程生效
+ * （今天提示过 `missing-project-rules`，重启 chat 后 10 分钟内不再提示）。
+ *
+ * 全局单文件而非按项目分：用户对「这条提示」的噪音感受是跨项目的
+ * （在 A 项目被提醒过 `init`，切到 B 项目又立刻被提醒，主观上就是「又来了」）。
+ */
+export function hintStatePath(): string {
+  return path.join(globalDir(), 'hint-state.json');
 }
 
 /** Reviewer 全局知识库目录：~/.concertoai/reviewer/knowledge/。 */

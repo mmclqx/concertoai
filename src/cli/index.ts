@@ -556,7 +556,7 @@ program
 program
   .command('config <action> [name] [value]')
   .description(
-    '配置管理：config set provider <name> | config set approvalInsight <rich|plain> | config set reflections <on|off> | config restore',
+    '配置管理：config set provider <name> | config set approvalInsight <rich|plain> | config set reflections <on|off> | config set hints <on|off> | config restore',
   )
   .option('--lang <zh|en>', '界面语言')
   .action(async (action: string, name?: string, value?: string) => {
@@ -590,45 +590,57 @@ program
         return;
       }
     }
-    // v5.0 T10/T11：枚举类配置写入（拒绝提示里承诺的 `config set reflections off` 必须真能用）
-    const { isApprovalInsightMode, isReflectionsMode, loadConfig, writeConfig } = await import(
-      '../store/config'
-    );
-    const enumKeys = ['approvalInsight', 'reflections'] as const;
+    // v5.0 T10/T11/T12：枚举类配置写入（拒绝提示里承诺的 `config set reflections off`
+    // / `config set hints off` 必须真能用——提示里的话是承诺，不能是空头支票）
+    const { isApprovalInsightMode, isHintsMode, isReflectionsMode, loadConfig, writeConfig } =
+      await import('../store/config');
+    const enumKeys = ['approvalInsight', 'reflections', 'hints'] as const;
     if (action === 'set' && name !== undefined && (enumKeys as readonly string[]).includes(name)) {
+      const acceptsOnOff = name === 'reflections' || name === 'hints';
+      const expected = acceptsOnOff ? 'on | off' : 'rich | plain';
       if (value === undefined) {
-        console.error(
-          `用法: concertoai config set ${name} <${name === 'reflections' ? 'on|off' : 'rich|plain'}>`,
-        );
+        console.error(`用法: concertoai config set ${name} <${expected}>`);
         process.exitCode = 1;
         return;
       }
       const valid =
-        name === 'reflections' ? isReflectionsMode(value) : isApprovalInsightMode(value);
+        name === 'reflections'
+          ? isReflectionsMode(value)
+          : name === 'hints'
+            ? isHintsMode(value)
+            : isApprovalInsightMode(value);
       if (!valid) {
         // 非法值 fail-closed：宁可报错让用户改，也不写入一个「看起来设了但无效」的值
-        console.error(
-          `❌ ${name} 仅接受 ${name === 'reflections' ? 'on | off' : 'rich | plain'}，收到: ${value}`,
-        );
+        console.error(`❌ ${name} 仅接受 ${expected}，收到: ${value}`);
         process.exitCode = 1;
         return;
       }
       const cfg = await loadConfig(cfgPath);
       const next = { ...cfg, [name]: value };
       await writeConfig(next, cfgPath);
-      console.log(
-        name === 'reflections'
-          ? value === 'off'
+      if (name === 'reflections') {
+        console.log(
+          value === 'off'
             ? '✅ 已关闭拒绝复盘记录（拒绝照常工作，只是不再写记录）。'
-            : '✅ 已开启拒绝复盘记录（本地 JSONL，零上传）。'
-          : value === 'plain'
+            : '✅ 已开启拒绝复盘记录（本地 JSONL，零上传）。',
+        );
+      } else if (name === 'hints') {
+        console.log(
+          value === 'off'
+            ? '✅ 已关闭场景提示（chat 内 /hints off 也可即时静音本次会话）。'
+            : '✅ 已开启场景提示（默认即开启；每会话最多 3 条，10 分钟冷却）。',
+        );
+      } else {
+        console.log(
+          value === 'plain'
             ? '✅ 审批卡已切回 v4.1.1 原貌（plain）。'
             : '✅ 审批卡已启用风险教学卡（rich）。',
-      );
+        );
+      }
       return;
     }
     console.error(
-      '用法: concertoai config set provider <name> | config set approvalInsight <rich|plain> | config set reflections <on|off> | config restore',
+      '用法: concertoai config set provider <name> | config set approvalInsight <rich|plain> | config set reflections <on|off> | config set hints <on|off> | config restore',
     );
     process.exitCode = 1;
   });

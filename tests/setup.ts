@@ -18,3 +18,16 @@
  * 模块 mock 顺序问题偶发失效。
  */
 process.env.CONCERTOAI_REFLECTIONS = 'off';
+
+/**
+ * v5.0 T12：场景提示同理默认关闭。
+ *
+ * 提示的冷却记录写在 `~/.concertoai/hint-state.json`（**开发者的真实 home**）。
+ * T13 的 UI 集成测试会走「真的触发一次提示」的路径，若不关掉，`npm test` 会把
+ * 测试产生的冷却时间戳写进本机真实状态文件——后果是**开发者自己用 CLI 时提示被
+ * 莫名静音 10 分钟**（比复盘那次更难排查，因为它表现为「功能不生效」）。
+ *
+ * 需要验证「默认开启」语义的用例显式 `vi.stubEnv('CONCERTOAI_HINTS', '')`
+ * 或直接注入 `hintsEnabled: true`（测试意图必须写在用例里，不能靠环境巧合）。
+ */
+process.env.CONCERTOAI_HINTS = 'off';
