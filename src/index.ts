@@ -43,8 +43,18 @@ export {
   readSseEvents,
   TimeoutError,
 } from './model/client';
-export type { ModelProfile } from './model/models';
-export { costFor, getDefaultModel, getModel, listModels, MODEL_PROFILES } from './model/models';
+export type { ModelProfile, PriceSet, PriceTier } from './model/models';
+export {
+  cacheHitCostFor,
+  costFor,
+  getDefaultModel,
+  getModel,
+  listModels,
+  MODEL_PROFILES,
+  priceFor,
+  priceTierFor,
+  tierLabel,
+} from './model/models';
 export {
   countMessageListTokens,
   countTokens,

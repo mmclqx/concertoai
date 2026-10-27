@@ -158,6 +158,9 @@ export const zh = {
     unavailable: '账户不可用',
     empty: '无余额信息',
     line: '💰 余额：{symbol}{total}',
+    // v5.0 T7：当前时段真实单价（高峰/空闲标注）
+    priceTier:
+      '📊 当前{model} {tier}：输入 ¥{input}/百万 · 缓存命中 ¥{cacheHit}/百万 · 输出 ¥{output}/百万',
   },
   peakTime: {
     askSwitch:

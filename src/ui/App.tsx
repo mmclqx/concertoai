@@ -37,7 +37,7 @@ import type { AgentInstaller } from '../market';
 import type { McpManager } from '../mcp/manager';
 import type { ModelClient } from '../model/client';
 import { costForProvider } from '../model/cost';
-import { cacheHitCostFor, costFor, getModel } from '../model/models';
+import { cacheHitCostFor, costFor, getModel, priceTierFor } from '../model/models';
 import { estimateMessageListTokens, estimateTokens } from '../model/tokenizer';
 import type { AuditLogger, TraceStore } from '../observable';
 import { SnapshotManager } from '../orchestrator/transaction';
@@ -1233,13 +1233,24 @@ export function App({
   // v2.2 智能成本控制：本地模型（ollamaModel）不在 DeepSeek 模型表中，成本按 0 展示
   // v4.0 M3 T3.2a：多 Provider 成本统一走 costForProvider（deepseek 复用模型表；openai 走定价表；ollama 恒 0）
   const isLocalModel = providerName !== 'deepseek' && getModel(model) === undefined;
+  // v5.0 T7：成本与价格档位标注用**同一时刻**，避免标签与数值取自不同档位（自相矛盾）
+  const costAt = new Date();
   const cost = isLocalModel
     ? 0
     : providerName === 'deepseek'
-      ? costFor(model, display.input, display.output, displayCacheHit)
-      : costForProvider(providerName, model, display.input, display.output, displayCacheHit);
+      ? costFor(model, display.input, display.output, displayCacheHit, costAt)
+      : costForProvider(
+          providerName,
+          model,
+          display.input,
+          display.output,
+          displayCacheHit,
+          costAt,
+        );
   const hitCost =
-    isLocalModel || providerName !== 'deepseek' ? 0 : cacheHitCostFor(model, displayCacheHit);
+    isLocalModel || providerName !== 'deepseek'
+      ? 0
+      : cacheHitCostFor(model, displayCacheHit, costAt);
 
   // v4.0 M3 T3.2a：会话结束成本对比提示（非 DeepSeek Provider 且已有真实 usage 时显示）
   // 「本次消费 ¥x（openai），如用 deepseek 约 ¥y」；本地模型显示 0 成本提示
@@ -1306,6 +1317,7 @@ export function App({
         mcpStatus={mcpSummary}
         fallbackNote={fallbackNote}
         costCompareNote={costCompareNote}
+        priceTier={isLocalModel ? undefined : priceTierFor(costAt)}
       />
     </Box>
   );

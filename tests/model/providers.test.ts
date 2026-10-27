@@ -11,6 +11,12 @@ import { createDeepSeekProvider } from '../../src/model/providers/deepseek';
 import { createOllamaProvider, listOllamaModels } from '../../src/model/providers/ollama';
 import { createOpenAIProvider } from '../../src/model/providers/openai';
 
+// ── 固定时刻夹具（v5.0 T7：价格档位时间注入，杜绝时间依赖 flaky）──
+/** 周三 10:00 → 计价高峰。 */
+const PEAK_AT = new Date(2026, 9, 28, 10, 0, 0);
+/** 周三 20:00 → 空闲。 */
+const OFFPEAK_AT = new Date(2026, 9, 28, 20, 0, 0);
+
 /** 构造 mock fetch（按 URL 分派）。 */
 function mockFetch(
   handler: (url: string, init?: RequestInit) => { ok: boolean; json?: unknown; status?: number },
@@ -30,15 +36,16 @@ function mockFetch(
 
 describe('createDeepSeekProvider（T3.3）', () => {
   it('接口契约：name/type/defaultModel + tokenize/cost/healthCheck', async () => {
-    const provider = createDeepSeekProvider({ apiKey: 'sk-test' });
+    // v5.0 T7：注入固定空闲时刻，避免「白天高峰价 / 晚上空闲价」的时间依赖 flaky
+    const provider = createDeepSeekProvider({ apiKey: 'sk-test', now: () => OFFPEAK_AT });
     expect(provider.name).toBe('deepseek');
     expect(provider.type).toBe('deepseek');
     expect(provider.defaultModel).toBe('deepseek-v4-flash');
     // tokenize：已知文本 → 正数
     expect(provider.tokenize('hello')).toBeGreaterThan(0);
-    // cost：按定价表计算（deepseek-v4-flash 输入 1 元/M，输出 2 元/M）
+    // cost：按定价表计算（flash 空闲价：输入 1.5 元/M，输出 4.5 元/M）
     const cost = provider.cost(1_000_000, 500_000);
-    expect(cost).toBeCloseTo(1.0 + 1.0, 5); // 1M 输入 * 1元/M + 0.5M 输出 * 2元/M
+    expect(cost).toBeCloseTo(1.5 + 2.25, 5); // 1M 输入 * 1.5 + 0.5M 输出 * 4.5
     // healthCheck：mock fetch 返回余额 → ok
     const withFetch = createDeepSeekProvider({
       apiKey: 'sk-test',
@@ -49,9 +56,15 @@ describe('createDeepSeekProvider（T3.3）', () => {
   });
 
   it('cost：缓存命中按低价计费', () => {
-    const provider = createDeepSeekProvider({ apiKey: 'sk-test' });
+    const provider = createDeepSeekProvider({ apiKey: 'sk-test', now: () => OFFPEAK_AT });
     const cost = provider.cost(1_000_000, 0, 1_000_000); // 全部命中
-    expect(cost).toBeCloseTo(0.02, 5); // 0.02 元/M 命中价
+    expect(cost).toBeCloseTo(0.05, 5); // 空闲档命中价 0.05 元/M
+  });
+
+  it('cost：高峰时段按高峰价（同一用量为空闲的 2 倍）', () => {
+    const peak = createDeepSeekProvider({ apiKey: 'sk-test', now: () => PEAK_AT });
+    const off = createDeepSeekProvider({ apiKey: 'sk-test', now: () => OFFPEAK_AT });
+    expect(peak.cost(1_000_000, 1_000_000)).toBeCloseTo(off.cost(1_000_000, 1_000_000) * 2);
   });
 
   it('healthCheck：API 失败 → ok=false + 错误信息', async () => {

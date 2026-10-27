@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
-import { isPeakHour, isPeakTime, isWorkday, PEAK_TIME_RANGES } from '../../src/core/peak-time';
+import {
+  isPeakHour,
+  isPeakTime,
+  isPricingPeakTime,
+  isWorkday,
+  PEAK_TIME_RANGES,
+  PRICING_PEAK_RANGES,
+  SWITCH_PEAK_RANGES,
+} from '../../src/core/peak-time';
 
 /** 构造指定周几与小时的 Date（星期天=0 … 星期六=6）。 */
 function at(dayOfWeek: number, hour: number, minute = 0): Date {
@@ -65,5 +73,41 @@ describe('isPeakTime', () => {
     expect(typeof isPeakTime()).toBe('boolean');
     expect(typeof isWorkday()).toBe('boolean');
     expect(typeof isPeakHour()).toBe('boolean');
+  });
+});
+
+describe('计价时段与切换时段解耦（v5.0 T7，R7）', () => {
+  it('两套区间常量各自独立存在', () => {
+    expect(SWITCH_PEAK_RANGES).toEqual([
+      { startHour: 9, endHour: 12 },
+      { startHour: 14, endHour: 18 },
+    ]);
+    expect(PRICING_PEAK_RANGES).toEqual([
+      { startHour: 9, endHour: 12 },
+      { startHour: 14, endHour: 18 },
+    ]);
+  });
+
+  it('PEAK_TIME_RANGES 是切换口径的兼容别名（不是计价口径）', () => {
+    // 断言引用相等：日后若有人把别名指向 PRICING，切换行为会被静默改变
+    expect(PEAK_TIME_RANGES).toBe(SWITCH_PEAK_RANGES);
+  });
+
+  it('isPricingPeakTime 覆盖高峰 / 空闲 / 周末', () => {
+    expect(isPricingPeakTime(at(1, 10))).toBe(true); // 周一 10:00 高峰
+    expect(isPricingPeakTime(at(1, 20))).toBe(false); // 周一 20:00 空闲
+    expect(isPricingPeakTime(at(6, 10))).toBe(false); // 周六 10:00 空闲（周末不涨价）
+    expect(isPricingPeakTime(at(1, 12))).toBe(false); // 边界 12:00 左闭右开
+    expect(isPricingPeakTime(at(1, 18))).toBe(false); // 边界 18:00 左闭右开
+  });
+
+  it('当前口径下两函数结果一致（同值兜底）；一旦改 PRICING 也不会影响切换口径', () => {
+    for (let day = 0; day <= 6; day += 1) {
+      for (const hour of [0, 8, 9, 12, 13, 14, 18, 20, 23]) {
+        expect(isPricingPeakTime(at(day, hour))).toBe(isPeakTime(at(day, hour)));
+      }
+    }
+    // 切换口径只读 SWITCH_PEAK_RANGES，结构上不可能受 PRICING 改动影响（引用独立）
+    expect(PRICING_PEAK_RANGES).not.toBe(SWITCH_PEAK_RANGES);
   });
 });

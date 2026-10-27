@@ -1,6 +1,8 @@
 import { Box, Text } from 'ink';
 
 import { t } from '../i18n';
+import type { PriceTier } from '../model/models';
+import { tierLabel } from '../model/models';
 
 export interface StatusBarProps {
   model: string;
@@ -21,6 +23,8 @@ export interface StatusBarProps {
   fallbackNote?: string;
   /** 成本对比提示（v4.0 M3 T3.2a）：切换/会话结束时显示成本倍率。 */
   costCompareNote?: string;
+  /** 当前价格档位（v5.0 T7）：传值则在成本后标注「高峰价 / 空闲价」。 */
+  priceTier?: PriceTier;
 }
 
 /** 状态条：Provider + 模型名 + 输入/输出 token + 缓存命中 + 成本（元）。真实 usage 到达后显示真实值并标记。 */
@@ -36,6 +40,7 @@ export function StatusBar({
   providerName = 'deepseek',
   fallbackNote,
   costCompareNote,
+  priceTier,
 }: StatusBarProps) {
   return (
     <Box flexDirection="column">
@@ -45,6 +50,7 @@ export function StatusBar({
           {inputTokens}/{outputTokens}
           {isReal ? `（${t().status.real}）` : ''} │ {t().status.cost}: ¥{cost.toFixed(4)}
           {t().status.yuan}
+          {priceTier !== undefined ? `（${tierLabel(priceTier)}）` : ''}
           {mcpStatus !== undefined ? ` │ 🔌 ${mcpStatus}` : ''}
         </Text>
       </Box>

@@ -163,6 +163,9 @@ export const en = {
     unavailable: 'Account unavailable',
     empty: 'No balance info',
     line: '💰 Balance: {symbol}{total}',
+    // v5.0 T7: current-tier real price (peak / off-peak label)
+    priceTier:
+      '📊 Current {model} {tier}: input ¥{input}/M · cache hit ¥{cacheHit}/M · output ¥{output}/M',
   },
   peakTime: {
     askSwitch:

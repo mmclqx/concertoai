@@ -1,14 +1,14 @@
 /**
- * DeepSeek Provider（v4.0 M3 T3.3）。
+ * DeepSeek Provider（v4.0 M3 T3.3 / v5.0 T7 双档计价）。
  *
  * 包装现有 DeepSeekClient（SSE 流式 + 重试 + 超时），补充 tokenize / cost / healthCheck。
- * 定价表复用 MODEL_PROFILES（官方定价 2026-08 核实）。
+ * 定价复用 `MODEL_PROFILES`（高峰 / 空闲双档），**不在此处重复维护价格**。
  * healthCheck：GET /user/balance（复用 balance/fetchBalance，只读轻量）。
  */
 
 import { fetchBalance } from '../../balance';
 import { DeepSeekClient, type DeepSeekClientOptions } from '../client';
-import { getModel } from '../models';
+import { costFor } from '../models';
 import type { Provider } from '../provider';
 import { countTokens } from '../tokenizer';
 
@@ -24,6 +24,14 @@ export interface DeepSeekProviderOptions extends Omit<DeepSeekClientOptions, 'ap
   defaultModel?: string;
   /** fetch 实现（healthCheck 注入；默认 globalThis.fetch）。 */
   fetchImpl?: typeof fetch;
+  /**
+   * 时钟（v5.0 T7）：决定计价档位（高峰 / 空闲）。
+   *
+   * Provider 的 `cost()` 是既有接口（`(input, output, cacheHit?) => number`），无法追加时刻参数，
+   * 因此时钟在构造时注入——默认 `() => new Date()`，测试注入固定时刻以避免
+   * 「白天跑高峰价、晚上跑空闲价」的时间依赖型 flaky。
+   */
+  now?: () => Date;
 }
 
 /** 构建 DeepSeek Provider（chat 复用 DeepSeekClient；tokenize/cost/healthCheck 补齐）。 */
@@ -32,6 +40,7 @@ export function createDeepSeekProvider(options: DeepSeekProviderOptions = {}): P
   const name = options.name ?? 'deepseek';
   const defaultModel = options.defaultModel ?? DEEPSEEK_DEFAULT_MODEL;
   const fetchImpl = options.fetchImpl ?? globalThis.fetch;
+  const now = options.now ?? (() => new Date());
 
   return {
     name,
@@ -39,16 +48,14 @@ export function createDeepSeekProvider(options: DeepSeekProviderOptions = {}): P
     defaultModel,
     streamChat: (params) => client.streamChat(params),
     tokenize: (text) => countTokens(text),
+    // v5.0 T7：复用 models.ts 的双档计价（避免此处重复维护价格，防两处漂移）
     cost: (inputTokens, outputTokens, cacheHitTokens = 0) => {
-      const profile = getModel(defaultModel);
-      if (profile === undefined) {
+      try {
+        return costFor(defaultModel, inputTokens, outputTokens, cacheHitTokens, now());
+      } catch {
+        // 未知模型（自定义 defaultModel）→ 0，不抛错
         return 0;
       }
-      return (
-        (Math.max(0, inputTokens - cacheHitTokens) / 1_000_000) * profile.inputPricePerM +
-        (cacheHitTokens / 1_000_000) * profile.inputCacheHitPricePerM +
-        (outputTokens / 1_000_000) * profile.outputPricePerM
-      );
     },
     healthCheck: async () => {
       const start = performance.now();

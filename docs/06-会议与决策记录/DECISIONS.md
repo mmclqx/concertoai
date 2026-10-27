@@ -578,4 +578,23 @@ interface AgentDef {
 
 ---
 
+## ADR-038：DeepSeek 高峰/空闲双档计价——计价时段与 ollama 切换时段解耦
+
+| 字段 | 内容 |
+|------|------|
+| **状态** | 已采纳（v5.0 T7） |
+| **日期** | 2026-10-27 |
+| **上下文** | DeepSeek 价格调整为**高峰 / 空闲双档**（flash 输入 1.5/3.0、缓存命中 0.05/0.10、输出 4.5/9.0；pro 输入 4.5/9.0、缓存命中 0.15/0.30、输出 13.5/27.0，空闲/高峰，元每百万 token），而 `src/model/models.ts` 仍是单档旧价（flash 输入 1.0、缓存命中 0.02），成本显示失真。同时项目已有 `core/peak-time.ts`（v2.2）用于「高峰时段切本地 ollama」，若直接把计价逻辑塞进去，两件事会被永久耦合 |
+| **选项** | ① 单档计价（维持现状，只更新数字）② 双档计价 + 复用现有 `peak-time.ts` 的 `isPeakTime` ③ **双档计价 + 拆两套时段口径**（`isPricingPeakTime` 计价 / `isPeakTime` 切换） |
+| **结论** | 采用 ③：`peak-time.ts` 提供 `PRICING_PEAK_RANGES` + `isPricingPeakTime`（计价）与 `SWITCH_PEAK_RANGES` + `isPeakTime`（切 ollama）两套独立口径；`models.ts` 新增 `priceTierFor(at)` / `priceFor(model, tier)` / `PriceSet` 双档价格；`costFor` / `cacheHitCostFor` / `costForProvider` 均接受 `at` 时间注入（默认当前时刻）；状态条与 `balance` 输出当前时段单价并标注「高峰价 / 空闲价」 |
+| **理由** | (a) **口径语义不同**：「切不切本地模型」是产品干预策略（可被用户 `peakTimeStrategy` 关掉），「按哪个价档计费」是厂商定价事实（不可关）；混用一个函数会导致「用户关掉切换 → 顺带关掉正确计价」的隐性 bug；(b) **独立演进**：DeepSeek 日后公布的高峰时段若与我们自定时段不同，只需改 `PRICING_PEAK_RANGES`，不触碰用户已习惯的切换行为（R7 风险闭环）；(c) **成本透明**：隐藏涨价即欺骗用户，状态条直接标注档位让用户看得见（c 对应 v5.0「透明驾驶舱」定位）；(d) 时间注入避免「白天测高峰价、晚上测空闲价」的时间依赖 flaky（已用固定时刻夹具锁定） |
+
+**⚠️ 数据来源如实声明（禁止编造）**：本次价格数字来自 v5.0 任务书给定表格（`v5.0-dev-tasks.md` T7 / `v4.2-dev-tasks.md` T7），**本轮未取得可独立核验的一手官方来源 URL**（无联网核验）。因此：
+
+- 高峰时段定义**按兜底处理**：官方未公开明确时段，暂取工作日 9:00-12:00 / 14:00-18:00（与既有切换时段同值，但已拆独立常量）；
+- **待用户核对**：请以 DeepSeek 官方定价页（`https://api-docs.deepseek.com/zh-cn/quick_start/pricing`）确认①双档价格数字 ②高峰/空闲时段边界与时区；若不一致，**只需改 `PRICING_PEAK_RANGES` + `MODEL_PROFILES` 两处**并同步本 ADR；
+- 不阻塞 v5.0 后续任务（T6 `model auto` 的成本提示按当前时段价格展示即可）。
+
+---
+
 *当重要决策做出后，请在此追加新条目。*

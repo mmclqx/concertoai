@@ -9,6 +9,7 @@
 import type { DeepSeekBalance } from '../balance';
 import { fetchBalance } from '../balance';
 import { fmt, t } from '../i18n';
+import { getDefaultModel, priceFor, priceTierFor, tierLabel } from '../model/models';
 
 /** balance 命令选项。 */
 export interface BalanceCommandOptions {
@@ -18,6 +19,27 @@ export interface BalanceCommandOptions {
   baseUrl?: string;
   /** fetch 实现（测试注入）。 */
   fetchImpl?: typeof fetch;
+  /** 当前时刻（v5.0 T7：决定价格档位；测试注入固定时刻）。 */
+  at?: Date;
+}
+
+/**
+ * 当前时段价格摘要（v5.0 T7）。
+ *
+ * 让用户看到「现在这一刻」的真实单价，而不是笼统的价目表——
+ * 成本透明是 fail-closed 基线的一部分（隐藏涨价 = 欺骗用户）。
+ */
+export function priceTierSummary(at: Date = new Date()): string {
+  const tier = priceTierFor(at);
+  const model = getDefaultModel();
+  const price = priceFor(model.id, tier);
+  return fmt(t().balance.priceTier, {
+    tier: tierLabel(tier),
+    input: String(price.input),
+    output: String(price.output),
+    cacheHit: String(price.cacheHit),
+    model: model.label,
+  });
 }
 
 /** 币种 → 符号映射（¥/$/€/£；未知币种用币种代码 + 空格，如 `JPY 5.00`）。 */
@@ -62,6 +84,8 @@ export async function runBalanceCommand(options: BalanceCommandOptions): Promise
       fetchImpl: options.fetchImpl,
     });
     printBalance(balance);
+    // v5.0 T7：附带当前时段真实单价（高峰/空闲标注）
+    console.log(priceTierSummary(options.at ?? new Date()));
     return 0;
   } catch (err) {
     console.error(err instanceof Error ? err.message : String(err));

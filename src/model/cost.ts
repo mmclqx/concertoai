@@ -11,7 +11,7 @@
  * 未知 Provider/模型 → 返回 0（不抛错，本地/未知模型无计费）。
  */
 
-import { getModel } from './models';
+import { getModel, priceFor, priceTierFor } from './models';
 
 /** 成本画像（元/百万 token）。 */
 export interface CostProfile {
@@ -34,15 +34,25 @@ export const OPENAI_COST_PROFILES: Record<string, CostProfile> = {
 /** 未知/本地模型成本（Ollama 等）。 */
 const ZERO_PROFILE: CostProfile = { inputPricePerM: 0, outputPricePerM: 0 };
 
-/** 从 Provider 名 + 模型 ID 取成本画像（deepseek 查 models.ts；openai 查 OPENAI_COST_PROFILES；其余 0）。 */
-export function costProfileFor(provider: string, model: string): CostProfile {
+/**
+ * 从 Provider 名 + 模型 ID 取成本画像（deepseek 查 models.ts；openai 查 OPENAI_COST_PROFILES；其余 0）。
+ *
+ * v5.0 T7：deepseek 价格改为**高峰 / 空闲双档**，故需 `at` 决定按哪个档位取价
+ * （默认当前时刻；测试注入固定时刻）。
+ */
+export function costProfileFor(
+  provider: string,
+  model: string,
+  at: Date = new Date(),
+): CostProfile {
   if (provider === 'deepseek') {
     const profile = getModel(model);
     if (profile !== undefined) {
+      const price = priceFor(model, priceTierFor(at));
       return {
-        inputPricePerM: profile.inputPricePerM,
-        outputPricePerM: profile.outputPricePerM,
-        inputCacheHitPricePerM: profile.inputCacheHitPricePerM,
+        inputPricePerM: price.input,
+        outputPricePerM: price.output,
+        inputCacheHitPricePerM: price.cacheHit,
       };
     }
     return ZERO_PROFILE;
@@ -56,7 +66,7 @@ export function costProfileFor(provider: string, model: string): CostProfile {
 
 /**
  * 按实际 token 用量计算成本（元）。cacheHitTokens 仅对 deepseek 缓存优惠生效。
- * 未知 Provider/模型 → 0（不抛错）。
+ * 未知 Provider/模型 → 0（不抛错）。`at` 决定 deepseek 的价格档位（默认当前时刻）。
  */
 export function costForProvider(
   provider: string,
@@ -64,8 +74,9 @@ export function costForProvider(
   inputTokens: number,
   outputTokens: number,
   cacheHitTokens = 0,
+  at: Date = new Date(),
 ): number {
-  const p = costProfileFor(provider, model);
+  const p = costProfileFor(provider, model, at);
   if (p.inputPricePerM === 0 && p.outputPricePerM === 0) {
     return 0;
   }
