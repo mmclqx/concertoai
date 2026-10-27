@@ -272,6 +272,16 @@ export const en = {
     repeatedEditRejectionNoFile:
       '💡 You rejected AI changes twice in a row; let the Reviewer Agent scan recently modified files before retrying',
   },
+  // v5.0 T13: `/hints` slash command (session mute / restore / status)
+  hintsCmd: {
+    off: '🔇 Scenario hints disabled (this session only). Restore: /hints on　·　Permanent: concertoai config set hints off',
+    on: '💡 Scenario hints enabled (strictly limited: at most 3 per session, same one not repeated within 10 minutes)',
+    statusOn:
+      '💡 Scenario hints: enabled (at most {max} per session; the same one not repeated within {minutes} minutes)',
+    statusOff: '🔇 Scenario hints: disabled (restore with /hints on)',
+    usage: 'Usage: /hints on | /hints off | /hints status',
+    unknownAction: 'Unknown hints subcommand: {action} (supported: on / off / status)',
+  },
   balance: {
     available: 'Account available',
     unavailable: 'Account unavailable',

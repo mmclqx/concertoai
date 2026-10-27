@@ -263,6 +263,15 @@ export const zh = {
     repeatedEditRejectionNoFile:
       '💡 你已经连续 2 次拒绝了 AI 的改动，可以让 Reviewer Agent 扫一遍最近修改的文件再重试',
   },
+  // v5.0 T13：`/hints` 斜杠命令（会话内静音 / 恢复 / 查看状态）
+  hintsCmd: {
+    off: '🔇 已关闭场景提示（仅本次会话）。恢复：/hints on　·　永久关闭：concertoai config set hints off',
+    on: '💡 已开启场景提示（很克制：每会话最多 3 条，同一条 10 分钟内不重复）',
+    statusOn: '💡 场景提示：已开启（每会话最多 {max} 条，同一条 {minutes} 分钟内不重复）',
+    statusOff: '🔇 场景提示：已关闭（恢复：/hints on）',
+    usage: '用法：/hints on | /hints off | /hints status',
+    unknownAction: '未知 hints 子命令：{action}（支持 on / off / status）',
+  },
   balance: {
     available: '账户可用',
     unavailable: '账户不可用',

@@ -10,6 +10,7 @@ import {
   executeAgentMarketCommand,
   parseAgentCommand,
 } from '../cli/slash/agent';
+import { executeHintsCommand, parseHintsCommand } from '../cli/slash/hints';
 import { executeMcpCommand, parseMcpCommand } from '../cli/slash/mcp';
 import { executeMemoryCommand, parseMemoryCommand } from '../cli/slash/memory';
 import { executeModelCommand, parseModelCommand } from '../cli/slash/model';
@@ -32,6 +33,17 @@ import type { ApprovalInsight } from '../core/approval-insight';
 import { analyzeApproval } from '../core/approval-insight';
 import { appendReflection, buildReflection, isReflectionsEnabled } from '../core/reflection-store';
 import { activeRiskRules } from '../core/risk-rules';
+import {
+  dismissHints,
+  EMPTY_HINT_HISTORY,
+  evaluateSuggestion,
+  type HintHistory,
+  isHintsEnabled,
+  readHintCooldowns,
+  recordSuggestionShown,
+  type Suggestion,
+  writeHintCooldowns,
+} from '../core/suggestion';
 import { fmt, t } from '../i18n';
 import { retrieveLocalMemories } from '../loop/local-memory';
 import type { LoopEvent } from '../loop/loop';
@@ -54,6 +66,16 @@ import type { SessionStore } from '../store/session';
 import type { ApprovalRequest, ToolContext } from '../tools/registry';
 import { ToolRegistry } from '../tools/registry';
 import { analyzableDetail } from './approval-text';
+import { HintBar } from './HintBar';
+import {
+  countUserTurns,
+  EMPTY_REJECT_STREAK,
+  hasProjectRulesFile,
+  isVerifyClassCommand,
+  nextFailureStreak,
+  nextRejectStreak,
+  type RejectStreakState,
+} from './hint-signals';
 import { renderMarkdownToAnsi } from './markdown';
 import { ApprovalModal, PlanConfirm } from './modals';
 import { ObservabilityPanel } from './ObservabilityPanel';
@@ -111,6 +133,26 @@ export interface AppProps {
    * 真实 home —— 实测踩到过一次（16 条测试垃圾记录）。
    */
   reflectionsEnabled?: boolean;
+
+  /**
+   * 场景提示开关（v5.0 T13；由 `resolveConfig().hints` 决定）。
+   *
+   * 缺省读环境变量 `CONCERTOAI_HINTS`（无则 on）。关掉后**完全不渲染**提示行，
+   * chat 内 `/hints off` 亦可临时静音本次会话（会话级，不改配置）。
+   *
+   * 与 `reflectionsEnabled` 同口径也读环境变量：① 给嵌入式调用方一个开关；
+   * ② 测试进程靠它兜底（`tests/setup.ts`），否则 `npm test` 会把冷却时间戳
+   * 写进开发者真实 `~/.concertoai/hint-state.json`，导致他自己用 CLI 时提示被莫名静音。
+   */
+  hintsEnabled?: boolean;
+  /**
+   * 提示冷却状态读取/写入注入（**仅测试用**）。
+   *
+   * 生产不传：缺省读写 `~/.concertoai/hint-state.json`。测试必须隔离到 tmp，
+   * 否则会污染开发者真实冷却状态（症状是「提示功能看起来不生效」，极难排查）。
+   */
+  readHintCooldownsForTest?: typeof readHintCooldowns;
+  writeHintCooldownsForTest?: typeof writeHintCooldowns;
 
   /**
    * 复盘写入注入（**仅测试用**）。
@@ -314,6 +356,9 @@ export function App({
   reflectionsEnabled = isReflectionsEnabled(undefined, process.env.CONCERTOAI_REFLECTIONS),
   appendReflectionForTest,
   insightEnv,
+  hintsEnabled = isHintsEnabled(undefined, process.env.CONCERTOAI_HINTS),
+  readHintCooldownsForTest,
+  writeHintCooldownsForTest,
 }: AppProps) {
   const { exit } = useApp();
   /**
@@ -390,8 +435,109 @@ export function App({
   /** 每次审批自增：用于丢弃「上一次审批」的迟到分析结果（避免串台）。 */
   const approvalSeq = useRef(0);
 
+  // ── v5.0 T13：场景提示（M3 场景可发现）──────────────────────────────────
+  /** 当前要显示的提示（`null` = 不显示；引擎已保证「同时最多 1 条」）。 */
+  const [hint, setHint] = useState<Suggestion | null>(null);
+  /**
+   * 会话内提示开关：`hintsEnabled`（配置 / 环境变量）是**初始值**，
+   * chat 内 `/hints off|on` 只改这个 state（会话级，不写配置——见 `slash/hints.ts`）。
+   */
+  const [hintsOn, setHintsOn] = useState(hintsEnabled);
+  /** 会话历史（已展示 id / 计数 / 冷却 / 是否已被忽略），纯数据，由引擎解释。 */
+  const hintHistory = useRef<HintHistory>(EMPTY_HINT_HISTORY);
+  /** 全局冷却是否已从磁盘装载完成（未装载就判定会误以为「从没提示过」）。 */
+  const [hintCooldownsReady, setHintCooldownsReady] = useState(false);
+  /** 「同一文件连续被拒」计数（T13 采集，T12 规则表消费）。 */
+  const [rejectStreak, setRejectStreak] = useState<RejectStreakState>(EMPTY_REJECT_STREAK);
+  /** 「verify 类连续失败」计数（T13 采集，T12 规则表消费）。 */
+  const [failureStreak, setFailureStreak] = useState(0);
+
   /** 生效的风险规则（config `riskRules.disabled` 消费方，T9 起真正接上）。 */
   const insightRules = useMemo(() => activeRiskRules(riskRulesDisabled), [riskRulesDisabled]);
+
+  /** 冷却状态读写（测试可注入；缺省走 `~/.concertoai/hint-state.json`）。 */
+  const readHintState = readHintCooldownsForTest ?? readHintCooldowns;
+  const writeHintState = writeHintCooldownsForTest ?? writeHintCooldowns;
+
+  /**
+   * 装载全局冷却（v5.0 T13，约束③）。
+   *
+   * **为什么必须先装载再判定**：冷却记录决定「10 分钟内不重复」。
+   * 若判定先跑，会以为「从没提示过」而立刻弹一条——用户刚启动就被提醒，
+   * 正是「重启后还是被同一句话打断」的体验退化。
+   */
+  useEffect(() => {
+    let cancelled = false;
+    void readHintState()
+      .then((result) => {
+        if (cancelled) {
+          return;
+        }
+        hintHistory.current = { ...hintHistory.current, cooldowns: result.cooldowns };
+      })
+      .catch(() => {
+        // `readHintCooldowns` 自身永不抛错；这里兜住未来改动的意外（提示不该让会话崩）
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setHintCooldownsReady(true);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [readHintState]);
+
+  /**
+   * 判定「现在该不该提示」（v5.0 T13）。
+   *
+   * 触发时机刻意绑在**阶段回到 idle** 上（不随每次渲染）：提示是「这一轮结束了，
+   * 你可能需要这个」，而不是「每帧都问一次模型状态」。
+   *
+   * 引擎（T12）负责全部硬约束；此处只交状态、收结果，并持久化冷却。
+   * `phase !== 'idle'` 时清空——流式输出期间严禁渲染（用户点名要求②，`HintBar` 再挡一次）。
+   */
+  useEffect(() => {
+    if (phase !== 'idle') {
+      setHint(null);
+      return;
+    }
+    if (!hintCooldownsReady) {
+      return;
+    }
+    const suggestion = evaluateSuggestion({
+      state: {
+        userTurns: countUserTurns(messages),
+        hasProjectRules: hasProjectRulesFile(ctx.cwd),
+        consecutiveFailures: failureStreak,
+        fileRejectStreak: rejectStreak.count,
+        fileRejectFile: rejectStreak.file === '' ? undefined : rejectStreak.file,
+        hintsEnabled: hintsOn,
+      },
+      history: hintHistory.current,
+      now: Date.now(),
+      // 文案走 i18n：T13 直接消费 zh/en 字典，引擎结构不变
+      messages: t().hints,
+    });
+    if (suggestion === null) {
+      setHint(null);
+      return;
+    }
+    const now = Date.now();
+    hintHistory.current = recordSuggestionShown(hintHistory.current, suggestion.id, now);
+    // fire-and-forget：冷却写盘失败最多让这条提示多出现一次，不该影响会话
+    void writeHintState(hintHistory.current.cooldowns, { now }).catch(() => {});
+    setHint(suggestion);
+  }, [
+    phase,
+    hintCooldownsReady,
+    hintsOn,
+    messages,
+    failureStreak,
+    rejectStreak,
+    ctx.cwd,
+    writeHintState,
+  ]);
 
   /** 展示态应用（节流器的 apply）。 */
   const applyToggle = useCallback((patch: { diffFull?: boolean; helpOpen?: boolean }) => {
@@ -486,6 +632,17 @@ export function App({
       diffFullRef.current = false;
       helpOpenRef.current = false;
       setPhase('idle');
+      // v5.0 T13：「同一文件连续被拒」计数（T12 规则表消费）。
+      // 只统计 **edit** 审批：批准一条 shell / model 不代表用户认可了某个文件的改动，
+      // 拿它去归零会让 «连续» 二字失真（`nextRejectStreak` 内部也做了 kind 无关的纯判断）。
+      if (request !== undefined && request !== null && request.kind === 'edit') {
+        setRejectStreak((prev) =>
+          nextRejectStreak(prev, {
+            file: request.insightHint?.file,
+            approved,
+          }),
+        );
+      }
       // v5.0 T10：决议已下发后才写复盘（不阻塞审批退出）
       if (!approved && request !== undefined && request !== null) {
         recordRejection(request, insight ?? null);
@@ -577,6 +734,17 @@ export function App({
               : fmt(t().errors.streamInterrupted, { message: event.error.message }),
           );
         } else {
+          // v5.0 T13：verify 类命令的连续失败计数（T12 规则表消费）。
+          // 只认「真的跑过一次质量关卡」的命令（`isVerifyClassCommand`），
+          // 任意工具报错都不算——否则正常干活时会被反复提示去跑 self-heal。
+          if (event.type === 'tool_result' && event.toolCall.name === 'run_command') {
+            const command = extractArg(event.toolCall, 'command') ?? '';
+            if (isVerifyClassCommand(command)) {
+              setFailureStreak((prev) =>
+                nextFailureStreak(prev, event.result.ok ? 'passed' : 'failed'),
+              );
+            }
+          }
           setActiveTool(null);
         }
       },
@@ -740,6 +908,28 @@ export function App({
         return;
       }
       const trimmed = text.trim();
+
+      // v5.0 T13：/hints —— 本会话静音 / 恢复 / 查看状态（约束⑤「忽略即静默」的用户入口）。
+      // 放在最前面：它是纯会话内操作，不碰模型、不碰工具，先拦下来最省事。
+      const hintsCmd = parseHintsCommand(trimmed);
+      if (hintsCmd !== null) {
+        setInput('');
+        setTokens((t) => ({ ...t, input: t.input + estimateTokens(text) }));
+        const result = executeHintsCommand(hintsCmd, { enabled: hintsOn });
+        setMessages((prev) => [...prev, { role: 'user', content: text }, result.message]);
+        if (result.enabled !== undefined) {
+          setHintsOn(result.enabled);
+        }
+        if (result.dismiss === true) {
+          // 立刻静默：标记 + 清掉当前正在显示的那一条（等下一帧 effect 太慢，用户会看到它闪一下）
+          hintHistory.current = dismissHints(hintHistory.current);
+          setHint(null);
+        } else if (result.dismiss === false) {
+          // /hints on：连「已忽略」一并清掉，否则「开了却再也不出提示」= 假按钮
+          hintHistory.current = { ...hintHistory.current, dismissed: false };
+        }
+        return;
+      }
 
       // v3.1 M5 T5.2：/orchestrate 触发 team 全链路（拆解 → 对抗性闭环 → 回滚兜底）
       const orchCmd = parseOrchestrateCommand(trimmed);
@@ -1302,6 +1492,11 @@ export function App({
           });
           const msg: ChatMessage = { role: 'assistant', content: result.message };
           setMessages((prev) => [...prev, msg]);
+          // v5.0 T13：self-heal 就是「跑一次 verify + 尝试修复」，其结果天然是
+          // 「连续失败」的权威判据（`RepairVerifyResult.passed`），无需再猜命令文本。
+          setFailureStreak((prev) =>
+            nextFailureStreak(prev, result.result.passed ? 'passed' : 'failed'),
+          );
           setTokens((t) => ({ ...t, output: t.output + estimateTokens(result.message) }));
           if (store !== undefined && sessionId !== undefined) {
             store.append(sessionId, msg).catch(() => {});
@@ -1422,6 +1617,9 @@ export function App({
       requestApproval,
       // v5.0 T6：/model 切换要判断 Provider（非 deepseek 拒绝切换），providerName 参与闭包
       providerName,
+      // v5.0 T13：/hints status 的回执要反映**当前**开关状态；漏了它就是 stale closure，
+      // 会永远报第一次渲染时的值（实测由 biome useExhaustiveDependencies 报红捕获）
+      hintsOn,
     ],
   );
 
@@ -1562,6 +1760,8 @@ export function App({
       {plan !== null && phase === 'plan-approval' && <PlanConfirm plan={plan} />}
       {/* v5.0 T10：拒绝后的复盘提示（中性灰，不是错误——用户拒绝是正常操作） */}
       {notice !== null && <Text dimColor>{notice}</Text>}
+      {/* v5.0 T13：场景提示（输入框上方单行灰字；不弹框、不进消息流、不挤压输入框） */}
+      <HintBar suggestion={hint} phase={phase} />
       {error !== null && <Text color="red">{error}</Text>}
       <PromptInput
         value={input}
