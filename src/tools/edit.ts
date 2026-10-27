@@ -202,6 +202,9 @@ export const editFileTool: ToolSpec = {
       kind: 'edit',
       summary: `编辑文件 ${args.path}`,
       detail: plan.diff,
+      // v5.0 T9：把目标文件与编辑意图交给审批洞察层——影响面分析（谁 import 了我）
+      // 与「新建 / 局部修改」判断都依赖这两个结构化信息，不靠猜 summary 文本
+      insightHint: { file: args.path, intent: args.search === '' ? 'create' : 'modify' },
     });
     if (!approved) {
       return toolError(ToolErrorCode.EDIT_REJECTED, '编辑被拒绝，文件未修改', {

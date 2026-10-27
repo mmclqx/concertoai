@@ -315,6 +315,10 @@ export const shellTool: ToolSpec = {
         kind: 'shell',
         summary: `执行命令: ${args.command}`,
         detail: args.command,
+        // v5.0 T9：**刻意不传 insightHint**——shell 命令没有「目标文件」，影响面分析不适用；
+        // 命令文本本身仍会过风险规则（`rm -rf` / `process.exit` 等照常命中），
+        // 步骤是「UI 层把命令文本按单行源码喂给 analyzeApproval」（见 App.tsx 的 analyzableDetail）。
+        // 传空对象 `{}` 只会是一层假参数，不如不传。
       });
       if (!approved) {
         return toolError(ToolErrorCode.SHELL_REJECTED, '命令执行被拒绝', {

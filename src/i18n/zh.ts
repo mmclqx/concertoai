@@ -127,6 +127,57 @@ export const zh = {
     summaryShell: '执行命令: {command}',
     confirm: '批准 (y / Enter)',
     reject: '拒绝 (n / Esc)',
+    // ── v5.0 T9：风险教学卡（rich 路径）。上面 6 个键是 plain 路径（v4.1.1 原貌）专用，
+    //    两条路径共用 src/ui/approval-text.ts 同一套渲染函数，文案只需维护在这里。
+    // ⚠️ 措辞红线：本组文案**不得出现「危险」二字**（medium 规则易误报，夸张措辞会让用户
+    //    对全部提示麻木，见 ADR-040 已知局限 + ADR-041）。medium 统一用「中风险 / 建议重点关注」。
+    levelTitle: {
+      high: '⚠️ 高风险审批',
+      medium: '🟡 中风险审批',
+      low: '✅ 低风险审批',
+    },
+    action: {
+      edit: '编辑',
+      shell: '执行命令',
+      model: '切换模型',
+    },
+    intentLabel: '操作意图：',
+    intent: {
+      create: '新建文件',
+      modify: '局部修改（SEARCH/REPLACE）',
+    },
+    natureLabel: '改动性质：',
+    noRiskPattern: '✅ 未检测到已知风险模式（已检查 {count} 类规则）',
+    riskLabel: '风险点：',
+    // medium / 易误报规则专用措辞（不是结论，只是「建议看一眼」）
+    attentionLabel: '🟡 建议重点关注（中风险提示，非阻断）：',
+    focusLabel: '💡 建议重点关注：第 {line} 行（{why}）',
+    impactLabel: '影响面：',
+    impactOk: '该文件被 {count} 个文件引用（{paths}）',
+    impactOkZero: '未发现其他文件引用该文件（已扫描 {scanned} 个文件）',
+    impactSkippedFiles: '，另有 {count} 个文件读取失败已跳过',
+    // ⚠️ 措辞红线：未分析 ≠ 无影响。status 非 ok 时禁止出现「无影响」「0 个引用」。
+    impactTimeout: '影响面未分析（超时 {ms}ms）',
+    impactSkipped: '影响面未分析（项目过大，文件数超过 {maxFiles}）',
+    impactError: '影响面未分析（读取失败）',
+    impactNotApplicable: '不适用（该操作不涉及文件引用）',
+    hugeDiff: '共 {count} 行改动，风险分析已跳过（超大 diff）',
+    diffFold: '… 还有 {count} 行未显示，按 v 查看完整 diff',
+    diffTruncated: '… diff 已截断（共 {total} 行，仅显示前 {limit} 行）',
+    diffFocusMark: ' ⚠️',
+    keyApprove: '[y] 批准',
+    keyReject: '[n] 拒绝（AI 将尝试更保守的方案）',
+    keyExpand: '[v] 完整 diff',
+    keyCollapse: '[v] 收起 diff',
+    keyHelp: '[?] 说明',
+    keyHelpClose: '[?] 收起说明',
+    helpTitle: '这一屏在说什么',
+    helpHigh: '⚠️ 高风险：命中高危规则（删除/覆盖/鉴权/密钥/越界），建议逐行看。',
+    helpMedium: '🟡 中风险：命中易误报规则（超时/断言/依赖变更），只是「建议重点关注」，不是结论。',
+    helpLow: '✅ 低风险：未命中已知规则；规则表覆盖有限，不代表一定安全。',
+    helpSource: '规则来源：本地内置规则表（{count} 类），零模型调用、零网络、代码不上传。',
+    helpDisable: '关闭方式：config.approvalInsight = "plain"（恢复 v4.1.1 原貌）。',
+    helpKeys: '按键：[y] 批准 · [n] 拒绝 · [v] 展开完整 diff · [?] 收起本说明',
   },
   prompt: {
     placeholder: '输入你的需求…（Enter 发送 / Shift+Enter 换行 / Esc 退出）',
@@ -154,6 +205,11 @@ export const zh = {
     hint: '批准 (y / Enter) / 拒绝 (n / Esc)',
     approved: '计划已批准，开始执行',
     rejected: '计划已拒绝，未执行',
+    // v5.0 T9：计划进度视图文案（原先硬编码在 modals.tsx，迁到 i18n 以满足
+    // 「Ink 组件内零文案字面量」的护栏要求）
+    progressTitle: '执行进度 {done}/{total}',
+    progressFailedSuffix: '（{failed} 失败）',
+    progressStep: '步骤{index}. {title}',
   },
   balance: {
     available: '账户可用',

@@ -1,7 +1,8 @@
 import { execSync } from 'node:child_process';
+import path from 'node:path';
 
 import { Box, Text, useApp, useInput } from 'ink';
-import { memo, useCallback, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { SubagentSpawner } from '../agent/spawner';
 import type { AgentRegistry } from '../agents';
 import {
@@ -27,6 +28,9 @@ import {
 } from '../cli/slash/skill';
 import { parseWorkflowCommand, runWorkflowSlash } from '../cli/slash/workflow';
 import { formatTeamProgress, runTeamCommand } from '../cli/team';
+import type { ApprovalInsight } from '../core/approval-insight';
+import { analyzeApproval } from '../core/approval-insight';
+import { activeRiskRules } from '../core/risk-rules';
 import { fmt, t } from '../i18n';
 import { retrieveLocalMemories } from '../loop/local-memory';
 import type { LoopEvent } from '../loop/loop';
@@ -48,6 +52,7 @@ import type { MemoryStore } from '../store/memory-store';
 import type { SessionStore } from '../store/session';
 import type { ApprovalRequest, ToolContext } from '../tools/registry';
 import { ToolRegistry } from '../tools/registry';
+import { analyzableDetail } from './approval-text';
 import { renderMarkdownToAnsi } from './markdown';
 import { ApprovalModal, PlanConfirm } from './modals';
 import { ObservabilityPanel } from './ObservabilityPanel';
@@ -55,6 +60,8 @@ import { PromptInput } from './PromptInput';
 import { Spinner } from './Spinner';
 import { StatusBar } from './StatusBar';
 import { StreamingView } from './StreamingView';
+import type { ToggleThrottle } from './toggle-throttle';
+import { createToggleThrottle, RENDER_THROTTLE_MS } from './toggle-throttle';
 
 type Phase = 'idle' | 'streaming' | 'approval' | 'plan-approval';
 
@@ -85,6 +92,18 @@ export interface AppProps {
   initialHistory?: ChatMessage[];
   /** 审批策略：ask = 弹框逐个审批（默认）；allowlist-only = 只放行白名单，其余一律拒绝（不弹框）。 */
   approvalStrategy?: 'ask' | 'allowlist-only';
+  /**
+   * 审批洞察模式（v5.0 T9；config `approvalInsight`）：
+   * `rich`（默认）= 风险教学卡；`plain` = v4.1.1 原貌（只 summary + diff）。
+   */
+  approvalInsightMode?: 'rich' | 'plain';
+  /** 关闭的风险规则 id（config `riskRules.disabled`，v5.0 T8 配置项的消费方）。 */
+  riskRulesDisabled?: readonly string[];
+  /**
+   * 环境探测注入（测试用；缺省读 `process.stdout.isTTY` / `process.env.CI`）。
+   * 生产代码不应传——降级判定必须反映真实终端环境。
+   */
+  insightEnv?: { isTTY?: boolean; isCI?: boolean };
   /** MCP memory 注入器（v1.1）：每轮对话前检索相关记忆注入上下文。 */
   memoryInjector?: MemoryInjector;
   /** 本地项目记忆存储（v1.1）：与 MCP memory 互补。 */
@@ -270,6 +289,9 @@ export function App({
   auditLogger,
   providerName = 'deepseek',
   fallbackNote,
+  approvalInsightMode,
+  riskRulesDisabled,
+  insightEnv,
 }: AppProps) {
   const { exit } = useApp();
   /**
@@ -317,14 +339,130 @@ export function App({
   /** 待审批的 /plan 计划文本与对应任务。 */
   const [plan, setPlan] = useState<string | null>(null);
   const lastPlanTaskRef = useRef('');
-  /** 审批回调：挂起当前流程，等待 y/n 按键决议。 */
-  const requestApproval = useCallback(async (request: ApprovalRequest): Promise<boolean> => {
-    setPending(request);
-    setPhase('approval');
-    return new Promise<boolean>((resolve) => {
-      approvalResolver.current = resolve;
-    });
+  /**
+   * v5.0 T9：审批风险洞察（`analyzeApproval` 的结果）。
+   *
+   * 生命周期刻意与 `pending` **解耦**：先渲染 plain 审批框（永不等待分析），
+   * 分析结果（通常 <20ms）到达后再补齐 rich 卡片。任何分析失败都只是「少给提示」。
+   */
+  const [pendingInsight, setPendingInsight] = useState<ApprovalInsight | null>(null);
+  /** `[v]` 完整 diff / `[?]` 说明（纯展示态，不产生审批决议）。 */
+  const [diffFull, setDiffFull] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  /**
+   * 展示态的**逻辑真值**（ref，与 state 并行维护）。
+   *
+   * 为什么需要 ref：连按 `v` 时同一批事件里 React 的 `diffFull` 还是旧值，
+   * 用 `!diffFull` 计算意图会让 10 次连按全部算成同一个值（实测踩到：
+   * 10 次连按后状态停在展开态，用户以为按键没反应）。ref 赋值是同步的，
+   * 每次按键都能基于最新意图取反。
+   */
+  const diffFullRef = useRef(false);
+  const helpOpenRef = useRef(false);
+  /** 每次审批自增：用于丢弃「上一次审批」的迟到分析结果（避免串台）。 */
+  const approvalSeq = useRef(0);
+
+  /** 生效的风险规则（config `riskRules.disabled` 消费方，T9 起真正接上）。 */
+  const insightRules = useMemo(() => activeRiskRules(riskRulesDisabled), [riskRulesDisabled]);
+
+  /** 展示态应用（节流器的 apply）。 */
+  const applyToggle = useCallback((patch: { diffFull?: boolean; helpOpen?: boolean }) => {
+    if (patch.diffFull !== undefined) {
+      setDiffFull(patch.diffFull);
+    }
+    if (patch.helpOpen !== undefined) {
+      setHelpOpen(patch.helpOpen);
+    }
   }, []);
+
+  /**
+   * `[v]` / `[?]` 的 80ms 节流器（T9.3c）。
+   *
+   * 只作用于展示态；`y` / `n` 决议**绝不**经过它（安全红线 G1）。
+   */
+  const toggleThrottleRef = useRef<ToggleThrottle<{
+    diffFull?: boolean;
+    helpOpen?: boolean;
+  }> | null>(null);
+  const getToggleThrottle = useCallback(() => {
+    if (toggleThrottleRef.current === null) {
+      toggleThrottleRef.current = createToggleThrottle(applyToggle, {
+        minIntervalMs: RENDER_THROTTLE_MS,
+      });
+    }
+    return toggleThrottleRef.current;
+  }, [applyToggle]);
+
+  // 卸载时清空待处理意图（不留悬挂 timer，T9.3c 验收）
+  useEffect(
+    () => () => {
+      toggleThrottleRef.current?.dispose();
+    },
+    [],
+  );
+
+  /** 结束一次审批：清空展示态与在途分析（G1：y/n 语义与 v4.1.1 完全一致）。 */
+  const finishApproval = useCallback((approved: boolean) => {
+    approvalSeq.current += 1; // 让在途分析结果失效，不再回写状态
+    toggleThrottleRef.current?.dispose();
+    approvalResolver.current?.(approved);
+    approvalResolver.current = null;
+    setPending(null);
+    setPendingInsight(null);
+    setDiffFull(false);
+    setHelpOpen(false);
+    diffFullRef.current = false;
+    helpOpenRef.current = false;
+    setPhase('idle');
+  }, []);
+
+  /**
+   * 审批回调：挂起当前流程，等待 y/n 按键决议。
+   *
+   * **G2 铁律**：审批框先出现（plain），风险洞察随后补齐——
+   * 用户永远不会因为「分析慢/分析挂了」而按不了 y。
+   */
+  const requestApproval = useCallback(
+    async (request: ApprovalRequest): Promise<boolean> => {
+      approvalSeq.current += 1;
+      const seq = approvalSeq.current;
+      toggleThrottleRef.current?.dispose();
+      setDiffFull(false);
+      setHelpOpen(false);
+      diffFullRef.current = false;
+      helpOpenRef.current = false;
+      setPendingInsight(null);
+      setPending(request);
+      setPhase('approval');
+      // 模型切换审批是对「成本文案」的确认，没有 diff 可分析 → 不跑洞察
+      if (request.kind !== 'model') {
+        const hintFile = request.insightHint?.file;
+        const absoluteFile = hintFile === undefined ? undefined : path.resolve(ctx.cwd, hintFile);
+        void analyzeApproval(analyzableDetail(request.kind, request.detail), {
+          cwd: ctx.cwd,
+          file: absoluteFile,
+          rules: insightRules,
+          mode: approvalInsightMode,
+          isTTY: insightEnv?.isTTY,
+          isCI: insightEnv?.isCI,
+          // 没有目标文件就没有「影响面」可言（shell 命令），别再白扫一遍全库
+          skipImpact: absoluteFile === undefined,
+        })
+          .then((insight) => {
+            if (approvalSeq.current === seq) {
+              setPendingInsight(insight);
+            }
+          })
+          .catch(() => {
+            // analyzeApproval 自身永不抛错（G2）；此处仅防御未来改动
+          });
+      }
+      return new Promise<boolean>((resolve) => {
+        approvalResolver.current = resolve;
+      });
+    },
+    [ctx.cwd, insightEnv?.isCI, insightEnv?.isTTY, insightRules, approvalInsightMode],
+  );
 
   const ctxWithApproval = useMemo<ToolContext>(() => {
     if (approvalStrategy === 'allowlist-only') {
@@ -1227,16 +1365,18 @@ export function App({
     }
     if (phase === 'approval') {
       if (input === 'y' || key.return) {
-        approvalResolver.current?.(true);
-        approvalResolver.current = null;
-        setPending(null);
-        setPhase('idle');
+        // 决议**不经节流**：安全按键必须即时响应（G1 / T9.3c 红线）
+        finishApproval(true);
       } else if (input === 'n' || key.escape || (input === 'c' && key.ctrl)) {
         // v3.1 BUG 修复：审批阶段 Esc / Ctrl+C = 拒绝该操作（fail-closed），不退出应用
-        approvalResolver.current?.(false);
-        approvalResolver.current = null;
-        setPending(null);
-        setPhase('idle');
+        finishApproval(false);
+      } else if (input === 'v') {
+        // 纯展示态切换，走 80ms 节流（连按只取最后一次意图，防终端闪烁）
+        diffFullRef.current = !diffFullRef.current;
+        getToggleThrottle().request({ diffFull: diffFullRef.current });
+      } else if (input === '?') {
+        helpOpenRef.current = !helpOpenRef.current;
+        getToggleThrottle().request({ helpOpen: helpOpenRef.current });
       }
       return;
     }
@@ -1328,7 +1468,17 @@ export function App({
       {phase === 'streaming' && <StreamingView text={streamed} />}
       {activeTool !== null && <Spinner text={fmt(t().ui.toolRunning, { name: activeTool.name })} />}
       {pending !== null && phase === 'approval' && (
-        <ApprovalModal kind={pending.kind} summary={pending.summary} detail={pending.detail} />
+        <ApprovalModal
+          kind={pending.kind}
+          summary={pending.summary}
+          detail={pending.detail}
+          insight={pendingInsight}
+          intent={pending.insightHint?.intent}
+          fullDiff={diffFull}
+          showHelp={helpOpen}
+          impactApplies={pending.kind === 'edit' && pending.insightHint?.file !== undefined}
+          ruleCount={insightRules.length}
+        />
       )}
       {plan !== null && phase === 'plan-approval' && <PlanConfirm plan={plan} />}
       {error !== null && <Text color="red">{error}</Text>}

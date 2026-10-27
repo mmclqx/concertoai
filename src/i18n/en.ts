@@ -132,6 +132,60 @@ export const en = {
     summaryShell: 'Run command: {command}',
     confirm: 'Approve (y / Enter)',
     reject: 'Reject (n / Esc)',
+    // ── v5.0 T9: risk teaching card (rich path). The 6 keys above are plain-path only
+    //    (v4.1.1 look); both paths share src/ui/approval-text.ts renderers.
+    // Wording red line: never use alarmist words here — medium rules are noisy by nature
+    // (see ADR-040 known limits + ADR-041).
+    levelTitle: {
+      high: '⚠️ High-risk approval',
+      medium: '🟡 Medium-risk approval',
+      low: '✅ Low-risk approval',
+    },
+    action: {
+      edit: 'edit',
+      shell: 'run command',
+      model: 'switch model',
+    },
+    intentLabel: 'Intent: ',
+    intent: {
+      create: 'create new file',
+      modify: 'partial edit (SEARCH/REPLACE)',
+    },
+    natureLabel: 'What changes: ',
+    noRiskPattern: '✅ No known risk pattern matched ({count} rule groups checked)',
+    riskLabel: 'Risk points:',
+    attentionLabel: '🟡 Worth a closer look (medium-risk hint, non-blocking):',
+    focusLabel: '💡 Focus here: line {line} ({why})',
+    impactLabel: 'Blast radius: ',
+    impactOk: 'referenced by {count} file(s) ({paths})',
+    impactOkZero: 'no other file references it ({scanned} files scanned)',
+    impactSkippedFiles: ', {count} unreadable file(s) skipped',
+    // Wording red line: "not analyzed" is not "no impact".
+    impactTimeout: 'not analyzed (timed out after {ms}ms)',
+    impactSkipped: 'not analyzed (project too large, more than {maxFiles} files)',
+    impactError: 'not analyzed (read failed)',
+    impactNotApplicable: 'not applicable (this action has no file references)',
+    hugeDiff: '{count} changed lines — risk analysis skipped (huge diff)',
+    diffFold: '… {count} more lines hidden, press v for the full diff',
+    diffTruncated: '… diff truncated ({total} lines total, first {limit} shown)',
+    diffFocusMark: ' ⚠️',
+    keyApprove: '[y] approve',
+    keyReject: '[n] reject (AI will try a more conservative approach)',
+    keyExpand: '[v] full diff',
+    keyCollapse: '[v] collapse diff',
+    keyHelp: '[?] help',
+    keyHelpClose: '[?] close help',
+    helpTitle: 'What this screen tells you',
+    helpHigh:
+      '⚠️ High: a high-risk rule matched (delete/overwrite/auth/secret/path) — read line by line.',
+    helpMedium:
+      '🟡 Medium: a noisy rule matched (timeout/assertion/dependency) — a hint to look closer, not a verdict.',
+    helpLow:
+      '✅ Low: no known rule matched; the rule table is finite, so this is not a safety proof.',
+    helpSource:
+      'Rules: built-in local table ({count} groups), no model calls, no network, code never leaves your machine.',
+    helpDisable: 'To turn it off: config.approvalInsight = "plain" (restores the v4.1.1 view).',
+    helpKeys: 'Keys: [y] approve · [n] reject · [v] toggle full diff · [?] close this help',
   },
   prompt: {
     placeholder: 'Type your request… (Enter to send / Shift+Enter for newline / Esc to quit)',
@@ -159,6 +213,11 @@ export const en = {
     hint: 'Approve (y / Enter) / Reject (n / Esc)',
     approved: 'Plan approved; starting execution',
     rejected: 'Plan rejected; nothing was executed',
+    // v5.0 T9: plan progress view text (was hardcoded in modals.tsx; moved to i18n
+    // so the "no user-facing literals inside Ink components" guard can be strict)
+    progressTitle: 'Progress {done}/{total}',
+    progressFailedSuffix: ' ({failed} failed)',
+    progressStep: 'Step {index}. {title}',
   },
   balance: {
     available: 'Account available',

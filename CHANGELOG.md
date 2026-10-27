@@ -42,6 +42,30 @@
 - 规则**逐行**匹配（不做跨行上下文）：`test-assertion-change` 会把「断言随文案/价格改动一起重写」也提示出来（medium 级），T9 UI 将以「建议重点关注」而非「危险」措辞呈现
 - 影响面只答「谁 import 了我」：间接引用与动态拼接路径看不到——`ImpactSummary.status` 会明确标注「未分析」，**不得呈现为「无影响」**
 
+### Added — v5.0 M2 审批透明化 T9：审批框升级为「风险教学卡」（2026-10-28 完成）
+
+> 定位：把 T8 的分析结果真正搬上屏幕，一眼看懂**批什么 / 影响谁 / 重点看哪行**。架构铁律：**纯字符串函数优先，Ink 只做着色与边框**（ADR-041 / §4 D70-D71）。136 文件 / 1805 用例全绿（+5 文件 / +91 用例）。
+
+- **`src/ui/approval-text.ts`（新增）**：审批卡**唯一文案来源** `renderApprovalLines(opts): ApprovalLine[]`——返回带**语义角色**的行（title / intent / nature / impact / risk / attention / focus / diff-add / diff-del / diff-hunk / diff-context / detail / fold / buttons / help），**零 Ink / React import**（护栏测试扫源码）；同文件导出 `renderApprovalText`（非 TTY 出口，与 TTY 逐行同源）、`isPlainApproval`、`analyzeApproval`→可渲染对象的 `describeImpact`、`fileLineNumbers`（按 hunk 头把 diff 下标还原成**文件行号**）、`analyzableDetail`（shell 命令文本按「新增源码行」参与规则匹配）
+- **`src/utils/text-width.ts`（新增）**：`displayWidth` / `truncateToWidth` / `wrapToWidth` / `stripAnsi`（CJK 与全角算 2、emoji 与 VS16 序列算 2、组合符号/零宽/ANSI 算 0）——**禁止用 `.length` 判宽度**（中文行必然溢出边框）；diff 行**截断**、解释性散文**折行**两把尺子分开（见下方 Fixed 第 1 条）
+- **`src/ui/toggle-throttle.ts`（新增）**：`createToggleThrottle(apply, opts)` 80ms 展示态节流（`RENDER_THROTTLE_MS`），语义为**丢弃中间态**（连按 10 次最多 2 帧），时钟/定时器可注入、无 `setInterval`、`dispose()` 清 pending（卸载不留悬挂 timer）
+- **`src/ui/modals.tsx`**：`ApprovalModal` 重写为「角色 → 颜色 + 边框 + memo + useMemo」的纯外壳（组件内**零用户可见文案字面量**，护栏测试剥离注释后断言）；high=红 / medium=黄 / **low=绿不标红**；`PlanProgressView` 的硬编码中文一并迁入 i18n（`plan.progress*`）
+- **`src/ui/App.tsx`**：`requestApproval` **先弹 plain 框再异步补 insight**（G2：绝不等待分析，`approvalSeq` 丢弃上一次审批的迟到结果）；`[v]` / `[?]` 走节流器且意图用 **ref** 维护（见下方 Fixed 第 2 条）；`y`/`n`/Esc/Ctrl+C 走 `finishApproval`，**语义与 v4.1.1 逐字节一致**（`y`→approve、`n`/Esc/Ctrl+C→reject、fail-closed），决议**不经过节流**
+- **`src/tools/registry.ts`（`ApprovalInsightHint`）/ `edit.ts` / `shell.ts`**：`ApprovalRequest` 新增可选 `insightHint: { file?, intent? }`——`edit_file` 传目标文件与「新建 / 局部修改」，shell **刻意不传**（命令没有目标文件，影响面「不适用」而不是白扫一遍全库）
+- **i18n（`zh` / `en`）**：`approval.*` 新增 rich 卡片键组（等级标题 / 操作意图 / 改动性质 / 影响面四态 / 风险点 / 关注行 / 折叠提示 / 按键 / `[?]` 说明）+ `plan.progress*`；**代码注释里写明「本组文案不得出现『危险』二字」**
+- **发布门实测（`scripts/bench-approval-ui.mjs`，新增；`npm run bench:approval-ui`）**：三段分别计时（分析 / 文案 / Ink 首帧），端到端 **P95 8.83ms**（后续复跑 9.72 / 7.96 / 7.48 / 7.39ms，**预算 150ms**）、文案生成 P95 **≤0.54ms**、Ink 首帧 P95 **≤8.61ms**（最坏 36.51ms 首轮冷启动）；`tsup` 新增 `ui/modals` 入口仅供基准脚本 import 真实组件（不塞进库 barrel，避免 import 库的人白加载 Ink）
+
+### Fixed — v5.0 T9 实测发现的两处真实缺陷
+
+- **解释性散文被当 diff 行截断，`[?]` 说明的关键半句被砍掉**：早期实现所有行统一走 `truncateToWidth`——对 **diff 行**正确（源码不能折行），对**散文**就是信息丢失（「只是『建议重点关注』，不是结论」正好被省略号吃掉，恰恰是 T8 已知局限要求必须传到的那句话）→ 两把尺子分开：diff/命令行**截断**、标题/改动性质/影响面/风险点/关注行/说明**折行**（`pushWrapped` 处理缩进续行 + `maxLines` 兜底）；回归用例断言整句在且不带 `…`。详见 `docs/09-踩坑记录/2026-10-28-审批卡散文按宽度截断导致说明被砍掉.md`
+- **连按 `v` 读到旧渲染快照，切换语义整段失效**：`useInput` 里用 `!diffFull`（渲染快照）算意图，同一批 React 更新内 10 次按键算出的目标值**全是 `true`**，节流器「丢弃中间态」忠实地把错误合并成看似合理的结果（10 次连按停在展开态）→ 展示态逻辑真值改用 **ref**（同步赋值），`requestApproval` / `finishApproval` 双入口 ref+state 一起归零；「意图正确」与「节流生效」分开测（`toggle-throttle.test.ts` 原子断言 apply 次数 ≤3 且最后一次值正确）。详见 `docs/09-踩坑记录/2026-10-28-连按v意图读到旧渲染快照.md`
+
+### Known limitations — v5.0 T9
+
+- diff 折叠只保「⚠️ 行 ± 2 行」：多 hunk 的大改动需要按 `v` 才看得到全貌（性能红线的代价，刻意接受）
+- 「建议重点关注」的行号由 hunk 头推算，hunk 头非标准/被截断时回退到 diff 下标，可能与真实文件行号有偏差
+- 影响面仍是「谁 import 了我」的近似（不做 AST）：动态 import 拼接路径、字符串路径引用不计入
+
 ### Changed — v5.0 M1
 
 - **计价时段与 ollama 切换时段解耦**（T7 / R7）：`core/peak-time.ts` 拆 `PRICING_PEAK_RANGES` + `isPricingPeakTime`（厂商定价事实）与 `SWITCH_PEAK_RANGES` + `isPeakTime`（可被用户关闭的切换策略），`PEAK_TIME_RANGES` 保留为切换口径别名；`costFor` / `cacheHitCostFor` / `costForProvider` / `costProfileFor` 统一接受 `at` 时间注入，Provider 层以 `now()` 构造注入（消除「白天测高峰价、晚上测空闲价」的时间依赖 flaky）

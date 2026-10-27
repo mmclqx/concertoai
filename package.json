@@ -40,6 +40,9 @@
     "lint:fix": "biome check --write src tests",
     "typecheck": "tsc --noEmit",
     "notices": "node scripts/gen-third-party-notices.mjs",
+    "bench:approval": "node scripts/bench-approval.mjs",
+    "bench:approval-ui": "node scripts/bench-approval-ui.mjs",
+    "bench:false-positive": "node scripts/verify-false-positive.mjs",
     "verify": "npm run build && npm run lint && npm run typecheck && npm run test -- --silent",
     "prepublishOnly": "npm run verify",
     "version": "node scripts/sync-version.mjs"

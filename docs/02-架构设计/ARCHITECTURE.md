@@ -1,6 +1,6 @@
 # ConcertoAI 架构文档
 
-> 版本：v5.0（含 v2.2 / v3.1 / v3.2 / v3.3 / v3.4 / v4.0 / v4.1 / v5.0 M1-M2 全部已交付功能）· 2026-10-27
+> 版本：v5.0（含 v2.2 / v3.1 / v3.2 / v3.3 / v3.4 / v4.0 / v4.1 / v5.0 M1-M2 全部已交付功能）· 2026-10-28
 > 本文档基于当前代码实现编写，作为后续维护与扩展的技术参考。
 > 配套文档：[v3.0 开发任务](../03-开发计划与任务/v3.0-dev-tasks.md)、[v3.1 开发计划](../03-开发计划与任务/v3.1-dev-plan-ai.md)、[v3.3 开发计划](../03-开发计划与任务/v3.3-dev-plan.md)、[v3.4 开发计划](../03-开发计划与任务/v3.4-dev-plan.md)、[v4.0 开发计划终稿](../03-开发计划与任务/v4.0-dev-plan-final.md)（已实施）、[任务看板](../03-开发计划与任务/TASKS.md)
 
@@ -12,7 +12,7 @@ ConcertoAI 是一款**中文优先**的终端编码助手 CLI（DeepSeek 驱动�
 
 - **技术栈**：TypeScript (strict) + Node ≥22 + ESM，Ink 7 (React 19) 渲染 TUI，commander 解析 CLI，zod 做工具参数校验，vitest 测试，Biome 检查，tsup 打包
 - **运行时依赖**：`ink` / `react` / `commander` / `zod` / `cli-highlight` / `chalk` / `tiktoken`（v2.0 BPE 精确 Token 计数）
-- **测试现状**：131 个测试文件、1714 个用例，`npm run verify` 全绿，`npm audit` 0 漏洞；已用真实 `DEEPSEEK_API_KEY` 完成端到端冒烟
+- **测试现状**：136 个测试文件、1805 个用例，`npm run verify` 全绿，`npm audit` 0 漏洞；已用真实 `DEEPSEEK_API_KEY` 完成端到端冒烟
 - **安全基线**：编辑与命令一律审批（fail-closed）、路径沙箱、结果截断、白名单免审批——无 yolo 模式
 - **v3.1 新增能力**：AI 自我修复闭环（self-heal）/ 多项目管理（project）/ 多租户登录（account）/ Orchestrator CLI（team、/orchestrate、audit export）/ 结构化错误增强（error-codes）；**v3.1 预留功能（已交付）**：`concertoai balance`（余额查询）/ `concertoai doctor`（环境诊断）、配置目录迁移 `~/.lumen → ~/.concertoai`（`src/store/paths.ts` 单一来源 + 幂等迁移）；**v2.2 智能成本控制**（高峰时段模型自动切换，见 §4 D41）
 - **v3.2 新增能力**：跨平台 CI 矩阵与 spawn 审计（ADR-032）/ UNC 路径与 EXDEV 边界（ADR-031）/ self-heal 模块化拆分（ADR-030）/ audit 损坏行统计 + /orchestrate diagnostics / 长任务进度推送（team onProgress + self-heal onPhase）/ project-account 视觉与 doctor 账号完整性 / 启动期缓存（ADR-029）/ Agent 市场版本对比与 `update --all`
@@ -20,7 +20,7 @@ ConcertoAI 是一款**中文优先**的终端编码助手 CLI（DeepSeek 驱动�
 - **v3.4 审查闭环 + VS Code 崩溃防护**：S-C1 `collectKeys` maxDepth（en.test.ts）/ I1 feedback 数据层 i18n（`selfHeal.feedback*` 键组，en 下全英文）/ I2 正则常量去 `g`/`gm` 全项目复核（classifier / edit / read / tokenizer / planner）/ I3 en 字典 CJK 校验 / **`concertoai doctor --vscode`**（`src/cli/vscode-health.ts`：进程数 / 崩溃转储 / AI 扩展 / argv.json 四维诊断，argv.json 字段名**单数** `disable-extension` 校验（复数 `disable-extensions` = 无效用法告警，踩坑记录 §六/§七）
 - **v4.0 已完成**：架构拐点——从「单体工具」到「插件化平台」。M0-M8 约 32.5h 全部落地：**M0 已完成**（config v3→v4 迁移器骨架 + 破坏性变更清单）；**M1 已完成**（Reviewer autoFix 闭环 `reviewer/autofix.ts` + `/review --fix`：A/B 分批 → 批量审批 fail-closed → 快照 → 写盘 → 增量 verify → commit/rollback，≤2 次交互）；**M2 已完成**（`concertoai workflow` DAG 工作流引擎 `workflow/`：4 内置模板 + YAML 解析/序列化 + NL 自然语言生成 + TaskScheduler 执行（拓扑/并行/审批/失败恢复 R/S/F/A）+ SnapshotManager 整体回滚 + 依赖推断提示确认 + export/import 分享 + `/workflow` chat 内可用）；**M3 已完成**（多 Provider 抽象层 `model/`：Provider 接口四能力（chat/tokenize/cost/healthCheck）+ DeepSeek/OpenAI/Ollama 三实现 + ProviderRegistry/Router（选择/切换/启动 fallback ≤1 次）+ `--provider` 临时切换 + `provider list/auth/switch` + `config set provider` + config v3→v4 自动迁移（备份 config.v3.bak + `_migrated` 幂等 + doctor 迁移完整性四检测）+ doctor 模型推荐（复杂度×预算×本地 Ollama + 月成本预估）+ StatusBar 成本对比/fallback 提示）；**M4 已完成**（插件市场 `plugin/` + `market/plugins[]`：PluginInstaller 全流程（注册表匹配→下载/builtin 直装→sha256→权限清单确认 fail-closed→落盘）+ `plugin install/search/list/remove/browse/recommend/popular` CLI + chat 内 `/plugin` + PluginLoader 双路径扫描（全局 `~/.concertoai/plugins/` + 项目 `.concertoai/plugins/`，ESM 强制）+ PluginRuntime 动态装配（工具注入 ToolRegistry 带 pluginSource/pluginPermission + 调用前权限钩子拦截）+ PermissionEnforcer 六类权限运行时 enforce（声明检查 + network/shell/mcp 白名单细粒度，见 §4 D57）+ 4 内置示例插件（git-status / api-docs / todo-tracker / release-helper）+ installer 按 type 分派（skill/agent/plugin，零破坏）；**M5 已完成**（`team --parallel` 多 Agent 并行 `orchestrator/parallel.ts`：自然语言/显式 `--parallel` 并行意图识别 → 任务按依赖分层 wave（复用 topologicalSort）→ 层内 Promise.all 并行 + 文件冲突组整组串行化 → 每任务独立 AgentContext/taskId/SnapshotManager 事务 → 汇总报告（成功/失败 + 冲突提示 + 降级提示），意图识别失败降级串行不产生副作用，见 §4 D58）；**M6 已完成**（LSP 三来源诊断 `lsp/`：`concertoai lsp --stdio`——LSP 3.17 最小闭环（JSON-RPC 2.0 + Content-Length 帧，跨平台 CRLF/LF）→ initialize 能力声明 + didOpen/didChange/didSave → 三来源诊断（biome lint → Warning / tsc type → Error / self-heal 静态规则：未使用 import、显式 any、console.log → Information）→ publishDiagnostics 推送 Problems 面板 + CodeAction「🔧 用 ConcertoAI 修复」（biome check --write 副本 diff，不直接改用户文件）与「移除未使用的 import / console.log」行删除，修复后 didChange 自动刷新诊断消失；Web UI + VS Code 扩展骨架延后 v4.1，见 §4 D59）；**M7 已完成**（TS7 评估 NO-GO：调研报告 `docs/10-技术评估/ts7-evaluation.md` 覆盖四维度（type stripping / erasableSyntaxOnly / 工具链 / Node 运行时）→ 锁定 TS 5.9 + v4.1 再评估，ADR-037 / 决策表 D60——收益趋近 0（esbuild 构建不依赖 tsc 产物）+ 12 处不可擦除语法改造成本 + 工具链适配未验证）。架构决策见 ADR-033~037（决策表 D53~D60）；详细计划见 [v4.0-dev-plan-final.md](../03-开发计划与任务/v4.0-dev-plan-final.md)，本架构正文随实施进度同步更新
 - **v4.1 已完成（体验打磨轮 Last-Mile UX，2026-08-15）**：不做架构重构，只打磨「用户第一次跑 / 失败时 / 退出时」三条边缘路径。T1.1 **步骤输出截断 + 智能错误摘要**（`src/utils/truncate.ts` `truncateMiddle` 头尾保留 + `src/utils/error-summary.ts` `extractErrorSummary` 识别 tsc/biome/npm/vitest 关键行 + workflow 步骤输出 4000 字符截断 + 失败先摘要后详情）；T1.2 **F 选项等待态闭环 + 60s 超时**（`promptLine` 扩展可选 timeoutMs（AbortController 竞速，缺省不超时）+ `promptRecoveryFix` 等待循环 Enter 重试 / a 放弃 / 超时自动放弃回滚 / 非 TTY fail-closed）；T1.3 **进度刷屏根因修复**（executor `TaskScheduler({ maxRetries: 0 })` 禁止内部静默重试 + 步骤 `retry` 语义重定义为「恢复后重试上限」缺省不限向后兼容）；T1.4 **preflight 环境预检 + 轻量自动初始化**（`src/workflow/preflight.ts`：脚本/依赖/配置三维预检 + y/N 自动装 biome/tsc + 写 biome.json + 注入 scripts，test 仅提示，非 TTY fail-closed，package.json JSON 读写写入后校验失败不落盘）；T2.1 **错误「下一步」指引 + CLI 风格统一**（runFailedNext / fatalNextStep / workflowNotFound 统一「💡 下一步：…」）；T2.2 **--help 分组示例 + 首次欢迎引导**（`~/.concertoai/.welcome-seen` 标记文件）；T3.1 **AGENTS.md 边缘路径强制覆盖规范**。详细计划见 [v4.1-dev-plan.md](../03-开发计划与任务/v4.1-dev-plan.md)，任务书见 [v4.1-dev-tasks.md](../03-开发计划与任务/v4.1-dev-tasks.md)
-- **v5.0 已完成（从「黑盒引擎」到「透明驾驶舱」）**：**M1 基线承接** T1-T7（npx 零安装 + 缺 Key 中文引导 / `update` / `ccai` 短命令 / `THIRD_PARTY_NOTICES` 脚本化 / `init` 双输出 AGENTS.md+PROJECT_GUIDE.md / `/model` 四子命令 + `auto` 预设 / DeepSeek 双档计价 + 法定节假日与调休口径）；**M2 T8 审批风险评估引擎**（`src/core/approval-insight.ts` + `risk-rules.ts` 15 条规则 + `impact-scan.ts` 影响面扫描，**纯本地零模型零网络**，ADR-040 / §4 D68-D69）：`analyzeApproval` 把 diff 变成「风险点 + 改动性质 + 该重点看哪行 + 影响谁」的可渲染对象；8 行降级矩阵（非 TTY / CI / 超大 diff / 超时 / 抛错 / config-off / 空命中 / 超大项目）**只减少展示、绝不阻断审批**（G2 铁律：分析抛错返回可渲染空 insight）；发布门 = 性能 6 项预算（bench 脚本）+ 26 条真实 diff 人工标注样本的误报率/召回率（fixtures 回归，误报 0/19=0%、召回 7/7=100%）
+- **v5.0 已完成（从「黑盒引擎」到「透明驾驶舱」）**：**M1 基线承接** T1-T7（npx 零安装 + 缺 Key 中文引导 / `update` / `ccai` 短命令 / `THIRD_PARTY_NOTICES` 脚本化 / `init` 双输出 AGENTS.md+PROJECT_GUIDE.md / `/model` 四子命令 + `auto` 预设 / DeepSeek 双档计价 + 法定节假日与调休口径）；**M2 T8 审批风险评估引擎**（`src/core/approval-insight.ts` + `risk-rules.ts` 15 条规则 + `impact-scan.ts` 影响面扫描，**纯本地零模型零网络**，ADR-040 / §4 D68-D69）：`analyzeApproval` 把 diff 变成「风险点 + 改动性质 + 该重点看哪行 + 影响谁」的可渲染对象；8 行降级矩阵（非 TTY / CI / 超大 diff / 超时 / 抛错 / config-off / 空命中 / 超大项目）**只减少展示、绝不阻断审批**（G2 铁律：分析抛错返回可渲染空 insight）；发布门 = 性能 6 项预算（bench 脚本）+ 26 条真实 diff 人工标注样本的误报率/召回率（fixtures 回归，误报 0/19=0%、召回 7/7=100%）；**M2 T9 审批 UI 升级**（`src/ui/approval-text.ts` + `toggle-throttle.ts` + `utils/text-width.ts`，ADR-041 / §4 D70-D71）：审批框从「一行 summary + diff」变成**风险教学卡**（标题/操作意图/改动性质/影响面/风险点/建议重点关注行/折叠 diff/按键四件套 + `[?]` 内联说明），架构铁律是**纯字符串函数优先、Ink 只做着色与边框**（`approval-text.ts` 零 Ink/React 依赖，plain 降级与 TTY 正常路径共用同一套文案，逐行快照断言一致性），并立三条措辞/降级红线：medium 绝不出现「危险」、影响面未分析绝不说「0 个引用」、默认 diff ≤12 行 + `[v]`/`[?]` 80ms 节流而 `y`/`n` 决议不节流；发布门 = `scripts/bench-approval-ui.mjs`（分析/文案/Ink 首帧三段分别计时，实测 P95 端到端 15.27ms / 预算 150ms）
 
 ## 2. 架构全景图
 
@@ -249,6 +249,24 @@ requestApproval(ctx, {kind, summary, detail})
   → 整体 try/catch：**分析抛错 → 返回可渲染空 insight（degraded='error'），审批照常弹**
 ```
 
+**审批卡渲染（v5.0 T9，三层架构不可颠倒，ADR-041 / §4 D70-D71）**：
+
+```
+insight ──▶ ① renderApprovalLines(opts): ApprovalLine[]      src/ui/approval-text.ts（零 Ink/React）
+               ├─ 角色化：title / intent / nature / impact / risk / attention / focus / diff-* / fold / buttons / help
+               ├─ 宽度：diff 行**截断**，散文（说明/风险点）**折行**（中文按显示宽度 2 格算）
+               └─ 折叠：默认只渲染「⚠️ 行 ± 2 行」且总 diff ≤ 12 行；fullDiff=true → ≤ 500 行 + 截断提示
+                 │
+                 ├──▶ ② TTY：ApprovalModal **只按角色上色 + 画边框**，文本全部来自 ①（无文案字面量）
+                 └──▶ ③ 非 TTY / plain / CI / 分析失败：renderApprovalText(opts) 直接输出（等价 v4.1.1 三行）
+
+App.tsx：requestApproval(request)
+  → 立刻 setPending + phase='approval'（**先弹 plain 框，绝不等待分析**，G2）
+  → 异步 analyzeApproval(...) → 到达后 setPendingInsight（seq 校验，丢弃上一次审批的迟到结果）
+  → 按键：y/Enter → resolve(true)；n/Esc/Ctrl+C → resolve(false)（**决议不节流**）
+          v / ? → 展示态切换，走 createToggleThrottle（80ms，丢弃中间态；意图用 ref 读，避免读到旧渲染快照）
+```
+
 ### 3.4 消息生命周期与序列化
 
 ```
@@ -361,6 +379,8 @@ MCP 服务故障
 | D66 | **计价高峰排除中国法定节假日 + 纳入调休上班日；节假日数据不内置推测值**（v5.0 T7 修订 / ADR-038）：新增 `core/holidays.ts`（`configureHolidayCalendar` / `isCnStatutoryHoliday` / `isCnMakeupWorkday` / `localDateKey` 本地时区补零）+ `peak-time.ts` 的 `isPricingWorkday`：`计价工作日 = (周一~周五 且 非法定节假日) 或 调休上班日`（节假日优先于调休，fail-safe 向便宜）；`BUILTIN_HOLIDAY_CALENDAR` **默认空**，由 `config.pricingHolidays: { holidays, makeupWorkdays }` 在 `loadConfig` 时装载（模块级状态，避免污染 8+ 个价格链签名）；未配置时 `balance` 显式提示「可能显示错误档位」；非法日期提示后忽略 | (a) 节假日按「周一~周五」判定会算错钱（国庆按高峰价收 = 多收费）；(b) **只排除不纳入是半个修复**——调休补班日是真实工作日，不纳入会少算高峰价；(c) 国务院逐年发布放假与调休安排，凭记忆内置 = 猜错一天算错钱，故默认空 + 显式配置 + 未配置时如实提示（不静默）；(d) 切换口径 `isPeakTime` 有意不改（用户可配置的切换策略，改它会静默改变既有行为） | `src/core/holidays.ts`（新增）+ `src/core/peak-time.ts` + `src/store/config.ts` + `src/cli/balance.ts` + `src/i18n/{zh,en}.ts` + `tests/core/holidays.test.ts` + `tests/model/models.test.ts` + `tests/store/config.test.ts` |
 | D67 | **配置迁移 `legacy` 字段在读取层摊平（顶层优先）**（v5.0 T7 修订，修 v4.0 存量缺陷）：`loadConfig` 对 `schemaVersion === 2` 与「迁移成功后重读」两条路径统一走 `flattenLegacy`——`merged = { ...legacy, ...顶层非 undefined }`，不返回 `legacy` 键、不改写磁盘 | `migrateV3ToV4` 把 `allowlist` / `peakTimeStrategy` / `mcpServers` / `sessionDir` / `locale` 等收进 `legacy` 子对象，而**全仓零处读取** legacy（消费方全读顶层）→ 迁移「成功」（`_migrated` + 备份 + doctor 显示已迁移）但配置全失效：白名单要重批、MCP 不启动、高峰策略回落 ask。修复放读取层而非迁移层：已发布迁移逻辑改动风险大（用户盘上可能已是迁移后形态），读取层摊平对所有历史形态一次生效 | `src/store/config.ts` + `tests/store/config.test.ts` |
 | D68 | **审批洞察纯本地化 + 分析失败永不阻断审批（fail-open）**（v5.0 T8 / ADR-040）：`core/approval-insight.ts` 的 `analyzeApproval` = `parseDiff`（剥 CRLF/BOM）→ 15 条规则逐行匹配 → 影响面扫描（仅 medium/high）→ 聚合 `level/changeNatures/focusLines`；**零模型调用 / 零网络 / 零 Token**；8 行降级矩阵（非 TTY / CI / diff>500 行 / impact 超时 / 抛错 / `config.approvalInsight='plain'` / 空命中 / 文件数>2000）逐行有单测，且**整体再包一层 try/catch（G2 铁律）**：抛错即返回 `degraded='error'` 的可渲染空 insight，审批流程照旧 | 与 D5 的 fail-closed 方向相反但不矛盾：fail-closed 管「批准动作」（不确定就不执行），fail-open 管「辅助信息」（不确定就不显示）；若分析失败阻断审批，等于让一个可选功能挟持核心流程——这是 v4.1 边缘路径教训的直接应用。纯本地还与低成本定位自洽：审批是高频动作，模型分析会让「省钱」和「安全」互相打脸（实测 P95 14.59ms vs 预算 150ms，与 Token 数无关） | `src/core/approval-insight.ts` + `src/core/impact-scan.ts` + `src/store/config.ts`（approvalInsight/riskRules）+ `tests/core/approval-insight.test.ts` + `tests/core/impact-scan.test.ts` |
+| D70 | **审批卡「纯字符串优先」，Ink 只做外壳 + 三条措辞/降级红线**（v5.0 T9 / ADR-041）：`src/ui/approval-text.ts` 的 `renderApprovalLines(opts)` 是**唯一文案来源**（零 Ink/React 依赖），返回带**语义角色**的行数组（title/intent/nature/impact/risk/attention/focus/diff-*/fold/buttons/help）；`modals.tsx` 的 `ApprovalModal` 只做「角色 → 颜色 + 边框」，非 TTY 走 `renderApprovalText` 直接输出同一套行。三条红线：① **medium 绝不出现「危险」**（`test-assertion-change` 等噪声规则一律「🟡 中风险审批」+「建议重点关注（中风险提示，非阻断）」，护栏测试遍历 15 条规则断言渲染结果无「危险」）② **未分析 ≠ 无影响**（`impact.status` 为 timeout/skipped/error 时只说「影响面未分析（超时 / 项目过大 / 读取失败）」，禁用「无影响」「0 个引用」；仅 `ok && count===0` 才允许「未发现其他文件引用（已扫描 N 个）」）③ **不吃掉 T8 性能**（默认 diff ≤12 行且保 ⚠️ 行 ±2 行、`[v]` ≤500 行、`[v]`/`[?]` 80ms 节流丢弃中间态，`y`/`n` **不节流**） | (a) 单一来源让「plain 与 rich 文案漂移」这类问题从结构上消失（`rich=false` 即 v4.1.1 三行，逐字节等价）；(b) 文案层是纯函数 → 全部分支可用纯单测覆盖（40+ 条），Ink 测试只验排版；(c) 措辞要求若没有集中的文案工厂，会散落到各组件被后人改回去——集中后一行断言即可守住；(d) 性能必须可归因：bench 把「分析/文案/Ink 首帧」分开计时（实测 16.05 / 0.17 / 14.90ms，端到端 P95 15.27ms vs 预算 150ms） | `src/ui/approval-text.ts`（新增）+ `src/ui/modals.tsx` + `src/ui/App.tsx` + `src/tools/registry.ts`（`ApprovalRequest.insightHint`）+ `src/tools/{edit,shell}.ts` + `src/i18n/{zh,en}.ts` + `tests/ui/approval-text.test.ts` + `tests/ui/approval-modal.test.tsx` + `tests/ui/approval-integration.test.tsx` + `scripts/bench-approval-ui.mjs` |
+| D71 | **展示态切换 80ms 节流 + 意图用 ref 而非渲染快照**（v5.0 T9 / §8.9）：`src/ui/toggle-throttle.ts` 的 `createToggleThrottle(apply, opts)` 是纯逻辑（时钟/定时器可注入、无 `setInterval`、`dispose()` 清 pending）；语义为**丢弃中间态**（距上次应用 ≥80ms 立即应用，否则只记最后一次意图，到期 flush 一次）→ 连按 10 次最多 2 次渲染；`App.tsx` 用 `diffFullRef`/`helpOpenRef` 维护**逻辑真值**（ref 同步赋值），state 只负责渲染，`requestApproval`/`finishApproval` 双双归零 | 连按会把错误「合并」成看似合理的结果：若从渲染快照读 `diffFull` 再取反，同一批事件里 10 次算出的目标值全相同（实测 10 次连按最终停在展开态）。节流的正确性依赖**喂进去的意图是对的**，故「意图（ref）」与「节流（throttle）」分开测。安全红线：`y`/`n` 决议**绝不经过节流器**（按键必须即时响应，G1） | `src/ui/toggle-throttle.ts`（新增）+ `src/ui/App.tsx` + `tests/ui/toggle-throttle.test.ts` + `tests/ui/approval-integration.test.tsx` |
 | D69 | **风险规则表三条红线：宁漏不误 + prefilter/pattern 双向可达 + 正则禁用无界量词**（v5.0 T8）：① **宁漏不误**——误报稀释提示可信度（狼来了），每条规则必须带 `negativePatterns`（排除）+ `why`（为什么是风险）+ `suggestion`（该看什么），并用 26 条真实 git diff 的**人工标注**作发布门（no-risk 误报 ≤1 且 <5%、high 级误报必须 0、标注 risk 召回 100%）；② **prefilter 与 patterns 双向可达**——prefilter 是粗筛（命中才跑正则），必须覆盖每条 pattern 的字面特征，否则正则成死代码（实测 `dependency-change` 两条 pattern 曾因 prefilter 只写 `": "^` 而永远跑不到）；③ **正则禁用无界量词**——`\w+` / `.*` 在 10 万字符单行上退化 O(n²)（实测单规则 1766ms），键长一律收上界（`{1,40}`）并用字面量起点定位，护栏为「15 条规则 × 10 万字符长行逐条 <20ms」用例 | (a) 规则表的可信度是产品级资产：一次 high 级误报（如把 `import '../core/x'` 判成文件系统越界）会让用户此后忽略所有提示；(b) prefilter 与 pattern 是两份独立维护的字面特征，没有护栏必然漂移——同源坑在 `network-timeout` 上已重演过一次；(c) 性能红线只有落成用例才是红线，且 bench 脚本必须与预算表**一一对应**（原脚本漏 4 项预算 = 制造假绿） | `src/core/risk-rules.ts` + `tests/core/risk-rules.test.ts`（W8 防 ReDoS + 规则结构）+ `tests/fixtures/approval/`（26 样本 + manifest.json）+ `scripts/bench-approval.mjs` + `scripts/verify-false-positive.mjs` |
 
 ## 5. 目录结构说明
@@ -371,9 +391,14 @@ concertoai/
 ├── tsconfig.json         strict 全开；verbatimModuleSyntax；jsx: react-jsx；noEmit（tsup 负责产物）
 ├── biome.json            Biome 2.5；lint 范围 src tests
 ├── vitest.config.ts      include tests/**/*.test.{ts,tsx}（注意：必须含 tsx，否则 UI 测试被静默跳过）
-├── tsup.config.ts        entry：src/index.ts（库）+ src/cli/index.ts（CLI）→ dist/（ESM + d.ts + sourcemap）
+├── tsup.config.ts        entry：src/index.ts（库）+ src/cli/index.ts（CLI）+ src/ui/modals.tsx（v5.0 T9：仅供基准脚本 import 真实 Ink 组件，不进库 barrel，避免 import 库的人白加载 Ink）→ dist/（ESM + d.ts + sourcemap）
 ├── CHANGELOG.md          变更日志（npm version 发布流程）
-├── scripts/              sync-version.mjs（npm version 钩子）/ smoke-install.mjs（安装冒烟）
+├── scripts/
+│   ├── sync-version.mjs（npm version 钩子）/ smoke-install.mjs（安装冒烟）
+│   ├── gen-third-party-notices.mjs  THIRD_PARTY_NOTICES 脚本化生成（v5.0 T4）
+│   ├── bench-approval.mjs           T8 发布门：analyzeDiff / 单规则 ReDoS / analyzeImpact 六项性能预算
+│   ├── verify-false-positive.mjs    T8 发布门：26 条人工标注 diff 的误报率/召回率
+│   └── bench-approval-ui.mjs        T9 发布门：分析 / 文案 / Ink 首帧三段分别计时（端到端 P95 预算 150ms）
 ├── docs/
 │   ├── 01-产品定位与范围.md
 │   ├── 02-架构设计/ARCHITECTURE.md   ← 本文档
@@ -427,16 +452,22 @@ concertoai/
 │   │       ├── plugin.ts   /plugin list|install|remove：chat 内插件管理（v4.0 M4，复用 CLI 实现 + 权限确认）
 │   │       └── model.ts    /model [list|auto|<id>]：模型查看与切换（v5.0 T6；升级方向走审批框确认、降级直接生效，无自动切换路径）
 │   ├── ui/
-│   │   ├── App.tsx       状态机组件：send/sendPlan/executePlan/审批挂起/消息渲染/错误显示；长任务进度消息推送 + activeTool 阶段更新（v3.2 M4）
+│   │   ├── App.tsx       状态机组件：send/sendPlan/executePlan/审批挂起/消息渲染/错误显示；长任务进度消息推送 + activeTool 阶段更新（v3.2 M4）；**审批流（v5.0 T9）**：先弹 plain 框再异步补 insight（G2，approvalSeq 丢弃迟到结果）+ `[v]`/`[?]` 展示态经 80ms 节流（意图走 ref）+ `y`/`n` 决议不节流（G1）
 │   │   ├── PromptInput.tsx  光标移动 + 历史浏览 + 多行输入
 │   │   ├── StreamingView.tsx 流式 markdown→ANSI（空文本显示 spinner）
 │   │   ├── markdown.tsx   markdown 解析 + cli-highlight 高亮（纯 ANSI 字符串）
-│   │   ├── modals.tsx    ApprovalModal + EditConfirm/ShellConfirm/PlanConfirm
+│   │   ├── approval-text.ts  审批卡**唯一文案来源**（v5.0 T9，ADR-041）：renderApprovalLines → 带语义角色的行；renderApprovalText（非 TTY 出口，与 TTY 同源）/ isPlainApproval / describeImpact（影响面四态）/ fileLineNumbers（hunk 头还原文件行号）/ analyzableDetail（shell 命令按新增行参与规则）；**零 Ink/React 依赖**（护栏测试扫源码）
+│   │   ├── toggle-throttle.ts 展示态切换节流（v5.0 T9.3c）：createToggleThrottle 80ms / 丢弃中间态 / 时钟与定时器可注入 / dispose 清 pending；**只用于 `[v]`/`[?]`，绝不用于 `y`/`n`**
+│   │   ├── modals.tsx    ApprovalModal（v5.0 T9：高风险教学卡外壳——只按「角色 → 颜色」着色 + 画边框，**组件内零用户可见文案字面量**）+ EditConfirm/ShellConfirm/PlanConfirm + PlanProgressView（文案走 i18n `plan.progress*`）
 │   │   ├── SessionPicker.tsx 会话列表交互选择（-r 无 ID）
 │   │   ├── ObservabilityPanel.tsx Agent 协作流程树面板（v3.0 M5，可展开/收起）
 │   │   ├── ReviewReport.tsx /review 审查报告组件（v2.1，问题分级渲染）
 │   │   ├── Spinner.tsx   Braille 进度指示
 │   │   └── StatusBar.tsx 模型名/token（真实 usage/估算）/成本（costFor 实时计算）
+│   ├── utils/            跨层纯工具（无 IO、无 UI 依赖）
+│   │   ├── truncate.ts   输出截断（v4.1 T1.1）：truncateMiddle 头尾保留
+│   │   ├── error-summary.ts 错误摘要（v4.1 T1.1）：extractErrorSummary 识别 tsc/biome/npm/vitest 关键行
+│   │   └── text-width.ts 终端显示宽度（v5.0 T9）：displayWidth / truncateToWidth / wrapToWidth / stripAnsi——CJK 与全角算 2、emoji 与 VS16 算 2、组合符/零宽/ANSI 算 0；**禁止用 .length 判宽度**；diff 行截断、散文折行两把尺子
 │   ├── loop/
 │   │   ├── loop.ts       runLoop / MAX_LOOP_TURNS=50 / MAX_REPAIRS=2 / LoopEvent（chunk/tool_call/tool_result/usage/error）
 │   │   ├── self-heal/    AI 自我修复闭环（v3.1 M1，v3.2 M2 拆分为 5 模块，详见 §4 D42 / §8）：
@@ -738,6 +769,17 @@ npm run verify     # 验收：build + lint + typecheck + test（--silent）
 | 影响面只回答「谁 import 了我」（无 AST、无全库语义分析） | 间接引用（A→B→C）与动态拼接路径看不到 | `ImpactSummary.status` 明确 `ok / timeout / skipped / error`，T9 UI 硬约束：**不得把「未分析」呈现为「无影响」** |
 | 规则表 15 条只覆盖常见模式，不追求完备 | 罕见风险形态（自定义 DSL / 领域专用写法）不会命中 | `config.riskRules.disabled` 可关闭单条规则（未知 id 静默忽略）；后续按真实误报/漏报迭代，**不靠堆规则**（堆规则的代价是误报与耗时双增） |
 | ReDoS 防护依赖「规则作者收敛量词」这一人工纪律 | 新增规则若写 `\w+` / `.*` 会重新引入 O(n²) | 护栏用例「15 条规则 × 10 万字符长行逐条 <20ms」会把新增规则的退化立刻打红（全员遍历规则表，不是抽样） |
+
+> 上表两条「T9 UI 硬约束」已由 T9 落地并加护栏：medium 措辞遍历 15 条规则断言全文无「危险」（`tests/ui/approval-text.test.ts`）；影响面四态文案互斥、`timeout/skipped/error` 下断言不含「无影响 / 0 个引用」。
+
+### 8.8b v5.0 T9 已知局限（审批卡渲染，ADR-041 / §4 D70-D71）
+
+| 局限 | 影响 | 处理 |
+| --- | --- | --- |
+| 折叠视图只保「⚠️ 行 ± 2 行」（`DIFF_CONTEXT_LINES`） | 多 hunk 的大改动默认看不到全貌 | 性能红线的**刻意代价**（默认 ≤12 行 `COLLAPSED_DIFF_LINES`）；`[v]` 一键展开（≤500 行 `MAX_FULL_DIFF_LINES` + 截断提示），折叠行尾明确写「还有 N 行未显示，按 v 查看」 |
+| 「建议重点关注」行号由 hunk 头推算（`fileLineNumbers`） | hunk 头非标准 / 被截断时回退为 diff 下标，行号可能与真实文件有偏差 | 已如实授予兜底（不静默消失）；`focusLines` 与 hits 对不上时回退「距离最近命中」的文案，避免整块提示消失 |
+| 散文折行 `maxLines` 有上限（说明区 6 行 / 其他 3 行） | 极端长文案末尾会被 `…` 收尾 | 上限只用于防异常输入撑爆卡片；正常文案（实测 76 格宽下中文 1-2 行）远达不到 |
+| 影响面「不适用」与「未分析」是两种事实（`impactApplies=false`） | shell / 模型切换没有文件引用面 | 显示「不适用（该操作不涉及文件引用）」，**不冒充** `skipped`（「项目过大」会是假话），也不扫全库再说「0 个引用」 |
 
 ### 8.9 规划（v3.1+，详见 [v3.1-dev-plan-ai.md](../03-开发计划与任务/v3.1-dev-plan-ai.md)）
 

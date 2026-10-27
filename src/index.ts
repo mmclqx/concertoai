@@ -151,9 +151,37 @@ export {
   resolveSafe,
   searchContentTool,
 } from './tools/read';
-export type { ApprovalRequest, ToolContext, ToolResult, ToolSpec } from './tools/registry';
+export type {
+  ApprovalInsightHint,
+  ApprovalRequest,
+  ToolContext,
+  ToolResult,
+  ToolSpec,
+} from './tools/registry';
 export { requestApproval, ToolRegistry } from './tools/registry';
 export { DEFAULT_SHELL_TIMEOUT_MS, isAllowlisted, shellTool } from './tools/shell';
 // 版本号独立于 barrel（v2.1 性能优化）：CLI 入口直接读取 src/version.ts，
 // 避免仅为取版本号而加载整个库的模块树。
+export type {
+  ApprovalIntent,
+  ApprovalKind,
+  ApprovalLine,
+  ApprovalLineRole,
+  ApprovalTextOptions,
+} from './ui/approval-text';
+// v5.0 T9：审批卡纯字符串渲染（非 TTY / 嵌入场景与 TUI 共用同一套文案）
+export {
+  analyzableDetail,
+  COLLAPSED_DIFF_LINES,
+  DEFAULT_CARD_WIDTH,
+  describeImpact,
+  fileLineNumbers,
+  isPlainApproval,
+  MAX_FULL_DIFF_LINES,
+  renderApprovalLines,
+  renderApprovalText,
+} from './ui/approval-text';
+export type { ToggleThrottle, ToggleThrottleOptions } from './ui/toggle-throttle';
+export { createToggleThrottle, RENDER_THROTTLE_MS } from './ui/toggle-throttle';
+export { displayWidth, ELLIPSIS, stripAnsi, truncateToWidth } from './utils/text-width';
 export { VERSION } from './version';

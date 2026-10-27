@@ -226,6 +226,9 @@ export async function runChat(options: RunChatOptions): Promise<void> {
       sessionId={sessionId}
       initialHistory={history}
       approvalStrategy={resolved.approvalPolicy}
+      // v5.0 T9：审批洞察配置（`plain` = v4.1.1 原貌；规则停用列表来自 config.riskRules）
+      approvalInsightMode={config.approvalInsight}
+      riskRulesDisabled={config.riskRules?.disabled}
       memoryInjector={
         mcpManager !== undefined ? new MemoryInjector(mcpManager, {}, knowledgeStore) : undefined
       }

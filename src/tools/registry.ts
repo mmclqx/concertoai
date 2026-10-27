@@ -21,6 +21,24 @@ export interface ToolContext {
   snapshotStore?: SnapshotStore;
 }
 
+/**
+ * 审批上下文提示（v5.0 T9）。
+ *
+ * 工具侧比审批 UI 更清楚「这次改的是什么」，把这类**结构化**信息传给洞察层，
+ * 而不是让 UI 去猜 summary/detail 里的字符串。
+ */
+export interface ApprovalInsightHint {
+  /**
+   * 本次操作的目标文件（**相对 cwd 的路径**；`edit_file` 传 `args.path`）。
+   *
+   * 影响面分析（谁 import 了我）只对「有明确目标文件」的操作有意义；
+   * 缺省表示不适用（shell 命令 / 模型切换）。
+   */
+  file?: string;
+  /** 编辑意图：create=新建文件 / modify=局部修改（仅 edit 有意义）。 */
+  intent?: 'create' | 'modify';
+}
+
 export interface ApprovalRequest {
   /** 审批类别：edit=文件编辑 / shell=命令执行 / model=模型切换（v5.0 T6，成本将上升时确认）。 */
   kind: 'edit' | 'shell' | 'model';
@@ -28,6 +46,11 @@ export interface ApprovalRequest {
   summary: string;
   /** 详细内容（edit：统一 diff；shell：命令文本；model：成本对比与影响）。 */
   detail: string;
+  /**
+   * 可选上下文（v5.0 T9）：目标文件 / 编辑意图。
+   * 缺省时审批框自动降级为「不做影响面分析」，不影响审批流程（G2）。
+   */
+  insightHint?: ApprovalInsightHint;
 }
 
 /** 统一审批入口：未配置回调时默认拒绝（fail-closed），无 yolo 模式。 */
