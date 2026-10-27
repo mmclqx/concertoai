@@ -8,6 +8,7 @@
 
 import type { DeepSeekBalance } from '../balance';
 import { fetchBalance } from '../balance';
+import { holidayCalendarStatus } from '../core/holidays';
 import { fmt, t } from '../i18n';
 import { getDefaultModel, priceFor, priceTierFor, tierLabel } from '../model/models';
 
@@ -33,13 +34,16 @@ export function priceTierSummary(at: Date = new Date()): string {
   const tier = priceTierFor(at);
   const model = getDefaultModel();
   const price = priceFor(model.id, tier);
-  return fmt(t().balance.priceTier, {
+  const line = fmt(t().balance.priceTier, {
     tier: tierLabel(tier),
     input: String(price.input),
     output: String(price.output),
     cacheHit: String(price.cacheHit),
     model: model.label,
   });
+  // v5.0 T7 修订：未配置节假日表时如实提示——「法定节假日可能仍按高峰价显示」比静默算错好
+  const calendar = holidayCalendarStatus();
+  return calendar.configured ? line : `${line}\n${t().balance.holidayNotConfigured}`;
 }
 
 /** 币种 → 符号映射（¥/$/€/£；未知币种用币种代码 + 空格，如 `JPY 5.00`）。 */

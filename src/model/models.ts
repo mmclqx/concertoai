@@ -1,12 +1,14 @@
 /**
  * 模型表与成本计算。
  *
- * **价格数据来源（v5.0 T7，务必如实对待）**：
- * - 数字来自 v5.0 任务书给定的 DeepSeek 新价格表（4.2-dev-tasks / v5.0-dev-tasks T7 表格）；
- * - **本轮未取得可独立核验的一手官方来源 URL**（无联网核验），因此 ADR-038 明确记录
- *   「价格与时段定义待用户以官方定价页核对」——**不做来源编造**（AGENTS 规则：禁止编造）。
+ * **价格数据来源（v5.0 T7，已由用户核对官方定价页）**：
+ * - 来源：DeepSeek 官方定价页 <https://api-docs.deepseek.com/zh-cn/quick_start/pricing>
+ *   （用户 2026-10-27 核对后给出订正值，见 ADR-038）；
+ * - flash 原任务书数字有误（缓存命中 0.05/0.10、输入 1.5/3.0），**已按官方订正**为 0.02/0.04、1/2；
+ * - pro 数字经核对无误；flash 输出价（4.5/9.0）用户未提出订正，保持原值。
  *
- * 双档计价：DeepSeek 按高峰 / 空闲两档计费，`priceTierFor(at)` 决定当前档位，
+ * 双档计价：DeepSeek 按高峰 / 空闲两档计费，`priceTierFor(at)` 决定当前档位
+ * （计价时段已排除中国法定节假日，见 `core/holidays.ts`），
  * 时间一律**注入**（不直接读 `Date.now()`），测试用固定时刻断言。
  */
 
@@ -45,9 +47,9 @@ export interface ModelProfile {
 }
 
 /**
- * v5.0 T7 模型表（新价格：高峰 / 空闲双档 + 1M 上下文 + 并发 2500/500）。
+ * v5.0 T7 模型表（官方定价页核对后：高峰 / 空闲双档 + 1M 上下文 + 并发 2500/500）。
  *
- * 并发限制照官方公告口径：flash 2500 / pro 500。
+ * 单位：元 / 百万 token；每档 `offPeak` 在前、`peak` 在后。并发限制照官方口径：flash 2500 / pro 500。
  */
 export const MODEL_PROFILES: readonly ModelProfile[] = [
   {
@@ -55,8 +57,8 @@ export const MODEL_PROFILES: readonly ModelProfile[] = [
     label: 'DeepSeek V4 Flash',
     description: '默认模型：快速、便宜，适合日常对话与简单任务',
     contextWindow: 1_000_000,
-    offPeak: { input: 1.5, output: 4.5, cacheHit: 0.05 },
-    peak: { input: 3.0, output: 9.0, cacheHit: 0.1 },
+    offPeak: { input: 1, output: 4.5, cacheHit: 0.02 },
+    peak: { input: 2, output: 9, cacheHit: 0.04 },
     rateLimit: 2500,
     default: true,
   },

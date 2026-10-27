@@ -14,7 +14,11 @@
  *
  * 区间为左闭右开 [startHour, endHour)——12:00 整不属于高峰、18:00 整不属于高峰。
  * 纯函数、无副作用，`Date` 可注入以便测试。
+ *
+ * v5.0 T7 修订：**计价口径排除中国法定节假日、并纳入调休上班日**（见 `core/holidays.ts` 与 ADR-038）。
  */
+
+import { isCnMakeupWorkday, isCnStatutoryHoliday } from './holidays';
 
 /** 高峰时段区间（左闭右开，小时制）。 */
 export interface PeakRange {
@@ -65,10 +69,35 @@ export function isPeakTime(date: Date = new Date()): boolean {
 }
 
 /**
- * 判断当前是否处于**计价**高峰时段（工作日 + `PRICING_PEAK_RANGES`）。
+ * 判断当前是否处于**计价**工作日（v5.0 T7 修订：排除法定节假日 + 纳入调休上班日）。
+ *
+ * 规则（与国务院放假安排对齐）：
+ * - 法定节假日 → **不是**计价工作日（即使落在周一~周五）；
+ * - 调休上班日 → **是**计价工作日（即使是周六/周日）；
+ * - 其余按周一~周五。
+ *
+ * 节假日表来源见 `core/holidays.ts`（默认空表，可用 config `pricingHolidays` 装载，
+ * 未配置时 `holidayCalendarStatus().configured === false`，`balance` 会显式提示）。
+ */
+export function isPricingWorkday(date: Date = new Date()): boolean {
+  if (isCnStatutoryHoliday(date)) {
+    return false;
+  }
+  if (isCnMakeupWorkday(date)) {
+    return true;
+  }
+  return isWorkday(date);
+}
+
+/**
+ * 判断当前是否处于**计价**高峰时段（计价工作日 + `PRICING_PEAK_RANGES`）。
  *
  * v5.0 T7：供 `model/models.ts` 的 `priceTierFor` 使用；与 `isPeakTime`（切换口径）解耦。
+ *
+ * ⚠️ 与切换口径的**有意差异**（ADR-038）：`isPeakTime`（切 ollama）保持 v2.2 语义
+ * 「周一~周五 + 时段」，**不排除节假日**——因为改它会静默改变用户已配置好的切换策略行为。
+ * 计价口径则是厂商定价事实，必须按真实工作日算。
  */
 export function isPricingPeakTime(date: Date = new Date()): boolean {
-  return isWorkday(date) && hourInRanges(date, PRICING_PEAK_RANGES);
+  return isPricingWorkday(date) && hourInRanges(date, PRICING_PEAK_RANGES);
 }

@@ -1,7 +1,7 @@
 # ConcertoAI 开发任务看板
 
 > 最后更新：2026-10-27
-> 当前里程碑：**🔵 v5.0 开发中（M1 基线承接全部完成：T1-T7 ✅，2026-10-27）**（v5.0: M1 **7/7** ✅ · 下一步 M2 审批透明化 T8 · 计划与任务书已定稿 D1-B/D2-A/D3-B/D4-B/D5-B/D6-5.0.0 · 127 文件 / 1582 用例全绿）
+> 当前里程碑：**🔵 v5.0 开发中（M1 基线承接全部完成：T1-T7 ✅，2026-10-27）**（v5.0: M1 **7/7** ✅ · 下一步 M2 审批透明化 T8 · 计划与任务书已定稿 D1-B/D2-A/D3-B/D4-B/D5-B/D6-5.0.0 · 128 文件 / 1609 用例全绿）
 > 基于：[v5.0 开发计划](./v5.0-dev-plan.md) · [v5.0 开发任务](./v5.0-dev-tasks.md) · 历史：[v4.2 开发任务（已并入 v5.0 M1）](./v4.2-dev-tasks.md) · [v4.1 开发任务](./v4.1-dev-tasks.md) · [v4.0 开发任务](./v4.0-dev-tasks.md)
 
 ---
@@ -28,7 +28,7 @@
 | **T3 ccai 短命令** | ✅ **完成**（0215457） | `bin` 双入口指向同一 `dist/cli/index.js`，与 `concertoai` 完全等价 · 3 用例 |
 | **T4 THIRD_PARTY_NOTICES** | ✅ **完成**（0215457） | 脚本化生成（`npm run notices`）+ 修正 `cli-highlight`=ISC + 补 highlight.js BSD-3 + 如实记录 tiktoken 缺 LICENSE · 9 用例 |
 | **T5 init 双输出** | ✅ **完成**（2026-10-27） | 一次扫描 `ProjectProfile` → 双文件输出（`AGENTS.md` 给 AI + `PROJECT_GUIDE.md` 给人）· **G7 证据硬约束**（每条结论带 `文件:行号`，无证据写「未检测到」）· 覆盖 fail-closed（默认不覆盖 / 非 TTY 不覆盖 / `--force`）· 有界扫描（400 文件 / 200KB / 跳过构建产物）· 非项目目录友好退出 · **实测修复 3 处误报**（动态 import、导出聚合行 `{ canAccess }`、模板字符串 lint）· **护栏用例**：生成内容只推荐真实注册的 CLI 命令 · 49 用例 |
-| **T7 双档价格表 + 时段解耦** | ✅ **完成**（2026-10-27） | ① 新价格入库（flash 空闲/高峰：输入 1.5/3.0、输出 4.5/9.0、缓存命中 0.05/0.10；pro：4.5/9.0、13.5/27.0、0.15/0.30），并发 2500/500 ② **R7 解耦**：`peak-time.ts` 拆 `PRICING_PEAK_RANGES`+`isPricingPeakTime`（计价）与 `SWITCH_PEAK_RANGES`+`isPeakTime`（切 ollama），`PEAK_TIME_RANGES` 保留切换口径别名 ③ `priceTierFor(at)`/`priceFor`/`tierLabel` + `costFor`/`cacheHitCostFor`/`costForProvider` 全链 `at` 时间注入（Provider 层 `now()` 构造注入，消除时间依赖 flaky）④ 状态条 + `balance` 标注「高峰价 / 空闲价」 ⑤ **ADR-038** 落盘（含「价格数字与时段定义待用户以官方定价页核对」的如实声明，未编造来源 URL）· 新增 19 用例 |
+| **T7 双档价格表 + 时段解耦** | ✅ **完成**（2026-10-27） | ① 新价格入库（**官方核对值**：flash 空闲/高峰：输入 1/2、输出 4.5/9.0、缓存命中 0.02/0.04；pro：4.5/9.0、13.5/27.0、0.15/0.30），并发 2500/500 ② **R7 解耦**：`peak-time.ts` 拆 `PRICING_PEAK_RANGES`+`isPricingPeakTime`（计价）与 `SWITCH_PEAK_RANGES`+`isPeakTime`（切 ollama），`PEAK_TIME_RANGES` 保留切换口径别名 ③ `priceTierFor(at)`/`priceFor`/`tierLabel` + `costFor`/`cacheHitCostFor`/`costForProvider` 全链 `at` 时间注入（Provider 层 `now()` 构造注入，消除时间依赖 flaky）④ 状态条 + `balance` 标注「高峰价 / 空闲价」 ⑤ **ADR-038** 落盘 · 新增 19 用例 ⑥ **修订（2026-10-27 用户核对官方页后）**：flash 价格订正（缓存命中 0.02/0.04、输入 1/2）+ **计价高峰排除中国法定节假日并纳入调休上班日**（`core/holidays.ts`，`config.pricingHolidays` 装载，未配置时 `balance` 显式提示）+ **连带修 v4.0 存量缺陷**（迁移 `legacy` 字段无人消费 → `flattenLegacy` 读取层摊平）· 新增 27 用例（holidays 17 + config 4 + models 3 + balance 2 + 其他） |
 | **T6 model auto** | ✅ **完成**（2026-10-27） | ① config/CLI/`/model auto` 接受 `"auto"`：**固定起始档 flash**，round-trip 正确（v3 `defaultModel` 迁移 + v4 `providers.<p>.model` 双路径都有用例）② 启用时打印成本策略说明（当前时段**真实单价** + 「**不会自动升级**」+ 可复制升级命令与倍数）③ **保守边界落地**：升级（变贵）→ 走审批框 `kind:'model'` 确认（y/Enter 批准、n/**Esc 拒绝**、确认异常 fail-closed）；降级（变便宜）→ 直接生效 ④ `/model` 状态/列表/切换全链（非 deepseek Provider 明确拒绝并指路 `provider switch`）⑤ **源码级红线用例**：`auto.ts` 禁复杂度判定标识、slash 层禁 `setInterval/setTimeout`、`App.tsx` 中 `setModel(` 仅 1 处且在 `/model` 块内 ⑥ ADR-039 落盘 · 新增 57 用例（model/auto 33 + slash/model 17 + UI 7），全量 **127 文件 / 1582 用例**全绿 |
 ---
 

@@ -168,6 +168,9 @@ export const en = {
     // v5.0 T7: current-tier real price (peak / off-peak label)
     priceTier:
       '📊 Current {model} {tier}: input ¥{input}/M · cache hit ¥{cacheHit}/M · output ¥{output}/M',
+    // v5.0 T7 revision: honest notice when the statutory-holiday calendar is not configured
+    holidayNotConfigured:
+      'ℹ️ Statutory holiday calendar not configured (config.pricingHolidays): holidays and make-up workdays still use the Mon-Fri 9-12 / 14-18 rule, so the tier shown may be wrong.',
   },
   peakTime: {
     askSwitch:

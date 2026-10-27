@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
+import { configureHolidayCalendar, resetHolidayCalendar } from '../../src/core/holidays';
 import type { ModelProfile } from '../../src/model/models';
 import {
   cacheHitCostFor,
@@ -19,6 +20,12 @@ const PEAK_AT = new Date(2026, 9, 28, 10, 0, 0);
 const OFFPEAK_AT = new Date(2026, 9, 28, 20, 0, 0);
 /** 周六 10:00 → 空闲（周末不涨价）。 */
 const WEEKEND_AT = new Date(2026, 9, 31, 10, 0, 0);
+/** 周四 10:00 → 高峰（作为「非节假日的同一高峰时刻」对照）。 */
+const NON_HOLIDAY_PEAK_AT = new Date(2026, 9, 29, 10, 0, 0);
+
+afterEach(() => {
+  resetHolidayCalendar();
+});
 
 describe('模型表', () => {
   it('包含 flash 与 pro 两个模型', () => {
@@ -58,7 +65,7 @@ describe('模型表', () => {
     }
   });
 
-  it('价格表 = v5.0 T7 任务书给定新价（高峰 / 空闲双档 + 并发 2500/500）', () => {
+  it('价格表 = 官方定价页核对值（高峰 / 空闲双档 + 并发 2500/500）', () => {
     const flash = getModel('deepseek-v4-flash') as ModelProfile;
     const pro = getModel('deepseek-v4-pro') as ModelProfile;
 
@@ -66,9 +73,10 @@ describe('模型表', () => {
     expect(flash.contextWindow).toBe(1_000_000);
     expect(pro.contextWindow).toBe(1_000_000);
 
-    // flash：缓存命中 0.05/0.10 · 未命中 1.5/3.0 · 输出 4.5/9.0（空闲/高峰），并发 2500
-    expect(flash.offPeak).toEqual({ input: 1.5, output: 4.5, cacheHit: 0.05 });
-    expect(flash.peak).toEqual({ input: 3.0, output: 9.0, cacheHit: 0.1 });
+    // flash：缓存命中 0.02/0.04 · 未命中 1/2 · 输出 4.5/9.0（空闲/高峰），并发 2500
+    // （v5.0 T7 修订：用户核对官方定价页后订正缓存命中与输入价，原任务书数字有误）
+    expect(flash.offPeak).toEqual({ input: 1, output: 4.5, cacheHit: 0.02 });
+    expect(flash.peak).toEqual({ input: 2, output: 9, cacheHit: 0.04 });
     expect(flash.rateLimit).toBe(2500);
 
     // pro：缓存命中 0.15/0.30 · 未命中 4.5/9.0 · 输出 13.5/27.0（空闲/高峰），并发 500
@@ -109,12 +117,35 @@ describe('priceTierFor：计价档位（纯函数 + 时间注入）', () => {
     expect(tierLabel('peak')).toBe('高峰价');
     expect(tierLabel('offpeak')).toBe('空闲价');
   });
+
+  // ── v5.0 T7 修订：计价档位必须排除法定节假日（用户核对官方规则后追加）──
+  it('法定节假日（周三）→ 空闲档，成本与空闲价一致且低于同日高峰价', () => {
+    configureHolidayCalendar({ holidays: ['2026-10-28'] });
+    expect(priceTierFor(PEAK_AT)).toBe('offpeak');
+    const holidayCost = costFor('deepseek-v4-flash', 1_000_000, 0, 0, PEAK_AT);
+    // 与「同日空闲时段」等价（1 元/M 输入）；低于「非节假日的同日高峰」（2 元/M）
+    expect(holidayCost).toBeCloseTo(costFor('deepseek-v4-flash', 1_000_000, 0, 0, OFFPEAK_AT));
+    expect(holidayCost).toBeLessThan(
+      costFor('deepseek-v4-flash', 1_000_000, 0, 0, NON_HOLIDAY_PEAK_AT),
+    );
+  });
+
+  it('调休上班日（周六）→ 高峰档（补班日按工作日计价）', () => {
+    configureHolidayCalendar({ makeupWorkdays: ['2026-10-31'] });
+    expect(priceTierFor(WEEKEND_AT)).toBe('peak');
+  });
+
+  it('未配置节假日表时行为与修订前一致（不静默改变既有计价）', () => {
+    resetHolidayCalendar();
+    expect(priceTierFor(PEAK_AT)).toBe('peak');
+    expect(priceTierFor(WEEKEND_AT)).toBe('offpeak');
+  });
 });
 
 describe('priceFor', () => {
   it('按时段返回对应价格集', () => {
-    expect(priceFor('deepseek-v4-flash', 'peak').input).toBe(3.0);
-    expect(priceFor('deepseek-v4-flash', 'offpeak').input).toBe(1.5);
+    expect(priceFor('deepseek-v4-flash', 'peak').input).toBe(2);
+    expect(priceFor('deepseek-v4-flash', 'offpeak').input).toBe(1);
   });
 
   it('未知模型抛错', () => {

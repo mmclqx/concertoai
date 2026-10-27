@@ -10,7 +10,7 @@
 
 ### Added — v5.0 M1 基线承接（T1-T7，2026-10-27 全部完成）
 
-> v5.0 定位：**从「黑盒引擎」到「透明驾驶舱」**——让用户看得见、看得懂、管得住每一步（含花钱）。M1 为「日常可用」基线承接（v4.2 计划并入）。127 文件 / 1582 用例全绿。
+> v5.0 定位：**从「黑盒引擎」到「透明驾驶舱」**——让用户看得见、看得懂、管得住每一步（含花钱）。M1 为「日常可用」基线承接（v4.2 计划并入）。128 文件 / 1609 用例全绿。
 
 - **`npx @concertoai/cli` 零安装可用 + 缺 Key 中文引导**（T1）：隔离目录实测零安装；缺 Key 时给出三种**均真实生效**的配置方式 + 获取链接；修复入口不读 `config.json` 中 `providers.deepseek.apiKey` 的真实缺口；新增 Node 版本中文提示（`engines>=22`，TTY-only，`CONCERTOAI_NO_NODE_WARN=1` 可静默）
 - **`concertoai update`**（T2）：版本对比（fetch 可注入）→ 确认升级 / `--yes`；npx 场景拒绝误升级；非 TTY fail-closed；错误输出截断
@@ -25,7 +25,11 @@
 - **计价时段与 ollama 切换时段解耦**（T7 / R7）：`core/peak-time.ts` 拆 `PRICING_PEAK_RANGES` + `isPricingPeakTime`（厂商定价事实）与 `SWITCH_PEAK_RANGES` + `isPeakTime`（可被用户关闭的切换策略），`PEAK_TIME_RANGES` 保留为切换口径别名；`costFor` / `cacheHitCostFor` / `costForProvider` / `costProfileFor` 统一接受 `at` 时间注入，Provider 层以 `now()` 构造注入（消除「白天测高峰价、晚上测空闲价」的时间依赖 flaky）
 - **审批类别扩展**：`ApprovalRequest.kind` 增加 `'model'`（模型升级确认），与 edit/shell 共用同一 fail-closed 决议机制
 
-> ⚠️ T7 价格数字与高峰时段定义来自任务书给定表格，本轮无联网核验，**未编造来源 URL**；请以 DeepSeek 官方定价页核对（只需改 `PRICING_PEAK_RANGES` + `MODEL_PROFILES` 两处），详见 ADR-038 的如实声明。
+### Fixed — v5.0 T7 修订（用户核对官方定价页后）
+
+- **flash 价格按官方订正**（原任务书数字有误）：缓存命中 0.05/0.10 → **0.02/0.04**，输入（未命中）1.5/3.0 → **1/2**（空闲/高峰，元每百万 token）；输出 4.5/9.0 与 pro 全部数字经核对无误。来源：<https://api-docs.deepseek.com/zh-cn/quick_start/pricing>（已落 ADR-038）。连带：flash→pro 切换倍数由「≈3.0 倍」变为「≈3.7 倍」，`/model` 与 `auto` 文案同步
+- **计价高峰排除中国法定节假日 + 纳入调休上班日**（`src/core/holidays.ts` 新增）：`计价工作日 = (周一~周五 且 非法定节假日) 或 调休上班日`；节假日优先于调休（同日两者都有 → 按节假日算，fail-safe 向便宜）；**切换口径 `isPeakTime` 保持不变**（v2.2 语义，避免静默改变用户已配置的 ollama 切换行为）。节假日数据**不内置推测值**（国务院逐年发布，猜错一天 = 算错钱），支持 `config.pricingHolidays: { holidays, makeupWorkdays }` 运行时装载；非法日期提示后忽略；**未配置时 `concertoai balance` 显式提示「可能显示错误档位」**，不静默犯错
+- **【存量缺陷】v3 配置迁移后 `legacy` 里的字段全部失效**（v4.0 起潜伏）：`migrateV3ToV4` 把 `allowlist` / `peakTimeStrategy` / `mcpServers` / `sessionDir` / `locale` 等收进 `legacy` 子对象，但全仓**零处读取** `legacy`（消费方都读顶层）→ 迁移「成功」但这些配置全失效（白名单要重批、MCP 不启动、高峰策略回落 ask）。本轮因新增 `pricingHolidays` 走同一路径而暴露，`loadConfig` 读取层新增 `flattenLegacy`（**顶层优先**，legacy 只补缺失键，不改写磁盘）+ 2 条回归用例。详见 `docs/09-踩坑记录/2026-10-27-配置迁移legacy字段无人消费.md`
 
 > 历史遗留（待 T23.2 文档收尾统一处理）：下方 v4.1.0 热修条目实际已随 v4.1.1 发布，尚未移动到 `[4.1.1]` 小节。
 

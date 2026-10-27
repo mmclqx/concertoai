@@ -4,6 +4,8 @@ import path from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { holidayCalendarStatus, resetHolidayCalendar } from '../../src/core/holidays';
+import { priceTierFor } from '../../src/model/models';
 import {
   CONFIG_SCHEMA_VERSION,
   DEFAULT_CONFIG_PATH,
@@ -30,6 +32,8 @@ beforeEach(() => {
 afterEach(() => {
   rmSync(tmp, { recursive: true, force: true });
   vi.unstubAllEnvs();
+  // 计价日历是模块级状态：必须复位，否则 loadConfig 的装载会污染后续用例
+  resetHolidayCalendar();
 });
 
 describe('loadConfig / writeConfig', () => {
@@ -203,5 +207,105 @@ describe('resolveConfig 优先级（CLI > 环境变量 > 配置文件 > 默认�
     vi.stubEnv('LANG', 'fr_FR.UTF-8');
     expect(resolveConfig({ schemaVersion: 1, locale: 'en' }).locale).toBe('en');
     expect(resolveConfig(emptyConfig()).locale).toBe('zh');
+  });
+});
+
+describe('pricingHolidays 装载（v5.0 T7 修订）', () => {
+  it('loadConfig 把 config.pricingHolidays 装载进计价日历', async () => {
+    const file = path.join(tmp, 'config.json');
+    await writeConfig(
+      {
+        schemaVersion: CONFIG_SCHEMA_VERSION,
+        pricingHolidays: { holidays: ['2026-10-28'], makeupWorkdays: ['2026-10-31'] },
+      },
+      file,
+    );
+    await loadConfig(file);
+    expect(holidayCalendarStatus()).toMatchObject({
+      configured: true,
+      holidayCount: 1,
+      makeupCount: 1,
+    });
+    // 周四=节假日 → 计价空闲；周六=调休上班 → 计价高峰
+    expect(priceTierFor(new Date(2026, 9, 28, 10, 0))).toBe('offpeak');
+    expect(priceTierFor(new Date(2026, 9, 31, 10, 0))).toBe('peak');
+  });
+
+  it('配置为空 → 复位为未配置（幂等：每次 load 都以当前配置为准）', async () => {
+    const file = path.join(tmp, 'config.json');
+    await writeConfig(
+      { schemaVersion: CONFIG_SCHEMA_VERSION, pricingHolidays: { holidays: ['2026-10-28'] } },
+      file,
+    );
+    await loadConfig(file);
+    expect(holidayCalendarStatus().configured).toBe(true);
+
+    await writeConfig({ schemaVersion: CONFIG_SCHEMA_VERSION }, file);
+    await loadConfig(file);
+    expect(holidayCalendarStatus().configured).toBe(false);
+  });
+
+  it('【回归】v3 迁移后 legacy 里的字段必须摊平到顶层（否则白名单/策略静默失效）', async () => {
+    const file = path.join(tmp, 'config.json');
+    await writeConfig(
+      {
+        schemaVersion: CONFIG_SCHEMA_VERSION, // v3 → 触发迁移
+        defaultModel: 'deepseek-v4-pro',
+        allowlist: ['npm test'],
+        peakTimeStrategy: 'ignore',
+        pricingHolidays: { holidays: ['2026-10-28'] },
+      } as unknown as Parameters<typeof writeConfig>[0],
+      file,
+    );
+    const loaded = await loadConfig(file);
+    // 迁移产生的遗留字段（v4 顶层本没有）必须补回顶层，否则用户配置「迁移成功但全失效」
+    expect(loaded.allowlist).toEqual(['npm test']);
+    expect(loaded.peakTimeStrategy).toBe('ignore');
+    expect(loaded.pricingHolidays).toEqual({ holidays: ['2026-10-28'] });
+    // 顶层不再残留 legacy 键（已摊平，避免消费方拿到双层结构）
+    expect((loaded as unknown as { legacy?: unknown }).legacy).toBeUndefined();
+    // 模型走 v4 的 providers 写法
+    expect(resolveConfig(loaded).model).toBe('deepseek-v4-pro');
+    // 节假日表已装载
+    expect(holidayCalendarStatus().configured).toBe(true);
+  });
+
+  it('【回归】v4 顶层显式配置优先于 legacy 中的旧值', async () => {
+    const file = path.join(tmp, 'config.json');
+    await writeConfig(
+      {
+        schemaVersion: 2,
+        defaultProvider: 'deepseek',
+        providers: { deepseek: { type: 'deepseek', model: 'deepseek-v4-flash' } },
+        allowlist: ['npm run build'], // 顶层（新）
+        legacy: { allowlist: ['npm test'], locale: 'en' }, // 迁移遗留（旧）
+      } as unknown as Parameters<typeof writeConfig>[0],
+      file,
+    );
+    const loaded = await loadConfig(file);
+    expect(loaded.allowlist).toEqual(['npm run build']); // 顶层赢
+    expect(loaded.locale).toBe('en'); // 顶层缺失 → legacy 补齐
+  });
+
+  it('非法日期提示一次并忽略（不静默）', async () => {
+    const file = path.join(tmp, 'config.json');
+    await writeConfig(
+      {
+        schemaVersion: CONFIG_SCHEMA_VERSION,
+        pricingHolidays: { holidays: ['2026-02-30', '2026-10-28'] },
+      } as unknown as Parameters<typeof writeConfig>[0],
+      file,
+    );
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await loadConfig(file);
+      const told = err.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(told).toContain('2026-02-30');
+      expect(told).toContain('非法日期');
+      // 合法的那条仍然生效
+      expect(holidayCalendarStatus().holidayCount).toBe(1);
+    } finally {
+      err.mockRestore();
+    }
   });
 });

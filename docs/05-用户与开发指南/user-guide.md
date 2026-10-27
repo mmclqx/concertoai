@@ -256,6 +256,7 @@ $ /model deepseek-v4-pro
 其他细节：
 
 - 切换按「成本方向」决策，与编辑/命令**同一套 fail-closed 决议机制**（确认过程异常视为拒绝）；
+- 价格与高峰时段以 DeepSeek 官方定价页为准（<https://api-docs.deepseek.com/zh-cn/quick_start/pricing>）；**高峰时段已排除中国法定节假日**，见下节「节假日表配置」；
 - 成本对比用与 `concertoai doctor` 月成本预估**同一套示例用量**（输入 8k 含缓存命中 4k、输出 1.2k），不会两处算出不同数；
 - 非 deepseek Provider 下 `/model` 明确拒绝并提示 `concertoai provider switch <name>`（不在价格表内的模型切换无意义）；
 - 配置文件也可写 `providers.deepseek.model: "auto"`，启动时会明确告知实际生效模型（不静默替换）。
@@ -624,6 +625,34 @@ v4.0 新增（可扩展的插件化 AI 开发平台）：
 - **`team --parallel`**：自然语言「同时/并行」自动触发多 Agent 并行 + 文件冲突提示 + 独立事务；
 - **`lsp --stdio`**：三来源诊断（biome/tsc/self-heal）推送到 IDE Problems 面板 + CodeAction 一键修复；
 - **升级迁移**：v3.4 → v4.0 破坏性变更与回滚见 migration-guide-v4.md。
+
+### 节假日表配置（v5.0 T7 修订，影响计价档位）
+
+计价高峰 = **计价工作日** 的 9:00-12:00 / 14:00-18:00，其中：
+
+```
+计价工作日 = (周一~周五 且 非法定节假日) 或 调休上班日
+```
+
+节假日安排每年由国务院办公厅发布，且必须同时有「放假日期」与「调休上班日期」两张表——**猜错一天就等于算错钱**，所以程序**不内置任何推测日期**。请在配置里显式提供：
+
+```json
+{
+  "schemaVersion": 2,
+  "defaultProvider": "deepseek",
+  "providers": { "deepseek": { "type": "deepseek", "model": "deepseek-v4-flash" } },
+  "pricingHolidays": {
+    "holidays": ["2027-01-01", "2027-02-06", "2027-02-07"],
+    "makeupWorkdays": ["2027-02-20"]
+  }
+}
+```
+
+- `holidays`：法定节假日 → 当天按**非工作日**（空闲价）；
+- `makeupWorkdays`：调休上班日（通常是周末补班）→ 当天按**工作日**（可能高峰价）；
+- 日期格式 `YYYY-MM-DD`（本地时区）；非法日期会在启动时提示并忽略；
+- **未配置时不会静默算错**：`concertoai balance` 会显示「ℹ️ 未配置法定节假日表（config.pricingHolidays）……可能显示错误档位」；
+- 只影响**计价档位显示与成本计算**；不会改变「高峰时段切本地模型」的行为（那套按 `peakTimeStrategy` 走，语义保持 v2.2）。
 
 ### 配置目录迁移（~/.lumen → ~/.concertoai）
 

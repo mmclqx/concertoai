@@ -101,13 +101,16 @@ describe('升级目标与方向（决定是否需要确认）', () => {
 });
 
 describe('quoteSwitch：成本对比（同时刻同档位）', () => {
-  it('flash→pro 成本倍率 = pro/flash 输出价比例（空闲档 3 倍）', () => {
+  it('flash→pro 成本倍率 = 按示例用量实算（空闲档约 3.67 倍，随价格表变动）', () => {
     const quote = quoteSwitch('deepseek-v4-flash', 'deepseek-v4-pro', OFFPEAK_AT);
     expect(quote.tier).toBe('offpeak');
-    expect(quote.ratio).toBeCloseTo(3);
+    // 官方定价核对值下的实算：flash 0.00948 元 vs pro 0.0348 元（示例用量）
+    expect(quote.fromCost).toBeCloseTo(0.00948, 6);
+    expect(quote.toCost).toBeCloseTo(0.0348, 6);
+    expect(quote.ratio).toBeCloseTo(0.0348 / 0.00948, 4);
   });
 
-  it('高峰档同样 3 倍（两模型同步翻倍，比率不因时段漂移）', () => {
+  it('高峰档比率不变（两模型同步翻倍，结论不因时段漂移）', () => {
     const off = quoteSwitch('deepseek-v4-flash', 'deepseek-v4-pro', OFFPEAK_AT);
     const peak = quoteSwitch('deepseek-v4-flash', 'deepseek-v4-pro', PEAK_AT);
     expect(peak.tier).toBe('peak');
@@ -134,7 +137,7 @@ describe('buildAutoPolicyGuide：策略说明必须讲清「不会自动升级�
   it('包含当前时段单价与档位标注', () => {
     const text = buildAutoPolicyGuide(OFFPEAK_AT).join('\n');
     expect(text).toContain('空闲价');
-    expect(text).toContain('¥1.5/百万');
+    expect(text).toContain('¥1/百万');
   });
 
   it('【红线】明确写出「不会自动升级」', () => {
@@ -145,7 +148,7 @@ describe('buildAutoPolicyGuide：策略说明必须讲清「不会自动升级�
   it('给出可复制的升级命令与成本倍数', () => {
     const text = buildAutoPolicyGuide(OFFPEAK_AT).join('\n');
     expect(text).toContain('/model deepseek-v4-pro');
-    expect(text).toContain('3.0 倍');
+    expect(text).toContain('3.7 倍');
   });
 
   it('说明不超过 6 行（防止新手被淹没）', () => {

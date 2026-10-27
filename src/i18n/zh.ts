@@ -163,6 +163,9 @@ export const zh = {
     // v5.0 T7：当前时段真实单价（高峰/空闲标注）
     priceTier:
       '📊 当前{model} {tier}：输入 ¥{input}/百万 · 缓存命中 ¥{cacheHit}/百万 · 输出 ¥{output}/百万',
+    // v5.0 T7 修订：未配置节假日表时的如实提示（不静默算错）
+    holidayNotConfigured:
+      'ℹ️ 未配置法定节假日表（config.pricingHolidays）：节假日与调休日仍按「周一~周五 9-12 / 14-18」判断，可能显示错误档位。',
   },
   peakTime: {
     askSwitch:

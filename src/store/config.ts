@@ -4,7 +4,7 @@
  * 支持字段：defaultModel（默认模型）、allowlist（命令白名单）、
  * approvalPolicy（ask / allowlist-only）、sessionDir（会话目录）、locale、
  * peakTimeStrategy（高峰时段模型切换策略）、ollamaModel / ollamaBaseUrl
- * （本地模型接入，v2.2 智能成本控制）。
+ * （本地模型接入，v2.2 智能成本控制）、pricingHolidays（计价用法定节假日表，v5.0 T7）。
  *
  * 优先级：CLI 参数 > 环境变量（LUMEN_*）> 配置文件 > 默认值。
  * 文件不存在 / JSON 损坏 / schema 版本不匹配 → 返回空配置（不抛错）。
@@ -13,6 +13,7 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
+import { configureHolidayCalendar } from '../core/holidays';
 import { configPath } from './paths';
 import { DEFAULT_SESSION_DIR } from './session';
 
@@ -75,6 +76,19 @@ export interface ConcertoAIConfig {
   ollamaModel?: string;
   /** 本地模型 OpenAI 兼容端点（Ollama /v1，v2.2）。 */
   ollamaBaseUrl?: string;
+  /**
+   * 计价用中国法定节假日表（v5.0 T7 修订）。
+   *
+   * 高峰/空闲双档计价必须排除法定节假日、并纳入调休上班日（见 `core/holidays.ts`）。
+   * 日期为本地时区 `YYYY-MM-DD`；非法日期在 `loadConfig` 时提示后忽略。
+   * 未配置时 `concertoai balance` 会显式提示「未配置节假日表」，**不静默算错**。
+   */
+  pricingHolidays?: {
+    /** 法定节假日（当天按非工作日计价）。 */
+    holidays?: string[];
+    /** 调休上班日（当天按工作日计价）。 */
+    makeupWorkdays?: string[];
+  };
 }
 
 export interface ResolvedConfig {
@@ -100,10 +114,55 @@ export function emptyConfig(): ConcertoAIConfig {
   return { schemaVersion: CONFIG_SCHEMA_VERSION };
 }
 
-/** 读取配置文件；不存在 / 损坏 / 版本不匹配时返回空配置（不抛错）。 */
+/**
+ * 读取配置文件；不存在 / 损坏 / 版本不匹配时返回空配置（不抛错）。
+ *
+ * v5.0 T7 修订：读取成功/失败后统一装载 `pricingHolidays`（计价用节假日表）——
+ * 日历是**配置的函数**（每次 load 都以当前配置为准，天然幂等），
+ * 非法日期在此提示一次（用户改配置打错字必须看得见，不能静默忽略）。
+ */
 export async function loadConfig(
   configPath: string = DEFAULT_CONFIG_PATH,
 ): Promise<ConcertoAIConfig> {
+  const config = await readConfigFile(configPath);
+  const report = configureHolidayCalendar(config.pricingHolidays);
+  if (report.invalid.length > 0) {
+    console.error(
+      `⚠️ config.pricingHolidays 中有 ${report.invalid.length} 个非法日期已忽略（需 YYYY-MM-DD）：${report.invalid.join(', ')}`,
+    );
+  }
+  return config;
+}
+
+/**
+ * 摊平 v4 迁移的 `legacy` 子对象到顶层（v5.0 T7 修订）。
+ *
+ * **为什么需要**：`migrateV3ToV4` 把 v3 的其余字段（allowlist / approvalPolicy /
+ * sessionDir / locale / mcpServers / peakTimeStrategy / pricingHolidays…）收进 `legacy` 子对象，
+ * 但 `resolveConfig` 等所有消费方读的都是**顶层**字段 → 迁移后用户的白名单、高峰切换策略等
+ * 「看似迁移成功、实际全部失效」（v4.0 遗留缺陷；v5.0 T7 因 pricingHolidays 走同一路径被发现）。
+ *
+ * 规则：**顶层优先**（v4 顶层显式配置永远赢过 legacy 里的旧值），legacy 只补「顶层缺失」的键。
+ * 不删除 `legacy` 本身（保留原始迁移痕迹便于排查），也不改写磁盘（读取层兼容，写回仍按新格式）。
+ */
+function flattenLegacy(parsed: Partial<ConcertoAIConfig>): ConcertoAIConfig {
+  const raw = parsed as Partial<ConcertoAIConfig> & { legacy?: Record<string, unknown> };
+  const legacy = raw.legacy;
+  if (legacy === undefined || typeof legacy !== 'object') {
+    return parsed as ConcertoAIConfig;
+  }
+  const merged: Record<string, unknown> = { ...legacy };
+  for (const [key, value] of Object.entries(raw)) {
+    if (key === 'legacy' || value === undefined) {
+      continue;
+    }
+    merged[key] = value; // 顶层优先
+  }
+  return merged as unknown as ConcertoAIConfig;
+}
+
+/** 纯读取实现（不含节假日装载副作用，便于单测与迁移路径复用）。 */
+async function readConfigFile(configPath: string): Promise<ConcertoAIConfig> {
   try {
     const raw = await readFile(configPath, 'utf8');
     const parsed = JSON.parse(raw) as Partial<ConcertoAIConfig> & {
@@ -117,14 +176,14 @@ export async function loadConfig(
       if (result.migrated) {
         // 迁移成功 → 返回迁移后的配置（v4 形态：schemaVersion=2 + defaultProvider + providers）
         const migrated = await readFile(configPath, 'utf8');
-        return JSON.parse(migrated) as ConcertoAIConfig;
+        return flattenLegacy(JSON.parse(migrated) as Partial<ConcertoAIConfig>);
       }
       // 迁移失败（备份失败等）→ 返回原配置（保持兼容读取，不阻塞启动）
       return { schemaVersion: CONFIG_SCHEMA_VERSION, ...parsed };
     }
-    // v4 格式（schemaVersion=2）→ 直接读取
+    // v4 格式（schemaVersion=2）→ 读取并摊平迁移遗留字段（见 flattenLegacy）
     if (parsed.schemaVersion === 2) {
-      return parsed as ConcertoAIConfig;
+      return flattenLegacy(parsed);
     }
     if (parsed.schemaVersion !== CONFIG_SCHEMA_VERSION) {
       return emptyConfig();

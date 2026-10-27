@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { priceTierSummary, printBalance, runBalanceCommand } from '../../src/cli/balance';
+import { configureHolidayCalendar, resetHolidayCalendar } from '../../src/core/holidays';
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -27,6 +28,7 @@ let err: ReturnType<typeof vi.spyOn> | undefined;
 afterEach(() => {
   log?.mockRestore();
   err?.mockRestore();
+  resetHolidayCalendar();
 });
 
 function captureLog(): void {
@@ -92,7 +94,7 @@ describe('priceTierSummary（v5.0 T7：当前时段真实单价）', () => {
   it('高峰时段标注「高峰价」并给出高峰单价', () => {
     const line = priceTierSummary(PEAK_AT);
     expect(line).toContain('高峰价');
-    expect(line).toContain('¥3/百万'); // flash 高峰输入价
+    expect(line).toContain('¥2/百万'); // flash 高峰输入价
     expect(line).toContain('¥9/百万'); // flash 高峰输出价
     expect(line).toContain('缓存命中');
   });
@@ -100,7 +102,7 @@ describe('priceTierSummary（v5.0 T7：当前时段真实单价）', () => {
   it('空闲时段标注「空闲价」并给出空闲单价', () => {
     const line = priceTierSummary(OFFPEAK_AT);
     expect(line).toContain('空闲价');
-    expect(line).toContain('¥1.5/百万');
+    expect(line).toContain('¥1/百万');
     expect(line).toContain('¥4.5/百万');
   });
 
@@ -111,6 +113,21 @@ describe('priceTierSummary（v5.0 T7：当前时段真实单价）', () => {
   it('缺省参数取当前时刻（不抛错，且必为两种标注之一）', () => {
     const line = priceTierSummary();
     expect(/高峰价|空闲价/.test(line)).toBe(true);
+  });
+
+  // ── v5.0 T7 修订：未配置节假日表必须如实提示（不静默算错）──
+  it('未配置节假日表 → 附加「未配置法定节假日表」提示', () => {
+    resetHolidayCalendar();
+    const line = priceTierSummary(PEAK_AT);
+    expect(line).toContain('未配置法定节假日表');
+    expect(line).toContain('config.pricingHolidays');
+  });
+
+  it('已配置节假日表 → 不再提示，且节假日当天显示空闲价', () => {
+    configureHolidayCalendar({ holidays: ['2026-10-28'] }); // 周三
+    const line = priceTierSummary(PEAK_AT);
+    expect(line).not.toContain('未配置法定节假日表');
+    expect(line).toContain('空闲价');
   });
 });
 

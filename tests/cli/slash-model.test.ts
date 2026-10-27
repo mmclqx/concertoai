@@ -73,7 +73,7 @@ describe('executeModelCommand：查看类命令', () => {
     const content = result.message?.content ?? '';
     expect(content).toContain('DeepSeek V4 Flash');
     expect(content).toContain('空闲价');
-    expect(content).toContain('¥1.5/百万');
+    expect(content).toContain('¥1/百万');
     expect(result.nextModel).toBeUndefined(); // 查看不改变模型
   });
 
@@ -116,7 +116,7 @@ describe('executeModelCommand：切换（成本方向决定是否确认）', () 
     // 确认文案必须含成本对比（不能只问「是否切换」）
     const question = String(confirm.mock.calls[0]?.[0] ?? '');
     expect(question).toContain('成本对比');
-    expect(question).toContain('3.0 倍');
+    expect(question).toContain('3.7 倍');
     expect(result.nextModel).toBe('deepseek-v4-pro');
     expect(result.message?.content).toContain('已切换到');
   });
