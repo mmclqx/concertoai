@@ -45,6 +45,13 @@ export const en = {
       description: 'One-command pre-commit health check (read-only, fixes nothing)',
       json: 'Print structured JSON (for scripts / automation)',
     },
+    // v5.0 T16: fix command (auto-repair, the recommended entry of self-heal)
+    fix: {
+      description:
+        'Auto-repair failures (thin self-heal entry: classify → repair → re-verify → rollback; every write asks)',
+      dryRun: 'Diagnose only and print the repair strategy, no writes (no API key needed)',
+      autoApprove: 'Approve every repair automatically (careful; by default both gates ask)',
+    },
     doctor: {
       description: 'Environment diagnostics (includes DeepSeek account balance)',
     },
@@ -141,6 +148,41 @@ export const en = {
       '💡 Add lint / typecheck / test scripts to package.json and retry, or run `concertoai init` to generate a project guide (with the usual commands).',
     runFailed: '❌ Failed to run {script}: {error}',
     timedOut: '⏱ {script} timed out (>{seconds}s), treated as failure',
+  },
+  // v5.0 T16: fix command (auto-repair: thin self-heal entry + --dry-run diagnosis)
+  fix: {
+    title: '🔧 Repair diagnosis (npm run verify)',
+    passed: '✅ verify passed, nothing to fix.',
+    unattributed:
+      '⚠️ verify exited non-zero but no specific error could be located in the output. Run `concertoai check` for the per-stage verdict, or inspect the raw output.',
+    summaryLine:
+      '{count} problem(s): {lint} auto-fixable by lint / {model} require a model fix (approval before writing) / {manual} need a human',
+    planTitle:
+      '💡 Repair strategy (up to {attempts} attempts, then handed over to you with the scene preserved):',
+    planLine: '{index}. [{stage}] {location}{code} — {action}{why}: {message}',
+    moreErrors: '… {count} more not shown (run `concertoai check` for the per-stage verdict)',
+    dryRunNotice:
+      'ℹ️  --dry-run: diagnosis only — no file written, no lint:fix, no snapshot, no model call.',
+    dryRunNext:
+      '💡 Drop --dry-run to actually repair: `concertoai fix` (every write asks you first).',
+    dryRunRunning: '[fix] running npm run verify (read-only diagnosis)…',
+    verifyRunFailed: '❌ Could not run verify: {error} (is this the project root?)',
+    needsTty:
+      '❌ An interactive terminal is required to approve repairs (edits and commands are always approved). Use `concertoai fix --dry-run` first, or pass --auto-approve explicitly in CI.',
+    confirmStart:
+      'About to run npm run verify and attempt auto-repair (up to {attempts} attempts; every write is confirmed separately). Continue? [y/N] ',
+    cancelled: 'Cancelled, nothing was changed.',
+    approvalTitle: '🔧 About to write: {summary}',
+    approvalPrompt: 'Approve this repair write? [y/N] ',
+    noApiKey:
+      'ℹ️  No API key provided: only lint fixes will run, model fixes are skipped (configure a key to auto-fix type errors).',
+    failedHint:
+      '❌ Still failing after {attempts} attempts — handing over to you (invalid changes were rolled back automatically).',
+    sceneKept:
+      '🗂  Scene preserved: leftover snapshot directory {path} (inspect with `concertoai snapshot list`, clean with `concertoai snapshot clean`).',
+    actionLintFix: 'lint auto-fix (npm run lint:fix)',
+    actionModelFix: 'model fix (approval before write)',
+    actionManual: 'not auto-fixed (hand to a human)',
   },
   // v5.0 T2: update command
   update: {

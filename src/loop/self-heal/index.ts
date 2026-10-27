@@ -35,6 +35,7 @@ import {
   MAX_SELF_HEAL_ATTEMPTS,
   repairVerifyReport,
   runVerifyAndParse,
+  strategyFor,
 } from './repair';
 import type { RepairVerifyResult, SelfHealPhase } from './types';
 
@@ -155,5 +156,6 @@ export {
   parseVerifyReport,
   repairVerifyReport,
   runVerifyAndParse,
+  strategyFor,
   suggestionFor,
 };

@@ -11,17 +11,48 @@
  */
 
 import { fmt, t } from '../../i18n';
-import type { VerifyReport } from './classifier';
+import type { VerifyError, VerifyReport } from './classifier';
 import { mergeLintPassed, parseLintErrors, parseVerifyReport } from './classifier';
 import { isSimpleTypeError, suggestionFor } from './model';
 import { applyModelFix } from './snapshot-guard';
-import type { RepairVerifyOptions, RepairVerifyResult, SelfHealAttempt } from './types';
+import type {
+  RepairVerifyOptions,
+  RepairVerifyResult,
+  SelfHealAction,
+  SelfHealAttempt,
+} from './types';
 
 /** 自我修复最大尝试次数（超限转人工）。 */
 export const MAX_SELF_HEAL_ATTEMPTS = 2;
 
 /** 每次模型修复仅修 1 个错误（避免连锁引入新错误）。 */
 export const MAX_MODEL_FIXES_PER_ATTEMPT = 1;
+
+/**
+ * 单条错误的修复策略（**唯一判定来源**，v5.0 T16 抽取）。
+ *
+ * 优先级：lint 错误 → 确定性 `npm run lint:fix`；type 简单错误（缺 import / 缺类型标注）
+ * → 模型修复（写盘前走审批）；其余（build / test / type 复杂错误）→ 不自动修，转人工。
+ *
+ * ## 为什么单独抽成纯函数
+ *
+ * `concertoai fix --dry-run` 要回答「如果真修，你会怎么修」，而**只能有一个答案**：
+ * 如果 dry-run 自己再写一份 if/else，就会出现「诊断说 lint 直修、真修却走模型」这类
+ * 自相矛盾（G6 薄包装铁律：禁止复制第二套判定/生成逻辑）。所以：
+ * - `repairVerifyReport`（真修）用它挑动作；
+ * - `fix --dry-run`（诊断）用它出策略；
+ *
+ * 两条路径共用同一份优先级，改规则只改这里。
+ */
+export function strategyFor(error: VerifyError): SelfHealAction {
+  if (error.stage === 'lint') {
+    return 'lint-fix';
+  }
+  if (isSimpleTypeError(error)) {
+    return 'model-fix';
+  }
+  return 'none';
+}
 
 /** 解析 verify 输出（生产：跑真实 npm run verify → parseVerifyReport）。 */
 export async function runVerifyAndParse(options: RepairVerifyOptions): Promise<VerifyReport> {
@@ -78,8 +109,8 @@ export async function repairVerifyReport(
       break;
     }
 
-    // 1) lint 错误 → 确定性 lint:fix
-    const lintErrors = report.errors.filter((e) => e.stage === 'lint');
+    // 1) lint 错误 → 确定性 lint:fix（动作由 strategyFor 判定，与 --dry-run 诊断同源）
+    const lintErrors = report.errors.filter((e) => strategyFor(e) === 'lint-fix');
     if (lintErrors.length > 0) {
       log(
         fmt(t().selfHeal.logLintFixAttempt, {
@@ -111,8 +142,8 @@ export async function repairVerifyReport(
       continue;
     }
 
-    // 2) 首个 type 简单错误 → 模型修复（快照守卫状态机，每次 1 个）
-    const simpleType = report.errors.find((e) => isSimpleTypeError(e));
+    // 2) 首个 type 简单错误 → 模型修复（快照守卫状态机，每次 1 个；动作同样来自 strategyFor）
+    const simpleType = report.errors.find((e) => strategyFor(e) === 'model-fix');
     if (simpleType !== undefined) {
       log(
         fmt(t().selfHeal.logModelFixAttempt, {

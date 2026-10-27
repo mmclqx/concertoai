@@ -88,20 +88,21 @@ program.name('concertoai').description(t().cli.description).version(VERSION);
  * 2. **不打空头支票**：表里写了但没注册的命令，会被 `findCommand` 过滤掉，
  *    一个字都不会出现在用户眼前（T10 / T12 两次踩过的坑，见 ADR-044）。
  *
- * ## M4 四动词的预留位（用户 2026-10-28 拍板：「绝对不允许打空头支票」）
+ * ## M4 四动词（用户 2026-10-28 拍板：「绝对不允许打空头支票」）
  *
- * `check` / `fix` / `commit` / `review` 属 M4（T15-T19），**当前未注册**，因此
- * 首屏一个字都不许出现。等 M4 落地后，**只改这一个数组**（把它们插到最前面）即可
- * 自动出现在「常用命令」，渲染逻辑不用动。
+ * `check` / `fix` 已落地（T15 / T16）；`commit` / `review` 属 T17 / T18，**当前未注册**，
+ * 因此首屏一个字都不许出现。落地时**只改下面这一个数组**（插到最前面）即可自动出现在
+ * 「常用命令」，渲染逻辑不用动。
  * 顺序即产品主张：`check`（提交前能不能提交）→ `fix`（报错自动修）→
  * `commit`（提交）→ `review`（审一遍）是 v5.0 的「提交前主路径」。
  */
 const COMMON_COMMAND_ORDER: readonly string[] = [
-  // v5.0 T15：`check` 已落地，按预留位插到最前（提交前主路径的第一步，只读最安全）。
-  // M4 剩余三动词（fix / commit / review）尚未注册，落地时同样加在这一行下面。
+  // v5.0 T15：`check` 已落地（提交前主路径的第一步，只读最安全）。
   'check',
+  // v5.0 T16：`fix` 已落地（check 说「不行」之后的那一步：薄包装 self-heal）。
+  'fix',
   'init', // 生成规则文件（也是 T13 场景提示指向的命令）
-  'self-heal', // 跑 verify，失败自动修
+  'self-heal', // 跑 verify，失败自动修（fix 是它的推荐入口，保留原名不删）
   'doctor', // 环境诊断
   'chat', // 进入对话
   'run', // 一次性任务
@@ -493,6 +494,41 @@ program
       process.exitCode = code;
     }
   });
+
+// v5.0 T16：fix 命令（报错自动修：self-heal 的推荐入口，薄包装 + 每次写盘审批）
+// ⚠️ 与 `self-heal` 的关系：同一闭环，`fix` 是推荐入口（`--help` 里排在前面），
+// `self-heal` 保留不删（旧脚本/文档引用它，改语义会静默改变行为）。
+program
+  .command('fix')
+  .description(t().cli.fix.description)
+  .option('--dry-run', t().cli.fix.dryRun)
+  .option('--auto-approve', t().cli.fix.autoApprove)
+  .option('-m, --model <id>', t().cli.model.description)
+  .option('--lang <zh|en>', '界面语言')
+  .action(
+    safeAction(
+      async (options: {
+        dryRun?: boolean;
+        autoApprove?: boolean;
+        model?: string;
+        lang?: string;
+      }) => {
+        const { runFixCommand } = await import('./fix');
+        const code = await runFixCommand({
+          cwd: process.cwd(),
+          // --dry-run 只诊断、不调模型 → 不解析 Key（第一次进项目、还没配 Key 也能先看清问题）
+          ...(options.dryRun === true ? {} : { apiKey: await getApiKey() }),
+          model: options.model,
+          dryRun: options.dryRun === true,
+          autoApprove: options.autoApprove === true,
+          lang: options.lang,
+        });
+        if (code !== 0) {
+          process.exitCode = code;
+        }
+      },
+    ),
+  );
 
 // v5.0 T2：update 命令（检查 npm 最新版并升级）
 program

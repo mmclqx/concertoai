@@ -12,7 +12,7 @@ ConcertoAI 是一款**中文优先**的终端编码助手 CLI（DeepSeek 驱动�
 
 - **技术栈**：TypeScript (strict) + Node ≥22 + ESM，Ink 7 (React 19) 渲染 TUI，commander 解析 CLI，zod 做工具参数校验，vitest 测试，Biome 检查，tsup 打包
 - **运行时依赖**：`ink` / `react` / `commander` / `zod` / `cli-highlight` / `chalk` / `tiktoken`（v2.0 BPE 精确 Token 计数）
-- **测试现状**：146 个测试文件、1990 个用例，`npm run verify` 全绿，`npm audit` 0 漏洞；已用真实 `DEEPSEEK_API_KEY` 完成端到端冒烟
+- **测试现状**：148 个测试文件、2035 个用例，`npm run verify` 全绿，`npm audit` 0 漏洞；已用真实 `DEEPSEEK_API_KEY` 完成端到端冒烟
 - **安全基线**：编辑与命令一律审批（fail-closed）、路径沙箱、结果截断、白名单免审批——无 yolo 模式
 - **v3.1 新增能力**：AI 自我修复闭环（self-heal）/ 多项目管理（project）/ 多租户登录（account）/ Orchestrator CLI（team、/orchestrate、audit export）/ 结构化错误增强（error-codes）；**v3.1 预留功能（已交付）**：`concertoai balance`（余额查询）/ `concertoai doctor`（环境诊断）、配置目录迁移 `~/.lumen → ~/.concertoai`（`src/store/paths.ts` 单一来源 + 幂等迁移）；**v2.2 智能成本控制**（高峰时段模型自动切换，见 §4 D41）
 - **v3.2 新增能力**：跨平台 CI 矩阵与 spawn 审计（ADR-032）/ UNC 路径与 EXDEV 边界（ADR-031）/ self-heal 模块化拆分（ADR-030）/ audit 损坏行统计 + /orchestrate diagnostics / 长任务进度推送（team onProgress + self-heal onPhase）/ project-account 视觉与 doctor 账号完整性 / 启动期缓存（ADR-029）/ Agent 市场版本对比与 `update --all`
@@ -32,6 +32,7 @@ ConcertoAI 是一款**中文优先**的终端编码助手 CLI（DeepSeek 驱动�
 │              concertoai balance（v3.1 余额查询）/ concertoai doctor（v3.1 环境诊断）│
 │              concertoai project（v3.1 项目管理）/ concertoai self-heal（v3.1 自我修复）│
 │              concertoai check（v5.0 T15 提交前只读体检：四段结论 + 下一步命令）│
+│              concertoai fix（v5.0 T16 报错自动修：self-heal 薄入口 + --dry-run 诊断）│
 │              concertoai team（v3.1 团队执行）/ concertoai audit export（v3.1 审计导出）│
 │              concertoai workflow list|init|run|export|import|create（v4.0 M2 DAG 工作流）│
 │              concertoai plugin install|search|list|remove|browse|recommend|popular（v4.0 M4 插件市场）│
@@ -68,7 +69,7 @@ ConcertoAI 是一款**中文优先**的终端编码助手 CLI（DeepSeek 驱动�
                        │ ctx.requestApproval（审批挂起/恢复）
 ┌──────────────────────▼──────────────────────────────────────┐
 │ loop/ 会话主循环（src/loop/）                                 │
-│   loop.ts     runLoop：消息组装→模型→工具分发→回填（≤50 轮）   │
+│   loop.ts     runLoop：消息组装→模型→工具分发→回填（≤200 轮）  │
 │   context.ts  上下文窗口管理（80% 预算裁剪 + 日志）            │
 │   messages.ts ChatMessage⇄ApiMessage 序列化 / 工具结果格式化   │
 │   types.ts    ChatMessage / ToolCall / Role                  │
@@ -223,7 +224,7 @@ cli/index.ts（无子命令或 chat）
       ④ 有工具调用 → 逐条执行（顺序）：
            JSON.parse(arguments) → registry.run(name, args, ctx)
            → 结果 formatToolResult 截断回填为 tool 消息
-         → 回到 ②（最多 MAX_LOOP_TURNS = 50 轮，超限返回 interrupted 不抛错，已累积结果保留）
+         → 回到 ②（最多 MAX_LOOP_TURNS = 200 轮，超限返回 interrupted 不抛错，已累积结果保留）
   → App：消息历史更新、token 估算累计、store.appendAll 落盘
 ```
 
@@ -448,7 +449,7 @@ concertoai/
 │   │       ├── research.ts 研究型子代理（多角度对比分析，结论 ≤500 字）
 │   │       └── index.ts    registerBuiltinSubagents
 │   ├── cli/
-│   │   ├── index.ts      commander 入口：concertoai（默认 chat）/ chat / run / plan / snapshot / balance / doctor / project / self-heal / team / audit / login / logout / whoami / account / workflow / provider / plugin / lsp / config / check（v5.0 T15 提交前只读体检）；DEEPSEEK_API_KEY 检查（resolveApiKey 链）
+│   │   ├── index.ts      commander 入口：concertoai（默认 chat）/ chat / run / plan / snapshot / balance / doctor / project / self-heal / team / audit / login / logout / whoami / account / workflow / provider / plugin / lsp / config / check（v5.0 T15 提交前只读体检）/ fix（v5.0 T16 报错自动修，self-heal 薄入口）；DEEPSEEK_API_KEY 检查（resolveApiKey 链）
 │   │   ├── chat.tsx      chat 装配：TTY 检查、配置加载、注册表、规则加载、项目探测（resolveProjectForCwd）、MCP 启动、resume、render(App)；--provider 临时切换 + 启动 fallback 探测（v4.0 M3）
 │   │   ├── provider.ts   concertoai provider list/auth/switch（v4.0 M3）：状态列表（🟢/🔴/🟡）+ Key 交互验证（0600 存储）+ 持久化切换 defaultProvider
 │   │   ├── provider-runtime.ts Provider 运行时解析（v4.0 M3）：CLI --provider > config defaultProvider > deepseek；-m 映射 defaultProvider.model；三 Provider 统一复用 DeepSeekClient（baseUrl 可配）
@@ -458,6 +459,7 @@ concertoai/
 │   │   ├── balance.ts    concertoai balance：余额查询（fetchBalance，v3.1）
 │   │   ├── reflect.ts    concertoai reflect list/clear（v5.0 T10）：list 倒序表格（按显示宽度对齐，未分析显示「— 未分析」）/ clear 非 TTY 无 --yes **fail-closed**；formatReflectionTime / levelLabel / parseReflectLimit 纯函数可单测
 │   │   ├── check.ts      concertoai check（v5.0 T15）：提交前**只读**体检（零写入、不调 lint:fix、不建快照）——四段分类复用 `loop/self-heal` 的 `parseVerifyReport` + 摘要复用 `utils/error-summary`（G6 薄包装，无第二套解析）；**退出码权威、解析只做归因**；无 package.json / 无检测脚本 / 解析不出原因三态一律 exit 1（不静默成功）；`&&` 链未跑到的段标「未执行」；无 verify 脚本 → 分项 build→lint→type→test；每段输出 ≤40 行；`--json` 供 T17 commit 复用
+│   │   ├── fix.ts        concertoai fix（v5.0 T16）：**报错自动修 = self-heal 的薄入口**——`runFixCommand`（全依赖注入）+ `buildFixDiagnosis`（纯函数：错误→策略）+ `formatFixPlan`（纯字符串渲染）；**G6 薄包装**：分类复用 `parseVerifyReport`、执行复用 `runSelfHeal`、报告复用 `formatSelfHealReport`，动作优先级抽成 **`strategyFor`**（`loop/self-heal/repair.ts`）由真修与诊断**共用同一份判定**（本文件无第二套解析/第二套 if-else 优先级）；**`--dry-run` 零写入且不需要 API Key**（不调模型、不 lint:fix、不建快照）；**退出码权威**（非 0 但解析不出错误 → 明说「没能定位」，不冒充无需修复）；**两道审批门**（开跑前确认兜住 `lint:fix`、模型修复逐次写盘审批，非 TTY 无 `--auto-approve` fail-closed）；超限 2 次转人工 + 现场保留（只给真实存在的 `snapshot list/clean`）
 │   │   ├── doctor.ts     concertoai doctor：环境诊断（Node/Key/配置/会话/模型/余额/账号完整性，v3.1 + v3.2 M4；--vscode 追加 VS Code 四维，v3.4 M3；模型推荐 + 配置迁移完整性四检测，v4.0 M3）
 │   ├── vscode-health.ts VS Code 健康诊断（v3.4 M3）：进程数（tasklist/ps）/ 崩溃转储（Crashpad *.dmp）/ AI 扩展（code --list-extensions + argv.json 核对）/ argv.json 字段名单数与值格式校验（disable-extension）；纯解析函数 + 依赖注入（exec/readFile/scanDir），检测失败降级不崩溃
 │   │   ├── project.ts    concertoai project add/list/remove/info/switch（v3.1 M2；list 三列表格 + 当前项目 ★ 高亮，v3.2 M4）
@@ -504,7 +506,7 @@ concertoai/
 │   │   ├── error-summary.ts 错误摘要（v4.1 T1.1）：extractErrorSummary 识别 tsc/biome/npm/vitest 关键行
 │   │   └── text-width.ts 终端显示宽度（v5.0 T9）：displayWidth / truncateToWidth / wrapToWidth / stripAnsi——CJK 与全角算 2、emoji 与 VS16 算 2、组合符/零宽/ANSI 算 0；**禁止用 .length 判宽度**；diff 行截断、散文折行两把尺子
 │   ├── loop/
-│   │   ├── loop.ts       runLoop / MAX_LOOP_TURNS=50 / MAX_REPAIRS=2 / LoopEvent（chunk/tool_call/tool_result/usage/error）
+│   │   ├── loop.ts       runLoop / MAX_LOOP_TURNS=200 / MAX_REPAIRS=2 / LoopEvent（chunk/tool_call/tool_result/usage/error）
 │   │   ├── self-heal/    AI 自我修复闭环（v3.1 M1，v3.2 M2 拆分为 5 模块，详见 §4 D42 / §8）：
 │   │   │   ├── classifier.ts    四段分类器（build/lint/type/test）+ parseVerifyReport + mergeLintPassed（311 行）
 │   │   │   ├── model.ts         模型修复计划生成（isSimpleTypeError / parseModelFixOutput / generateModelFixPlan）
@@ -644,7 +646,7 @@ concertoai/
 │       ├── zh.ts         中文字典 + fmt()（v5.0 T12 新增 hints.* 场景提示文案）
 │       ├── en.ts         英文字典（键与 zh 同构）
 │       └── index.ts      resolveLocale / setLocale / t() / DICTS
-└── tests/                镜像 src 结构（147 个文件 / 2015 用例，v3.4 基线 + M0 迁移器骨架 + M1 autoFix + M2 workflow + M3 Provider 体系 + M4 插件体系 + M5 team-parallel + M6 lsp + v4.0.1 Ctrl+C 崩溃链路 10 用例 + v4.1 体验打磨轮 35 用例 + v5.0 T8 审批洞察（approval-insight / risk-rules / impact-scan / fixtures 标注回归）+ v5.0 T12 场景提示（core/suggestion.test.ts 40 用例：七条硬约束逐条 + 命令护栏实跑 `--help` + IO 层边缘）+ v5.0 T13 提示 UI（ui/hint-text.test.ts 排版截断与阶段门禁 + ui/hint-bar.test.tsx 源码护栏与**卡满边界宽度** + ui/hint-signals.test.ts 信号口径 + ui/hint-app.test.tsx 挂起模型集成 + cli/slash-hints.test.ts + v5.0 T15 提交前体检（cli/check.test.ts 25 用例：假通过三态防线 + 零写入（脚本轨迹 + 真实落盘 mtime）+ Ctrl+C 中断 + 超长截断 + 变异测试自证护栏有牙）），含 tests/agent/、tests/agents/、tests/balance/、tests/cli/（含 check.test.ts 只读体检 + common.test.ts 启动缓存 + workflow.test.ts / slash-workflow.test.ts + provider.test.ts + plugin.test.ts + team-parallel.test.ts + prompt.test.ts / crash-handler.test.ts / help.test.ts）、tests/core/、tests/e2e/（team-cli/self-heal/project-isolation/platform-e2e）、tests/fixtures/（platform-samples 跨平台样本库 + approval/ 26 条真实 git diff 样本与人工标注 manifest.json）、tests/i18n/、tests/knowledge/、tests/loop/（self-heal/error-reporting）、tests/lsp/（framing/diagnostics/server）、tests/market/、tests/mcp/、tests/model/（client/models/tokenizer/providers/registry/router/recommend）、tests/observable/、tests/orchestrator/、tests/planner/、tests/plugin/（permissions/loader/installer/runtime）、tests/reviewer/（含 autofix.test.ts）、tests/skill/、tests/store/（projects/accounts/accounts-exdev/migration/config）、tests/tools/、tests/ui/（含 review-report.test.tsx）、tests/utils/（error-summary.test.ts）、tests/workflow/（templates/parser/nl-generator/executor/preflight） 等
+└── tests/                镜像 src 结构（148 个文件 / 2035 用例，v3.4 基线 + M0 迁移器骨架 + M1 autoFix + M2 workflow + M3 Provider 体系 + M4 插件体系 + M5 team-parallel + M6 lsp + v4.0.1 Ctrl+C 崩溃链路 10 用例 + v4.1 体验打磨轮 35 用例 + v5.0 T8 审批洞察（approval-insight / risk-rules / impact-scan / fixtures 标注回归）+ v5.0 T12 场景提示（core/suggestion.test.ts 40 用例：七条硬约束逐条 + 命令护栏实跑 `--help` + IO 层边缘）+ v5.0 T13 提示 UI（ui/hint-text.test.ts 排版截断与阶段门禁 + ui/hint-bar.test.tsx 源码护栏与**卡满边界宽度** + ui/hint-signals.test.ts 信号口径 + ui/hint-app.test.tsx 挂起模型集成 + cli/slash-hints.test.ts + v5.0 T15 提交前体检（cli/check.test.ts 25 用例：假通过三态防线 + 零写入（脚本轨迹 + 真实落盘 mtime）+ Ctrl+C 中断 + 超长截断 + 变异测试自证护栏有牙）+ v5.0 T16 报错自动修（cli/fix.test.ts 20 用例：`--dry-run` 零写入（脚本轨迹）+ 无 Key 也能诊断（不构造模型客户端）+ 退出码非 0 却解析不出错误时**不冒充通过** + 两道审批门（拒绝则文件原样未改 / 批准则恰好 1 次）+ 非 TTY fail-closed（verify 一次都没跑）+ Ctrl+C（undefined）取消 + 修不好转人工只给真实存在的 snapshot 命令 + **薄包装源码护栏**（不许自带 verify 解析、不许直接起子进程））），含 tests/agent/、tests/agents/、tests/balance/、tests/cli/（含 check.test.ts 只读体检 + fix.test.ts 报错自动修 + common.test.ts 启动缓存 + workflow.test.ts / slash-workflow.test.ts + provider.test.ts + plugin.test.ts + team-parallel.test.ts + prompt.test.ts / crash-handler.test.ts / help.test.ts）、tests/core/、tests/e2e/（team-cli/self-heal/project-isolation/platform-e2e）、tests/fixtures/（platform-samples 跨平台样本库 + approval/ 26 条真实 git diff 样本与人工标注 manifest.json）、tests/i18n/、tests/knowledge/、tests/loop/（self-heal/error-reporting）、tests/lsp/（framing/diagnostics/server）、tests/market/、tests/mcp/、tests/model/（client/models/tokenizer/providers/registry/router/recommend）、tests/observable/、tests/orchestrator/、tests/planner/、tests/plugin/（permissions/loader/installer/runtime）、tests/reviewer/（含 autofix.test.ts）、tests/skill/、tests/store/（projects/accounts/accounts-exdev/migration/config）、tests/tools/、tests/ui/（含 review-report.test.tsx）、tests/utils/（error-summary.test.ts）、tests/workflow/（templates/parser/nl-generator/executor/preflight） 等
 ```
 
 ## 6. 5分钟快速体验
@@ -861,6 +863,7 @@ npm run verify     # 验收：build + lint + typecheck + test（--silent）
 | 项目隔离 | 多项目管理下会话/审批白名单/MCP 服务按项目分目录存储，全局配置/技能/Agent 共享（v3.1） |
 | self-heal | AI 自我修复闭环：`npm run verify` 失败 → 分类（lint/type）→ 自动修复 → 验证 → 回滚（v3.1） |
 | check（只读体检） | `concertoai check`：跑既有检测（verify 或分项 build/lint/type/test）后给一句「能不能提交」的结论——**只看退出码判定通过与否**（解析只做失败归因）、**零写入**（不修、不建快照）、判不了就如实说判不了（v5.0 T15） |
+| fix（报错自动修） | `concertoai fix`：`self-heal` 的**薄入口**——分类→修复→复验→回滚，最多 2 次超限转人工并保留现场；**动作优先级只有一份判定**（`strategyFor`，诊断与真修同源）、`--dry-run` 零写入且不需要 API Key、**每次写盘都要确认**（开跑前一道 + 模型写盘前逐道）、修不好只说真实存在的命令（v5.0 T16） |
 
 ---
 

@@ -8,6 +8,33 @@
 
 ## [Unreleased]
 
+### Added — v5.0 M4 T16：`concertoai fix` 报错自动修（2026-10-28 完成）
+
+> 定位：**`check` 说「不行」之后的下一步——一条命令让 AI 试着修。** `fix` 只做 **薄包装**（判断与修复逻辑一个字都不重写），「每次写盘都必须问」不放宽。148 文件 / 2035 用例全绿（+1 文件 / +20 用例）。
+
+- **`src/cli/fix.ts`（新增）**：`runFixCommand`（命令入口 + 全依赖注入，测试不跑真实 verify / 不碰真实终端）/ `buildFixDiagnosis`（纯函数：错误 → 修复策略）/ `formatFixPlan`（纯字符串渲染，TUI 可复用）+ `MAX_DIAGNOSIS_ENTRIES = 20` / `MAX_MESSAGE_DISPLAY = 200`（G5：超长输出不淹没终端）
+- **G6 薄包装：动作优先级抽成唯一判定源** `strategyFor(error)`（`src/loop/self-heal/repair.ts`）——`repairVerifyReport`（真修）与 `fix --dry-run`（诊断）**共用同一份**「lint → 确定性 `lint:fix` / type 简单错误 → 模型修复 / 其余 → 转人工」判定。分类复用 `parseVerifyReport`、执行复用 `runSelfHeal`、报告复用 `formatSelfHealReport`，**`fix.ts` 里没有第二套 verify 解析，也没有第二个 if/else 优先级表**（否则会出现「诊断说 lint 直修、真修却走模型」的自相矛盾）
+- **`--dry-run` 零写入**：只跑 `npm run verify` + 解析，输出「共 N 个问题 + 每条错误打算怎么修 + 最多尝试几次」。**不调模型（不花钱）、不跑 `lint:fix`、不建快照、不写盘**，且**不需要 API Key**——第一次进项目、还没配 Key 的用户也能先看清问题（边缘路径①）
+- **退出码权威**（承接 T15 假通过教训）：`--dry-run` 的通过与否**只看子进程真实退出码**，解析只回答「哪条错误、打算怎么修」；退出码非 0 却一条错误都解析不出 → 明说「**没能定位**」并指向 `concertoai check`，**绝不写成「无需修复」**
+- **两道审批门**：① **开跑前确认**——覆盖 `lint:fix` 这类确定性修复（它本身不弹审批框，不兜一层就是「静默改文件」）② **模型修复每次写盘前逐条确认**（复用 `runSelfHeal` 的 `requestApproval`，T8/T9 的风险 insight 自动生效）。非 TTY 且无 `--auto-approve` → **fail-closed 拒绝启动**并指路 `--dry-run`；Ctrl+C / 回答不是 y 一律当拒绝
+- **超限转人工 + 现场保留**：复用既有 `MAX_SELF_HEAL_ATTEMPTS`（2 次）与 `RepairVerifyResult.exceeded`；文案只给**真实存在**的命令（`concertoai snapshot list` / `concertoai snapshot clean`）+ 快照目录路径——`snapshot restore` 至今不存在，**一个字都不写**（T10 / T12 空头支票教训，ADR-044）；修复无效的改动由 self-heal 在复验失败时**自动回滚**，不需要用户手敲回滚
+- **无 Key 不静默降级**：没配 Key 时明说「只跑 lint 直修，模型修复已跳过（配好 Key 可自动修类型错误）」，不假装修完了
+- **i18n**：`zh.fix.*` / `en.fix.*` **同构**（诊断标题 / 通过 / 未能定位 / 摘要 / 策略清单 / 截断 / dry-run 声明与下一步 / 审批标题与提示 / 取消 / 缺 Key / 转人工 / 现场保留 / 三类动作文案）+ `cli.fix.description / dryRun / autoApprove`（en 无 CJK 由 `en.test.ts` 看住）
+- **命令注册**：`src/cli/index.ts` 注册 `fix`（`--dry-run` / `--auto-approve` / `-m` / `--lang`），插入 `COMMON_COMMAND_ORDER`（`check` 之后）→ 首屏「常用命令」自动跟随（顺序表非文案表）；**`self-heal` 保留不删**（旧脚本 / 文档引用它，改语义 = 静默改变行为），`fix` 是它的推荐入口
+
+### 测试（v5.0 T16）
+
+- `tests/cli/fix.test.ts` **20 用例**，围绕「会不会偷偷写盘 / 会不会假装修好」组织：
+  - 纯函数层：诊断构造（verify 通过 → 零条目、次数上限复用 `MAX_SELF_HEAL_ATTEMPTS`）/ 动作一律来自 `strategyFor`（lint→lint-fix、type 简单→model-fix、build→none + 建议）/ 超上限截断 + `hiddenCount` / 退出码非 0 但解析不出错误 → **不冒充通过** / 通过时不渲染策略清单 / 未通过且零条目 → 明说「没能定位」/ 渲染含 dry-run 零写入声明
+  - 命令入口层：verify 通过 → exit 0 且 `lint:fix`／审批**零调用** / verify 失败 → exit 1 + 策略清单且**一次都没写盘** / 首次进裸项目（verify 跑不起来）不崩 / 无 Key 也能诊断（不构造模型客户端）/ 非 TTY fail-closed（verify 一次都没跑）/ 回答 n 与 **Ctrl+C（undefined）** 均视为取消且零写入 / lint 直修后通过 / 模型修复审批**拒绝**（文件原样未改）与**通过**（落盘 + 审批恰好 1 次）/ 修不好 → 转人工 + 现场保留并给出真实存在的 snapshot 命令
+  - **薄包装源码护栏**：`fix.ts` 不许自带 verify 解析、不许直接 `spawn`/`ChildProcessQaRunner` 起子进程（必须经注入点）
+- **基线校准**：147 文件 / 2015 用例 → **148 文件 / 2035 用例**全绿（`npm run verify`）
+
+### Changed — v5.0 T16 顺带：工具循环上限 50 → 200（文档三处同步）
+
+- `src/loop/loop.ts`：`MAX_LOOP_TURNS` **50 → 200**（用户手动调整，长任务不再频繁触发 `interrupted`）；`LoopOptions.maxTurns` 的 JSDoc 同步
+- **文档同步**（纪律 1「常量改动必须搜全量引用」）：`ARCHITECTURE.md` §2 全景图与 §5 目录树的 `MAX_LOOP_TURNS = 50` 两处、`user-guide.md` §11 安全模型「工具循环上限 50 轮」一处，全部改为 **200**
+
 ### Added — v5.0 M4 T15：`concertoai check` 提交前只读体检（2026-10-28 完成）
 
 > 定位：**「现在这份代码能不能提交？」一条命令回答，只读、零写入。** 此前「能不能提交」只能靠手敲 `npm run verify` 再从几百行翻滚输出里自己找结论；而 `self-heal` 会动手修——用户 2026-10-28 拍板：**体检先行，修东西是 `self-heal` 的事**。147 文件 / 2015 用例全绿（+1 文件 / +25 用例）。

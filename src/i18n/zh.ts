@@ -44,6 +44,12 @@ export const zh = {
       description: '提交前一条命令体检（只读，不修任何东西）',
       json: '输出结构化 JSON（供脚本/自动化消费）',
     },
+    // v5.0 T16：fix 命令（报错自动修，self-heal 的推荐入口）
+    fix: {
+      description: '报错自动修（self-heal 薄入口：分类 → 修复 → 复验 → 回滚，每次写盘都审批）',
+      dryRun: '只诊断并给出修复策略，不写盘（零写入，不需要 API Key）',
+      autoApprove: '自动批准全部修复（谨慎；默认开跑前与每次写盘都要确认）',
+    },
     doctor: {
       description: '环境诊断（含 DeepSeek 账户余额）',
     },
@@ -136,6 +142,37 @@ export const zh = {
       '💡 在 package.json 补上 lint / typecheck / test 脚本后重试，或运行 `concertoai init` 生成项目指南（含常用命令）。',
     runFailed: '❌ 执行 {script} 失败：{error}',
     timedOut: '⏱ {script} 超时（>{seconds}s），视为失败',
+  },
+  // v5.0 T16：fix 命令（报错自动修：self-heal 薄入口 + --dry-run 只诊断）
+  fix: {
+    title: '🔧 修复诊断（npm run verify）',
+    passed: '✅ verify 全部通过，无需修复。',
+    unattributed:
+      '⚠️ verify 退出码非 0，但输出里没能定位到具体错误（修不修得先看清楚，请运行 `concertoai check` 看分段结论或人工查看原始输出）。',
+    summaryLine:
+      '共 {count} 个问题：可 lint 直修 {lint} 个 / 需要模型修复（写盘前审批）{model} 个 / 需人工 {manual} 个',
+    planTitle: '💡 修复策略（最多尝试 {attempts} 次，超限转人工并保留现场）：',
+    planLine: '{index}. [{stage}] {location}{code} — {action}{why}：{message}',
+    moreErrors: '… 另有 {count} 条未显示（先跑 `concertoai check` 看分段结论，避免刷屏）',
+    dryRunNotice: 'ℹ️  --dry-run：只诊断，未写任何文件、未执行 lint:fix、未建快照、未调用模型。',
+    dryRunNext: '💡 去掉 --dry-run 即执行修复：`concertoai fix`（每次写盘都会单独征求你的同意）。',
+    dryRunRunning: '[fix] 执行 npm run verify（只读诊断）…',
+    verifyRunFailed: '❌ 无法执行 verify：{error}（请确认当前目录是项目根目录）',
+    needsTty:
+      '❌ 需要交互式终端来确认修复（编辑与命令一律审批）。先用 `concertoai fix --dry-run` 看诊断，或在 CI 中显式加 --auto-approve。',
+    confirmStart:
+      '即将运行 npm run verify 并尝试自动修复（最多 {attempts} 次；每次写盘都会单独确认）。继续？[y/N] ',
+    cancelled: '已取消，未做任何修改。',
+    approvalTitle: '🔧 即将写入：{summary}',
+    approvalPrompt: '批准这次修复写盘？[y/N] ',
+    noApiKey:
+      'ℹ️  未提供 API Key：只执行 lint 直修，模型修复已跳过（配好 Key 后可自动修类型错误）。',
+    failedHint: '❌ 已尝试 {attempts} 次仍未全部通过，转人工处理（修复无效的改动已自动回滚）。',
+    sceneKept:
+      '🗂  现场已保留：残留快照目录 {path}（用 `concertoai snapshot list` 查看、`concertoai snapshot clean` 清理）。',
+    actionLintFix: 'lint 直修（npm run lint:fix）',
+    actionModelFix: '模型修复（写盘前审批）',
+    actionManual: '不自动修（转人工）',
   },
   // v5.0 T2：update 命令
   update: {

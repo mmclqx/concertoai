@@ -131,6 +131,56 @@ $ concertoai self-heal
 → 修复后 verify 失败 → 快照回滚，保留报告转人工
 ```
 
+### `concertoai fix` —— 报错自动修（v5.0 T16，`self-heal` 的推荐入口）
+
+`concertoai check` 说「不行」之后的下一步：跑 `npm run verify`，失败就按既有 self-heal 闭环**分类 → 修复 → 复验 → 回滚**，最多尝试 2 次，超限转人工并保留现场。
+
+| 用法 | 说明 |
+| --- | --- |
+| `concertoai fix --dry-run` | **只诊断**：跑 verify + 逐条列出「这个错误打算怎么修」。不写任何文件、不跑 `lint:fix`、不建快照、**不调模型（不花钱）**，**也不需要 API Key** |
+| `concertoai fix` | 真修：开跑前确认一次（覆盖 `lint:fix` 这类确定性修复），**每次模型写盘前再单独确认** |
+| `concertoai fix --auto-approve` | 跳过两道确认（**谨慎**，仅用于确实无人值守的 CI；默认在非交互终端会直接拒绝启动） |
+| `concertoai fix -m <id>` | 指定修复用的模型 |
+
+修复策略与 `concertoai self-heal` **共用同一份判定**（诊断说的和真修做的不会给出两种答案）：
+
+| 错误类型 | 处理 |
+| --- | --- |
+| lint / format | 确定性执行 `npm run lint:fix`（开跑前那次确认覆盖它——它本身不弹审批框） |
+| type（简单错误：缺 import / 缺类型标注） | 模型生成修复，**每次写盘前单独审批**；复验失败或引入新错误 → 快照自动回滚 |
+| build / test / 复杂 type | 不自动修，给中文建议转人工 |
+
+典型场景：
+
+```bash
+# ① 先看清楚：不需要 Key，一个字节都不写
+$ concertoai fix --dry-run
+🔧 修复诊断（npm run verify）
+共 3 个问题：可 lint 直修 2 个 / 需要模型修复（写盘前审批）1 个 / 需人工 0 个
+
+💡 修复策略（最多尝试 2 次，超限转人工并保留现场）：
+1. [lint] src/cli/foo.ts:12 — lint 直修（npm run lint:fix）：Lint format error…
+2. [lint] src/util.ts:3 — lint 直修（npm run lint:fix）：Lint/assist error…
+3. [type] src/api.ts:42 — 模型修复（写盘前审批）：Type error: 不能将 string 赋给 number
+
+ℹ️  --dry-run：只诊断，未写任何文件、未执行 lint:fix、未建快照、未调用模型。
+💡 去掉 --dry-run 即执行修复：`concertoai fix`（每次写盘都会单独征求你的同意）。
+
+# ② 真修（在项目根目录执行，且项目配了 npm run verify 脚本）
+$ concertoai fix
+即将运行 npm run verify 并尝试自动修复（最多 2 次；每次写盘都会单独确认）。继续？[y/N] y
+```
+
+几条**刻意设计**的边界：
+
+| 行为 | 为什么这样 |
+|---|---|
+| verify 退出码非 0 但一条错误都解析不出来 → 明说「**没能定位**」并指向 `concertoai check` | 解析器认不出的输出形态不等于「没问题」；「✅ 无需修复」是最危险的假话 |
+| 修不好时只说**真实存在**的命令（`concertoai snapshot list` / `concertoai snapshot clean`）+ 快照目录路径 | 「把某个快照精确还原」的 CLI 目前不存在，不给你一条跑不通的命令；修复无效的改动本身已在复验失败时自动回滚 |
+| 非交互终端（脚本 / CI）不加 `--auto-approve` 直接拒绝启动 | 没人能批准就不该改文件——与编辑、命令同一套 fail-closed |
+| 没配 API Key 时明说「只跑 lint 直修，模型修复已跳过」 | 不假装修完了 |
+| 原 `concertoai self-heal` **保留不变** | 旧脚本与文档仍在用它；`fix` 是同一个闭环更短、更靠前的推荐入口 |
+
 ### `concertoai project` —— 多项目管理（v3.1）
 
 | 子命令 | 说明 |
@@ -659,7 +709,7 @@ ConcertoAI 支持项目级跨会话记忆，帮助模型在多次对话中「记
 - 白名单：命令前缀词边界匹配（`npm test` 命中 `npm test --x`，不命中 `npm testx`）；
 - 截断：文件 50k 字符、搜索结果 100 条、工具回填 20k、命令输出 20k、项目规则 8k；
 - 上下文：超模型 80% 预算自动裁剪（保留 system + 最近轮），记录日志；Agent 显式上下文 ≤ 64KB；
-- 防失控：工具循环上限 50 轮；可修复失败累计超 2 次终止；审批拒绝/越界不进入重试管线；对抗性闭环 ≤ 5 次。
+- 防失控：工具循环上限 200 轮；可修复失败累计超 2 次终止；审批拒绝/越界不进入重试管线；对抗性闭环 ≤ 5 次。
 
 ## 12. 故障排查
 
