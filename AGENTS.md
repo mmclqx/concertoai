@@ -1,6 +1,6 @@
 # AGENTS.md - ConcertoAI 项目开发规范
 
-> 最后更新：2026-08-16
+> 最后更新：2026-10-28
 > 版本：v4.1.0
 
 ---
@@ -152,6 +152,7 @@ UI 测试：Ink 组件需用 ink-testing-library 覆盖
 14. **生成物方向/箭头语义自查**：任何「边/依赖/指向」类结构（工作流 depends、插件权限 allowlist、快照回滚、LSP 编辑方向）在规则表/常量旁必须注释「from 依赖 to / to 是被依赖方」；面向用户的提示用「X 依赖 Y」措辞，禁止用「X → Y」箭头（会被误读为执行顺序）；测试须同时断言「有边」与「无反向边」（教训：workflow 依赖推断方向反了——lint→typecheck 写成 lint 依赖 typecheck，见 09-踩坑记录/2026-08-15-workflow依赖推断方向反了.md）
 15. **自动生成模板/配置文件版本前瞻**：自动初始化/模板生成的配置文件（biome.json / tsconfig.json 等）不得绑定写死的旧工具版本假设（schema URL / 已废弃字段）；须用「npm install 最新版」的真实用户环境端到端验证「装完直接 run 能跑通」，存在性检查（依赖/scripts/配置文件）≠ 跑通（教训：preflight 自动初始化用 biome 1.9.4 schema 模板 + 不生成 tsconfig.json → 用户侧 biome 2.5.8 lint 必败 + tsc 打印 help，见 09-踩坑记录/2026-08-16-preflight自动初始化装好但跑不通.md）
 16. **手工测试隔离目录验证**：手工测试必须在独立目录进行，切换目录后立即验证 cd 生效（跨盘符用 `cd /d` 或 `pushd`；Windows 下 `cd C:\tmp\xxx` 从 F: 盘切过去不生效，所有写操作会落到当前目录污染项目）。验证方式：`cd /d <测试目录>` 后 `cd`（或 pwd）确认路径正确；测试记录须记录「实际执行目录」而非仅命令（教训：v4.1.1 手工测试 cd 跨盘符未生效，package.json 被 mt44 模板整体覆盖导致 npm run dev 丢失，见 09-踩坑记录/2026-08-16-手工测试cd跨盘符未生效污染项目根目录.md）
+17. **临时资源清理纪律**：任何脚本/命令/测试若创建外部资源（PTY、子进程、临时目录、临时文件、监听器、锁文件），释放逻辑必须写进 `try/finally`，并补 `process.on('exit')` + `SIGINT`/`SIGTERM` 兜底——末尾裸 `fs.rmSync` 在进程被硬杀（编辑器闪退 / Ctrl+C / taskkill）时 100% 失效；Windows 下杀 PTY/子进程必须补 `taskkill /pid <pid> /T /F`（`term.kill()` 只带走壳，POSIX 用进程组信号 `kill(-pid)`），且杀之前先探活（`process.kill(pid, 0)`）避免 pid 复用误伤；清理须幂等（flag 防重入）、先杀后删（`rmSync` 加 `maxRetries`/`retryDelay` 对付 Windows EBUSY）、失败时打印残留路径禁止静默；起真实资源的验证脚本必须自证清理（跑完自查残留目录/进程）。判据——「进程被硬杀时这段代码还会执行吗？」答否就必须兜底（教训：pty-drive-t13.mjs 把清理裸放在末尾，见 09-踩坑记录/2026-10-28-PTY清理未放finally导致孤儿进程.md）
 
 ## 命名与包
 项目	内容
