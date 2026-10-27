@@ -40,6 +40,11 @@ export const en = {
         'Analyze the project and generate two guides (AGENTS.md for AI + PROJECT_GUIDE.md for humans)',
       force: 'Overwrite existing files (default: never overwrite, ask interactively)',
     },
+    // v5.0 T15: check command (read-only pre-commit health check)
+    check: {
+      description: 'One-command pre-commit health check (read-only, fixes nothing)',
+      json: 'Print structured JSON (for scripts / automation)',
+    },
     doctor: {
       description: 'Environment diagnostics (includes DeepSeek account balance)',
     },
@@ -105,6 +110,37 @@ export const en = {
       '⚠️  This directory does not look like a project root (no package.json / src / pyproject.toml / Cargo.toml / go.mod)',
     notAProjectHint:
       '💡 Run `concertoai init` in the project root; no empty files will be created.',
+  },
+  // v5.0 T15: check command (read-only pre-commit check; never a silent pass)
+  check: {
+    title: '🔍 Pre-commit check',
+    modeVerify: '🔍 Pre-commit check (npm run verify)',
+    modePerStage: '🔍 Pre-commit check (per-stage: {scripts})',
+    stagePass: 'passed',
+    stageFail: '{count} issue(s): {summary}',
+    stageFailNoCount: 'failed: {summary}',
+    stageSkipped: 'not run (previous stage failed)',
+    stageUnknown: 'inconclusive (see raw output)',
+    stageNoScript: 'no check script configured',
+    outputTruncated: '(stage output is {total} lines, first {limit} shown)',
+    allPass: '✅ Ready to commit ({stages} all passed in {seconds}s)',
+    failed: '❌ {count} item(s) to fix ({stages})',
+    conclusionHintSelfHeal:
+      '💡 check is read-only and fixes nothing; run `concertoai self-heal` to auto-fix (rolls back on failure).',
+    nextTitle: '💡 Next steps:',
+    nextItem: '{index}. {command} — {why}',
+    whySelfHeal: 'run verify and auto-fix classified failures (auto rollback)',
+    whyLintFix: 'auto-fix formatting and safe lint issues',
+    noPackageJson:
+      '⚠️  No readable package.json in this directory — not a Node project, nothing to check.',
+    noPackageJsonHint:
+      '💡 Run it from your project root; for non-Node projects use your own toolchain (pytest / cargo test …).',
+    noScripts:
+      '⚠️  No check scripts found (build / lint / typecheck / test all missing) — nothing was checked, so this is not a pass.',
+    noScriptsHint:
+      '💡 Add lint / typecheck / test scripts to package.json and retry, or run `concertoai init` to generate a project guide (with the usual commands).',
+    runFailed: '❌ Failed to run {script}: {error}',
+    timedOut: '⏱ {script} timed out (>{seconds}s), treated as failure',
   },
   // v5.0 T2: update command
   update: {

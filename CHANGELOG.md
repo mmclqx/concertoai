@@ -8,6 +8,34 @@
 
 ## [Unreleased]
 
+### Added — v5.0 M4 T15：`concertoai check` 提交前只读体检（2026-10-28 完成）
+
+> 定位：**「现在这份代码能不能提交？」一条命令回答，只读、零写入。** 此前「能不能提交」只能靠手敲 `npm run verify` 再从几百行翻滚输出里自己找结论；而 `self-heal` 会动手修——用户 2026-10-28 拍板：**体检先行，修东西是 `self-heal` 的事**。147 文件 / 2015 用例全绿（+1 文件 / +25 用例）。
+
+- **`src/cli/check.ts`（新增）**：`runCheck`（纯逻辑 + 依赖注入，测试不跑真实 verify）/ `runCheckCommand`（命令入口，返回退出码）/ `formatCheckReport`（纯字符串渲染，Ink 可复用）
+- **G6 薄包装铁律**：四段分类**复用** `src/loop/self-heal` 的 `parseVerifyReport`，失败摘要**复用** `src/utils/error-summary` 的 `extractErrorSummary`——`check.ts` 里**没有第二套 verify 输出解析**（源码护栏用例盯着：出现 `STAGE_MARKER` / `error TS` / 自带段标记即红）
+- **退出码权威，解析只做归因**：通过与否**只看子进程真实退出码**，解析结果只回答「哪段挂了、挂在哪一行」。这条避免了两个方向的假话——解析器没认出成功标记 ≠ 失败；解析器没认出错误 ≠ 通过
+- **「不静默成功」三态**（本项目最容易犯的错就是假通过）：① 无 `package.json` → 「这里不是 Node 项目，无法体检」② 有 `package.json` 但 build / lint / typecheck / test 全缺 → 「**没做检测就不算通过**」③ 退出码非 0 却一条错误都定位不出 → 四段全「结果无法判定」+ 末尾带 `extractErrorSummary` 兜底单行——**三种一律 `exit 1`**
+- **`&&` 链诚实**：`verify` 定义顺序从**脚本定义**解析（不是猜输出），先跑 test 的项目里 test 失败后 build 标「未执行（前一段失败）」，**不冒充通过**
+- **无 `verify` 脚本 → 分项检测**：按固定顺序 build → lint → type → test 各跑一次（`typecheck` / `type` 两种写法都兼容），逐段用退出码判定；缺哪段就说「未配置检测脚本」，**不算通过也不算失败**
+- **下一步命令不打空头支票**（T10 / T12 两次踩坑的延续）：`npm run lint:fix` **仅在项目真的配了这个脚本时**才给；其余一律指向**已注册**的 `concertoai self-heal`——M4 的 `fix` 尚未落地，一个字都不写
+- **G5 输出受控**：每段输出最多 40 行 + 明确告知「共 N 行，已显示前 40 行」；`--json` 给机器可读结构（`ok` / `mode` / `stages` / `failedStages` / `conclusion` / `nextCommands` / `code`），供 T17 `commit` 直接复用
+- **`ChildProcessQaRunner` 增加 `script` 参数**（`src/agents/qa.ts`，默认 `verify` 行为逐字节不变）：分项检测复用既有 spawn + 超时 + **Windows 进程树终止**逻辑，不复制第二套执行器（G6）
+- **i18n**：`zh.check.*` / `en.check.*` 同构（标题 / 四段状态 / 截断提示 / 结论 / 下一步 / 三种「无法体检」文案 / 超时 / 运行失败），`cli.check.description` + `--json` 说明
+- **命令注册**：`src/cli/index.ts` 注册 `check`（`--json`），并插入 `COMMON_COMMAND_ORDER` 的预留位（首屏「常用命令」第一条=提交前主路径第一步）；`code !== 0` 时写 `process.exitCode`，CI 可直接用
+- **顺带修掉一处工作区脏状态**：`src/loop/self-heal/classifier.ts` 被此前的工具写成了 CRLF（内容与 HEAD 一致，`git diff --numstat` 零行），导致 `npm run lint` 的 format 段报错 → 行尾归一为 LF，**不改一个字符**
+
+### 测试（v5.0 T15）
+
+- `tests/cli/check.test.ts` **25 用例**，围绕「会不会骗人」组织：
+  - 主路径：全绿 → `✅ 可以提交` + `exit 0`；lint 失败 → 归因 lint + type/test 标「未执行」+ `nextCommands = [npm run lint:fix, concertoai self-heal]`；tsc 错误写在 **stderr** 也能归因 type；`verify` 先跑 test 时顺序按脚本定义
+  - 假通过防线：无 `package.json` / 无任何检测脚本 / 退出码非 0 但解析不出原因——**三种都必须 `exit 1` 且结论里不许出现「可以提交」**
+  - 边缘路径（G5 四覆盖）：首次运行裸目录 / 命令跑不起来（`spawn ENOENT` 不崩）/ **Ctrl+C 中断**（`ok=false` + `timedOut=false` + stderr 只有 `^C` → 判不了且仍给下一步）/ 500 行噪声输出截断到 40 行
+  - 两条红线：**零写入**（运行时断言执行过的脚本列表里永远没有 `fix`；真实落盘断言 `package.json` 与源码文件的**内容与 mtime 前后一致**）+ **薄包装**（源码护栏，含 `lint:fix` 只许「存在性探测」或「建议命令」两种身份）
+  - 命令注册护栏：`concertoai check --help` 起**真实进程**，必须有 `--json` 与描述（不打空头支票）
+- **变异测试自证护栏有牙**：① 把 `check` 改成「顺手跑 `lint:fix`」→ **2 红**（零写入 + 源码护栏）② 把结论改成「永远 `ok = true`」→ **6 红**；两次均自动还原并逐字比对（`restored identical: true`）
+- **基线校准**：146 文件 / 1990 用例 → **147 文件 / 2015 用例**全绿（`npm run verify`）
+
 ### Added — v5.0 M3 场景可发现 T14：`--help` 首屏精简（2026-10-28 完成）
 
 > 定位：**首屏只给动词，不给 21 条命令的平铺清单。** 新手打开 `--help` 面对一屏 46 行命令列表，等于没有帮助（v4.0「输出淹没」同类问题）。146 文件 / 1990 用例全绿（+14 用例）。

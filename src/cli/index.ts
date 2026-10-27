@@ -97,7 +97,9 @@ program.name('concertoai').description(t().cli.description).version(VERSION);
  * `commit`（提交）→ `review`（审一遍）是 v5.0 的「提交前主路径」。
  */
 const COMMON_COMMAND_ORDER: readonly string[] = [
-  // ← M4 落地后在此插入 'check' / 'fix' / 'commit' / 'review'（它们应排在最前）
+  // v5.0 T15：`check` 已落地，按预留位插到最前（提交前主路径的第一步，只读最安全）。
+  // M4 剩余三动词（fix / commit / review）尚未注册，落地时同样加在这一行下面。
+  'check',
   'init', // 生成规则文件（也是 T13 场景提示指向的命令）
   'self-heal', // 跑 verify，失败自动修
   'doctor', // 环境诊断
@@ -475,6 +477,20 @@ program
     });
     if (result.code !== 0) {
       process.exitCode = result.code;
+    }
+  });
+
+// v5.0 T15：check 命令（提交前只读体检：四段分类 + 一句结论 + 下一步命令）
+// ⚠️ 只读零写入——本命令**不修任何东西**（修是 self-heal 的事）。
+program
+  .command('check')
+  .description(t().cli.check.description)
+  .option('--json', t().cli.check.json)
+  .action(async (options: { json?: boolean }) => {
+    const { runCheckCommand } = await import('./check');
+    const code = await runCheckCommand({ cwd: process.cwd(), json: options.json === true });
+    if (code !== 0) {
+      process.exitCode = code;
     }
   });
 

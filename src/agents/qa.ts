@@ -103,6 +103,15 @@ export interface ChildProcessQaRunnerOptions {
   cwd?: string;
   /** npm 命令名（Windows 需 npm.cmd）。 */
   npmCommand?: string;
+  /**
+   * 要执行的 npm 脚本名（默认 `verify`）。
+   *
+   * v5.0 T15：`concertoai check` 在「项目没有 verify 脚本」时要分项跑
+   * build / lint / typecheck / test——与其在 check 里另写一套 spawn + 超时 +
+   * 进程树清理（G6 禁止第二套执行/解析），不如让本执行器带一个脚本名参数，
+   * 两条路径共用同一份 Windows 进程树终止逻辑。默认值保持 `verify`，行为不变。
+   */
+  script?: string;
 }
 
 /**
@@ -149,17 +158,20 @@ export function killTree(child: ChildProcess): Promise<void> {
 export class ChildProcessQaRunner implements QaRunner {
   private readonly cwd: string;
   private readonly npmCommand: string;
+  private readonly script: string;
 
   constructor(options: ChildProcessQaRunnerOptions = {}) {
     this.cwd = options.cwd ?? process.cwd();
     this.npmCommand = options.npmCommand ?? (process.platform === 'win32' ? 'npm.cmd' : 'npm');
+    // v5.0 T15：脚本名可指定（默认 verify，行为与之前逐字节一致）
+    this.script = options.script ?? 'verify';
   }
 
   run(timeoutMs: number): Promise<QaRunResult> {
     return new Promise((resolve) => {
       // npmCommand 已在构造器按平台处理（win32 → npm.cmd），此处直接使用；
       // 若再追加 `.cmd` 会变成 `npm.cmd.cmd`（ENOENT，v3.1.1 Windows 回归）。
-      const child = spawn(this.npmCommand, ['run', 'verify'], {
+      const child = spawn(this.npmCommand, ['run', this.script], {
         cwd: this.cwd,
         shell: true,
         windowsHide: true,

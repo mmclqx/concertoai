@@ -1,7 +1,7 @@
 # ConcertoAI 开发任务看板
 
 > 最后更新：2026-10-28
-> 当前里程碑：**🟡 v5.0 开发中（M1 7/7 ✅ + M2 审批透明化 4/4 ✅ + M3 场景可发现 3/3 ✅ 均已封板，2026-10-28）**（v5.0: M1 **7/7** ✅ · M2 **4/4** ✅ · M3 **3/3** ✅ · 下一步 **M4 CLI 动词化（T15-T19）** · 146 文件 / 1990 用例全绿）
+> 当前里程碑：**🟡 v5.0 开发中（M1 7/7 ✅ + M2 审批透明化 4/4 ✅ + M3 场景可发现 3/3 ✅ 均已封板 + M4 动词化 1/5 🔄，2026-10-28）**（v5.0: M1 **7/7** ✅ · M2 **4/4** ✅ · M3 **3/3** ✅ · M4 **1/5** 🔄 · 下一步 **M4 T16 fix** · 147 文件 / 2015 用例全绿）
 > 基于：[v5.0 开发计划](./v5.0-dev-plan.md) · [v5.0 开发任务](./v5.0-dev-tasks.md) · 历史：[v4.2 开发任务（已并入 v5.0 M1）](./v4.2-dev-tasks.md) · [v4.1 开发任务](./v4.1-dev-tasks.md) · [v4.0 开发任务](./v4.0-dev-tasks.md)
 
 ---
@@ -15,7 +15,7 @@
 | **M1 基线承接**（v4.2 并入） | T1 npx 实测 · T2 update · T3 ccai · T4 THIRD_PARTY · T5 init 双输出 · T6 model auto · T7 价格表 | **7/7** | ✅ **完成**（2026-10-27） |
 | M2 审批透明化 | T8 风险引擎 ✅ · T9 审批 UI ✅ · T10 复盘记录 ✅ · T11 配置降级 ✅ | **4/4** | ✅ **完成·已封板**（2026-10-28） |
 | M3 场景可发现 | T12 触发表引擎 ✅ · T13 三场景 UI ✅ · T14 首屏精简 ✅ | **3/3** | ✅ **完成·已封板**（2026-10-28） |
-| M4 CLI 动词化 | T15 check · T16 fix · T17 commit · T18 review · T19 护栏 | 0/5 | ⬜ 待开始 |
+| M4 CLI 动词化 | T15 check ✅ · T16 fix · T17 commit · T18 review · T19 护栏 | **1/5** | 🔄 **进行中**（T15 完成 2026-10-28） |
 | M5 收敛与度量 | T20 功能冻结 · T21 本地指标 · T22 定位重写 | 0/3 | ⬜ 待开始 |
 | 收尾 | T23.1 回归 · T23.2 文档 · T23.3 手工测试 · T23.4 自审+发布 | 0/4 | ⬜ 待开始 |
 
@@ -47,6 +47,12 @@
 | **T13 场景提示 UI** | ✅ **完成**（2026-10-28） | 「一条灰字、单行、不挤压输入框，用户看得见也关得掉」（ADR-045 / 承接 ADR-044）· **四个新模块**：`ui/hint-signals.ts`（状态信号采集：`hasProjectRulesFile` / `countUserTurns` / `isVerifyClassCommand` / `nextFailureStreak` / `nextRejectStreak`——**只认数出来的事实**）+ `ui/hint-text.ts`（纯字符串排版：`renderHintLine` / `resolveHintLine` / `isHintVisiblePhase`，**零 Ink 依赖**，命令永不截断）+ `ui/HintBar.tsx`（只上色，`memo`，`null` 时不占行）+ `cli/slash/hints.ts`（`/hints on\|off\|status` 会话级开关，不写配置）· **三条硬要求逐条落地**：① 纯字符串渲染 Ink 只上色（源码护栏断言组件零中文字面量、无 `<Box>`）② 单行 + 不挤压输入框（`null` 而非空 `<Text>`；真实容器宽度换算 `HINT_CONTAINER_PADDING_X`）③ 超宽按 `displayWidth` 截断但**命令绝对完整**（宽度不够时丢文案保命令）· **`awaiting` 阶段（本轮核心修正）**：`idle` / `awaiting` 才渲染，`streaming`（有字/有工具）与审批焦点一律不画；输入框 `inputActive = idle \|\| awaiting`——断网/假 Key 时既能看见提示，也**敲得进** `/hints off` · **假按钮防护**：等待期提交普通需求不排队但给「⏳ 正在等待模型回复…」回执，绝不静默吞；`/hints` 提到 `busy` 守卫之前 · **真实 PTY 端到端**（`scripts/pty-drive-t13.mjs`，隔离项目目录 + 隔离 HOME + `try/finally` + `exit`/信号兜底 + Windows `taskkill /T`）：四条断言 ①②③④ **全部 PASS**，且跑后自证「PTY 1 个已终止 / 临时目录已删除 / 残留 0」· **单测抓不到、端到端才暴露的三个真 bug 全部修复**：① 判定绑 `phase==='idle'` → 永远不提示 ② 输入框 `active={phase==='idle'}` → 命令敲不进去 ③ 按终端列数排版 → 100 列终端里 `concertoai init` 被折行劈开 · 测试 6 文件（`hint-text` / `hint-signals` / `hint-bar` / `hint-app` / `slash-hints` 等）· 踩坑 2 条（PTY 清理未放 finally / 提示行按终端列数排版在容器内必然折行）· **146 文件 / 1976 用例全绿** |
 
 | **T14 首屏精简** | ✅ **完成**（2026-10-28） | 「`--help` 首屏给动词不给 21 条命令平铺清单」（T14 验收：首屏 ≤ 40 行）· **分层渲染**：`src/cli/index.ts` 新增 `COMMON_COMMAND_ORDER`（**顺序表不是文案表**——命令名与描述一律从 `program.commands` 现取，改名/删命令/改描述时首屏自动跟随）+ `findCommand`（**查不到 = 不渲染**，T10/T12 的「不打空头支票」在此落地为代码而非人工核对）+ `renderGroupedHelp`（快速开始 3 步 → 常用命令 → 交互斜杠 → 高级折叠一行）· **`program.configureHelp({ visibleCommands })` 已挂载**（默认隐藏命令平铺，仅 `--all` 时显示；`visibleCommands` 读 `process.argv` 而非 `program.opts()`，因 `--help` 被解析即打印退出、同批 `--all` 可能尚未进 opts——两种参数顺序实测均 57 行等价，且各有用例）· **`readonly Command[]` → `[...cmd.commands]`**（commander 签名要可变数组；esbuild 不查类型，只有 `tsc` 会红——build 全绿 ≠ 类型正确）· **i18n 补齐** `help.fastStart/fast1/fast2/fast3/common/commonHint/slash/slashPlan/slashReview/slashWorkflow/slashHints/advanced/advancedHint`（zh/en 同构，`en.test.ts` 看住无 CJK；旧 `gettingStarted/step1-3/commands/example*` 死键全数退场）· **测试 `tests/cli/help.test.ts` 重写（17 用例）**：用 tsx 起**真实进程**跑 `--help` / `--help --all`，再拿 `Commands:` 段反查注册表做**交叉校验**（首屏每个名字必须查得到、描述必须与注册值逐字相同）+ 行数预算（≥25 且 ≤40）+ 四段顺序 + 常用∪高级=全部注册命令（无遗漏无重复）+ **M4 四动词双向不变量**（未注册则首屏一个字不许出现，注册了必须上首屏）+ i18n 死文案检测 + 斜杠命令走真实解析器 · **变异测试三次自证护栏有牙**：① 摘掉 `configureHelp` → 2 红 ② 往常用表塞未注册 `check` → **不红且正确**（`findCommand` 按设计过滤掉）③ 硬写一行 `check` → 3 红 · **首次进入引导复用 T13 `no-project-rules`**（不新增第二套，验收项「第一次有、第二次无」由 T12/T13 已有用例覆盖）· **顺带修一个挡住 verify 的既有 flaky**：`tests/cli/slash-skill.test.ts` 把技能装进**真实** `~/.concertoai/skills`（实测已累积 191 个 `install-test-*` 目录）且不清理 → 与 `tests/skill/loader.test.ts` 并行时计数不等（首轮全量实测仅此一处红、单跑必绿）；改为 `vi.spyOn(os,'homedir')` 隔离 + `vi.restoreAllMocks()` 清理，实测跑后 191→191 不再泄漏 · **146 文件 / 1990 用例全绿**（+14）|
+
+### M4 任务明细
+
+| 任务 | 状态 | 说明 |
+|------|------|------|
+| **T15 `concertoai check`** | ✅ **完成**（2026-10-28） | 「提交前一条命令判断能不能提交」——**只读，零写入**（`src/cli/check.ts` / `runCheckCommand`）· **G6 薄包装**：四段分类复用 `self-heal` 的 `parseVerifyReport`、失败摘要复用 `utils/error-summary` 的 `extractErrorSummary`，本源码内**没有第二套 verify 解析**（源码护栏盯着）· **退出码权威、解析只做归因**：通过与否只看子进程真实退出码，解析结果只回答「哪段挂了、挂在第几行」——避免「解析不到成功标记」被误判失败、「解析不到错误」被误判通过 · **不静默成功三态**：无 `package.json` → 「这里不是 Node 项目，无法体检」；有 `package.json` 但 build/lint/typecheck/test 全缺 → 「没做检测就不算通过」；退出码非 0 却一条错误都定位不出 → 四段全「结果无法判定」+ 末尾补 `extractErrorSummary` 兜底，三种均 `exit 1` · **`&&` 链诚实**：verify 先跑 test 时，后面 build 标「未执行（前一段失败）」，不冒充通过 · **无 verify 脚本 → 分项检测**（顺序固定 build→lint→type→test，`typecheck`/`type` 两种写法兼容）· **下一步命令不打空头支票**：`npm run lint:fix` 仅在项目真配了该脚本时才给，其余一律指向已注册的 `concertoai self-heal`（M4 的 `fix` 未落地故不许写）· **G5 输出受控**：每段最多 40 行 + `--json` 机器可读（供 T17 commit 复用）· `ChildProcessQaRunner` 增加 `script` 参数（默认 `verify`，行为不变）复用既有 Windows 进程树终止逻辑 · **25 用例**（`tests/cli/check.test.ts`），含真实落盘 mtime 零写入断言 + Ctrl+C 中断路径 + 命令注册护栏（`check --help` 真存在）· **变异测试自证护栏有牙**：改成「顺手跑 lint:fix」→ 2 红；改成「结论永远 ok=true」→ 6 红 · **147 文件 / 2015 用例全绿**（+1 文件 / +25 用例） |
 
 ---
 

@@ -39,6 +39,11 @@ export const zh = {
       description: '分析项目并生成两份指南（AGENTS.md 给 AI + PROJECT_GUIDE.md 给人）',
       force: '覆盖已存在的文件（默认不覆盖，交互询问）',
     },
+    // v5.0 T15：check 命令（提交前只读体检）
+    check: {
+      description: '提交前一条命令体检（只读，不修任何东西）',
+      json: '输出结构化 JSON（供脚本/自动化消费）',
+    },
     doctor: {
       description: '环境诊断（含 DeepSeek 账户余额）',
     },
@@ -101,6 +106,36 @@ export const zh = {
     notAProject:
       '⚠️  当前目录看起来不是项目根目录（未找到 package.json / src / pyproject.toml / Cargo.toml / go.mod）',
     notAProjectHint: '💡 请在项目根目录运行 `concertoai init`，不会生成空文件污染目录。',
+  },
+  // v5.0 T15：check 命令（提交前只读体检：只读、零写入、不静默成功）
+  check: {
+    title: '🔍 提交前体检',
+    modeVerify: '🔍 提交前体检（npm run verify）',
+    modePerStage: '🔍 提交前体检（分项检测：{scripts}）',
+    stagePass: '通过',
+    stageFail: '{count} 个问题：{summary}',
+    stageFailNoCount: '失败：{summary}',
+    stageSkipped: '未执行（前一段失败）',
+    stageUnknown: '结果无法判定（请查看原始输出）',
+    stageNoScript: '未配置检测脚本',
+    outputTruncated: '（该段输出共 {total} 行，已显示前 {limit} 行）',
+    allPass: '✅ 可以提交（{stages} 全部通过，耗时 {seconds}s）',
+    failed: '❌ {count} 项待修（{stages}）',
+    conclusionHintSelfHeal:
+      '💡 体检只读、不修任何东西；要自动修可以跑 `concertoai self-heal`（失败会自动回滚）。',
+    nextTitle: '💡 下一步：',
+    nextItem: '{index}. {command} — {why}',
+    whySelfHeal: '跑 verify，失败自动分类修复（失败自动回滚）',
+    whyLintFix: '自动修可自动修的格式与 lint 问题',
+    noPackageJson: '⚠️  当前目录没有可读取的 package.json —— 这里不是 Node 项目，无法体检。',
+    noPackageJsonHint:
+      '💡 请在项目根目录运行；非 Node 项目请用对应生态的工具（如 pytest / cargo test）。',
+    noScripts:
+      '⚠️  未找到任何检测脚本（build / lint / typecheck / test 都缺）——没做检测就不算通过。',
+    noScriptsHint:
+      '💡 在 package.json 补上 lint / typecheck / test 脚本后重试，或运行 `concertoai init` 生成项目指南（含常用命令）。',
+    runFailed: '❌ 执行 {script} 失败：{error}',
+    timedOut: '⏱ {script} 超时（>{seconds}s），视为失败',
   },
   // v5.0 T2：update 命令
   update: {
