@@ -207,6 +207,36 @@ $ concertoai audit export --out audit.json
 ✅ 审计日志已导出到 audit.json：共 42 条记录（跳过 0 条损坏行）。
 ```
 
+### `concertoai reflect` —— 拒绝复盘记录（v5.0 T10）
+
+| 子命令 | 说明 |
+|---|---|
+| `reflect list [--limit N]` | 按时间**倒序**展示最近 N 条（默认 20）：时间 / 级别 / 文件 / 风险类别 |
+| `reflect clear [--yes]` | 清空全部记录；交互环境需 `y` 确认（**回车 = 取消**），**非 TTY 无 `--yes` 直接拒绝** |
+
+- 记录位置：`~/.concertoai/reflections.jsonl`（**纯本地、零上传、O_APPEND 追加**）；
+- 写入时机：只在**编辑类**操作被 `n` / `Esc` / `Ctrl+C` 拒绝时；写入失败只提示、**绝不阻断审批**；
+- 关闭：`concertoai config set reflections off`，或临时 `CONCERTOAI_REFLECTIONS=off`（见配置表）。
+
+```bash
+$ concertoai reflect list --limit 2
+拒绝复盘（2 条，最新在前）
+时间         级别       文件                    风险类别
+10-28 01:54  — 未分析   src/util.ts             —
+10-28 01:53  ⚠️ 高      src/api.ts              删除/破坏性操作、鉴权
+```
+
+详见「3. 交互细节 → 拒绝复盘」小节。
+
+### `concertoai config set` —— 配置写入（v5.0 T10/T11）
+
+| 用法 | 说明 |
+|---|---|
+| `config set provider <name>` | 持久化默认 Provider（v4.0 M3） |
+| `config set approvalInsight <rich\|plain>` | `plain` = 审批卡恢复 v4.1.1 原貌（v5.0 T11）；非法值**报错不写盘** |
+| `config set reflections <on\|off>` | 关闭 / 开启拒绝复盘（v5.0 T10） |
+| `config restore` | 从 `config.v3.bak` 回滚配置格式 |
+
 ### `concertoai workflow` —— 工作流引擎（v4.0 M2）
 
 | 子命令 | 说明 |
@@ -372,7 +402,7 @@ $ concertoai account list
 三条**如实告知**的措辞约定（都是刻意的，不是文案疏漏）：
 
 1. **medium 不说「危险」**：`test-assertion-change`、网络超时这类规则逐行匹配天然有噪声，命中只表示「建议看一眼」，卡片一律写「🟡 中风险审批 / 建议重点关注（中风险提示，非阻断）」；
-2. **未分析 ≠ 无影响**：影响面扫描超时（300ms）/ 项目过大（>2000 文件）/ 读取失败时会如实写「影响面未分析（超时 300ms）」；只有**真的扫过且真的没有**才写「未发现其他文件引用该文件（已扫描 N 个文件）」；
+2. **未分析 ≠ 无影响**：影响面有六种状态，各自说真话——`ok`（有引用）→「该文件被 N 个文件引用」；`ok`（零引用）→「未发现其他文件引用该文件（已扫描 N 个文件）」；超时 →「影响面未分析（超时 300ms）」；项目过大 →「影响面未分析（项目过大，文件数超过 2000）」；**低风险没扫 →「低风险改动，未做影响面扫描（仅中高风险才扫）」**；读取失败 →「影响面未分析（读取失败）」。绝不把「没扫」说成「无影响」或「项目太大」；
 3. **低风险不标红**：`✅ 低风险审批` 配绿色边框；规则表覆盖有限，卡片不会承诺「一定安全」。
 
 大 diff 保护：默认只显示「⚠️ 行 ± 2 行」且总 diff ≤ 12 行，`v` 展开仍截断到 500 行并提示——避免大文件把终端刷爆。
@@ -380,6 +410,46 @@ $ concertoai account list
 非交互环境（`concertoai run` / 管道 / CI）不会渲染这张卡，直接按老版三行文案输出（`plain` 路径与 TUI 共用**同一套**字符串函数，不存在两套说法）。
 
 不想要这张卡：在 `~/.concertoai/config.json` 里设 `"approvalInsight": "plain"` 即恢复 v4.1.1 原貌（只显示标题 + diff + 按键）；想关掉某条聒噪规则，把它的 id 放进 `"riskRules": { "disabled": ["规则 id"] }`。
+
+#### 拒绝复盘：拒绝过的原因会被记住（v5.0 T10）
+
+按 `n` 拒绝一次**编辑**时，ConcertoAI 会往本地追加一条复盘记录，批完立刻显示：
+
+```
+📝 已记录到本地复盘（concertoai reflect list 查看，concertoai config set reflections off 可关闭）
+```
+
+查看与清空：
+
+```bash
+concertoai reflect list            # 最近 20 条，最新在前
+concertoai reflect list --limit 50 # 看更多
+concertoai reflect clear           # 需确认（y/N，回车 = 取消）
+concertoai reflect clear --yes     # 非交互环境（脚本/CI）必须显式加 --yes
+```
+
+`reflect list` 的输出：
+
+```
+拒绝复盘（2 条，最新在前）
+时间         级别       文件                    风险类别
+10-28 01:54  — 未分析   src/util.ts             —
+10-28 01:53  ⚠️ 高      src/api.ts              删除/破坏性操作、鉴权
+清空：concertoai reflect clear　·　关闭记录：concertoai config set reflections off
+```
+
+几条**刻意设计**的细节：
+
+| 行为 | 为什么这样 |
+|---|---|
+| 只记**编辑类**拒绝（shell 命令不记） | 命令没有「文件引用面」，硬记一个空文件名的记录没有复盘价值 |
+| 「级别」列显示 **`— 未分析`** 而不是「低」 | 非 TTY / CI / 超大 diff 时根本没做分析，写成「低风险」是假话 |
+| 记录写入失败**只提示、不阻断** | 拒绝的目的是「别改我的文件」；目录只读不该让你连拒绝都做不到 |
+| `clear` 的 `（y/N）` **回车 = 取消** | 与审批框「回车 = 批准」刻意不同：删除不可逆，默认必须最保守 |
+| 全程**纯本地 JSONL，零上传** | 这是你「为什么拒绝了 AI」的判断记录，不该离开你的机器 |
+
+关闭方式（双轨，任一即可）：`concertoai config set reflections off`，或临时 `CONCERTOAI_REFLECTIONS=off`。
+关掉后**拒绝照常工作**，只是不写记录、不显示提示行。
 
 ### 对话内计划（/plan）
 
@@ -403,6 +473,7 @@ $ concertoai account list
 | `ollamaBaseUrl` | string | `http://localhost:11434/v1` | 本地模型 OpenAI 兼容端点（Ollama /v1，v2.2） |
 | `approvalInsight` | `"rich" \| "plain"` | rich | 审批卡形态（v5.0 T8/T9）：`rich`=风险教学卡；`plain`=v4.1.1 原貌（只 summary + diff + 按键）。非 TTY / CI 环境自动降级，无需手配 |
 | `riskRules` | `{ disabled?: string[] }` | 空 | 关闭指定风险规则 id（v5.0 T8/T9），如 `{ "disabled": ["dependency-change"] }`；未知 id 静默忽略 |
+| `reflections` | `"on" \| "off"` | on | 拒绝复盘记录开关（v5.0 T10）：拒绝编辑时向 `~/.concertoai/reflections.jsonl` 追加一条（纯本地、零上传、O_APPEND）。关掉后拒绝照常工作，只是不记录。也可用环境变量 `CONCERTOAI_REFLECTIONS=off` 临时关 |
 
 优先级：**CLI 参数 > 环境变量 > 配置文件 > 默认值**。
 

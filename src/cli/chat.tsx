@@ -226,9 +226,11 @@ export async function runChat(options: RunChatOptions): Promise<void> {
       sessionId={sessionId}
       initialHistory={history}
       approvalStrategy={resolved.approvalPolicy}
-      // v5.0 T9：审批洞察配置（`plain` = v4.1.1 原貌；规则停用列表来自 config.riskRules）
-      approvalInsightMode={config.approvalInsight}
+      // v5.0 T9/T11：审批洞察与复盘配置——**统一从 resolveConfig 的解析结果取**
+      // （环境变量与 config 的优先级只在那一处实现，入口层不再自己判断）
+      approvalInsightMode={resolved.approvalInsight}
       riskRulesDisabled={config.riskRules?.disabled}
+      reflectionsEnabled={resolved.reflections === 'on'}
       memoryInjector={
         mcpManager !== undefined ? new MemoryInjector(mcpManager, {}, knowledgeStore) : undefined
       }

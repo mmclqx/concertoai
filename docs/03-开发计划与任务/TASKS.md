@@ -1,7 +1,7 @@
 # ConcertoAI 开发任务看板
 
 > 最后更新：2026-10-28
-> 当前里程碑：**🟡 v5.0 开发中（M1 基线承接 7/7 ✅ + M2 T8 风险引擎 ✅ + T9 审批 UI ✅，2026-10-28）**（v5.0: M1 **7/7** ✅ · M2 **2/4** · 下一步 **T10 拒绝复盘记录** · 136 文件 / 1805 用例全绿）
+> 当前里程碑：**🟡 v5.0 开发中（M1 7/7 ✅ + M2 审批透明化 4/4 ✅ 已封板，2026-10-28）**（v5.0: M1 **7/7** ✅ · M2 **4/4** ✅ · 下一步 **M3 T12 触发引擎** · 140 文件 / 1869 用例全绿）
 > 基于：[v5.0 开发计划](./v5.0-dev-plan.md) · [v5.0 开发任务](./v5.0-dev-tasks.md) · 历史：[v4.2 开发任务（已并入 v5.0 M1）](./v4.2-dev-tasks.md) · [v4.1 开发任务](./v4.1-dev-tasks.md) · [v4.0 开发任务](./v4.0-dev-tasks.md)
 
 ---
@@ -13,7 +13,7 @@
 | 里程碑 | 任务 | 进度 | 状态 |
 |--------|------|------|------|
 | **M1 基线承接**（v4.2 并入） | T1 npx 实测 · T2 update · T3 ccai · T4 THIRD_PARTY · T5 init 双输出 · T6 model auto · T7 价格表 | **7/7** | ✅ **完成**（2026-10-27） |
-| M2 审批透明化 | T8 风险引擎 ✅ · T9 审批 UI ✅ · T10 复盘记录 · T11 配置降级 | **2/4** | 🟡 进行中（T9 完成 2026-10-28） |
+| M2 审批透明化 | T8 风险引擎 ✅ · T9 审批 UI ✅ · T10 复盘记录 ✅ · T11 配置降级 ✅ | **4/4** | ✅ **完成·已封板**（2026-10-28） |
 | M3 场景可发现 | T12 触发表引擎 · T13 三场景 UI · T14 首次引导 | 0/3 | ⬜ 待开始 |
 | M4 CLI 动词化 | T15 check · T16 fix · T17 commit · T18 review · T19 护栏 | 0/5 | ⬜ 待开始 |
 | M5 收敛与度量 | T20 功能冻结 · T21 本地指标 · T22 定位重写 | 0/3 | ⬜ 待开始 |
@@ -36,6 +36,8 @@
 |------|------|------|
 | **T8 审批风险评估引擎** | ✅ **完成**（2026-10-27） | 纯本地零模型零网络（ADR-040 / §4 D68-D69）：`core/approval-insight.ts`（`analyzeApproval`/`analyzeDiff`/`parseDiff`/`levelOf`/`focusLinesFrom`/`changeNaturesFrom`）+ `core/risk-rules.ts`（**15 条**规则，每条含 prefilter/patterns/negativePatterns/why/suggestion）+ `core/impact-scan.ts`（影响面「谁 import 了我」，唯一 IO：并发池 32 / 300ms 硬超时 / 5s TTL 缓存 / 文件上限 2000 / 单文件失败计入 skippedCount）· **降级矩阵 8 行逐行单测**（非TTY/CI/超大diff/超时/抛错/config-off/空命中/超大项目）+ **G2 铁律**（分析抛错返回可渲染空 insight，审批照旧）· **W1-W10 Windows 红线逐条单测**（含 LF/CRLF 一致、反斜杠路径、BOM、URL 中 `//` 不判注释、中文/emoji 行）· **fixtures 26 条真实 git diff 人工标注**（`tests/fixtures/approval/`，manifest 与 .diff 一一对应校验）· **发布门实测**：性能 6 项全达标（analyzeDiff 100 行 P95 0.34ms/5ms、单规则 10 万字符 0.77ms/20ms、analyzeImpact 200 文件 19.89ms/80ms、审批 P95 14.59ms/150ms）+ **误报 0/19=0%**、high 级误报 0、召回 7/7=100% · **实测抓到并修掉两处真实缺陷**：`dependency-change` 正则 ReDoS（1766ms→0.77ms）+ prefilter 死模式（两条 pattern 永远跑不到）· 新增 3 个测试文件 + 2 个发布门脚本（`scripts/bench-approval.mjs` / `scripts/verify-false-positive.mjs`）· **131 文件 / 1714 用例全绿**（本任务新增 3 个测试文件 / 105 用例：approval-insight 63 + impact-scan 31 + risk-rules 11（含 W8 防 ReDoS 2 条），基线 128 文件 / 1609 用例 → 131 文件 / 1714 用例） |
 | **T9 审批 UI 升级** | ✅ **完成**（2026-10-28） | 审批框从「一行 summary + diff」变成**风险教学卡**（标题/操作意图/改动性质/影响面/风险点/建议重点关注行/折叠 diff/按键四件套 + `[?]` 内联说明），**架构铁律：纯字符串优先、Ink 只做着色与边框**（ADR-041 / §4 D70-D71）：`src/ui/approval-text.ts`（`renderApprovalLines` 唯一文案来源，返回带语义角色的行，**零 Ink/React 依赖**，护栏测试扫源码）+ `src/ui/toggle-throttle.ts`（`createToggleThrottle` 80ms 展示态节流，**丢弃中间态**，可注入时钟、无 `setInterval`、`dispose()` 清 pending）+ `src/utils/text-width.ts`（`displayWidth`/`truncateToWidth`/`wrapToWidth`，**禁止 `.length` 判宽度**）· `ApprovalModal` 改为「角色→颜色」纯外壳（**组件内零用户可见文案字面量**，`PlanProgressView` 硬编码中文一并入 i18n）；high 红 / medium 黄 / **low 绿不标红** · `App.tsx` **先弹 plain 框再异步补 insight**（G2，`approvalSeq` 丢弃迟到结果）、`y`/`n` 走 `finishApproval` 且**决议不节流**、`[v]`/`[?]` 意图用 **ref** 维护 · `ApprovalRequest.insightHint`（`edit` 传目标文件+意图 / shell **刻意不传** → 影响面「不适用」而非白扫全库）· **三条红线逐条护栏**：medium 全文无「危险」、未分析绝不说「0 个引用」（timeout/skipped/error/ok-zero 四态各自文案）、默认 diff ≤12 行 + `[v]` ≤500 行 · **实测抓到并修掉两处真实缺陷**：散文按宽度截断砍掉「不是结论」（改折行）+ 连按 `v` 读到渲染快照导致停在展开态（改 ref，意图与节流分开测）· **发布门实测**（`scripts/bench-approval-ui.mjs`）：端到端 P95 **8.83ms** / 预算 150ms、文案 P95 ≤0.54ms、Ink 首帧 P95 ≤8.61ms · 新增 5 个测试文件 / **91 用例**（approval-text 44 + approval-modal 13 + approval-integration 12 + toggle-throttle 10 + text-width 12），**136 文件 / 1805 用例全绿** |
+| **T10 拒绝复盘记录** | ✅ **完成**（2026-10-28） | 拒绝编辑时留一条可回看的本地记录（ADR-042 / §4 D72）· `core/reflection-store.ts`（`buildReflection` 纯函数去重+截断+**未分析写 unknown 非 low** / `appendReflection` **O_APPEND 且永不抛错** / `readReflections` 倒序+损坏行跳过计数 / `clearReflections` 幂等 / `isReflectionsEnabled` 双轨开关）+ `cli/reflect.ts`（`list [--limit]` 倒序表格按**显示宽度**对齐 / `clear [--yes]` **非 TTY 无 --yes fail-closed**）+ `ui/App.tsx`（`finishApproval(false, …)` → `recordRejection` **fire-and-forget**，决议先 resolve 再写盘）+ 新增 `notice` 中性灰提示行（拒绝是正常操作，不复用 error 红字）+ `config set reflections on\|off`（兑现提示里的承诺命令，非法值 fail-closed）· **G8 零网络护栏**（源码断言无 fetch/http/net/axios）+ **写盘失败不阻塞**（只读目录 / 路径被占用两种失败均 `{ok:false}` 且 Promise 不 reject，UI 层断言模型第二轮照常继续）· `tests/core/reflection-store.test.ts`(22) + `tests/cli/reflect.test.ts`(15) + `tests/ui/approval-reflect.test.tsx`(8) · **实测抓两处真实缺陷**：① `npm test` 污染开发者真实复盘文件（16 条垃圾记录 → `tests/setup.ts` 全局 env 隔离 + App 缺省读 env + 护栏用例）② 降级时 `insight.level` 恒为 `low` 导致复盘全校「✅ 低」（判据改 `degraded`） |
+| **T11 配置与降级收尾** | ✅ **完成**（2026-10-28） | `store/config.ts` 新增 `ApprovalInsightMode` / `ReflectionsMode` + `validateConfigValues`（非法值**提示一次不抛错**，与 pricingHolidays 同口径）+ 类型守卫；`ResolvedConfig.approvalInsight/reflections`（**环境变量在解析层合并**，入口不再各读一份）· `config set approvalInsight` / `config set reflections`（非法值 fail-closed 不写盘）· **`plain` 与 v4.1.1 逐字节一致**（三行文案 + detail 不截断 + shell/model 标题；快照断言）· **降级判定单一来源**（源码护栏：App 不读 `process.stdout.isTTY` / `process.env.CI`，只透传 `insightEnv`；`approval-insight.ts` 集中五类降级原因）· **顺带修 T8/T9 存量缺陷**：`ImpactSummary` 新增第五态 `not-needed`——低风险不扫影响面时此前复用 `skipped` 被渲染成「项目过大，文件数超过 2000」（单文件项目也这么说 = 假话）· `tests/ui/approval-degrade.test.tsx`(12) + `tests/store/config.test.ts`(+5) · M2 **4/4 封板** |
 
 ---
 

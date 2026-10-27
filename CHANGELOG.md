@@ -66,6 +66,30 @@
 - 「建议重点关注」的行号由 hunk 头推算，hunk 头非标准/被截断时回退到 diff 下标，可能与真实文件行号有偏差
 - 影响面仍是「谁 import 了我」的近似（不做 AST）：动态 import 拼接路径、字符串路径引用不计入
 
+### Added — v5.0 M2 审批透明化 T10/T11：拒绝复盘 + 配置降级（2026-10-28 完成，M2 封板）
+
+> 定位：T9 让用户「看得懂」审批，T10 让「拒绝过的原因能被记住」，T11 让「想要原味审批 / 慢机器不卡」有出口。140 文件 / 1869 用例全绿（较 T9 基线 +4 文件 / +64 用例）。
+
+- **`core/reflection-store.ts`（新增，T10）**：拒绝复盘记录（ADR-042 / §4 D72）。`buildReflection`（纯函数：类别去重 + 上限 5 / 关注行上限 10 / **未分析写 `unknown` 而非 `low`**）+ `appendReflection`（**O_APPEND** 单次追加，**永不抛错**，失败返 `{ok:false}`）+ `readReflections`（按时间倒序、同毫秒后写的在上、损坏行跳过并计数、`limit`）+ `clearReflections`（幂等）+ `isReflectionsEnabled`（环境变量 > config 双轨，**非法值回落下一层而非回落默认**）
+- **`cli/reflect.ts`（新增，T10）**：`concertoai reflect list [--limit N]`（倒序表格：时间 / 级别 / 文件 / 风险类别，按**显示宽度**补空格中文不糊版；未分析显示「— 未分析」不冒充低风险）+ `reflect clear [--yes]`（**非 TTY 无 `--yes` fail-closed**：复盘是不可再生的判断历史，不让脚本静默清空；`（y/N）` 回车 = 取消，与审批框回车 = 批准刻意不同）；`--limit` 非法时如实提示后按默认 20 继续
+- **`ui/App.tsx`（T10）**：拒绝时 `finishApproval(false, request, insight)` → `recordRejection` **fire-and-forget**（决议先 `resolve(false)`，写盘不阻塞退出，G2′）；新增 `notice` 中性提示行（「已记录到本地复盘」用灰字，不复用 error 红字——拒绝是正常操作不是报错）；`reflectionsEnabled` 缺省读 `CONCERTOAI_REFLECTIONS`
+- **`store/config.ts`（T11）**：新增 `ApprovalInsightMode` / `ReflectionsMode` + 默认常量 + `validateConfigValues`（**非法值提示一次不抛错**，与 `pricingHolidays` 同口径）+ `isApprovalInsightMode` / `isReflectionsMode` 类型守卫；`ResolvedConfig` 新增 `approvalInsight` / `reflections`（**环境变量在解析层合并**，入口不再各读一份）
+- **`concertoai config set`（T11）**：支持 `reflections <on|off>` / `approvalInsight <rich|plain>`——拒绝提示里承诺的命令**必须真能用**；非法值 **fail-closed 不写盘**（与「读取时宽容」刻意相反：写入是用户明确表达意图的时刻）
+- **i18n**：`reflect.*`（22 键）/ `cli.reflect.*`（3 键）/ `approval.impactNotNeeded`（第五态）中英双语
+- **测试**：`tests/core/reflection-store.test.ts`（22）+ `tests/cli/reflect.test.ts`（15）+ `tests/ui/approval-reflect.test.tsx`（8）+ `tests/ui/approval-degrade.test.tsx`（12）+ `tests/store/config.test.ts`（+5）+ `tests/setup.ts`（全局测试隔离）
+
+### Fixed — v5.0 T10/T11 实测发现的三处真实缺陷
+
+- **`npm test` 把测试数据写进开发者真实复盘记录**（T10 让既有缺陷产生副作用）：`reflections` 默认 on + 写入路径是真实 `~/.concertoai/reflections.jsonl` + T9 集成测试会走真实「按 n 拒绝」→ 一次全量跑完多了 **16 条**垃圾记录（project 全是 `mkdtemp` 临时目录名）→ 新增 `tests/setup.ts` 全局 `CONCERTOAI_REFLECTIONS=off` + App 缺省读该环境变量 + 要测写入的用例**显式**开启 + 护栏用例断言「未传 prop 时遵循 env=off」；受影响的「默认 on」配置测试在 describe 内 `vi.stubEnv('')` 显式声明前提。详见 `docs/09-踩坑记录/2026-10-28-测试污染真实复盘记录.md`
+- **分析被降级时复盘把所有编辑记成「低风险」**：`analyzeApproval` 降级时 `hits` 为空 → `levelOf([])` 返回 `'low'`，直接记录会让非 TTY / CI 环境下的复盘表一片「✅ 低」而事实是**根本没分析**（`undefined` 只覆盖了「分析未到达」）→ 判据改用 `insight.degraded`，`buildReflection` 侧 `unknown` 时同时丢掉 categories。详见 `docs/09-踩坑记录/2026-10-28-降级未分析却记录成低风险.md`
+- **【T8/T9 存量缺陷】低风险不扫影响面，UI 却说「你的项目太大」**：`emptyImpact()` 缺省 `skipped`，而 `skipped` 的文案是「影响面未分析（项目过大，文件数超过 2000）」——单文件临时项目也会被这么说（实测在 T11 对照组截图里看到）→ `ImpactSummary.status` 新增第五态 **`not-needed`** + 独立文案「低风险改动，未做影响面扫描（仅中高风险才扫）」，`skipped` 现在只表示真超限。详见 `docs/09-踩坑记录/2026-10-28-低风险未扫影响面被说成项目过大.md`
+
+### Known limitations — v5.0 T10/T11
+
+- 复盘只记「编辑类拒绝」：shell 命令拒绝不记（命令没有文件风险面，`file` 会为空）——若要覆盖需先定义「命令的影响面」语义
+- `reflect list` 不做按项目 / 等级过滤（当前 `--limit` + 肉眼够用；等 M5 本地指标再考虑）
+- 复盘记录无自动轮转（只追加不清空）：一天几十条量级下暂无问题，若长期使用需配合 `reflect clear`
+
 ### Changed — v5.0 M1
 
 - **计价时段与 ollama 切换时段解耦**（T7 / R7）：`core/peak-time.ts` 拆 `PRICING_PEAK_RANGES` + `isPricingPeakTime`（厂商定价事实）与 `SWITCH_PEAK_RANGES` + `isPeakTime`（可被用户关闭的切换策略），`PEAK_TIME_RANGES` 保留为切换口径别名；`costFor` / `cacheHitCostFor` / `costForProvider` / `costProfileFor` 统一接受 `at` 时间注入，Provider 层以 `now()` 构造注入（消除「白天测高峰价、晚上测空闲价」的时间依赖 flaky）

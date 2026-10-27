@@ -4,7 +4,9 @@
  * 支持字段：defaultModel（默认模型）、allowlist（命令白名单）、
  * approvalPolicy（ask / allowlist-only）、sessionDir（会话目录）、locale、
  * peakTimeStrategy（高峰时段模型切换策略）、ollamaModel / ollamaBaseUrl
- * （本地模型接入，v2.2 智能成本控制）、pricingHolidays（计价用法定节假日表，v5.0 T7）。
+ * （本地模型接入，v2.2 智能成本控制）、pricingHolidays（计价用法定节假日表，v5.0 T7）、
+ * approvalInsight / riskRules（审批卡形态与规则开关，v5.0 T8-T11）、
+ * reflections（拒绝复盘开关，v5.0 T10）。
  *
  * 优先级：CLI 参数 > 环境变量（LUMEN_*）> 配置文件 > 默认值。
  * 文件不存在 / JSON 损坏 / schema 版本不匹配 → 返回空配置（不抛错）。
@@ -14,6 +16,7 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import { configureHolidayCalendar } from '../core/holidays';
+import { isReflectionsEnabled } from '../core/reflection-store';
 import { configPath } from './paths';
 import { DEFAULT_SESSION_DIR } from './session';
 
@@ -31,6 +34,25 @@ export type ApprovalPolicy = 'ask' | 'allowlist-only';
  * - `ignore`：忽略切换，始终使用主模型。
  */
 export type PeakTimeStrategy = 'ask' | 'switch' | 'ignore';
+
+/**
+ * 审批卡形态（v5.0 T8/T9/T11）：
+ * - `rich`：风险教学卡（默认）；
+ * - `plain`：v4.1.1 原貌（只 summary + diff + 按键），逐字节等价。
+ *
+ * 非 TTY / CI / 超大 diff 时**自动降级为 plain**，判定逻辑唯一来源是
+ * `core/approval-insight.ts` 的降级矩阵（本文件只负责「用户想用哪种」，不重复判断环境）。
+ */
+export type ApprovalInsightMode = 'rich' | 'plain';
+
+/** 审批卡形态默认值（rich）。 */
+export const DEFAULT_APPROVAL_INSIGHT: ApprovalInsightMode = 'rich';
+
+/** 拒绝复盘记录开关（v5.0 T10）：`on` = 拒绝时记一条本地 JSONL（默认）；`off` = 不记，拒绝照常。 */
+export type ReflectionsMode = 'on' | 'off';
+
+/** 复盘记录默认值（on：功能默认可用，但纯本地零上传，见 ADR-042）。 */
+export const DEFAULT_REFLECTIONS: ReflectionsMode = 'on';
 
 /** 高峰时段切换策略默认值：ask（询问用户）。 */
 export const DEFAULT_PEAK_TIME_STRATEGY: PeakTimeStrategy = 'ask';
@@ -81,12 +103,24 @@ export interface ConcertoAIConfig {
    *
    * 环境不满足时（非 TTY / CI）程序会自动降级为 plain，无需手动配置。
    */
-  approvalInsight?: 'rich' | 'plain';
-  /** 风险规则配置（v5.0 T8）。 */
+  approvalInsight?: ApprovalInsightMode;
+  /**
+   * 风险规则配置（v5.0 T8）。
+   *
+   * **只允许「关」，不允许「加」自定义正则规则**：规则表跑在审批热路径上，
+   * 用户手写正则既无法保证 ReDoS 安全（D69 第三条红线），也无法保证误报率——
+   * 一次 high 级误报就会让用户此后忽略所有提示。故本字段刻意只开放 `disabled`（见 D72）。
+   */
   riskRules?: {
     /** 关闭的规则 id（如 `['dependency-change']`）；未知 id 静默忽略。 */
     disabled?: string[];
   };
+  /**
+   * 拒绝复盘记录开关（v5.0 T10）：`on`（默认）/ `off`。
+   *
+   * 关掉后拒绝**照常工作**，只是不写记录；也可用环境变量 `CONCERTOAI_REFLECTIONS=off` 临时关。
+   */
+  reflections?: ReflectionsMode;
   /**
    * 计价用中国法定节假日表（v5.0 T7 修订）。
    *
@@ -118,6 +152,72 @@ export interface ResolvedConfig {
   ollamaModel: string;
   /** 本地模型 OpenAI 兼容端点（Ollama /v1，v2.2）。 */
   ollamaBaseUrl: string;
+  /**
+   * 审批卡形态（v5.0 T11）：**已合并环境变量**的最终值。
+   *
+   * 消费者（chat.tsx / App）只读这个字段，不要自己再读 `config.approvalInsight`
+   * 或环境变量——否则「配置文件 vs 环境变量」的优先级会被各入口实现成两套。
+   */
+  approvalInsight: ApprovalInsightMode;
+  /** 拒绝复盘开关（v5.0 T10/T11）：已合并环境变量的最终值。 */
+  reflections: ReflectionsMode;
+}
+
+/** 一条配置值非法记录（供 `loadConfig` 统一提示 + 单测断言，不抛错）。 */
+export interface ConfigValidationIssue {
+  /** 出问题的字段名（顶层名，如 `reflections`）。 */
+  key: string;
+  /** 用户填的原始值（提示里原样回显，便于用户定位）。 */
+  value: unknown;
+  /** 允许的取值说明。 */
+  expected: string;
+}
+
+/**
+ * 校验枚举类配置项的取值（v5.0 T11）。
+ *
+ * 设计取向：**非法值不抛错、不静默吞掉**——返回问题清单，由 `loadConfig` 提示一次后
+ * 按默认值继续工作（配置写错一个字不该让 CLI 起不来），但用户必须看得见（`console.error`）。
+ * 这与 `pricingHolidays` 非法日期的处理口径一致。
+ */
+export function validateConfigValues(config: ConcertoAIConfig): ConfigValidationIssue[] {
+  const issues: ConfigValidationIssue[] = [];
+  if (config.approvalInsight !== undefined && !isApprovalInsightMode(config.approvalInsight)) {
+    issues.push({
+      key: 'approvalInsight',
+      value: config.approvalInsight,
+      expected: 'rich | plain',
+    });
+  }
+  if (
+    config.reflections !== undefined &&
+    config.reflections !== 'on' &&
+    config.reflections !== 'off'
+  ) {
+    issues.push({ key: 'reflections', value: config.reflections, expected: 'on | off' });
+  }
+  const disabled = config.riskRules?.disabled;
+  if (
+    disabled !== undefined &&
+    (!Array.isArray(disabled) || disabled.some((id) => typeof id !== 'string'))
+  ) {
+    issues.push({
+      key: 'riskRules.disabled',
+      value: disabled,
+      expected: 'string[]（规则 id 数组）',
+    });
+  }
+  return issues;
+}
+
+/** 是否为合法审批卡形态。 */
+export function isApprovalInsightMode(value: unknown): value is ApprovalInsightMode {
+  return value === 'rich' || value === 'plain';
+}
+
+/** 是否为合法复盘开关。 */
+export function isReflectionsMode(value: unknown): value is ReflectionsMode {
+  return value === 'on' || value === 'off';
 }
 
 /** 空配置（默认值由解析层兜底）。 */
@@ -140,6 +240,14 @@ export async function loadConfig(
   if (report.invalid.length > 0) {
     console.error(
       `⚠️ config.pricingHolidays 中有 ${report.invalid.length} 个非法日期已忽略（需 YYYY-MM-DD）：${report.invalid.join(', ')}`,
+    );
+  }
+  // v5.0 T11：枚举类配置非法值提示一次（不抛错、不静默——写错字不能让 CLI 起不来，
+  // 但用户必须知道自己的配置没生效，见 validateConfigValues 的设计取向）
+  const issues = validateConfigValues(config);
+  for (const issue of issues) {
+    console.error(
+      `⚠️ config.${issue.key} 的值 ${JSON.stringify(issue.value)} 无效（应为 ${issue.expected}），已按默认值处理。`,
     );
   }
   return config;
@@ -289,6 +397,27 @@ export function resolveConfig(
   const ollamaModel = file.ollamaModel ?? DEFAULT_OLLAMA_MODEL;
   const ollamaBaseUrl = file.ollamaBaseUrl ?? DEFAULT_OLLAMA_BASE_URL;
 
+  // v5.0 T11：审批卡形态（环境变量 CONCERTOAI_APPROVAL_INSIGHT 覆盖 config）
+  //
+  // ⚠️ 非法环境变量**必须忽略并回落 config**，不能直接落默认值：
+  // 用户配置文件里明确写了 `plain`，而 CI 里手滑写了 `CONCERTOAI_APPROVAL_INSIGHT=plian`，
+  // 若按「env 优先 → 非法 → 默认 rich」处理，等于用一次手滑**静默推翻用户的有效配置**。
+  // 实测由 config.test.ts「环境变量写错值 → 回落配置文件」报红捕获。
+  const envInsight = env('CONCERTOAI_APPROVAL_INSIGHT');
+  const approvalInsight: ApprovalInsightMode = isApprovalInsightMode(envInsight)
+    ? envInsight
+    : isApprovalInsightMode(file.approvalInsight)
+      ? file.approvalInsight
+      : DEFAULT_APPROVAL_INSIGHT;
+
+  // v5.0 T10/T11：复盘开关（环境变量优先于 config；`off/false/0/no` 均视为关）
+  const reflections: ReflectionsMode = isReflectionsEnabled(
+    file.reflections,
+    env('CONCERTOAI_REFLECTIONS') ?? env('LUMEN_REFLECTIONS'),
+  )
+    ? 'on'
+    : 'off';
+
   return {
     model,
     allowlist,
@@ -299,5 +428,7 @@ export function resolveConfig(
     peakTimeStrategy,
     ollamaModel,
     ollamaBaseUrl,
+    approvalInsight,
+    reflections,
   };
 }

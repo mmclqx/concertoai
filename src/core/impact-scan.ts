@@ -49,8 +49,22 @@ export const IMPACT_LIMITS: Required<ImpactScanLimits> = {
 
 /** 影响面分析结果。 */
 export interface ImpactSummary {
-  /** ok=正常完成 / timeout=超时（含部分结果）/ skipped=超限或未执行 / error=异常。 */
-  status: 'ok' | 'timeout' | 'skipped' | 'error';
+  /**
+   * 五种状态，**每种对应一句不同的人话**（混用会让 UI 说假话）：
+   *
+   * | status | 含义 | 用户看到的文案 |
+   * |---|---|---|
+   * | `ok` | 正常扫完 | 被 N 个文件引用 / 未发现其他文件引用（已扫描 M 个） |
+   * | `timeout` | 超时（含部分结果） | 影响面未分析（超时 300ms） |
+   * | `skipped` | **项目较大，文件数超限** | 影响面未分析（项目过大，文件数超过 2000） |
+   * | `not-needed` | **本次不需要扫**（低风险不扫，省 90% IO） | 低风险改动，未做影响面扫描 |
+   * | `error` | 读取失败 | 影响面未分析（读取失败） |
+   *
+   * ⚠️ `not-needed` 是 v5.0 T11 新增的第五态：此前「低风险没扫」复用 `skipped`，
+   * 于是 UI 把「我觉得不用扫」说成了「你的项目太大」——一句假话（实测发现，
+   * 见 09-踩坑记录/2026-10-28-低风险未扫影响面被说成项目过大.md）。
+   */
+  status: 'ok' | 'timeout' | 'skipped' | 'not-needed' | 'error';
   /** 引用本文件的文件数。 */
   referenceCount: number;
   /** 前 3 个引用者（相对路径，正斜杠）。 */

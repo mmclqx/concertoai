@@ -674,4 +674,36 @@ interface AgentDef {
 
 ---
 
+## ADR-042：拒绝复盘落本地 JSONL，写盘永不阻塞审批，未分析不冒充低风险
+
+| 字段 | 内容 |
+|------|------|
+| **状态** | 已采纳（v5.0 T10） |
+| **日期** | 2026-10-28 |
+| **上下文** | T9 把审批框做成了「风险教学卡」，用户能看懂风险了；但用户按下 `n` 之后，这次判断**什么痕迹都不留**——第二天再遇到一模一样的改动，还得靠记忆重新判断一遍。审批框上承诺的「AI 将尝试更保守的方案」如果没有记录支撑，就只是一句空头支票。同时存在三重风险：（a）复盘写入如果失败（目录只读 / 磁盘满），绝不能把审批流程卡住——那等于「为了记录拒绝，反而让用户拒绝不掉」；（b）复盘是行为数据，一旦涉及网络上传就越过了隐私底线；（c）风险等级字段很容易写成「没命中 = low」，而这会把「没分析」谎报成「安全」。 |
+| **选项** | ① 不做（保持现状）② 写入会话 JSONL 复用现有存储 ③ **独立本地 JSONL + O_APPEND + 永不抛错 + unknown 独立枚举** ④ 上传云端做团队复盘 |
+| **结论** | 采用 ③：<br>**结构**：`~/.concertoai/reflections.jsonl`（`store/paths.ts` 单一来源的 `reflectionsPath()`），字段 `{ ts, project, file, level, categories[], focusLines[], intent, decision }`——扁平且短，长文案（why/suggestion）**不入库**（会迅速把文件撑大）。<br>**写入**：`appendFile`（O_APPEND）单次追加，不「读全文→拼接→覆写」；内部全 `try/catch`，**永不抛错**，失败返回 `{ok:false}`。<br>**时序**：`finishApproval(false, …)` **先 `resolve(false)`** 再 fire-and-forget 写盘（`void`，不 await）。<br>**语义**：`level` 用 `insight.degraded` 判定，未分析写 **`unknown`**（不是 `low`），且 unknown 时丢掉 categories。<br>**开关双轨**：`config.reflections: 'on' \| 'off'` + 环境变量 `CONCERTOAI_REFLECTIONS`（环境变量优先，**非法值回落下一层而非回落默认**）。<br>**CLI**：`reflect list [--limit]`（倒序表格，按**显示宽度**对齐）+ `reflect clear [--yes]`（**非 TTY 无 `--yes` fail-closed**）。 |
+| **理由** | (a) **安全优先的产品哲学要求「记录不能有副作用」**：用户按 `n` 的目的是「别改我的文件」，不是「等我写完日志」——故写盘必须发生在决议之后且失败不可见（只降级为一条灰字提示）；(b) **`unknown ≠ low`** 是 T9 措辞红线②在数据层的同一条原则：把「没分析」记成「低风险」，会让复盘表在非 TTY / CI 环境下整片「✅ 低」，这个功能就彻底失去意义（实测踩到，见踩坑记录）；(c) **零网络（G8）**：复盘是「我今天为什么拒了 AI」的私密判断记录，只写本地；源码护栏断言无 `fetch`/`http`/`net`/`axios`/`XMLHttpRequest`；(d) **`clear` 走 fail-closed**：复盘是**不可再生的判断历史**，让脚本在管道里静默清空等于毁掉用户的记忆——这与审批 fail-closed 是同一套价值观；(e) **`（y/N）` 回车 = 取消 与审批框回车 = 批准刻意不同**：审批框的语义是 v4.1.1 既有行为（G1 逐字节保留，用户已形成的肌肉记忆不能改），而 `clear` 是不可逆删除，回车的「无脑继续」习惯不能替用户删历史。 |
+| **红线（改动前必读）** | ① `reflection-store.ts` / `reflect.ts` **禁止任何网络 API**（有护栏扫描源码）；② 写入**必须 O_APPEND**（护栏断言用 `appendFile` 且写入层无 `writeFile(`），否则记录变多后 O(n) 全量重写；③ `appendReflection` **必须永不抛错**（有「Promise 永不 reject」用例），调用方 `void` 不 await；④ `level` 判定**必须用 `degraded`**，禁止直接透传 `insight.level`；⑤ `clear` 非 TTY **必须 fail-closed**；⑥ 测试进程**必须默认关闭**（`tests/setup.ts`），需要写的用例显式开启。 |
+
+**已知局限（如实记录）**：① 只记「编辑类拒绝」——shell 命令没有文件风险面，`file` 会为空，若要覆盖需先定义「命令的影响面」语义；② 无自动轮转（只追加不清空），长期使用需配合 `reflect clear`；③ `reflect list` 不做按项目 / 等级过滤。
+
+---
+
+## ADR-043：配置项在解析层统一合并环境变量；降级判定单一来源；影响面拆第五态
+
+| 字段 | 内容 |
+|------|------|
+| **状态** | 已采纳（v5.0 T11） |
+| **日期** | 2026-10-28 |
+| **上下文** | T8/T9/T10 陆续引入了 `approvalInsight`、`riskRules.disabled`、`reflections` 三个配置项，但它们散落在各入口（`chat.tsx` 读 config、`App` 读 prop）与各环境变量（`CONCERTOAI_APPROVAL_INSIGHT`、`CONCERTOAI_REFLECTIONS`）之间，优先级靠「各入口自觉」保证。同时 T11 写对照组测试时从真实审批帧里看到一句假话：**单文件临时项目也被渲染成「影响面未分析（项目过大，文件数超过 2000）」**。 |
+| **选项** | ① 每个入口各自读 config + 环境变量（现状）② **解析层 `resolveConfig` 统一产出最终值，入口只消费** ③ 引入配置中心 / 统一 registry（重） |
+| **结论** | 采用 ②，并连带修三处：<br>**（1）单源合并**：`ResolvedConfig` 新增 `approvalInsight` / `reflections`，环境变量在 `resolveConfig` 里合并。优先级「CLI > 环境变量 > 配置 > 默认」只在一处实现。<br>**（2）非法值语义分层**：<br>· 读取时（`validateConfigValues`）→ **提示一次、不抛错、按默认值继续**（配错一个字不该让 CLI 起不来，但必须看得见，与 `pricingHolidays` 非法日期同口径）<br>· 写入时（`config set <enum>`）→ **fail-closed 不写盘**（写入是用户明确表达意图的时刻）<br>· 环境变量非法 → **回落 config 而非回落默认**（否则 CI 手滑 `=plian` 会静默推翻用户配置里的有效 `plain`）<br>**（3）降级判定单一来源**：仍只在 `core/approval-insight.ts`；`App.tsx` 不得出现 `process.stdout.isTTY` / `process.env.CI`（有源码护栏，剥注释后断言），只能透传 `insightEnv`。<br>**（4）影响面第五态**：`ImpactSummary.status` 新增 **`not-needed`**（低风险不扫），`emptyImpact()` 缺省值由 `skipped` 改为它；独立文案「低风险改动，未做影响面扫描（仅中高风险才扫）」。 |
+| **理由** | (a) 优先级规则若由各入口各自实现，必然分裂成「chat 生效、run 不生效」；(b) 非法环境变量回落默认值是**静默推翻用户配置**——用户配置文件里明确写了 `plain`，CI 一次手滑就变成 `rich`，且没有任何提示（此条由 `config.test.ts` 报红捕获，是实测发现的真缺陷）；(c) **一个枚举承载两种事实时，文案必然在某一侧说谎**：`skipped` 同时表示「文件数超限（客观限制）」与「低风险不需要扫（主观省略）」，前者该说「你的项目太大」，后者绝不能说——判断标准是「两种情况用户下一步动作是否不同」；(d) `plain` 模式是用户「想要原味审批」的**逃生舱**，必须与 v4.1.1 逐字节一致（快照断言三行文案 + detail 不截断 + shell/model 标题），走样就是失信。 |
+| **红线（改动前必读）** | ① 新增配置项的优先级**必须加到 `resolveConfig`**，禁止在入口层再读一次；② 读取宽容 / 写入 fail-closed 的分层不许合并（两种时刻的安全诉求相反）；③ `App.tsx` 若要接触终端环境，**只能通过 `insightEnv` 注入**（生产不传，测试传）；④ `plain` 快照用例是**合同**，改 `renderPlainLines` 必须同步改 `approval-degrade.test.tsx`；⑤ 影响面文案六条（ok / ok-zero / timeout / skipped / not-needed / error）**互斥且各有独立用例**，不许复用。 |
+
+**已知局限（如实记录）**：① `plain` 模式下影响面 / 风险点全不显示（这是定义，不是缺陷）；② `riskRules` 只开放 `disabled`，不支持用户自定义正则规则（规则跑在审批热路径，手写正则无法保证 ReDoS 安全与误报率，见 D69）；③ 环境变量名 `CONCERTOAI_*` 与历史 `LUMEN_*` 并存（`LUMEN_REFLECTIONS` 仍可用，向后兼容）。
+
+---
+
 *当重要决策做出后，请在此追加新条目。*

@@ -9,6 +9,7 @@
  * - 审计日志：~/.concertoai/audit/
  * - Agent 安装：~/.concertoai/agents/
  * - Reviewer 全局知识库：~/.concertoai/reviewer/knowledge/
+ * - 拒绝复盘记录：~/.concertoai/reflections.jsonl（v5.0 T10）
  *
  * 首次启动（CLI 入口）调用 migrateLegacyHome() 自动迁移旧目录（幂等）：
  * 1. ~/.lumen 不存在 → 无操作（新安装直接用新版目录）；
@@ -111,6 +112,16 @@ export function globalPluginsDir(): string {
 /** 崩溃日志文件：~/.concertoai/crash.log（v3.1 M3 诊断用）。 */
 export function crashLogPath(): string {
   return path.join(globalDir(), 'crash.log');
+}
+
+/**
+ * 拒绝复盘记录文件：~/.concertoai/reflections.jsonl（v5.0 T10）。
+ *
+ * 全局单一文件（不按项目分子目录）：复盘是「我今天为什么拒了 AI」的流水，
+ * 跨项目按时间倒序看才有意义；项目名作为**字段**记录，需要时用 `--limit` + 肉眼过滤。
+ */
+export function reflectionsPath(): string {
+  return path.join(globalDir(), 'reflections.jsonl');
 }
 
 /** Reviewer 全局知识库目录：~/.concertoai/reviewer/knowledge/。 */

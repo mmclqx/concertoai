@@ -362,6 +362,9 @@ export function describeImpact(impact: ImpactSummary): string {
         return fmt(dict.impactTimeout, { ms: IMPACT_LIMITS.timeoutMs });
       case 'skipped':
         return fmt(dict.impactSkipped, { maxFiles: IMPACT_LIMITS.maxFiles });
+      case 'not-needed':
+        // 低风险不扫（省 IO）——如实说「没扫」，不冒充「项目过大」也不冒充「无影响」
+        return dict.impactNotNeeded;
       default:
         return dict.impactError;
     }

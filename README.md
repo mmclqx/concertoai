@@ -84,6 +84,8 @@ concertoai plan "重构这个模块"
 | `concertoai snapshot clean` | 清理全部残留快照（失败/取消后的遗留） |
 | `concertoai balance` | 查询 DeepSeek 账户余额（总额/赠送/充值，按币种） |
 | `concertoai doctor` | 环境诊断：Node/平台/API Key/配置/会话目录/模型表 + 账户余额 |
+| `concertoai reflect list [--limit N]` | 回看拒绝复盘（本地 JSONL，零上传）：时间 / 级别 / 文件 / 风险类别（v5.0 T10） |
+| `concertoai reflect clear [--yes]` | 清空复盘记录（交互需 `y` 确认，**回车 = 取消**；非 TTY 无 `--yes` 直接拒绝） |
 
 ## 智能成本控制
 

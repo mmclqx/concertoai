@@ -13,8 +13,11 @@ import {
   DEFAULT_OLLAMA_MODEL,
   DEFAULT_PEAK_TIME_STRATEGY,
   emptyConfig,
+  isApprovalInsightMode,
+  isReflectionsMode,
   loadConfig,
   resolveConfig,
+  validateConfigValues,
   writeConfig,
 } from '../../src/store/config';
 import { DEFAULT_SESSION_DIR } from '../../src/store/session';
@@ -307,5 +310,149 @@ describe('pricingHolidays 装载（v5.0 T7 修订）', () => {
     } finally {
       err.mockRestore();
     }
+  });
+});
+
+/**
+ * v5.0 T11：审批配置（approvalInsight / riskRules / reflections）的读写与解析。
+ *
+ * 三条验收要求落在这里：
+ * 1. round-trip（写→读不变）+ 非法值友好报错（提示而非崩溃）；
+ * 2. **v4.x 旧 config（没有这些字段）→ 默认值生效**（向后兼容，不因新增配置阻塞老用户）；
+ * 3. 环境变量与 config 的优先级**只在 resolveConfig 一处实现**（避免入口层各写一份）。
+ */
+describe('v5.0 T11：审批配置项', () => {
+  /**
+   * 清掉全局测试环境的复盘开关（`tests/setup.ts` 把 `CONCERTOAI_REFLECTIONS` 设为 off，
+   * 防止集成测试把记录写进开发者真实 home）。
+   *
+   * 但**本组要测的就是「默认值」与「环境变量优先级」本身**，带着 off 跑会把
+   * 「默认 on」断言成 off——测试意图必须显式声明，不能靠环境巧合。
+   */
+  beforeEach(() => {
+    vi.stubEnv('CONCERTOAI_REFLECTIONS', '');
+    vi.stubEnv('CONCERTOAI_APPROVAL_INSIGHT', '');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('三配置项 round-trip（approvalInsight / riskRules.disabled / reflections）', async () => {
+    const file = path.join(tmp, 'config.json');
+    await writeConfig(
+      {
+        schemaVersion: CONFIG_SCHEMA_VERSION,
+        approvalInsight: 'plain',
+        riskRules: { disabled: ['dependency-change'] },
+        reflections: 'off',
+      } as Parameters<typeof writeConfig>[0],
+      file,
+    );
+    const loaded = await loadConfig(file);
+    expect(loaded.approvalInsight).toBe('plain');
+    expect(loaded.riskRules?.disabled).toEqual(['dependency-change']);
+    expect(loaded.reflections).toBe('off');
+    expect(validateConfigValues(loaded)).toEqual([]);
+  });
+
+  it('v4.x 旧 config 缺这些字段 → 默认 rich / on（向后兼容）', async () => {
+    const file = path.join(tmp, 'config.json');
+    await writeConfig(
+      {
+        schemaVersion: CONFIG_SCHEMA_VERSION,
+        defaultModel: 'deepseek-v4-flash',
+      } as Parameters<typeof writeConfig>[0],
+      file,
+    );
+    const loaded = await loadConfig(file);
+    expect(loaded.approvalInsight).toBeUndefined(); // 文件里没有
+    const resolved = resolveConfig(loaded);
+    expect(resolved.approvalInsight).toBe('rich'); // 解析层兜默认
+    expect(resolved.reflections).toBe('on');
+  });
+
+  it('非法值不抛错、按默认值工作，但必须提示（不静默吞掉）', async () => {
+    const file = path.join(tmp, 'config.json');
+    await writeConfig(
+      {
+        schemaVersion: CONFIG_SCHEMA_VERSION,
+        approvalInsight: 'fancy',
+        reflections: 'maybe',
+        riskRules: { disabled: 'dependency-change' },
+      } as unknown as Parameters<typeof writeConfig>[0],
+      file,
+    );
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const loaded = await loadConfig(file);
+      const told = err.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(told).toContain('approvalInsight');
+      expect(told).toContain('reflections');
+      expect(told).toContain('riskRules.disabled');
+      // 非法值 → resolveConfig 回落到默认
+      const resolved = resolveConfig(loaded);
+      expect(resolved.approvalInsight).toBe('rich');
+      expect(resolved.reflections).toBe('on');
+    } finally {
+      err.mockRestore();
+    }
+  });
+
+  it('validateConfigValues 单独可用（纯函数，非法/合法各一组）', () => {
+    expect(validateConfigValues(emptyConfig())).toEqual([]);
+    expect(
+      validateConfigValues({
+        schemaVersion: CONFIG_SCHEMA_VERSION,
+        approvalInsight: 'plain',
+        reflections: 'off',
+        riskRules: { disabled: ['network-timeout'] },
+      }),
+    ).toEqual([]);
+    const issues = validateConfigValues({
+      schemaVersion: CONFIG_SCHEMA_VERSION,
+      approvalInsight: 'x' as never,
+      reflections: 'y' as never,
+    });
+    expect(issues.map((i) => i.key)).toEqual(['approvalInsight', 'reflections']);
+    for (const issue of issues) {
+      expect(issue.expected.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('环境变量优先于配置文件（允许运维临时切 plain / 关复盘）', () => {
+    const base = {
+      schemaVersion: CONFIG_SCHEMA_VERSION,
+      approvalInsight: 'rich',
+      reflections: 'on',
+    };
+    vi.stubEnv('CONCERTOAI_APPROVAL_INSIGHT', 'plain');
+    vi.stubEnv('CONCERTOAI_REFLECTIONS', 'off');
+    const resolved = resolveConfig(base as Parameters<typeof resolveConfig>[0]);
+    expect(resolved.approvalInsight).toBe('plain');
+    expect(resolved.reflections).toBe('off');
+  });
+
+  it('环境变量写错值 → 回落配置文件（不会把有效配置覆盖成非法）', () => {
+    const base = {
+      schemaVersion: CONFIG_SCHEMA_VERSION,
+      approvalInsight: 'plain',
+      reflections: 'off',
+    };
+    vi.stubEnv('CONCERTOAI_APPROVAL_INSIGHT', 'nonsense');
+    vi.stubEnv('CONCERTOAI_REFLECTIONS', '');
+    const resolved = resolveConfig(base as Parameters<typeof resolveConfig>[0]);
+    expect(resolved.approvalInsight).toBe('plain');
+    expect(resolved.reflections).toBe('off');
+  });
+
+  it('isApprovalInsightMode / isReflectionsMode：类型守卫只认合法值', () => {
+    expect(isApprovalInsightMode('rich')).toBe(true);
+    expect(isApprovalInsightMode('plain')).toBe(true);
+    expect(isApprovalInsightMode('Rich')).toBe(false);
+    expect(isApprovalInsightMode(undefined)).toBe(false);
+    expect(isReflectionsMode('on')).toBe(true);
+    expect(isReflectionsMode('off')).toBe(true);
+    expect(isReflectionsMode('OFF')).toBe(false);
   });
 });

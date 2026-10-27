@@ -221,8 +221,13 @@ export function focusLinesFrom(hits: readonly RiskHit[]): number[] {
   return medium === undefined ? [] : [medium.diffLineIndex];
 }
 
-/** 空影响面（降级路径用；保证调用方永远拿到完整结构）。 */
-export function emptyImpact(status: ImpactSummary['status'] = 'skipped'): ImpactSummary {
+/**
+ * 空影响面（降级 / 未扫路径用；保证调用方永远拿到完整结构）。
+ *
+ * 缺省 `not-needed` 而**不是** `skipped`：`skipped` 的文案是「项目过大，文件数超过 2000」，
+ * 拿它当「没扫」的默认值，会让每个低风险审批都显示「你的项目太大」（实测发现的假话）。
+ */
+export function emptyImpact(status: ImpactSummary['status'] = 'not-needed'): ImpactSummary {
   return {
     status,
     referenceCount: 0,
@@ -288,6 +293,7 @@ export async function analyzeApproval(
     const level = levelOf(hits);
 
     // ④ 影响面：只在中高风险时扫（low 直接跳过，省掉 90% 的 IO）
+    //    `emptyImpact()` 缺省为 `not-needed`——「没扫」不等于「项目太大」，也不等于「无影响」
     let impact: ImpactSummary = emptyImpact();
     if (options.skipImpact !== true && level !== 'low' && options.file !== undefined) {
       impact = await scanImpact({

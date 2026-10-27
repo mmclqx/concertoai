@@ -52,6 +52,11 @@ export const zh = {
     plugin: {
       description: '插件市场（install/search/list/remove/browse/recommend/popular）',
     },
+    reflect: {
+      description: '拒绝复盘记录（list 查看 / clear 清空；本地 JSONL，零上传）',
+      limit: '展示条数（默认 20）',
+      yes: '清空时跳过确认（非交互环境必需）',
+    },
   },
   errors: {
     noApiKey: '未找到 DEEPSEEK_API_KEY 环境变量，请先设置后再启动。',
@@ -160,6 +165,8 @@ export const zh = {
     impactTimeout: '影响面未分析（超时 {ms}ms）',
     impactSkipped: '影响面未分析（项目过大，文件数超过 {maxFiles}）',
     impactError: '影响面未分析（读取失败）',
+    // 第五态（T11）：低风险不做影响面扫描——如实说「没扫」，不说「项目过大」也不说「无影响」
+    impactNotNeeded: '低风险改动，未做影响面扫描（仅中高风险才扫）',
     impactNotApplicable: '不适用（该操作不涉及文件引用）',
     hugeDiff: '共 {count} 行改动，风险分析已跳过（超大 diff）',
     diffFold: '… 还有 {count} 行未显示，按 v 查看完整 diff',
@@ -210,6 +217,37 @@ export const zh = {
     progressTitle: '执行进度 {done}/{total}',
     progressFailedSuffix: '（{failed} 失败）',
     progressStep: '步骤{index}. {title}',
+  },
+  // v5.0 T10：拒绝复盘记录（本地 JSONL，零上传；`concertoai reflect` + 拒绝后的提示行）
+  reflect: {
+    listTitle: '拒绝复盘（{count} 条，最新在前）',
+    listEmpty: '暂无复盘记录。拒绝一次编辑后会自动记一条（纯本地 JSONL，零上传）。',
+    listSkipped: '⚠️ 跳过 {count} 条损坏行（文件被手工编辑或写入被打断）',
+    listHint: '清空：concertoai reflect clear　·　关闭记录：concertoai config set reflections off',
+    colTime: '时间',
+    colLevel: '级别',
+    colFile: '文件',
+    colCategories: '风险类别',
+    levelHigh: '⚠️ 高',
+    levelMedium: '🟡 中',
+    levelLow: '✅ 低',
+    // 未分析 ≠ 低风险（与审批卡同一套措辞红线）
+    levelUnknown: '— 未分析',
+    noFile: '—',
+    noCategories: '—',
+    clearConfirm: '确定清空全部复盘记录？（y/N）',
+    clearCanceled: '已取消，复盘记录未变更。',
+    clearEmpty: '复盘记录本来就是空的，无需清空。',
+    clearNeedsYes: '❌ 非交互环境需显式加 --yes 才能清空（避免脚本误删复盘历史）。',
+    cleared: '✅ 已清空复盘记录：{path}',
+    clearFailed: '❌ 清空失败：{message}',
+    unknownAction: '未知 reflect 子命令: {action}（支持 list / clear）',
+    usage: '用法: concertoai reflect list [--limit 20] | concertoai reflect clear [--yes]',
+    limitInvalid: '⚠️ --limit 需为正整数，已按默认 {limit} 处理',
+    // App 拒绝后的提示行（G8：只提示本地，绝不暗示上传）
+    recorded:
+      '📝 已记录到本地复盘（concertoai reflect list 查看，concertoai config set reflections off 可关闭）',
+    recordFailed: '📝 复盘记录写入失败（已忽略，不影响审批结果）',
   },
   balance: {
     available: '账户可用',

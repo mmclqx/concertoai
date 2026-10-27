@@ -30,6 +30,7 @@ import { parseWorkflowCommand, runWorkflowSlash } from '../cli/slash/workflow';
 import { formatTeamProgress, runTeamCommand } from '../cli/team';
 import type { ApprovalInsight } from '../core/approval-insight';
 import { analyzeApproval } from '../core/approval-insight';
+import { appendReflection, buildReflection, isReflectionsEnabled } from '../core/reflection-store';
 import { activeRiskRules } from '../core/risk-rules';
 import { fmt, t } from '../i18n';
 import { retrieveLocalMemories } from '../loop/local-memory';
@@ -99,6 +100,25 @@ export interface AppProps {
   approvalInsightMode?: 'rich' | 'plain';
   /** 关闭的风险规则 id（config `riskRules.disabled`，v5.0 T8 配置项的消费方）。 */
   riskRulesDisabled?: readonly string[];
+  /**
+   * 拒绝复盘开关（v5.0 T10；由 `resolveConfig().reflections` 决定）。
+   *
+   * 缺省读环境变量 `CONCERTOAI_REFLECTIONS`（无则 on）。关掉后拒绝**照常工作**，
+   * 只是不写记录——绝不影响审批决议。
+   *
+   * 为什么缺省也读环境变量：① 给嵌入式调用方（不经过 `resolveConfig`）一个开关；
+   * ② 测试进程靠它兜底（`tests/setup.ts`），否则 `npm test` 会把记录写进开发者
+   * 真实 home —— 实测踩到过一次（16 条测试垃圾记录）。
+   */
+  reflectionsEnabled?: boolean;
+
+  /**
+   * 复盘写入注入（**仅测试用**）。
+   *
+   * 生产代码不要传：缺省写 `~/.concertoai/reflections.jsonl`，测试必须隔离到 tmp 目录，
+   * 否则一次 `npm test` 会污染开发者本机的真实复盘记录。
+   */
+  appendReflectionForTest?: typeof appendReflection;
   /**
    * 环境探测注入（测试用；缺省读 `process.stdout.isTTY` / `process.env.CI`）。
    * 生产代码不应传——降级判定必须反映真实终端环境。
@@ -291,6 +311,8 @@ export function App({
   fallbackNote,
   approvalInsightMode,
   riskRulesDisabled,
+  reflectionsEnabled = isReflectionsEnabled(undefined, process.env.CONCERTOAI_REFLECTIONS),
+  appendReflectionForTest,
   insightEnv,
 }: AppProps) {
   const { exit } = useApp();
@@ -329,6 +351,12 @@ export function App({
   const [activeTool, setActiveTool] = useState<ToolCall | null>(null);
   const [pending, setPending] = useState<ApprovalRequest | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * 中性提示行（v5.0 T10）：用于「已记录到复盘」这类**不是错误**的告知。
+   *
+   * 为什么不复用 `error`：拒绝操作对用户是正常行为，用红字渲染会让人以为出了问题。
+   */
+  const [notice, setNotice] = useState<string | null>(null);
   const [tokens, setTokens] = useState({ input: 0, output: 0 });
   /** API 返回的真实 usage 累计（usage 事件累加；流式中途仍显示估算值）。 */
   const [realUsage, setRealUsage] = useState({ input: 0, output: 0, cacheHit: 0 });
@@ -401,20 +429,70 @@ export function App({
     [],
   );
 
+  /**
+   * 拒绝时记一条本地复盘（v5.0 T10，G8 / ADR-042）。
+   *
+   * **顺序与容错都是刻意的**：
+   * 1. 由 `finishApproval` 在 `resolve(false)` **之后**调用（决议已下发，写盘再慢也只影响提示行）；
+   * 2. `void` 发出去不 await（fire-and-forget）——目录只读 / 磁盘满都不能让审批流程卡住；
+   * 3. `appendReflection` 自身永不抛错，这里再兜一层 `then/catch` 只为更新提示行。
+   */
+  const recordRejection = useCallback(
+    (request: ApprovalRequest, insight: ApprovalInsight | null) => {
+      if (reflectionsEnabled === false || request.kind !== 'edit') {
+        return;
+      }
+      /**
+       * **降级 ≠ 低风险**（实测踩到，见踩坑记录 2026-10-28）。
+       *
+       * `analyzeApproval` 在降级时返回的空 insight 上 `level` 恒为 `'low'`
+       * （因为「无命中 = low」），直接记录会让复盘表显出一片「✅ 低」——
+       * 而事实是**根本没分析**。判据必须用 `degraded`，不能用 `level` 本身。
+       */
+      const analyzed = insight !== null && insight !== undefined && insight.degraded !== true;
+      const entry = buildReflection({
+        file: request.insightHint?.file,
+        intent: request.insightHint?.intent,
+        // 未分析（降级 / 分析未到达）→ undefined → 记为 unknown
+        level: analyzed ? insight.level : undefined,
+        categories: analyzed ? insight.hits.map((hit) => hit.category) : undefined,
+        focusLines: analyzed ? insight.focusLines : undefined,
+        cwd: ctx.cwd,
+      });
+      const writer = appendReflectionForTest ?? appendReflection;
+      void writer(entry)
+        .then((result) => {
+          setNotice(result.ok ? t().reflect.recorded : t().reflect.recordFailed);
+        })
+        .catch(() => {
+          // 防御未来改动：写盘链路上的任何异常都不该冒泡到 UI
+          setNotice(t().reflect.recordFailed);
+        });
+    },
+    [ctx.cwd, reflectionsEnabled, appendReflectionForTest],
+  );
+
   /** 结束一次审批：清空展示态与在途分析（G1：y/n 语义与 v4.1.1 完全一致）。 */
-  const finishApproval = useCallback((approved: boolean) => {
-    approvalSeq.current += 1; // 让在途分析结果失效，不再回写状态
-    toggleThrottleRef.current?.dispose();
-    approvalResolver.current?.(approved);
-    approvalResolver.current = null;
-    setPending(null);
-    setPendingInsight(null);
-    setDiffFull(false);
-    setHelpOpen(false);
-    diffFullRef.current = false;
-    helpOpenRef.current = false;
-    setPhase('idle');
-  }, []);
+  const finishApproval = useCallback(
+    (approved: boolean, request?: ApprovalRequest | null, insight?: ApprovalInsight | null) => {
+      approvalSeq.current += 1; // 让在途分析结果失效，不再回写状态
+      toggleThrottleRef.current?.dispose();
+      approvalResolver.current?.(approved);
+      approvalResolver.current = null;
+      setPending(null);
+      setPendingInsight(null);
+      setDiffFull(false);
+      setHelpOpen(false);
+      diffFullRef.current = false;
+      helpOpenRef.current = false;
+      setPhase('idle');
+      // v5.0 T10：决议已下发后才写复盘（不阻塞审批退出）
+      if (!approved && request !== undefined && request !== null) {
+        recordRejection(request, insight ?? null);
+      }
+    },
+    [recordRejection],
+  );
 
   /**
    * 审批回调：挂起当前流程，等待 y/n 按键决议。
@@ -1369,7 +1447,8 @@ export function App({
         finishApproval(true);
       } else if (input === 'n' || key.escape || (input === 'c' && key.ctrl)) {
         // v3.1 BUG 修复：审批阶段 Esc / Ctrl+C = 拒绝该操作（fail-closed），不退出应用
-        finishApproval(false);
+        // v5.0 T10：把「拒的是什么 + 当时的风险洞察」交给复盘记录
+        finishApproval(false, pending, pendingInsight);
       } else if (input === 'v') {
         // 纯展示态切换，走 80ms 节流（连按只取最后一次意图，防终端闪烁）
         diffFullRef.current = !diffFullRef.current;
@@ -1481,6 +1560,8 @@ export function App({
         />
       )}
       {plan !== null && phase === 'plan-approval' && <PlanConfirm plan={plan} />}
+      {/* v5.0 T10：拒绝后的复盘提示（中性灰，不是错误——用户拒绝是正常操作） */}
+      {notice !== null && <Text dimColor>{notice}</Text>}
       {error !== null && <Text color="red">{error}</Text>}
       <PromptInput
         value={input}

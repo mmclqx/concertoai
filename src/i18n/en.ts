@@ -53,6 +53,11 @@ export const en = {
     plugin: {
       description: 'Plugin marketplace (install/search/list/remove/browse/recommend/popular)',
     },
+    reflect: {
+      description: 'Rejection retrospectives (list / clear; local JSONL, never uploaded)',
+      limit: 'Number of entries to show (default 20)',
+      yes: 'Skip the confirmation prompt (required in non-interactive environments)',
+    },
   },
   errors: {
     noApiKey: 'DEEPSEEK_API_KEY not found. Set it first, then start again.',
@@ -164,6 +169,8 @@ export const en = {
     impactTimeout: 'not analyzed (timed out after {ms}ms)',
     impactSkipped: 'not analyzed (project too large, more than {maxFiles} files)',
     impactError: 'not analyzed (read failed)',
+    // Fifth state (T11): low risk → no scan. Say "not scanned", never "too large"/"no impact".
+    impactNotNeeded: 'low-risk change — blast radius not scanned (only medium/high are scanned)',
     impactNotApplicable: 'not applicable (this action has no file references)',
     hugeDiff: '{count} changed lines — risk analysis skipped (huge diff)',
     diffFold: '… {count} more lines hidden, press v for the full diff',
@@ -218,6 +225,38 @@ export const en = {
     progressTitle: 'Progress {done}/{total}',
     progressFailedSuffix: ' ({failed} failed)',
     progressStep: 'Step {index}. {title}',
+  },
+  // v5.0 T10: rejection retrospectives (local JSONL, never uploaded)
+  reflect: {
+    listTitle: 'Rejection retrospectives ({count} entries, newest first)',
+    listEmpty:
+      'No retrospectives yet. Rejecting an edit records one automatically (local JSONL only, never uploaded).',
+    listSkipped: '⚠️ Skipped {count} corrupted line(s) (manual edit or interrupted write)',
+    listHint: 'Clear: concertoai reflect clear　·　Disable: concertoai config set reflections off',
+    colTime: 'Time',
+    colLevel: 'Level',
+    colFile: 'File',
+    colCategories: 'Risk categories',
+    levelHigh: '⚠️ High',
+    levelMedium: '🟡 Med',
+    levelLow: '✅ Low',
+    // "not analyzed" is not "low risk" (same wording red line as the approval card)
+    levelUnknown: '— n/a',
+    noFile: '—',
+    noCategories: '—',
+    clearConfirm: 'Clear all retrospectives? (y/N)',
+    clearCanceled: 'Canceled; retrospectives unchanged.',
+    clearEmpty: 'There is nothing to clear.',
+    clearNeedsYes:
+      '❌ Non-interactive environment requires --yes to clear (prevents scripts from wiping history).',
+    cleared: '✅ Retrospectives cleared: {path}',
+    clearFailed: '❌ Clear failed: {message}',
+    unknownAction: 'Unknown reflect subcommand: {action} (supported: list / clear)',
+    usage: 'Usage: concertoai reflect list [--limit 20] | concertoai reflect clear [--yes]',
+    limitInvalid: '⚠️ --limit must be a positive integer; using the default of {limit}',
+    recorded:
+      '📝 Recorded to local retrospectives (see concertoai reflect list; disable with concertoai config set reflections off)',
+    recordFailed: '📝 Failed to record the retrospective (ignored; approval result unaffected)',
   },
   balance: {
     available: 'Account available',

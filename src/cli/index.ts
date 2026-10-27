@@ -4,7 +4,7 @@
  */
 
 import { Command } from 'commander';
-import { t } from '../i18n';
+import { fmt, t } from '../i18n';
 import { configPath, crashLogPath, migrateLegacyHome } from '../store/paths';
 import { VERSION } from '../version';
 import { buildMissingApiKeyGuide } from './api-key-guide';
@@ -332,6 +332,25 @@ program
     }
   });
 
+// v5.0 T10：拒绝复盘记录（本地 JSONL，零上传；list 查看 / clear 清空）
+program
+  .command('reflect <action>')
+  .description(t().cli.reflect.description)
+  .option('--limit <n>', t().cli.reflect.limit)
+  .option('-y, --yes', t().cli.reflect.yes)
+  .action(async (action: string, options: { limit?: string; yes?: boolean }) => {
+    const { parseReflectLimit, runReflectCommand } = await import('./reflect');
+    const { limit, invalid } = parseReflectLimit(options.limit);
+    if (invalid) {
+      // 参数写错如实提示（不静默吞掉），但仍按默认条数继续 —— 别让一次手滑中断用户的查看
+      console.error(fmt(t().reflect.limitInvalid, { limit }));
+    }
+    const code = await runReflectCommand({ action, limit, yes: options.yes ?? false });
+    if (code !== 0) {
+      process.exitCode = code;
+    }
+  });
+
 program
   .command('balance')
   .description(t().cli.balance.description)
@@ -536,7 +555,9 @@ program
 // v4.0 M3 T3.5：config 命令族（config set provider <name> / config restore）
 program
   .command('config <action> [name] [value]')
-  .description('配置管理（v4.0 M3）：config set provider <name> / config restore')
+  .description(
+    '配置管理：config set provider <name> | config set approvalInsight <rich|plain> | config set reflections <on|off> | config restore',
+  )
   .option('--lang <zh|en>', '界面语言')
   .action(async (action: string, name?: string, value?: string) => {
     const { configPath } = await import('../store/paths');
@@ -569,7 +590,46 @@ program
         return;
       }
     }
-    console.error('用法: concertoai config set provider <name> | config restore');
+    // v5.0 T10/T11：枚举类配置写入（拒绝提示里承诺的 `config set reflections off` 必须真能用）
+    const { isApprovalInsightMode, isReflectionsMode, loadConfig, writeConfig } = await import(
+      '../store/config'
+    );
+    const enumKeys = ['approvalInsight', 'reflections'] as const;
+    if (action === 'set' && name !== undefined && (enumKeys as readonly string[]).includes(name)) {
+      if (value === undefined) {
+        console.error(
+          `用法: concertoai config set ${name} <${name === 'reflections' ? 'on|off' : 'rich|plain'}>`,
+        );
+        process.exitCode = 1;
+        return;
+      }
+      const valid =
+        name === 'reflections' ? isReflectionsMode(value) : isApprovalInsightMode(value);
+      if (!valid) {
+        // 非法值 fail-closed：宁可报错让用户改，也不写入一个「看起来设了但无效」的值
+        console.error(
+          `❌ ${name} 仅接受 ${name === 'reflections' ? 'on | off' : 'rich | plain'}，收到: ${value}`,
+        );
+        process.exitCode = 1;
+        return;
+      }
+      const cfg = await loadConfig(cfgPath);
+      const next = { ...cfg, [name]: value };
+      await writeConfig(next, cfgPath);
+      console.log(
+        name === 'reflections'
+          ? value === 'off'
+            ? '✅ 已关闭拒绝复盘记录（拒绝照常工作，只是不再写记录）。'
+            : '✅ 已开启拒绝复盘记录（本地 JSONL，零上传）。'
+          : value === 'plain'
+            ? '✅ 审批卡已切回 v4.1.1 原貌（plain）。'
+            : '✅ 审批卡已启用风险教学卡（rich）。',
+      );
+      return;
+    }
+    console.error(
+      '用法: concertoai config set provider <name> | config set approvalInsight <rich|plain> | config set reflections <on|off> | config restore',
+    );
     process.exitCode = 1;
   });
 
