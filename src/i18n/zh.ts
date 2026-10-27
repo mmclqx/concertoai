@@ -64,6 +64,22 @@ export const zh = {
     fatalNextStep:
       '💡 下一步：运行 `concertoai doctor` 检查环境；若为软件缺陷请附带上方错误报告反馈。',
   },
+  // v5.0 T1：缺 API Key 中文引导（命令片段见 src/cli/api-key-guide.ts，跨语言一致故不入字典）
+  missingApiKey: {
+    title: '⚠️  未检测到 DeepSeek API Key —— ConcertoAI 需要它来调用模型',
+    intro: '任选一种方式配置（推荐方式 1，当前终端立即生效）：',
+    envTitle: '1. 设置环境变量',
+    accountTitle: '2. 登录账号（保存到本地，之后无需重复配置）',
+    accountHint: '（交互式输入不回显：concertoai login myname）',
+    configTitle: '3. 写入配置文件（目录不存在时需先创建）',
+    getKeyLabel: '获取 API Key：',
+    nextStep: '💡 配置完成后运行 `concertoai doctor` 验证环境。',
+  },
+  // v5.0 T1：Node 版本提示（engines 要求 >= 22；不阻断，仅交互式终端提示）
+  nodeVersion: {
+    tooOld:
+      '⚠️  当前 Node {current}，ConcertoAI 要求 {required}。本次命令仍会执行，但部分功能可能异常；如遇问题请先升级 Node。',
+  },
   approval: {
     editTitle: '编辑文件',
     shellTitle: '执行命令',

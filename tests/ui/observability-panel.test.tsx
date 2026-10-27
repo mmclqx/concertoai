@@ -82,11 +82,18 @@ describe('ObservabilityPanel 性能基准（§6.1）', () => {
         }),
       );
     }
-    const start = performance.now();
-    const { lastFrame, unmount } = render(<ObservabilityPanel spans={spans} open={true} />);
-    const elapsed = performance.now() - start;
-    expect(lastFrame()).toContain('50 条记录');
+    // v5.0 T1：改为「3 次取最小值」（原先单次测量 < 100ms 会在并行跑测试/机器负载高时
+    // 偶发失败——实测 v5.0 新增 npx e2e 后触发过一次 flaky）。
+    // 取最小值既过滤掉负载尖峰，又保留对真实性能退化的灵敏度。
+    const measure = (): number => {
+      const start = performance.now();
+      const { lastFrame, unmount } = render(<ObservabilityPanel spans={spans} open={true} />);
+      const elapsed = performance.now() - start;
+      expect(lastFrame()).toContain('50 条记录');
+      unmount();
+      return elapsed;
+    };
+    const elapsed = Math.min(measure(), measure(), measure());
     expect(elapsed).toBeLessThan(100);
-    unmount();
   });
 });

@@ -5,10 +5,12 @@
 
 import { Command } from 'commander';
 import { t } from '../i18n';
-import { crashLogPath, migrateLegacyHome } from '../store/paths';
+import { configPath, crashLogPath, migrateLegacyHome } from '../store/paths';
 import { VERSION } from '../version';
-import { resolveApiKeyCached } from './common';
+import { buildMissingApiKeyGuide } from './api-key-guide';
+import { readConfigDeepseekKey, resolveApiKeyCached } from './common';
 import { installCrashHandlers } from './crash-handler';
+import { checkNodeVersion, isNodeWarnSuppressed } from './node-version';
 import { makePermissionConfirm as makeCliPermissionConfirm } from './plugin';
 
 // ═══ 最早阶段：安装全局崩溃处理器（v3.1 M3 诊断） ═══
@@ -20,6 +22,19 @@ installCrashHandlers();
 // 幂等：~/.lumen 不存在或 ~/.concertoai 已存在时无操作。
 migrateLegacyHome((message) => console.error(message));
 
+// v5.0 T1：Node 版本提示（不阻断；仅交互式终端提示一次）。
+// 背景：engines 要求 >= 22，但 Node 20 仍是 active LTS，npm 会刷多条英文
+// EBADENGINE 警告（npx 零安装实测发现），新手会误以为装坏了 → 补一句中文说明。
+{
+  const check = checkNodeVersion(process.versions.node, {
+    isTTY: process.stderr.isTTY === true,
+    suppressed: isNodeWarnSuppressed(),
+  });
+  if (check.warning !== '') {
+    process.stderr.write(`${check.warning}\n\n`);
+  }
+}
+
 /**
  * 解析 API Key（v3.1 M3 T3.3）：CLI > 环境变量 > active account > config.json。
  * 无任何来源 → 报错退出（fail-closed，与现状一致）。
@@ -27,11 +42,18 @@ migrateLegacyHome((message) => console.error(message));
 async function getApiKey(): Promise<string> {
   // v3.2 M4 / T4.5：启动期一次性解析并缓存（同一进程后续命令复用，消除重复读盘）
   const resolved = await resolveApiKeyCached();
-  if (resolved.key === undefined) {
-    console.error(t().errors.noApiKey);
-    process.exit(1);
+  if (resolved.key !== undefined) {
+    return resolved.key;
   }
-  return resolved.key;
+  // v5.0 T1：回退到 config.json 的 providers.deepseek.apiKey。
+  // 此前入口不读该字段 → 引导里的「方式 3：写入配置文件」写了也不生效（v4.1.1 同类坑）。
+  const configKey = await readConfigDeepseekKey();
+  if (configKey !== undefined) {
+    return configKey;
+  }
+  // v5.0 T1：缺 Key → 中文引导（三种真实生效的配置方式 + 获取地址），非静默崩溃
+  console.error(buildMissingApiKeyGuide({ configPath: configPath() }).join('\n'));
+  process.exit(1);
 }
 
 /**

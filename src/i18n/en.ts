@@ -65,6 +65,22 @@ export const en = {
     fatalNextStep:
       '💡 Next: run `concertoai doctor` to check the environment; if it is a software defect, report the error above.',
   },
+  // v5.0 T1: missing API key guide (command snippets live in src/cli/api-key-guide.ts)
+  missingApiKey: {
+    title: '⚠️  DeepSeek API key not found — ConcertoAI needs it to call the model',
+    intro: 'Pick one way to configure it (option 1 is recommended and takes effect immediately):',
+    envTitle: '1. Set an environment variable',
+    accountTitle: '2. Log in an account (stored locally; no need to repeat later)',
+    accountHint: '(interactive input is hidden: concertoai login myname)',
+    configTitle: '3. Write the config file (create the directory first if missing)',
+    getKeyLabel: 'Get an API key:',
+    nextStep: '💡 After configuring, run `concertoai doctor` to verify the environment.',
+  },
+  // v5.0 T1: Node version notice (engines requires >= 22; non-blocking, TTY only)
+  nodeVersion: {
+    tooOld:
+      '⚠️  Current Node {current}, ConcertoAI requires {required}. This command will still run, but some features may misbehave; upgrade Node if you hit issues.',
+  },
   approval: {
     editTitle: 'Edit file',
     shellTitle: 'Run command',

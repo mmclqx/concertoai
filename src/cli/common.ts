@@ -10,6 +10,8 @@ import os from 'node:os';
 import { getDefaultModel, getModel, listModels } from '../model/models';
 import { getActiveAccount, getApiKeyFor } from '../store/accounts';
 import type { MCPServerEntry } from '../store/config';
+import { loadConfig } from '../store/config';
+import { configPath } from '../store/paths';
 import { ProjectRegistry } from '../store/projects';
 import { editFileTool } from '../tools/edit';
 import { listDirectoryTool, readFileTool, searchContentTool } from '../tools/read';
@@ -103,6 +105,27 @@ export async function resolveApiKey(options: ResolveApiKeyOptions = {}): Promise
     return { key: configKey, source: 'config' };
   }
   return { key: undefined, source: 'none' };
+}
+
+/**
+ * 读取 config.json 中 `providers.deepseek.apiKey`（v5.0 T1）。
+ *
+ * 背景（真实缺口修复）：入口 `getApiKey()` 调 `resolveApiKeyCached()` 时**不传 configKey**，
+ * 因此 `providers.deepseek.apiKey` 只在 provider-runtime 链路生效，在 chat/run/plan 入口不生效。
+ * 缺 Key 引导的「方式 3：写入配置文件」若指向不生效的字段，就是重演 v4.1.1
+ * 「装好了但跑不通」（见 docs/09-踩坑记录/2026-08-16-preflight自动初始化装好但跑不通.md）。
+ *
+ * 容错：配置缺失 / 损坏 / 无该字段 → 一律返回 undefined（不抛错，由调用方决定是否报缺 Key）。
+ */
+export async function readConfigDeepseekKey(configFile?: string): Promise<string | undefined> {
+  try {
+    const config = await loadConfig(configFile ?? configPath());
+    const providers = (config as { providers?: Record<string, { apiKey?: string }> }).providers;
+    const key = providers?.deepseek?.apiKey;
+    return typeof key === 'string' && key.trim() !== '' ? key : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /** 打码 API Key：`sk-****abcd`（仅显示后 4 位；短 Key 全部掩码）。 */
