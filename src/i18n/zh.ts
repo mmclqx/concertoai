@@ -188,6 +188,9 @@ export const zh = {
   },
   prompt: {
     placeholder: '输入你的需求…（Enter 发送 / Shift+Enter 换行 / Esc 退出）',
+    // v5.0 T13：等待回复期间输入框是活的（否则断网时 /hints off 敲不进去），
+    // 此时提交普通需求会被忽略——必须说清楚，不能静默吞掉（假按钮）。
+    busyWaiting: '⏳ 正在等待模型回复…（Ctrl+C 中断；/hints off 可静音提示）',
   },
   status: {
     provider: 'Provider',

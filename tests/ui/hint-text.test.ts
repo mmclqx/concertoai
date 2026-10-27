@@ -16,6 +16,7 @@ import { describe, expect, it } from 'vitest';
 import {
   FALLBACK_COLUMNS,
   HINT_MIN_MESSAGE_WIDTH,
+  isHintVisiblePhase,
   normalizeColumns,
   renderHintLine,
   resolveHintLine,
@@ -140,6 +141,20 @@ describe('② 阶段门禁：流式输出期间严禁渲染', () => {
 
   it('streaming → null（与流式抢行是用户点名禁止的）', () => {
     expect(resolveHintLine({ phase: 'streaming', suggestion, columns: 100 })).toBeNull();
+  });
+
+  it('awaiting → 渲染（已提交、尚无产出：断网/假 Key 时唯一能帮到用户的时刻）', () => {
+    const line = resolveHintLine({ phase: 'awaiting', suggestion, columns: 100 });
+    expect(line).not.toBeNull();
+    expect(line).toContain(COMMAND);
+  });
+
+  it('isHintVisiblePhase：只放行 idle / awaiting（新阶段默认不放行）', () => {
+    expect(isHintVisiblePhase('idle')).toBe(true);
+    expect(isHintVisiblePhase('awaiting')).toBe(true);
+    expect(isHintVisiblePhase('streaming')).toBe(false);
+    expect(isHintVisiblePhase('approval')).toBe(false);
+    expect(isHintVisiblePhase('plan-approval')).toBe(false);
   });
 
   it('approval / plan-approval → null（审批焦点不能被灰字干扰）', () => {

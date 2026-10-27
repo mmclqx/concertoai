@@ -316,6 +316,120 @@ describe('T13 约束②：流式输出期间不渲染提示', () => {
   });
 });
 
+describe('T13 修正（2026-10-28）：提示不依赖「这一轮对话跑成功」', () => {
+  /**
+   * 挂起的模型：`streamChat` 产出**零字节**且永不结束——精确模拟「Key 没配好 / 断网」。
+   *
+   * 这就是 PTY 端到端脚本四条断言全红的真实原因：`phase` 永远停在 `streaming`，
+   * 而旧实现 `phase !== 'idle' → setHint(null)` 把提示按死了。
+   */
+  class HangingModel implements ModelClient {
+    async *streamChat(_params: StreamChatParams): AsyncGenerator<ChatCompletionChunk> {
+      await new Promise(() => {}); // 永不 settle
+      yield fakeChunk({}, 'stop'); // 不可达，仅为满足类型
+    }
+  }
+
+  it('模型一直不回话（假 Key / 断网）→ 提示照样出现（awaiting 阶段）', async () => {
+    const hintState = makeHintStateSpy();
+    const { stdin, lastFrame, unmount } = render(
+      <App
+        client={new HangingModel()}
+        registry={registry}
+        ctx={{ cwd: tmp }}
+        model="deepseek-v4-flash"
+        hintsEnabled
+        readHintCooldownsForTest={hintState.read}
+        writeHintCooldownsForTest={hintState.write}
+      />,
+    );
+    // 提交前不抢开场白
+    expect(lastFrame()).not.toContain('concertoai init');
+
+    stdin.write('你好');
+    await sleep(50);
+    stdin.write('\r');
+    // 关键断言：请求**没有任何回复**，提示仍必须出现
+    await waitFor(() => {
+      expect(lastFrame()).toContain('concertoai init');
+    });
+    // 而且此时确实还在等（没有任何助手输出），确认走的是 awaiting 而不是已结束
+    expect(lastFrame()).not.toContain('好的');
+    expect(hintState.writes[0]).toHaveProperty('missing-project-rules');
+    unmount();
+  });
+
+  it('等待回复期间 /hints off 依然有效（busy 守卫不得吞掉会话内命令）', async () => {
+    const hintState = makeHintStateSpy();
+    const { stdin, lastFrame, unmount } = render(
+      <App
+        client={new HangingModel()}
+        registry={registry}
+        ctx={{ cwd: tmp }}
+        model="deepseek-v4-flash"
+        hintsEnabled
+        readHintCooldownsForTest={hintState.read}
+        writeHintCooldownsForTest={hintState.write}
+      />,
+    );
+    stdin.write('你好');
+    await sleep(50);
+    stdin.write('\r');
+    await waitFor(() => {
+      expect(lastFrame()).toContain('concertoai init');
+    });
+
+    // 请求仍挂起（busy=true）时输入 /hints off
+    stdin.write('/hints off');
+    await sleep(50);
+    stdin.write('\r');
+    await waitFor(() => {
+      expect(lastFrame()).toContain('/hints on');
+    });
+    await waitFor(() => {
+      expect(lastFrame()).not.toContain('concertoai init');
+    });
+    unmount();
+  });
+
+  /**
+   * 「假按钮」护栏：输入框在 `awaiting` 期间是活的（为了能敲 `/hints off`），
+   * 于是用户也可能敲一句普通需求再 Enter。这一刻不能排队执行，
+   * **但必须给出可见回执**——静默吞掉正是 v4.0 客户投诉的 F 假按钮同型问题。
+   */
+  it('等待回复期间提交普通需求 → 不排队，但给出「正在等待」回执（不静默吞）', async () => {
+    const hintState = makeHintStateSpy();
+    const { stdin, lastFrame, unmount } = render(
+      <App
+        client={new HangingModel()}
+        registry={registry}
+        ctx={{ cwd: tmp }}
+        model="deepseek-v4-flash"
+        hintsEnabled
+        readHintCooldownsForTest={hintState.read}
+        writeHintCooldownsForTest={hintState.write}
+      />,
+    );
+    stdin.write('你好');
+    await sleep(50);
+    stdin.write('\r');
+    await waitFor(() => {
+      expect(lastFrame()).toContain('concertoai init');
+    });
+
+    // 请求仍挂起时再提交一句普通需求
+    stdin.write('再补一句');
+    await sleep(50);
+    stdin.write('\r');
+    await waitFor(() => {
+      expect(lastFrame()).toContain('正在等待模型回复');
+    });
+    // 没有真的发起第二轮（消息流里仍只有用户那一条 + 没出现第二轮的痕迹）
+    expect(hintState.writes.length).toBe(1);
+    unmount();
+  });
+});
+
 describe('T13：冷却装载前不判定（避免启动即弹）', () => {
   it('磁盘里已有冷却记录 → 重启后同一提示不再出现', async () => {
     const model = new FakeModel([{ content: '好的' }]);

@@ -94,13 +94,26 @@ export function renderHintLine(input: RenderHintLineInput): string {
 }
 
 /**
- * 渲染阶段（与 `App.tsx` 的 `Phase` 同构；本文件不 import 组件层，故自行声明）。
+ * 渲染阶段（与 `App.tsx` 的 `Phase` 同构 + 一个提示专用的 `awaiting`；本文件不 import 组件层，故自行声明）。
  *
- * 只有 `idle` 允许显示提示——其余三个阶段都有「正在发生的事」：
- * 流式输出会与提示抢同一行；审批框 / 计划确认框本身就是全屏焦点，
- * 底下再挂一行灰字只会让人以为它也参与决策。
+ * 允许显示提示的只有两种「屏幕上没有别的东西在长」的时刻：
+ *
+ * | 阶段 | 显示 | 为什么 |
+ * |---|---|---|
+ * | `idle` | ✅ | 用户掌控输入框，正是「下一步该敲什么」有用的时刻 |
+ * | `awaiting` | ✅ | **已提交、还没有任何产出**（等首字节 / 等模型回话）。此刻屏幕上只有 spinner，没有可被打断的输出；而用户断网 / Key 没配好时这一等就是无限长——若此时不给提示，他就**永远看不到**（v5.0 T13 实测踩到，见下方「②的边界」） |
+ * | `streaming` | ❌ | 正在吐字，灰字会与输出抢同一行（用户点名禁止） |
+ * | `approval` / `plan-approval` | ❌ | 审批框 / 计划确认框本身是全屏焦点，底下挂灰字会让人以为它也参与决策 |
+ *
+ * ## ②的边界（2026-10-28 修正）
+ *
+ * 原实现只认 `idle`，等于把「提示」这个**确定性事实**绑在了「这一轮对话成功跑完」上。
+ * 实测后果：假 Key / 断网时 `runLoop` 一直挂起、`phase` 永远停在 `streaming`，
+ * 于是「没有规则文件」这条最该早早告诉用户的提示**一次都没出现**。
+ * 现在把「等首字节」从 `streaming` 里单独拆出来（`awaiting`）：②的本意是
+ * 「别打断用户读流式输出」，而不是「对话没结束就别帮他」。
  */
-export type HintPhase = 'idle' | 'streaming' | 'approval' | 'plan-approval';
+export type HintPhase = 'idle' | 'awaiting' | 'streaming' | 'approval' | 'plan-approval';
 
 /** `resolveHintLine` 入参。 */
 export interface ResolveHintLineInput {
@@ -114,7 +127,8 @@ export interface ResolveHintLineInput {
 
 /**
  * 判定「现在该不该画这一行、画成什么」——**纯函数**，一行搞定两个门禁：
- * 阶段门禁（②，只在 idle 出现）与排版（③，超宽截断但命令完整）。
+ * 阶段门禁（②，`idle` / `awaiting` 才出现，`streaming` 与审批类一律不画）与排版
+ * （③，超宽截断但命令完整）。
  *
  * @returns 需要渲染的单行字符串；`null` = 不渲染（组件据此**不占任何行**，输入框不会被挤）。
  */
@@ -122,7 +136,7 @@ export function resolveHintLine(input: ResolveHintLineInput): string | null {
   if (input.suggestion === null) {
     return null;
   }
-  if (input.phase !== 'idle') {
+  if (!isHintVisiblePhase(input.phase)) {
     return null;
   }
   const line = renderHintLine({
@@ -131,4 +145,14 @@ export function resolveHintLine(input: ResolveHintLineInput): string | null {
     columns: input.columns,
   });
   return line === '' ? null : line;
+}
+
+/**
+ * 该阶段是否允许出现提示（阶段门禁的**唯一**判据，组件与测试都从这里取，不各自写一份）。
+ *
+ * 新增阶段时**必须**在这里显式表态：默认不放行（`false`），避免「新加了个 phase
+ * 就悄悄多出一行灰字」这类回归。
+ */
+export function isHintVisiblePhase(phase: HintPhase): boolean {
+  return phase === 'idle' || phase === 'awaiting';
 }

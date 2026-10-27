@@ -76,6 +76,7 @@ import {
   nextRejectStreak,
   type RejectStreakState,
 } from './hint-signals';
+import type { HintPhase } from './hint-text';
 import { renderMarkdownToAnsi } from './markdown';
 import { ApprovalModal, PlanConfirm } from './modals';
 import { ObservabilityPanel } from './ObservabilityPanel';
@@ -489,20 +490,31 @@ export function App({
   }, [readHintState]);
 
   /**
-   * 判定「现在该不该提示」（v5.0 T13）。
+   * 判定「现在该不该提示」（v5.0 T13，2026-10-28 修正）。
    *
-   * 触发时机刻意绑在**阶段回到 idle** 上（不随每次渲染）：提示是「这一轮结束了，
-   * 你可能需要这个」，而不是「每帧都问一次模型状态」。
+   * ## 修正了什么（原实现的两个坑）
+   *
+   * 原实现是 `phase !== 'idle' → setHint(null)`，即「每轮对话跑完才判定」。实测后果：
+   * 假 Key / 断网时 `runLoop` 一直挂起、`phase` 永远停在 `streaming`，于是
+   * 「没有规则文件」这条最该早早告诉用户的提示**一次都没出现**（PTY 端到端脚本四条断言全红）。
+   *
+   * 现在：
+   * 1. **判定不再看 phase**——信号源是「用户已产生输入」（`countUserTurns(messages)`，
+   *    提交那一刻 `setMessages` 就已回填，与 API 成功与否无关）+ 规则文件存在性；
+   * 2. **已出现的提示不清空**——引擎 ②「每会话只展示 1 次」意味着判定第二次必然返回
+   *    `null`，若见 `null` 就清空，提示会在「显示 → 下一秒消失」之间闪一下；
+   * 3. **何时收起**：用户静音（`/hints off`）、配置关掉、或发起下一轮（新提示接手）。
+   *    渲染层再由 `hint-text` 做阶段门禁（`streaming` 吐字中仍然不画，②不放松）。
    *
    * 引擎（T12）负责全部硬约束；此处只交状态、收结果，并持久化冷却。
-   * `phase !== 'idle'` 时清空——流式输出期间严禁渲染（用户点名要求②，`HintBar` 再挡一次）。
    */
   useEffect(() => {
-    if (phase !== 'idle') {
-      setHint(null);
+    if (!hintCooldownsReady) {
       return;
     }
-    if (!hintCooldownsReady) {
+    // 关掉了 / 已忽略 → 立刻收起（不能等下一次判定：引擎返回 null 时我们保持现状）
+    if (!hintsOn || hintHistory.current.dismissed) {
+      setHint(null);
       return;
     }
     const suggestion = evaluateSuggestion({
@@ -520,7 +532,7 @@ export function App({
       messages: t().hints,
     });
     if (suggestion === null) {
-      setHint(null);
+      // 不主动清空：见上方第 2 点（否则「展示 1 次」会退化成「闪 1 下」）
       return;
     }
     const now = Date.now();
@@ -528,16 +540,7 @@ export function App({
     // fire-and-forget：冷却写盘失败最多让这条提示多出现一次，不该影响会话
     void writeHintState(hintHistory.current.cooldowns, { now }).catch(() => {});
     setHint(suggestion);
-  }, [
-    phase,
-    hintCooldownsReady,
-    hintsOn,
-    messages,
-    failureStreak,
-    rejectStreak,
-    ctx.cwd,
-    writeHintState,
-  ]);
+  }, [hintCooldownsReady, hintsOn, messages, failureStreak, rejectStreak, ctx.cwd, writeHintState]);
 
   /** 展示态应用（节流器的 apply）。 */
   const applyToggle = useCallback((patch: { diffFull?: boolean; helpOpen?: boolean }) => {
@@ -904,32 +907,49 @@ export function App({
 
   const send = useCallback(
     async (text: string) => {
-      if (busy.current || text.trim() === '') {
+      const earlyTrimmed = text.trim();
+
+      // v5.0 T13：/hints —— 本会话静音 / 恢复 / 查看状态（约束⑤「忽略即静默」的用户入口）。
+      //
+      // **必须放在 `busy` 守卫之前**：它是纯会话内操作（不碰模型、不碰工具、不排队），
+      // 而用户最想静音的时刻恰恰是「发了消息、正在等回复」——`busy.current` 为 true 时
+      // 若把它挡掉，提示看着能关却关不掉，就是假按钮。
+      // （实测来源：假 Key 挂起时 `/hints off` 被 busy 守卫吞掉，端到端 ④ 永远测不过）
+      if (earlyTrimmed !== '') {
+        const hintsCmd = parseHintsCommand(earlyTrimmed);
+        if (hintsCmd !== null) {
+          setInput('');
+          setTokens((t) => ({ ...t, input: t.input + estimateTokens(text) }));
+          const result = executeHintsCommand(hintsCmd, { enabled: hintsOn });
+          setMessages((prev) => [...prev, { role: 'user', content: text }, result.message]);
+          if (result.enabled !== undefined) {
+            setHintsOn(result.enabled);
+          }
+          if (result.dismiss === true) {
+            // 立刻静默：标记 + 清掉当前正在显示的那一条（等下一帧 effect 太慢，用户会看到它闪一下）
+            hintHistory.current = dismissHints(hintHistory.current);
+            setHint(null);
+          } else if (result.dismiss === false) {
+            // /hints on：连「已忽略」一并清掉，否则「开了却再也不出提示」= 假按钮
+            hintHistory.current = { ...hintHistory.current, dismissed: false };
+          }
+          return;
+        }
+      }
+
+      if (busy.current) {
+        // 等待回复期间输入框仍可用（见渲染处 `inputActive`）：用户可能想敲
+        // `/hints off`（上面已拦下）或再补一句需求。后者此刻不能排队——
+        // **但绝不能静默吞掉**，否则就是「按了没反应」的假按钮。
+        if (text.trim() !== '') {
+          setNotice(t().prompt.busyWaiting);
+        }
+        return;
+      }
+      if (text.trim() === '') {
         return;
       }
       const trimmed = text.trim();
-
-      // v5.0 T13：/hints —— 本会话静音 / 恢复 / 查看状态（约束⑤「忽略即静默」的用户入口）。
-      // 放在最前面：它是纯会话内操作，不碰模型、不碰工具，先拦下来最省事。
-      const hintsCmd = parseHintsCommand(trimmed);
-      if (hintsCmd !== null) {
-        setInput('');
-        setTokens((t) => ({ ...t, input: t.input + estimateTokens(text) }));
-        const result = executeHintsCommand(hintsCmd, { enabled: hintsOn });
-        setMessages((prev) => [...prev, { role: 'user', content: text }, result.message]);
-        if (result.enabled !== undefined) {
-          setHintsOn(result.enabled);
-        }
-        if (result.dismiss === true) {
-          // 立刻静默：标记 + 清掉当前正在显示的那一条（等下一帧 effect 太慢，用户会看到它闪一下）
-          hintHistory.current = dismissHints(hintHistory.current);
-          setHint(null);
-        } else if (result.dismiss === false) {
-          // /hints on：连「已忽略」一并清掉，否则「开了却再也不出提示」= 假按钮
-          hintHistory.current = { ...hintHistory.current, dismissed: false };
-        }
-        return;
-      }
 
       // v3.1 M5 T5.2：/orchestrate 触发 team 全链路（拆解 → 对抗性闭环 → 回滚兜底）
       const orchCmd = parseOrchestrateCommand(trimmed);
@@ -1522,6 +1542,9 @@ export function App({
       busy.current = true;
       setError(null);
       setInput('');
+      // v5.0 T13：新一轮开始 → 收起上一轮挂着的提示（它属于「上一次卡住」的语境，
+      // 留着会变成永远不会消失的背景板；引擎 ②「每会话 1 次」不允许它再自动回来）。
+      setHint(null);
       setStreamed('');
       setActiveTool(null);
       setTokens((t) => ({ ...t, input: t.input + estimateTokens(text) }));
@@ -1736,6 +1759,32 @@ export function App({
       })()
     : undefined;
 
+  /**
+   * 提示渲染阶段（v5.0 T13，2026-10-28 修正）。
+   *
+   * `streaming` 内部要再分两种：
+   * - **已有产出**（`streamed` 有字 / 有工具在跑）→ 真正的 `streaming`，提示必须让位（②）；
+   * - **尚无产出**（已提交、屏幕上只有 spinner）→ `awaiting`，允许显示提示。
+   *
+   * 这一层拆分的意义：断网 / 假 Key 时 `runLoop` 会一直挂着，`phase` 永远是 `streaming`，
+   * 若不区分「等首字节」和「正在吐字」，用户在最需要提示的时候反而永远看不到它。
+   */
+  const hintPhase: HintPhase =
+    phase === 'streaming' && streamed === '' && activeTool === null ? 'awaiting' : phase;
+
+  /**
+   * 输入框是否接受按键（v5.0 T13 修正，2026-10-28）。
+   *
+   * 原来只认 `phase === 'idle'`。实测后果：断网 / Key 没配好时 `runLoop` 一直挂着，
+   * `phase` 永远是 `streaming`，**输入框整个是死的**——用户连 `/hints off` 都敲不进去，
+   * 想静音那条提示的唯一办法是 Ctrl+C 杀掉整个会话（PTY 端到端 ④ 永远测不过）。
+   *
+   * 现在 `awaiting`（已提交、尚无任何产出）也放行：那段时间屏幕上只有 spinner，
+   * 用户没有东西可读，让他能敲命令/补话才是对的。**真正的流式输出**
+   * （`streamed` 有字 / 有工具在跑）仍然禁用，不打扰阅读（②不放松）。
+   */
+  const inputActive = hintPhase === 'idle' || hintPhase === 'awaiting';
+
   return (
     <Box flexDirection="column" paddingX={1}>
       {messages.map((m, i) => (
@@ -1761,7 +1810,7 @@ export function App({
       {/* v5.0 T10：拒绝后的复盘提示（中性灰，不是错误——用户拒绝是正常操作） */}
       {notice !== null && <Text dimColor>{notice}</Text>}
       {/* v5.0 T13：场景提示（输入框上方单行灰字；不弹框、不进消息流、不挤压输入框） */}
-      <HintBar suggestion={hint} phase={phase} />
+      <HintBar suggestion={hint} phase={hintPhase} />
       {error !== null && <Text color="red">{error}</Text>}
       <PromptInput
         value={input}
@@ -1770,7 +1819,7 @@ export function App({
           void send(t);
         }}
         placeholder={t().prompt.placeholder}
-        active={phase === 'idle'}
+        active={inputActive}
       />
       {traceStore !== undefined && <ObservabilityPanel spans={traceStore.all()} open={obsOpen} />}
       <StatusBar

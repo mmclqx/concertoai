@@ -196,6 +196,10 @@ export const en = {
   },
   prompt: {
     placeholder: 'Type your request… (Enter to send / Shift+Enter for newline / Esc to quit)',
+    // v5.0 T13: the input box stays live while awaiting a reply (otherwise
+    // /hints off cannot be typed at all when offline); a plain request submitted
+    // at that moment is ignored — say so instead of silently swallowing it.
+    busyWaiting: '⏳ Waiting for the model… (Ctrl+C to interrupt; /hints off mutes hints)',
   },
   status: {
     provider: 'Provider',

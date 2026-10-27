@@ -30,6 +30,17 @@ export interface HintBarProps {
 }
 
 /**
+ * 提示行所在的容器水平内边距（`App.tsx` 里 `<Box paddingX={1}>` 的左右各 1 列）。
+ *
+ * **为什么必须减掉**：`columns` 是**终端**列数，而提示行渲染在容器**内部**。
+ * 若按终端列数排版，排出来的行正好占满一整行 → 终端把它折成两行
+ * （实测：100 列终端里 `💡 …  concertoai init` 在 `init` 前折行，
+ * 变成「提示」+「init」两行，违反用户点名的③单行要求）。
+ * 所以这里把「终端列数」换算成「实际可用列数」再交给排版层。
+ */
+export const HINT_CONTAINER_PADDING_X = 1;
+
+/**
  * 输入框上方的一行灰字提示。
  *
  * `memo` 包裹：聊天气泡逐个追加时，提示行不变就不重算（与 T9 的节流口径一致）。
@@ -37,10 +48,12 @@ export interface HintBarProps {
 export const HintBar = memo(function HintBar({ suggestion, phase, columns }: HintBarProps) {
   const resolvedColumns =
     columns ?? (typeof process.stdout.columns === 'number' ? process.stdout.columns : undefined);
+  const terminalColumns = normalizeColumns(resolvedColumns);
   const line = resolveHintLine({
     phase,
     suggestion,
-    columns: normalizeColumns(resolvedColumns),
+    // 容器内边距要吃掉 2 列（左右各 1），否则排满整行会被终端折行（见常量注释）
+    columns: Math.max(1, terminalColumns - HINT_CONTAINER_PADDING_X * 2),
   });
   // 不渲染 ≠ 渲染空白：必须返回 null，否则空 <Text> 会白占一行，把输入框往下推
   if (line === null) {

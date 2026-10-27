@@ -196,10 +196,19 @@ const run = async () => {
     }
 
     // 场景：首屏 → 发一条消息 → 等提示 → /hints off → 断提示消失
+    //
+    // ⚠️ **文本与回车必须分两次写**（2026-10-28 实测踩坑）：
+    // `term.write('你好\r')` 一次写入时，回车会在**同一批 React 更新**里被处理，
+    // Ink 的 `useInput` 拿到的 submit 回调里 `value` 还是空串（旧渲染快照），
+    // `onSubmit('')` 被 `send()` 的空串守卫挡掉 —— 输入框看着打了字，
+    // 实际一条消息都没发出去（端到端四条断言因此全红，单测却是绿的）。
+    // 与 T12「连按 v 读到旧渲染快照」同型：状态快照滞后于同一批事件。
     const raw = await runTui(
       [
-        { atMs: 3000, write: '你好\r' },
-        { atMs: 12000, write: '/hints off\r' },
+        { atMs: 3000, write: '你好' },
+        { atMs: 3400, write: '\r' },
+        { atMs: 12000, write: '/hints off' },
+        { atMs: 12400, write: '\r' },
       ],
       18000,
     );

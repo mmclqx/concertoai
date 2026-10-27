@@ -13,7 +13,7 @@ import path from 'node:path';
 import { render } from 'ink-testing-library';
 import { describe, expect, it } from 'vitest';
 
-import { HintBar } from '../../src/ui/HintBar';
+import { HINT_CONTAINER_PADDING_X, HintBar } from '../../src/ui/HintBar';
 import { PromptInput } from '../../src/ui/PromptInput';
 import { displayWidth } from '../../src/utils/text-width';
 
@@ -46,6 +46,24 @@ describe('① 架构铁律：Ink 只上色，不拼文案', () => {
 });
 
 describe('② 单行 + 不挤压输入框 + 流式期不渲染', () => {
+  /**
+   * 回归护栏（2026-10-28 PTY 实测踩到）：提示行渲染在 App 的 `paddingX={1}` 容器**内部**，
+   * 可用列 = 终端列 - 2。若按终端列数排版，行宽正好占满一整行 → 终端把它折成两行
+   * （实测 100 列终端里 `concertoai init` 的 `init` 被折到下一行，违反③单行）。
+   */
+  it('③ 真实容器宽度：行宽 ≤ 终端列 - paddingX*2（否则终端折行，单行要求破功）', () => {
+    for (const columns of [100, 120, 160]) {
+      const { lastFrame } = render(
+        <HintBar suggestion={suggestion} phase="idle" columns={columns} />,
+      );
+      const frame = frameOf(lastFrame());
+      expect(frame.split('\n')).toHaveLength(1);
+      expect(displayWidth(frame)).toBeLessThanOrEqual(columns - HINT_CONTAINER_PADDING_X * 2);
+      // 命令必须完整（半条命令对用户是负价值）
+      expect(frame).toContain(COMMAND);
+    }
+  });
+
   it('有提示时：输入框上方**恰好一行**灰字', () => {
     const { lastFrame } = render(<HintBar suggestion={suggestion} phase="idle" columns={120} />);
     const frame = frameOf(lastFrame());
@@ -63,6 +81,15 @@ describe('② 单行 + 不挤压输入框 + 流式期不渲染', () => {
       <HintBar suggestion={suggestion} phase="streaming" columns={120} />,
     );
     expect(frameOf(lastFrame())).toBe('');
+  });
+
+  it('等待首字节期间（phase=awaiting）→ 渲染一行（断网 / 假 Key 时唯一可见的提示）', () => {
+    const { lastFrame } = render(
+      <HintBar suggestion={suggestion} phase="awaiting" columns={120} />,
+    );
+    const frame = frameOf(lastFrame());
+    expect(frame.split('\n')).toHaveLength(1);
+    expect(frame).toContain(COMMAND);
   });
 
   it('审批 / 计划审批期间同样不渲染（焦点不可被干扰）', () => {
