@@ -31,6 +31,10 @@ export const zh = {
     balance: {
       description: '查询 DeepSeek 账户余额',
     },
+    update: {
+      description: '检查并升级到最新版本（--yes 跳过确认）',
+      yes: '跳过确认直接升级',
+    },
     doctor: {
       description: '环境诊断（含 DeepSeek 账户余额）',
     },
@@ -74,6 +78,22 @@ export const zh = {
     configTitle: '3. 写入配置文件（目录不存在时需先创建）',
     getKeyLabel: '获取 API Key：',
     nextStep: '💡 配置完成后运行 `concertoai doctor` 验证环境。',
+  },
+  // v5.0 T2：update 命令
+  update: {
+    checking: '🔍 正在检查更新（当前版本 {current}）…',
+    upToDate: '✅ 已是最新版本（{current}），无需更新。',
+    newVersion: '📦 发现新版本：{current} → {latest}',
+    npxHint:
+      '⚠️  当前为 npx 临时运行（未全局安装），升级到临时目录对您无意义。\n💡 请先全局安装：{command}',
+    needConfirmNonTty: '提示：非交互式环境不会自动升级。如需升级请运行：{command}',
+    confirmPrompt: '是否升级到 {latest}？',
+    cancelled: '已取消，未做任何更改。',
+    installing: '⏳ 正在安装 {latest} …',
+    installOk: '✅ 已升级到 {latest}。重新运行 concertoai 生效。',
+    installFailed: '❌ 安装失败：{error}',
+    fetchFailed: '❌ 检查更新失败：{error}',
+    manualHint: '💡 可手动升级：{command}',
   },
   // v5.0 T1：Node 版本提示（engines 要求 >= 22；不阻断，仅交互式终端提示）
   nodeVersion: {

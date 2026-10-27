@@ -31,6 +31,10 @@ export const en = {
     balance: {
       description: 'Query DeepSeek account balance',
     },
+    update: {
+      description: 'Check for updates and upgrade (--yes skips confirmation)',
+      yes: 'Skip confirmation and upgrade',
+    },
     doctor: {
       description: 'Environment diagnostics (includes DeepSeek account balance)',
     },
@@ -75,6 +79,23 @@ export const en = {
     configTitle: '3. Write the config file (create the directory first if missing)',
     getKeyLabel: 'Get an API key:',
     nextStep: '💡 After configuring, run `concertoai doctor` to verify the environment.',
+  },
+  // v5.0 T2: update command
+  update: {
+    checking: '🔍 Checking for updates (current {current})…',
+    upToDate: '✅ Already up to date ({current}).',
+    newVersion: '📦 New version available: {current} → {latest}',
+    npxHint:
+      '⚠️  Running via npx (not globally installed); upgrading a temp install is pointless.\n💡 Install globally first: {command}',
+    needConfirmNonTty:
+      'Note: non-interactive environment never auto-upgrades. To upgrade run: {command}',
+    confirmPrompt: 'Upgrade to {latest}?',
+    cancelled: 'Cancelled, nothing changed.',
+    installing: '⏳ Installing {latest} …',
+    installOk: '✅ Upgraded to {latest}. Re-run concertoai to take effect.',
+    installFailed: '❌ Install failed: {error}',
+    fetchFailed: '❌ Update check failed: {error}',
+    manualHint: '💡 Manual upgrade: {command}',
   },
   // v5.0 T1: Node version notice (engines requires >= 22; non-blocking, TTY only)
   nodeVersion: {

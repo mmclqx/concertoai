@@ -343,6 +343,19 @@ program
     }
   });
 
+// v5.0 T2：update 命令（检查 npm 最新版并升级）
+program
+  .command('update')
+  .description(t().cli.update.description)
+  .option('-y, --yes', t().cli.update.yes)
+  .action(async (options: { yes?: boolean }) => {
+    const { runUpdateCommand } = await import('./update');
+    const code = await runUpdateCommand({ yes: options.yes ?? false });
+    if (code !== 0) {
+      process.exitCode = code;
+    }
+  });
+
 program
   .command('doctor')
   .description(t().cli.doctor.description)
