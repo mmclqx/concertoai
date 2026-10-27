@@ -1,0 +1,7 @@
+@@ -22,4 +24,6 @@ export interface StatusBarProps {
+   /** 成本对比提示（v4.0 M3 T3.2a）：切换/会话结束时显示成本倍率。 */
+   costCompareNote?: string;
++  /** 当前价格档位（v5.0 T7）：传值则在成本后标注「高峰价 / 空闲价」。 */
++  priceTier?: PriceTier;
+ }
+ 

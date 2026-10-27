@@ -77,6 +77,17 @@ export interface ConcertoAIConfig {
   /** 本地模型 OpenAI 兼容端点（Ollama /v1，v2.2）。 */
   ollamaBaseUrl?: string;
   /**
+   * 审批洞察模式（v5.0 T8）：`rich` = 风险教学卡（默认）；`plain` = v4.1.1 原貌（只 summary + diff）。
+   *
+   * 环境不满足时（非 TTY / CI）程序会自动降级为 plain，无需手动配置。
+   */
+  approvalInsight?: 'rich' | 'plain';
+  /** 风险规则配置（v5.0 T8）。 */
+  riskRules?: {
+    /** 关闭的规则 id（如 `['dependency-change']`）；未知 id 静默忽略。 */
+    disabled?: string[];
+  };
+  /**
    * 计价用中国法定节假日表（v5.0 T7 修订）。
    *
    * 高峰/空闲双档计价必须排除法定节假日、并纳入调休上班日（见 `core/holidays.ts`）。

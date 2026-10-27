@@ -1,0 +1,24 @@
+@@ -406,4 +436,23 @@ export const en = {
+     quit: 'Exited. Session saved.',
+   },
++  welcome: {
++    // v4.1 T2.2: first-run welcome guide (user feedback 3: beginners don't know the flow)
++    title: '🎉 Welcome to ConcertoAI!',
++    line1: '  Type a request to start; /help shows slash commands',
++    line2: '  Common: /plan plan-first · /review code review · /workflow run workflows',
++    line3: '  Health check: concertoai doctor · Quit: Ctrl+C (session saved)',
++  },
++  help: {
++    // v4.1 T2.2: --help grouping + 3-step starter path (user feedback 3)
++    gettingStarted: 'Getting started (3 steps)',
++    step1: '  ① Health check: concertoai doctor',
++    step2: '  ② Start a chat: concertoai chat (or just concertoai)',
++    step3: '  ③ Run a workflow: concertoai workflow init && concertoai workflow run <name>',
++    commands: 'Command overview',
++    exampleChat: '  e.g. concertoai chat · concertoai run "fix this bug" (one-shot)',
++    exampleProject: '  e.g. concertoai project add demo . · concertoai team "..." (agent team)',
++    exampleOps: '  e.g. concertoai balance · doctor · self-heal · audit export',
++    exampleMarket: '  e.g. concertoai plugin browse · provider list · config set provider <name>',
++  },
+ } as const;
+ 

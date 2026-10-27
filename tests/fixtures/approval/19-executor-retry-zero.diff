@@ -1,0 +1,15 @@
+@@ -164,8 +170,13 @@ export async function runWorkflow(
+   };
+ 
+-  const scheduler = new TaskScheduler({ fileConflict: 'serialize', maxRetries: 2 });
++  // v4.1 T1.3：内部重试归零——工作流步骤失败直接交回外层 R/S/F/A 恢复 UI，
++  // 禁止调度器静默自动重试（否则 lint 连跑 3 遍刷屏 + 外层恢复 UI 失去意义）。
++  // 步骤级 retry 语义重定义为「恢复后重试上限」，在下方恢复循环中按步骤计数。
++  const scheduler = new TaskScheduler({ fileConflict: 'serialize', maxRetries: 0 });
+   let failedStep: string | undefined;
+   let failedError: string | undefined;
+   let aborted = false;
++  /** 步骤恢复次数（retry 语义：用户在 R/S/F/A 恢复中重试该步骤的次数）。 */
++  const recoveryCount = new Map<string, number>();
+ 
+   // 失败恢复主循环

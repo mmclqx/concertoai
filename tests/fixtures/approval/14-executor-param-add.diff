@@ -1,0 +1,6 @@
+@@ -268,4 +285,5 @@ function toRunResult(
+   failedStep: string | undefined,
+   aborted: boolean,
++  cycle?: string[],
+ ): WorkflowRunResult {
+   const order = topologicalSort(

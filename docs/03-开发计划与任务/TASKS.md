@@ -1,7 +1,7 @@
 # ConcertoAI 开发任务看板
 
 > 最后更新：2026-10-27
-> 当前里程碑：**🔵 v5.0 开发中（M1 基线承接全部完成：T1-T7 ✅，2026-10-27）**（v5.0: M1 **7/7** ✅ · 下一步 M2 审批透明化 T8 · 计划与任务书已定稿 D1-B/D2-A/D3-B/D4-B/D5-B/D6-5.0.0 · 128 文件 / 1609 用例全绿）
+> 当前里程碑：**🟡 v5.0 开发中（M1 基线承接 7/7 ✅ + M2 T8 审批风险引擎 ✅，2026-10-27）**（v5.0: M1 **7/7** ✅ · M2 **1/4** · 下一步 **T9 审批 UI 升级** · 131 文件 / 1714 用例全绿）
 > 基于：[v5.0 开发计划](./v5.0-dev-plan.md) · [v5.0 开发任务](./v5.0-dev-tasks.md) · 历史：[v4.2 开发任务（已并入 v5.0 M1）](./v4.2-dev-tasks.md) · [v4.1 开发任务](./v4.1-dev-tasks.md) · [v4.0 开发任务](./v4.0-dev-tasks.md)
 
 ---
@@ -13,7 +13,7 @@
 | 里程碑 | 任务 | 进度 | 状态 |
 |--------|------|------|------|
 | **M1 基线承接**（v4.2 并入） | T1 npx 实测 · T2 update · T3 ccai · T4 THIRD_PARTY · T5 init 双输出 · T6 model auto · T7 价格表 | **7/7** | ✅ **完成**（2026-10-27） |
-| M2 审批透明化 | T8 风险引擎 · T9 审批 UI · T10 复盘记录 · T11 配置降级 | 0/4 | ⬜ 待开始 |
+| M2 审批透明化 | T8 风险引擎 ✅ · T9 审批 UI · T10 复盘记录 · T11 配置降级 | **1/4** | 🟡 进行中（T8 完成 2026-10-27） |
 | M3 场景可发现 | T12 触发表引擎 · T13 三场景 UI · T14 首次引导 | 0/3 | ⬜ 待开始 |
 | M4 CLI 动词化 | T15 check · T16 fix · T17 commit · T18 review · T19 护栏 | 0/5 | ⬜ 待开始 |
 | M5 收敛与度量 | T20 功能冻结 · T21 本地指标 · T22 定位重写 | 0/3 | ⬜ 待开始 |
@@ -30,6 +30,12 @@
 | **T5 init 双输出** | ✅ **完成**（2026-10-27） | 一次扫描 `ProjectProfile` → 双文件输出（`AGENTS.md` 给 AI + `PROJECT_GUIDE.md` 给人）· **G7 证据硬约束**（每条结论带 `文件:行号`，无证据写「未检测到」）· 覆盖 fail-closed（默认不覆盖 / 非 TTY 不覆盖 / `--force`）· 有界扫描（400 文件 / 200KB / 跳过构建产物）· 非项目目录友好退出 · **实测修复 3 处误报**（动态 import、导出聚合行 `{ canAccess }`、模板字符串 lint）· **护栏用例**：生成内容只推荐真实注册的 CLI 命令 · 49 用例 |
 | **T7 双档价格表 + 时段解耦** | ✅ **完成**（2026-10-27） | ① 新价格入库（**官方核对值**：flash 空闲/高峰：输入 1/2、输出 4.5/9.0、缓存命中 0.02/0.04；pro：4.5/9.0、13.5/27.0、0.15/0.30），并发 2500/500 ② **R7 解耦**：`peak-time.ts` 拆 `PRICING_PEAK_RANGES`+`isPricingPeakTime`（计价）与 `SWITCH_PEAK_RANGES`+`isPeakTime`（切 ollama），`PEAK_TIME_RANGES` 保留切换口径别名 ③ `priceTierFor(at)`/`priceFor`/`tierLabel` + `costFor`/`cacheHitCostFor`/`costForProvider` 全链 `at` 时间注入（Provider 层 `now()` 构造注入，消除时间依赖 flaky）④ 状态条 + `balance` 标注「高峰价 / 空闲价」 ⑤ **ADR-038** 落盘 · 新增 19 用例 ⑥ **修订（2026-10-27 用户核对官方页后）**：flash 价格订正（缓存命中 0.02/0.04、输入 1/2）+ **计价高峰排除中国法定节假日并纳入调休上班日**（`core/holidays.ts`，`config.pricingHolidays` 装载，未配置时 `balance` 显式提示）+ **连带修 v4.0 存量缺陷**（迁移 `legacy` 字段无人消费 → `flattenLegacy` 读取层摊平）· 新增 27 用例（holidays 17 + config 4 + models 3 + balance 2 + 其他） |
 | **T6 model auto** | ✅ **完成**（2026-10-27） | ① config/CLI/`/model auto` 接受 `"auto"`：**固定起始档 flash**，round-trip 正确（v3 `defaultModel` 迁移 + v4 `providers.<p>.model` 双路径都有用例）② 启用时打印成本策略说明（当前时段**真实单价** + 「**不会自动升级**」+ 可复制升级命令与倍数）③ **保守边界落地**：升级（变贵）→ 走审批框 `kind:'model'` 确认（y/Enter 批准、n/**Esc 拒绝**、确认异常 fail-closed）；降级（变便宜）→ 直接生效 ④ `/model` 状态/列表/切换全链（非 deepseek Provider 明确拒绝并指路 `provider switch`）⑤ **源码级红线用例**：`auto.ts` 禁复杂度判定标识、slash 层禁 `setInterval/setTimeout`、`App.tsx` 中 `setModel(` 仅 1 处且在 `/model` 块内 ⑥ ADR-039 落盘 · 新增 57 用例（model/auto 33 + slash/model 17 + UI 7），全量 **127 文件 / 1582 用例**全绿 |
+### M2 任务明细
+
+| 任务 | 状态 | 说明 |
+|------|------|------|
+| **T8 审批风险评估引擎** | ✅ **完成**（2026-10-27） | 纯本地零模型零网络（ADR-040 / §4 D68-D69）：`core/approval-insight.ts`（`analyzeApproval`/`analyzeDiff`/`parseDiff`/`levelOf`/`focusLinesFrom`/`changeNaturesFrom`）+ `core/risk-rules.ts`（**15 条**规则，每条含 prefilter/patterns/negativePatterns/why/suggestion）+ `core/impact-scan.ts`（影响面「谁 import 了我」，唯一 IO：并发池 32 / 300ms 硬超时 / 5s TTL 缓存 / 文件上限 2000 / 单文件失败计入 skippedCount）· **降级矩阵 8 行逐行单测**（非TTY/CI/超大diff/超时/抛错/config-off/空命中/超大项目）+ **G2 铁律**（分析抛错返回可渲染空 insight，审批照旧）· **W1-W10 Windows 红线逐条单测**（含 LF/CRLF 一致、反斜杠路径、BOM、URL 中 `//` 不判注释、中文/emoji 行）· **fixtures 26 条真实 git diff 人工标注**（`tests/fixtures/approval/`，manifest 与 .diff 一一对应校验）· **发布门实测**：性能 6 项全达标（analyzeDiff 100 行 P95 0.34ms/5ms、单规则 10 万字符 0.77ms/20ms、analyzeImpact 200 文件 19.89ms/80ms、审批 P95 14.59ms/150ms）+ **误报 0/19=0%**、high 级误报 0、召回 7/7=100% · **实测抓到并修掉两处真实缺陷**：`dependency-change` 正则 ReDoS（1766ms→0.77ms）+ prefilter 死模式（两条 pattern 永远跑不到）· 新增 3 个测试文件 + 2 个发布门脚本（`scripts/bench-approval.mjs` / `scripts/verify-false-positive.mjs`）· **131 文件 / 1714 用例全绿**（本任务新增 3 个测试文件 / 105 用例：approval-insight 63 + impact-scan 31 + risk-rules 11（含 W8 防 ReDoS 2 条），基线 128 文件 / 1609 用例 → 131 文件 / 1714 用例） |
+
 ---
 
 ## 📊 总览（截至 v4.1.1）

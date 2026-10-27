@@ -1,0 +1,7 @@
+@@ -22,5 +25,5 @@ import { SkillLoader } from '../skill/loader';
+ import { loadConfig, resolveConfig } from '../store/config';
+ import { MemoryStore } from '../store/memory-store';
+-import { projectKeyFor, projectSessionsDir } from '../store/paths';
++import { globalDir, projectKeyFor, projectSessionsDir } from '../store/paths';
+ import { loadProjectRules } from '../store/project-rules';
+ import { SessionStore } from '../store/session';

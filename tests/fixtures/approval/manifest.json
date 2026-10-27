@@ -1,0 +1,222 @@
+{
+  "generatedAt": "2026-10-27",
+  "source": "本项目 git 历史真实 hunk（git log -p -n 14 --unified=2 -- src）",
+  "labelCriteria": "risk = 含破坏性/不可逆/安全敏感/错误可见性变化（删除、覆盖写、鉴权凭据、密钥、DB 写、错误分支删除、失败重试语义变化）；no-risk = 等价重构、i18n 文案、类型/注释/import 调整、纯函数新增、只读查询",
+  "samples": [
+    {
+      "file": "01-import-add-balance.diff",
+      "source": "src/cli/balance.ts",
+      "commit": "dfbe17a",
+      "kind": "random",
+      "label": "no-risk",
+      "why": "仅新增一条 import，无任何行为变化"
+    },
+    {
+      "file": "02-barrel-export-holidays.diff",
+      "source": "src/index.ts",
+      "commit": "dfbe17a",
+      "kind": "random",
+      "label": "no-risk",
+      "why": "barrel 文件汇总导出，无逻辑"
+    },
+    {
+      "file": "03-config-load-refactor.diff",
+      "source": "src/store/config.ts",
+      "commit": "dfbe17a",
+      "kind": "random",
+      "label": "no-risk",
+      "why": "拆分读取函数 + 新增 flattenLegacy 纯函数；新增的 console.error 只是提示非法日期，无误删/覆盖写"
+    },
+    {
+      "file": "04-new-module-auto.diff",
+      "source": "src/model/auto.ts",
+      "commit": "0f32932",
+      "kind": "random",
+      "label": "no-risk",
+      "why": "新增纯函数模块（成本对比与文案），无 IO、无删除、无凭据"
+    },
+    {
+      "file": "05-modal-props-union.diff",
+      "source": "src/ui/modals.tsx",
+      "commit": "0f32932",
+      "kind": "random",
+      "label": "no-risk",
+      "why": "类型联合多一个成员 + 注释"
+    },
+    {
+      "file": "06-i18n-price-tier.diff",
+      "source": "src/i18n/zh.ts",
+      "commit": "e8363d9",
+      "kind": "random",
+      "label": "no-risk",
+      "why": "新增「当前档位单价」中文文案键，纯 i18n 字符串，无逻辑"
+    },
+    {
+      "file": "07-model-profile-comment.diff",
+      "source": "src/model/models.ts",
+      "commit": "e8363d9",
+      "kind": "random",
+      "label": "no-risk",
+      "why": "注释块更新（价格表说明），无逻辑"
+    },
+    {
+      "file": "08-provider-import-swap.diff",
+      "source": "src/model/providers/deepseek.ts",
+      "commit": "e8363d9",
+      "kind": "random",
+      "label": "no-risk",
+      "why": "import 符号替换（getModel → costFor）"
+    },
+    {
+      "file": "09-statusbar-prop-add.diff",
+      "source": "src/ui/StatusBar.tsx",
+      "commit": "e8363d9",
+      "kind": "random",
+      "label": "no-risk",
+      "why": "新增可选 prop 声明（向后兼容，不影响既有调用）"
+    },
+    {
+      "file": "10-i18n-init-desc.diff",
+      "source": "src/i18n/zh.ts",
+      "commit": "0c3dd90",
+      "kind": "random",
+      "label": "no-risk",
+      "why": "新增 init 子命令的描述与 --force 文案"
+    },
+    {
+      "file": "11-read-config-key.diff",
+      "source": "src/cli/common.ts",
+      "commit": "f0265d8",
+      "kind": "random",
+      "label": "no-risk",
+      "why": "新增只读配置键的 helper；catch 内 return undefined 是有意容错且注释已说明（凭据只是读取，不落盘不改鉴权判定）"
+    },
+    {
+      "file": "12-preflight-templates.diff",
+      "source": "src/workflow/preflight.ts",
+      "commit": "57f413b",
+      "kind": "random",
+      "label": "no-risk",
+      "why": "生成模板 JSON 的纯函数，返回字符串但不落盘（真正落盘的改动见 23 号样本）"
+    },
+    {
+      "file": "13-i18n-preflight-stopped.diff",
+      "source": "src/i18n/en.ts",
+      "commit": "aabde3a",
+      "kind": "random",
+      "label": "no-risk",
+      "why": "新增英文文案；本条曾是误报源（'… then retry.' 被判 network-timeout），已通过收窄规则修掉"
+    },
+    {
+      "file": "14-executor-param-add.diff",
+      "source": "src/workflow/executor.ts",
+      "commit": "aabde3a",
+      "kind": "random",
+      "label": "no-risk",
+      "why": "函数签名末尾加可选参数（cycle?），既有调用不受影响"
+    },
+    {
+      "file": "15-chat-import-swap.diff",
+      "source": "src/cli/chat.tsx",
+      "commit": "3452c82",
+      "kind": "random",
+      "label": "no-risk",
+      "why": "import 增加一个符号"
+    },
+    {
+      "file": "16-slash-workflow-import.diff",
+      "source": "src/cli/slash/workflow.ts",
+      "commit": "3452c82",
+      "kind": "random",
+      "label": "no-risk",
+      "why": "import 增加一个符号"
+    },
+    {
+      "file": "17-prompt-recovery-refactor.diff",
+      "source": "src/cli/workflow.ts",
+      "commit": "3452c82",
+      "kind": "random",
+      "label": "no-risk",
+      "why": "失败提示改为「先摘要后截断详情」，只改输出排版，不删除错误处理也不落盘"
+    },
+    {
+      "file": "18-i18n-welcome-help.diff",
+      "source": "src/i18n/en.ts",
+      "commit": "3452c82",
+      "kind": "random",
+      "label": "no-risk",
+      "why": "新增欢迎引导与 --help 分组文案（纯 i18n）"
+    },
+    {
+      "file": "19-executor-retry-zero.diff",
+      "source": "src/workflow/executor.ts",
+      "commit": "3452c82",
+      "kind": "random",
+      "label": "risk",
+      "expectRules": ["network-timeout"],
+      "why": "调度器内部重试 2 → 0，属失败重试语义的实质变化（虽然是有意设计，但审阅者必须被告知）"
+    },
+    {
+      "file": "20-new-module-prompt-line.diff",
+      "source": "src/cli/prompt.ts",
+      "commit": "142b04b",
+      "kind": "random",
+      "label": "no-risk",
+      "why": "新增行输入工具纯封装（AbortError → undefined），无删除/覆盖写/凭据"
+    },
+    {
+      "file": "21-removed-guard-throw.diff",
+      "source": "src/model/models.ts",
+      "commit": "e8363d9",
+      "kind": "recall",
+      "label": "risk",
+      "expectRules": ["error-branch-removal"],
+      "why": "删掉「未知模型 → throw」守卫，错误从显式抛出变成隐式（可能静默算错钱）"
+    },
+    {
+      "file": "22-api-key-exit-branch.diff",
+      "source": "src/cli/index.ts",
+      "commit": "f0265d8",
+      "kind": "recall",
+      "label": "risk",
+      "expectRules": ["process-exit"],
+      "why": "启动入口新增 process.exit(1)，且缺 Key 判定条件取反（=== → !==），属进程退出与鉴权入口变化"
+    },
+    {
+      "file": "23-preflight-auto-writefile.diff",
+      "source": "src/workflow/preflight.ts",
+      "commit": "57f413b",
+      "kind": "recall",
+      "label": "risk",
+      "expectRules": ["destructive-write"],
+      "why": "自动初始化会往用户项目写 tsconfig.json（对象形态 writeFile），覆盖风险真实存在"
+    },
+    {
+      "file": "24-welcome-marker-write.diff",
+      "source": "src/cli/chat.tsx",
+      "commit": "3452c82",
+      "kind": "recall",
+      "label": "risk",
+      "expectRules": ["destructive-write"],
+      "why": "新增 writeFileSync 落盘（欢迎标记）+ 空 catch 吞掉写入失败"
+    },
+    {
+      "file": "25-crash-handler-exit.diff",
+      "source": "src/cli/crash-handler.ts",
+      "commit": "142b04b",
+      "kind": "recall",
+      "label": "risk",
+      "expectRules": ["process-exit"],
+      "why": "崩溃处理路径新增 process.exit(130)：AbortError 不再写 crash.log"
+    },
+    {
+      "file": "26-provider-auth-input.diff",
+      "source": "src/cli/provider.ts",
+      "commit": "142b04b",
+      "kind": "recall",
+      "label": "risk",
+      "expectRules": ["auth-change"],
+      "why": "凭据输入路径被重写（readline → promptLine），apiKey 赋值与取消分支都变了"
+    }
+  ]
+}

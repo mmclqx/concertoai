@@ -1,0 +1,30 @@
+@@ -88,14 +140,27 @@ export const defaultRunCommand: CommandRunner = async (command, cwd) => {
+ // ── 交互工具 ──────────────────────────────────────────────────
+ 
++/** 失败详情截断展示上限（v4.1 T1.1：先摘要后截断详情，防完整 diff 淹没）。 */
++const MAX_FAILURE_DETAIL_CHARS = 2_000;
++
+ /**
+  * 失败恢复交互：展示选项并读取 R/S/F/A。非 TTY 或非法输入 → abort（fail-closed）。
+  *
++ * 展示顺序（v4.1 T1.1）：先一行智能摘要（tsc/biome/npm 关键行），再截断详情——
++ * 消除客户评价问题 5（6 文件完整 diff 淹没提示）。
++ *
+  * F（fix-and-retry）语义：仅重跑失败步骤，不包含 AI 自动修复——用户需先手动
+- * 修改代码再按 F。选 F 后打印提示（v4.0.1 修复：消除「F 会自动修」的误解）。
++ * 修改代码再按 F。选 F 后进入等待态（v4.1 T1.2，见 promptRecoveryFix）。
+  */
+ export async function promptRecovery(failedStep: string, error: string): Promise<RecoveryChoice> {
+   console.log('');
+   console.log(t().workflow.failureHeader);
+-  console.log(fmt(t().workflow.failureStep, { step: failedStep, error }));
++  const summary = extractErrorSummary(error);
++  if (summary.line !== '') {
++    console.log(fmt(t().workflow.failureSummary, { summary: summary.line }));
++  }
++  console.log(fmt(t().workflow.failureStep, { step: failedStep }));
++  if (error.trim() !== '') {
++    console.log(truncateMiddle(error.trim(), MAX_FAILURE_DETAIL_CHARS));
++  }
+   console.log(t().workflow.failureOptions);
+   const answer = await promptLine(t().workflow.failurePrompt);

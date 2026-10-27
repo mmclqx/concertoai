@@ -1,0 +1,7 @@
+@@ -17,5 +17,5 @@ import { parseWorkflowYaml, serializeWorkflowYaml } from '../../workflow/parser'
+ import { getWorkflowTemplate, WORKFLOW_TEMPLATE_NAMES } from '../../workflow/templates';
+ import type { WorkflowProgress } from '../../workflow/types';
+-import { loadWorkflow, saveWorkflow } from '../workflow';
++import { loadWorkflow, loadWorkflowResult, saveWorkflow } from '../workflow';
+ 
+ // ── 命令解析 ──────────────────────────────────────────────────

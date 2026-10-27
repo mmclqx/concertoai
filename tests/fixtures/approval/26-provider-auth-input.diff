@@ -1,0 +1,20 @@
+@@ -150,12 +149,12 @@ export async function runProviderAuth(options: {
+       return 1;
+     }
+-    const rl = createInterface({ input: process.stdin, output: process.stdout });
+-    try {
+-      // 不回显输入（Node readline 无直接静默 API；用隐藏输入提示，回车后读入）
+-      const answer = await rl.question(`${fmt(dict.authPrompt, { name })} `);
+-      apiKey = answer.trim();
+-    } finally {
+-      rl.close();
++    // 不回显输入（Node readline 无直接静默 API；用隐藏输入提示，回车后读入）
++    const answer = await promptLine(`${fmt(dict.authPrompt, { name })} `);
++    if (answer === undefined) {
++      // Ctrl+C（AbortError → undefined）：用户主动取消，非崩溃（v4.0.1 修复）
++      console.error(dict.authCanceled);
++      return 1;
+     }
++    apiKey = answer;
+   }
+   if (apiKey === undefined || apiKey === '') {

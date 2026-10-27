@@ -1,0 +1,9 @@
+@@ -36,4 +36,8 @@ export const zh = {
+       yes: '跳过确认直接升级',
+     },
++    init: {
++      description: '分析项目并生成两份指南（AGENTS.md 给 AI + PROJECT_GUIDE.md 给人）',
++      force: '覆盖已存在的文件（默认不覆盖，交互询问）',
++    },
+     doctor: {
+       description: '环境诊断（含 DeepSeek 账户余额）',

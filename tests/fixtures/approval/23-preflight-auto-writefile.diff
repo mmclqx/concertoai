@@ -1,0 +1,9 @@
+@@ -107,6 +145,8 @@ export function autoInitForScript(script: string): AutoInitAction | undefined {
+   }
+   if (script === 'typecheck') {
++    // v4.1.1 P0：同时生成 tsconfig.json——裸项目无 tsconfig 时 tsc 打印 help 而非检查文件
+     return {
+       install: 'typescript',
++      writeFile: { file: 'tsconfig.json', content: defaultTsconfigJson() },
+       addScript: { name: 'typecheck', command: 'tsc --noEmit' },
+     };

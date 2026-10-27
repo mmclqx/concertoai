@@ -1,0 +1,11 @@
+@@ -27,5 +45,9 @@ export interface ModelProfile {
+ }
+ 
+-/** v1.0 模型表。数据来源：DeepSeek 官方定价页（2026-08-07 核实）。 */
++/**
++ * v5.0 T7 模型表（新价格：高峰 / 空闲双档 + 1M 上下文 + 并发 2500/500）。
++ *
++ * 并发限制照官方公告口径：flash 2500 / pro 500。
++ */
+ export const MODEL_PROFILES: readonly ModelProfile[] = [
+   {

@@ -1,0 +1,54 @@
+@@ -83,12 +83,50 @@ export function binExists(cwd: string, tool: string): boolean {
+ }
+ 
+-/** 默认 biome.json（保守配置：空格缩进 + LF，规避 Windows CRLF 误报，见 4.0.1 模板说明）。 */
++/**
++ * 默认 biome.json（v4.1.1 P0 修复：biome 2.x 兼容）。
++ *
++ * v4.1 初版用了 biome 1.9.4 的 `$schema` + `linter.rules.recommended: true`——在 biome 2.x
++ * （实测 2.5.8）下报「schema 版本不匹配（Expected 2.5.8 / Found 1.9.4）」+ `recommended`
++ * 字段 deprecated，导致 preflight 自动初始化后 lint 必然失败（破坏「装完直接 run」承诺）。
++ *
++ * 2.x 正确写法（已实测 biome 2.5.8 校验通过）：
++ * - `$schema` 指向 2.x（2.5.8；biome 对「配置 schema 版本 ≤ CLI 版本」向后兼容）
++ * - `linter.rules.preset: "recommended"` 替代 deprecated 的 `recommended: true`
++ * 保守配置保留：空格缩进 + LF，规避 Windows CRLF 误报（见 4.0.1 模板说明）。
++ */
+ export function defaultBiomeJson(): string {
+   return `${JSON.stringify(
+     {
+-      $schema: 'https://biomejs.dev/schemas/1.9.4/schema.json',
++      $schema: 'https://biomejs.dev/schemas/2.5.8/schema.json',
+       files: { ignoreUnknown: true },
+       formatter: { enabled: true, indentStyle: 'space', indentWidth: 2, lineEnding: 'lf' },
+-      linter: { enabled: true, rules: { recommended: true } },
++      linter: { enabled: true, rules: { preset: 'recommended' } },
++    },
++    null,
++    2,
++  )}\n`;
++}
++
++/**
++ * 默认 tsconfig.json（v4.1.1 P0 修复：typecheck 自动初始化生成）。
++ *
++ * v4.1 preflight 只装 typescript + 注入 `tsc --noEmit`，但裸项目没有 tsconfig.json →
++ * tsc 无 tsconfig 时不检查文件而是打印 help（exit 1），typecheck 必然失败。
++ * 这里生成精简但合理的基线（target/module 现代、strict、noEmit、skipLibCheck），
++ * 保证「装完模板直接 run」typecheck 可跑通；用户后续可自行调整。
++ */
++export function defaultTsconfigJson(): string {
++  return `${JSON.stringify(
++    {
++      compilerOptions: {
++        target: 'esnext',
++        module: 'nodenext',
++        moduleResolution: 'nodenext',
++        strict: true,
++        noEmit: true,
++        skipLibCheck: true,
++        verbatimModuleSyntax: true,
++      },
++      include: ['**/*.ts'],
+     },
+     null,

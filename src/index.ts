@@ -6,6 +6,25 @@
 export type { SubagentDef, SubagentResult, SubagentTask, SubagentToolName } from './agent';
 export type { BalanceInfo, DeepSeekBalance, FetchBalanceOptions } from './balance';
 export { BalanceError, fetchBalance } from './balance';
+// v5.0 T8：审批洞察（纯本地风险分析，零模型调用）
+export type {
+  AnalyzeApprovalOptions,
+  ApprovalInsight,
+  DegradeReason,
+  InsightEnvironment,
+  ParsedDiffLine,
+} from './core/approval-insight';
+export {
+  analyzeApproval,
+  analyzeDiff,
+  changeNaturesFrom,
+  emptyImpact,
+  focusLinesFrom,
+  levelOf,
+  lineMatchesRule,
+  MAX_ANALYZED_DIFF_LINES,
+  parseDiff,
+} from './core/approval-insight';
 export type { HolidayCalendarInput, HolidayCalendarReport } from './core/holidays';
 export {
   BUILTIN_HOLIDAY_CALENDAR,
@@ -17,6 +36,16 @@ export {
   localDateKey,
   resetHolidayCalendar,
 } from './core/holidays';
+export type { ImpactScanLimits, ImpactScanOptions, ImpactSummary } from './core/impact-scan';
+export {
+  clearImpactCache,
+  extractExportedSymbols,
+  IMPACT_LIMITS,
+  lineReferencesTarget,
+  normalizePath,
+  runWithConcurrency,
+  scanImpact,
+} from './core/impact-scan';
 export type {
   MaybeSwitchModelOptions,
   PeakSwitchOptions,
@@ -34,6 +63,21 @@ export {
   PRICING_PEAK_RANGES,
   SWITCH_PEAK_RANGES,
 } from './core/peak-time';
+export type {
+  DiffSide,
+  RiskHit,
+  RiskLevel as ApprovalRiskLevel,
+  RiskRule,
+  RuleTarget,
+} from './core/risk-rules';
+export {
+  activeRiskRules,
+  getRiskRule,
+  isCommentLine,
+  normalizeDiffLine,
+  RISK_LEVEL_WEIGHT,
+  RISK_RULES,
+} from './core/risk-rules';
 export type { ZhDict } from './i18n/zh';
 export { fmt, zh } from './i18n/zh';
 export type { LoopEvent, LoopOptions, RunLoopResult } from './loop/loop';

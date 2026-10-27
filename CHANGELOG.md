@@ -20,6 +20,28 @@
 - **`/model` 模型查看与切换 + `model auto` 预设**（T6 / ADR-039）：`/model`（状态+当前时段单价+升级提示）/ `list` / `auto` / `<id>`；**auto = 固定起始档 flash + 手动一键切换，无任何无监督自动升级**；升级方向（变贵）走审批框确认（`kind:'model'`，y/Enter 批准、n/Esc 拒绝、异常 fail-closed），降级方向直接生效；成本对比与 `doctor` 月成本预估同口径；非 deepseek Provider 明确拒绝并指路 `provider switch`
 - **DeepSeek 高峰/空闲双档计价**（T7 / ADR-038）：flash 输入 1.5/3.0、输出 4.5/9.0、缓存命中 0.05/0.10；pro 4.5/9.0、13.5/27.0、0.15/0.30（空闲/高峰，元每百万 token），并发 2500/500；`priceTierFor(at)` / `priceFor(model, tier)` / `tierLabel`；状态条与 `concertoai balance` 标注「高峰价 / 空闲价」
 
+### Added — v5.0 M2 审批透明化 T8：审批风险评估引擎（2026-10-27 完成）
+
+> 定位：把审批框里「一行 summary + 一片 diff」变成「批什么 / 影响谁 / 重点看哪行」。**纯本地分析，零模型调用、零 Token、零网络**（ADR-040）。131 文件 / 1714 用例全绿。
+
+- **`core/approval-insight.ts`（新增）**：主入口 `analyzeApproval` → `parseDiff`（剥 CRLF/BOM，不做列偏移）→ 规则匹配 → 影响面聚合 → `ApprovalInsight`（`level` / `changeNatures`≤3 / `hits` / `focusLines` / `impact` / `degraded`）；另导出 `analyzeDiff` / `levelOf` / `focusLinesFrom` / `changeNaturesFrom` 等纯函数
+- **`core/risk-rules.ts`（新增）**：15 条风险规则（删除/破坏性、覆盖写、状态删除、数据库写、鉴权、密钥硬编码、网络超时、静默吞错、错误分支删除、并发、配置环境变量、文件系统越界、依赖变更、测试断言弱化、进程退出），每条含 `level` / `target` / `prefilter` 粗筛 / `patterns` / `negativePatterns` 排除 / `why` / `suggestion`（人话字段有测试断言非占位符）；`config.riskRules.disabled` 可关闭单条
+- **`core/impact-scan.ts`（新增）**：影响面扫描「谁 import 了我」——只在 medium/high 时执行（省掉 90% IO）、文件数上限 2000、并发池 32（禁止裸 `Promise.all`，防 Windows EMFILE）、单文件失败计入 `skippedCount` 不中断、300ms 硬超时、5s TTL 缓存（key = 路径 + mtime）
+- **降级矩阵 8 行 + G2 铁律**：非 TTY / CI / diff > 500 行 / 影响面超时 / 分析抛错 / `approvalInsight='plain'` / 无命中 / 文件数 > 2000 各有独立行为与单测；**分析抛错时返回 `degraded='error'` 的可渲染空 insight，审批流程照旧**（可选功能绝不挟持核心流程）
+- **`config.approvalInsight` / `config.riskRules`（新增配置项）**：`rich`（默认）/ `plain`（v4.1.1 原貌）/ `disabled[]`
+- **发布门实测（`scripts/bench-approval.mjs` + `scripts/verify-false-positive.mjs`，新增）**：analyzeDiff 100 行 P95 **0.34ms**（预算 5ms）/ 500 行 P95 **1.00ms**（20ms）/ 单规则 10 万字符 **0.77ms**（20ms）/ analyzeImpact 200 文件 **19.89ms**（80ms）/ 审批框出现 P95 **14.59ms**（150ms）；**误报率 0/19 = 0%**（门 ≤1 条且 <5%）、high 级误报 **0**、标注 risk 召回 **7/7 = 100%**
+
+### Fixed — v5.0 T8 实测发现的两处真实缺陷
+
+- **规则正则 ReDoS**：`dependency-change` 的 `\w[\w-]*` 无界量词在 10 万字符单行上退化 O(n²)，bench 实测单规则 **1766ms**（预算 20ms）→ 键长收敛为 `{1,40}` + 字面量起点定位，修复后 **0.77ms**；新增护栏用例「15 条规则 × 10 万字符长行逐条 <20ms」。详见 `docs/09-踩坑记录/2026-10-27-风险规则正则ReDoS爆炸.md`
+- **规则 prefilter 死模式**：同一条规则的 `prefilter` 只写了 `": "^` / `": "~`，导致「无引号键」与「依赖段本身」两条 pattern **永远跑不到**（等于静默失效）→ 收紧为覆盖全部形态的 `['"dependencies"', '"devDependencies"', ': "']`，并加三形态命中 + 反例不命中的回归用例。详见 `docs/09-踩坑记录/2026-10-27-风险规则粗筛漏掉形态导致死模式.md`
+- **误报收窄（实测驱动）**：`fs-boundary` 的 5 条 high 级命中全部是 `import … from '../core/x'` 这类模块路径（40 段真实 hunk 抽样），已加 `negativePatterns` 排除「specifier 是字符串字面量」的形态，同时保留 `await import(path.join('..', x))` 这类真风险
+
+### Known limitations — v5.0 T8
+
+- 规则**逐行**匹配（不做跨行上下文）：`test-assertion-change` 会把「断言随文案/价格改动一起重写」也提示出来（medium 级），T9 UI 将以「建议重点关注」而非「危险」措辞呈现
+- 影响面只答「谁 import 了我」：间接引用与动态拼接路径看不到——`ImpactSummary.status` 会明确标注「未分析」，**不得呈现为「无影响」**
+
 ### Changed — v5.0 M1
 
 - **计价时段与 ollama 切换时段解耦**（T7 / R7）：`core/peak-time.ts` 拆 `PRICING_PEAK_RANGES` + `isPricingPeakTime`（厂商定价事实）与 `SWITCH_PEAK_RANGES` + `isPeakTime`（可被用户关闭的切换策略），`PEAK_TIME_RANGES` 保留为切换口径别名；`costFor` / `cacheHitCostFor` / `costForProvider` / `costProfileFor` 统一接受 `at` 时间注入，Provider 层以 `now()` 构造注入（消除「白天测高峰价、晚上测空闲价」的时间依赖 flaky）

@@ -1,0 +1,16 @@
+@@ -7,4 +7,15 @@ export type { SubagentDef, SubagentResult, SubagentTask, SubagentToolName } from
+ export type { BalanceInfo, DeepSeekBalance, FetchBalanceOptions } from './balance';
+ export { BalanceError, fetchBalance } from './balance';
++export type { HolidayCalendarInput, HolidayCalendarReport } from './core/holidays';
++export {
++  BUILTIN_HOLIDAY_CALENDAR,
++  configureHolidayCalendar,
++  holidayCalendarStatus,
++  isCnMakeupWorkday,
++  isCnStatutoryHoliday,
++  isValidDateKey,
++  localDateKey,
++  resetHolidayCalendar,
++} from './core/holidays';
+ export type {
+   MaybeSwitchModelOptions,

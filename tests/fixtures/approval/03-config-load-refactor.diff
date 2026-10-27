@@ -1,0 +1,55 @@
+@@ -101,8 +115,53 @@ export function emptyConfig(): ConcertoAIConfig {
+ }
+ 
+-/** 读取配置文件；不存在 / 损坏 / 版本不匹配时返回空配置（不抛错）。 */
++/**
++ * 读取配置文件；不存在 / 损坏 / 版本不匹配时返回空配置（不抛错）。
++ *
++ * v5.0 T7 修订：读取成功/失败后统一装载 `pricingHolidays`（计价用节假日表）——
++ * 日历是**配置的函数**（每次 load 都以当前配置为准，天然幂等），
++ * 非法日期在此提示一次（用户改配置打错字必须看得见，不能静默忽略）。
++ */
+ export async function loadConfig(
+   configPath: string = DEFAULT_CONFIG_PATH,
+ ): Promise<ConcertoAIConfig> {
++  const config = await readConfigFile(configPath);
++  const report = configureHolidayCalendar(config.pricingHolidays);
++  if (report.invalid.length > 0) {
++    console.error(
++      `⚠️ config.pricingHolidays 中有 ${report.invalid.length} 个非法日期已忽略（需 YYYY-MM-DD）：${report.invalid.join(', ')}`,
++    );
++  }
++  return config;
++}
++
++/**
++ * 摊平 v4 迁移的 `legacy` 子对象到顶层（v5.0 T7 修订）。
++ *
++ * **为什么需要**：`migrateV3ToV4` 把 v3 的其余字段（allowlist / approvalPolicy /
++ * sessionDir / locale / mcpServers / peakTimeStrategy / pricingHolidays…）收进 `legacy` 子对象，
++ * 但 `resolveConfig` 等所有消费方读的都是**顶层**字段 → 迁移后用户的白名单、高峰切换策略等
++ * 「看似迁移成功、实际全部失效」（v4.0 遗留缺陷；v5.0 T7 因 pricingHolidays 走同一路径被发现）。
++ *
++ * 规则：**顶层优先**（v4 顶层显式配置永远赢过 legacy 里的旧值），legacy 只补「顶层缺失」的键。
++ * 不删除 `legacy` 本身（保留原始迁移痕迹便于排查），也不改写磁盘（读取层兼容，写回仍按新格式）。
++ */
++function flattenLegacy(parsed: Partial<ConcertoAIConfig>): ConcertoAIConfig {
++  const raw = parsed as Partial<ConcertoAIConfig> & { legacy?: Record<string, unknown> };
++  const legacy = raw.legacy;
++  if (legacy === undefined || typeof legacy !== 'object') {
++    return parsed as ConcertoAIConfig;
++  }
++  const merged: Record<string, unknown> = { ...legacy };
++  for (const [key, value] of Object.entries(raw)) {
++    if (key === 'legacy' || value === undefined) {
++      continue;
++    }
++    merged[key] = value; // 顶层优先
++  }
++  return merged as unknown as ConcertoAIConfig;
++}
++
++/** 纯读取实现（不含节假日装载副作用，便于单测与迁移路径复用）。 */
++async function readConfigFile(configPath: string): Promise<ConcertoAIConfig> {
+   try {
+     const raw = await readFile(configPath, 'utf8');
