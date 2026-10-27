@@ -8,7 +8,8 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "concertoai": "./dist/cli/index.js"
+    "concertoai": "./dist/cli/index.js",
+    "ccai": "./dist/cli/index.js"
   },
   "exports": {
     ".": {
@@ -17,7 +18,9 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "LICENSES",
+    "THIRD_PARTY_NOTICES.md"
   ],
   "engines": {
     "node": ">=22"
@@ -36,6 +39,7 @@
     "lint": "biome check src tests",
     "lint:fix": "biome check --write src tests",
     "typecheck": "tsc --noEmit",
+    "notices": "node scripts/gen-third-party-notices.mjs",
     "verify": "npm run build && npm run lint && npm run typecheck && npm run test -- --silent",
     "prepublishOnly": "npm run verify",
     "version": "node scripts/sync-version.mjs"

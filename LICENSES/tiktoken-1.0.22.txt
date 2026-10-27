@@ -1,0 +1,9 @@
+# tiktoken@1.0.22 — 许可证声明：MIT
+
+⚠️  本包在 npm 发布物中**未附带 LICENSE 文件**（实测确认）。
+
+package.json 中声明的许可证：MIT
+上游仓库：https://github.com/dqbd/tiktoken
+
+为合规起见，本文件记录该事实，许可证全文请以上游仓库 LICENSE 文件为准。
+本项目未修改该依赖源码，仅作为运行时依赖使用。

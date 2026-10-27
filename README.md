@@ -15,16 +15,32 @@ ConcertoAI —— 面向个人开发者的**中文优先**终端编码助手 CLI
 
 ## 环境要求
 
-- Node.js ≥ 22
-- `DEEPSEEK_API_KEY` 环境变量（不写入任何配置文件）
+- Node.js ≥ 22（Node 20 会给出中文提示，命令仍可用但部分功能可能异常）
+- DeepSeek API Key，三种配置方式任选（详见 `concertoai` 首次运行引导）：
+  1. 环境变量 `DEEPSEEK_API_KEY`（推荐，当前终端立即生效）
+  2. `concertoai login <name> --key sk-...`（存本地 `~/.concertoai/accounts/`，0600 权限）
+  3. `~/.concertoai/config.json` 的 `providers.deepseek.apiKey`
 
 ## 安装
 
 ```bash
+# 方式一：全局安装（推荐，可用 update 命令升级）
 npm install -g @concertoai/cli
+
+# 方式二：零安装试用（npx，不落盘；如需长期使用请改全局安装）
+npx @concertoai/cli
 ```
 
-安装后直接使用 `concertoai` 命令（开发仓库内可用 `npm run dev` 代替）。
+安装后可使用 `concertoai` 或短命令 **`ccai`**（两者完全等价，同一入口文件）。
+
+升级到最新版：
+
+```bash
+concertoai update          # 交互确认后升级
+concertoai update --yes    # 跳过确认（CI 场景）
+```
+
+> npx 临时运行场景下 `update` 会提示先全局安装，而不会把新版装到临时目录。
 
 ## 快速开始
 
