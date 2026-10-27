@@ -11,6 +11,7 @@ import {
 } from '../cli/slash/agent';
 import { executeMcpCommand, parseMcpCommand } from '../cli/slash/mcp';
 import { executeMemoryCommand, parseMemoryCommand } from '../cli/slash/memory';
+import { executeModelCommand, parseModelCommand } from '../cli/slash/model';
 import { executeOrchestrateCommand, parseOrchestrateCommand } from '../cli/slash/orchestrate';
 import { parsePluginCommand, runPluginSlash } from '../cli/slash/plugin';
 import { executeReviewCommand, parseReviewCommand } from '../cli/slash/review';
@@ -252,7 +253,7 @@ export function App({
   client,
   registry,
   ctx,
-  model,
+  model: initialModel,
   systemPrompt,
   store,
   sessionId,
@@ -271,6 +272,12 @@ export function App({
   fallbackNote,
 }: AppProps) {
   const { exit } = useApp();
+  /**
+   * v5.0 T6：模型可在会话内切换（`/model flash|pro|auto`）。
+   * prop 只作为初值——之后由 `setModel` 接管；切换仅影响后续请求的 `model` 参数
+   * （SSE 客户端按请求传模型，无需重建 client）。
+   */
+  const [model, setModel] = useState(initialModel);
   const [messages, setMessages] = useState<ChatMessage[]>(initialHistory ?? []);
   /** v3.0 M5：可观测性面板开关（'o' 键切换，默认收起不阻塞主对话流）。 */
   const [obsOpen, setObsOpen] = useState(false);
@@ -997,6 +1004,34 @@ export function App({
         }
       }
 
+      // v5.0 T6：/model 模型查看与切换（升级方向走审批框确认，降级直接生效；无自动切换路径）
+      const modelCmd = parseModelCommand(trimmed);
+      if (modelCmd !== null) {
+        const modelResult = await executeModelCommand(modelCmd, {
+          currentModel: model,
+          providerName,
+          // 确认走审批框（y/Enter 批准、n/Esc 拒绝）：与编辑/命令同一套 fail-closed 决议机制
+          confirm: async (question: string) =>
+            requestApproval({
+              kind: 'model',
+              summary: '切换模型（成本将上升）',
+              detail: question,
+            }),
+        });
+        if (modelResult.handled) {
+          if (modelResult.nextModel !== undefined) {
+            setModel(modelResult.nextModel);
+          }
+          const msg = modelResult.message ?? { role: 'assistant' as const, content: '（无输出）' };
+          setMessages((prev) => [...prev, { role: 'user', content: text }, msg]);
+          setTokens((t) => ({ ...t, input: t.input + estimateTokens(text) }));
+          if (store !== undefined && sessionId !== undefined) {
+            store.append(sessionId, msg).catch(() => {});
+          }
+          return;
+        }
+      }
+
       // MCP 管理命令（/mcp status / connect / disconnect）
       if (mcpManager !== undefined) {
         const mcpCmd = parseMcpCommand(trimmed);
@@ -1169,6 +1204,8 @@ export function App({
       traceStore,
       auditLogger,
       requestApproval,
+      // v5.0 T6：/model 切换要判断 Provider（非 deepseek 拒绝切换），providerName 参与闭包
+      providerName,
     ],
   );
 

@@ -126,6 +126,8 @@ export const en = {
   approval: {
     editTitle: 'Edit file',
     shellTitle: 'Run command',
+    // v5.0 T6: model switch approval (higher cost confirmation)
+    modelTitle: 'Switch model (cost increases)',
     summaryEdit: 'Edit file {path}',
     summaryShell: 'Run command: {command}',
     confirm: 'Approve (y / Enter)',

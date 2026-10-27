@@ -230,6 +230,36 @@ chat 内 `/workflow run <name>` 同样可用。语法参考见 [workflow-syntax.
 
 `concertoai --provider openai` 临时切换；`concertoai config set provider openai` 持久化。切换前状态条显示成本对比。DeepSeek（默认）/ OpenAI（兼容协议，baseUrl 可配）/ Ollama（本地探测 /api/tags）。config v3→v4 自动迁移（备份 + `_migrated` 幂等），`config restore` 回滚。详见 [migration-guide-v4.md](./migration-guide-v4.md)。
 
+### 对话内 `/model` —— 模型查看与切换（v5.0 T6）
+
+| 命令 | 说明 |
+| --- | --- |
+| `/model` | 显示当前模型 + **当前时段单价**（高峰价 / 空闲价）+ 更强档升级提示（可复制命令 + 成本倍数） |
+| `/model list` | 列出可用模型与当前时段单价，`← 当前` 标记正在使用的模型 |
+| `/model auto` | 启用 auto 预设：**从默认档（flash）起步**，打印成本策略说明；**不会自动升级** |
+| `/model <id>` | 手动切换：**变贵（升级）先弹审批框确认**，变便宜（降级）直接生效 |
+
+**保守边界（务必知情）**：`auto` 不是「后台自动升降级」，而是「一套被说明清楚的默认策略 + 手动一键切换」。任何「根据任务复杂度自动换模型」的行为都**不会发生**——是否花更多钱跑更强的模型，永远由你确认（见 ADR-039）。
+
+```
+$ /model
+🤖 当前模型：DeepSeek V4 Flash（deepseek-v4-flash）
+   当前时段：空闲价（输入 ¥1.5/百万 · 输出 ¥4.5/百万 · 缓存命中 ¥0.05/百万）
+   上下文窗口：128,000 tokens · 并发限制：2500
+   💡 任务较复杂？可手动升级到 DeepSeek V4 Pro：/model deepseek-v4-pro（同一示例用量约 3.0 倍成本，需确认）
+用法：/model auto（自动预设）· /model list（模型列表）· /model <id>（手动切换）
+
+$ /model deepseek-v4-pro
+# → 弹出审批框「切换模型（成本将上升）」+ 成本对比；y 批准 / n、Esc 拒绝（拒绝即保持原模型）
+```
+
+其他细节：
+
+- 切换按「成本方向」决策，与编辑/命令**同一套 fail-closed 决议机制**（确认过程异常视为拒绝）；
+- 成本对比用与 `concertoai doctor` 月成本预估**同一套示例用量**（输入 8k 含缓存命中 4k、输出 1.2k），不会两处算出不同数；
+- 非 deepseek Provider 下 `/model` 明确拒绝并提示 `concertoai provider switch <name>`（不在价格表内的模型切换无意义）；
+- 配置文件也可写 `providers.deepseek.model: "auto"`，启动时会明确告知实际生效模型（不静默替换）。
+
 ### `concertoai plugin` —— 插件市场（v4.0 M4）
 
 | 子命令 | 说明 |
@@ -306,7 +336,7 @@ $ concertoai account list
 
 ### 审批
 
-- `edit_file` / 非白名单 `run_command` 会弹出审批框（黄色边框）；
+- `edit_file` / 非白名单 `run_command` 会弹出审批框（黄色边框）；v5.0 起**升级模型**（`/model <更贵模型>`）也走审批框（标题「切换模型（成本将上升）」+ 成本对比）；
 - `y` 或 `Enter` 批准、`n` 或 `Esc` 拒绝；拒绝后模型会收到拒绝信息并调整方案，但**不会自动重试同一操作**；
 - 审批策略可在配置中改为 `allowlist-only`（只放行白名单，其余一律拒绝且不弹框）。
 

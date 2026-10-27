@@ -28,6 +28,18 @@ export {
   userMessage,
 } from './loop/messages';
 export type { ChatMessage, Role, ToolCall } from './loop/types';
+export type { SwitchDirection, SwitchQuote } from './model/auto';
+export {
+  AUTO_MODEL,
+  buildAutoPolicyGuide,
+  buildUpgradeHint,
+  isAutoModel,
+  normalizeModelValue,
+  quoteSwitch,
+  resolveAutoStartModel,
+  switchDirection,
+  upgradeTargetFor,
+} from './model/auto';
 export type {
   ApiMessage,
   ApiToolCall,

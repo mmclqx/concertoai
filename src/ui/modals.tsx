@@ -3,15 +3,17 @@ import { Box, Text } from 'ink';
 import { t } from '../i18n';
 
 export interface ApprovalModalProps {
-  kind: 'edit' | 'shell';
+  kind: 'edit' | 'shell' | 'model';
   summary: string;
-  /** 详细内容（edit：统一 diff；shell：命令文本）。 */
+  /** 详细内容（edit：统一 diff；shell：命令文本；model：成本对比）。 */
   detail: string;
 }
 
 /** 通用审批框：黄框 + 标题 + 摘要 + 详情 + 按键提示。 */
 export function ApprovalModal({ kind, summary, detail }: ApprovalModalProps) {
-  const title = kind === 'edit' ? t().approval.editTitle : t().approval.shellTitle;
+  const dict = t().approval;
+  const title =
+    kind === 'edit' ? dict.editTitle : kind === 'shell' ? dict.shellTitle : dict.modelTitle;
   return (
     <Box flexDirection="column" borderStyle="single" borderColor="yellow" paddingX={1} marginY={1}>
       <Text bold color="yellow">

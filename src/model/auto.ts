@@ -1,0 +1,204 @@
+/**
+ * `auto` 模型预设（v5.0 T6，**保守方案**）。
+ *
+ * ## 设计边界（务必遵守，改动前先读）
+ *
+ * `auto` **不是**「后台自动升降级」，而是「**一套被说明清楚的默认策略 + 手动一键切换**」：
+ *
+ * - 起始模型固定为默认档（flash）——省钱、可预测；
+ * - **绝不做无监督自动升级**：复杂任务时，`auto` 只会**提示**「可以考虑升到 pro（成本 ×N）」，
+ *   真正的升级必须由用户执行 `/model pro` 并确认；
+ * - 升级方向（更贵）必须确认（非 TTY fail-closed 直接拒绝）；降级方向（更便宜）直接生效。
+ *
+ * 为什么不自动升级（ADR-039 / 对应 v4.1「成本透明 + fail-closed」基线）：
+ * 自动升级会在用户不知情时放大账单，且「任务复杂度」判定本身是启发式（会误判），
+ * 用不可靠信号驱动花钱动作，等于把成本风险外包给猜测。
+ *
+ * 所有函数纯函数、时间注入（`at`），可单测。
+ */
+
+import type { SessionTokenAssumption } from './cost';
+import { DEFAULT_SESSION_TOKENS } from './cost';
+import type { ModelProfile, PriceTier } from './models';
+import { costFor, getDefaultModel, getModel, listModels, priceTierFor, tierLabel } from './models';
+
+/** config / CLI 中表示「自动预设」的保留值。 */
+export const AUTO_MODEL = 'auto';
+
+/** 是否为 auto 预设值（大小写不敏感，去空白）。 */
+export function isAutoModel(value: string | undefined): boolean {
+  return value !== undefined && value.trim().toLowerCase() === AUTO_MODEL;
+}
+
+/**
+ * auto 预设的**起始模型**：默认档（flash）。
+ *
+ * 保守取值理由：先花最少的钱跑起来；能力不够时用户自己升，而不是系统替他花钱。
+ */
+export function resolveAutoStartModel(): string {
+  return getDefaultModel().id;
+}
+
+/**
+ * 把配置/CLI 里的模型值规范化为真实模型 ID。
+ *
+ * - `auto` → 起始模型（flash）；
+ * - 已知模型 ID → 原样返回；
+ * - 未知值 → 返回 undefined（由调用方决定报错，不在此静默替换）。
+ */
+export function normalizeModelValue(value: string | undefined): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (isAutoModel(value)) {
+    return resolveAutoStartModel();
+  }
+  return getModel(value) === undefined ? undefined : value;
+}
+
+/**
+ * 可升级目标：比当前模型「更强/更贵」的模型（按输出单价升序找下一个）。
+ *
+ * 已经是最高档 → undefined（没有更强档，auto 也没什么可推的）。
+ */
+export function upgradeTargetFor(currentModelId: string): ModelProfile | undefined {
+  const current = getModel(currentModelId);
+  if (current === undefined) {
+    return undefined;
+  }
+  const stronger = [...listModels()]
+    .filter((m) => m.offPeak.output > current.offPeak.output)
+    .sort((a, b) => a.offPeak.output - b.offPeak.output);
+  return stronger[0];
+}
+
+/** 单次切换的成本对比（同一用量假设、同一时刻档位，避免拿两个时段比价）。 */
+export interface SwitchQuote {
+  /** 当前模型 ID。 */
+  from: string;
+  /** 目标模型 ID。 */
+  to: string;
+  /** 计价档位（两模型必须同一档，否则对比失真）。 */
+  tier: PriceTier;
+  /** 当前模型成本（元，按示例用量）。 */
+  fromCost: number;
+  /** 目标模型成本（元，按示例用量）。 */
+  toCost: number;
+  /** 成本倍数（toCost / fromCost；fromCost 为 0 时返回 0）。 */
+  ratio: number;
+  /** 示例用量（让用户能自行核对，不藏假设）。 */
+  sample: { input: number; output: number; cacheHit: number };
+}
+
+/**
+ * 计算切换成本对比（纯函数，时间注入）。
+ *
+ * 用 `DEFAULT_SESSION_TOKENS`（doctor 月成本预估同一套假设：输入 8k 含缓存命中 4k、输出 1.2k），
+ * 保证「切换提示」与「doctor 预估」口径一致，不会出现两个地方算出不同数。
+ */
+export function quoteSwitch(
+  fromModelId: string,
+  toModelId: string,
+  at: Date = new Date(),
+  tokens: SessionTokenAssumption = DEFAULT_SESSION_TOKENS,
+): SwitchQuote {
+  const fromCost = costFor(
+    fromModelId,
+    tokens.inputTokens,
+    tokens.outputTokens,
+    tokens.cacheHitTokens,
+    at,
+  );
+  const toCost = costFor(
+    toModelId,
+    tokens.inputTokens,
+    tokens.outputTokens,
+    tokens.cacheHitTokens,
+    at,
+  );
+  return {
+    from: fromModelId,
+    to: toModelId,
+    tier: priceTierFor(at),
+    fromCost,
+    toCost,
+    ratio: fromCost > 0 ? toCost / fromCost : 0,
+    sample: {
+      input: tokens.inputTokens,
+      output: tokens.outputTokens,
+      cacheHit: tokens.cacheHitTokens,
+    },
+  };
+}
+
+/** 切换方向（决定是否需要用户确认）。 */
+export type SwitchDirection = 'upgrade' | 'downgrade' | 'same';
+
+/** 判断切换方向：变贵 = upgrade（需确认）/ 变便宜 = downgrade（直接生效）/ 相同 = same。 */
+export function switchDirection(fromModelId: string, toModelId: string): SwitchDirection {
+  if (fromModelId === toModelId) {
+    return 'same';
+  }
+  const from = getModel(fromModelId);
+  const to = getModel(toModelId);
+  if (from === undefined || to === undefined) {
+    return 'upgrade'; // 未知模型按「需确认」处理（fail-closed）
+  }
+  if (to.offPeak.output > from.offPeak.output) {
+    return 'upgrade';
+  }
+  return to.offPeak.output < from.offPeak.output ? 'downgrade' : 'same';
+}
+
+/**
+ * auto 预设的策略说明（给用户看的「这是什么、会怎么花钱」）。
+ *
+ * 硬要求：说明里必须出现「不会自动升级」这句话——
+ * 用户最怕的就是「说好省钱，结果偷偷用了贵的模型」。
+ */
+export function buildAutoPolicyGuide(at: Date = new Date()): string[] {
+  const start = resolveAutoStartModel();
+  const startProfile = getModel(start);
+  const tier = priceTierFor(at);
+  const startPrice =
+    startProfile !== undefined ? startProfile[tier === 'peak' ? 'peak' : 'offPeak'] : undefined;
+  const target = upgradeTargetFor(start);
+  const lines: string[] = [];
+
+  lines.push(`🤖 已启用 auto 预设：默认使用 ${startProfile?.label ?? start}`);
+  if (startPrice !== undefined) {
+    lines.push(
+      `   当前时段（${tierLabel(tier)}）单价：输入 ¥${startPrice.input}/百万 · 输出 ¥${startPrice.output}/百万 · 缓存命中 ¥${startPrice.cacheHit}/百万`,
+    );
+  }
+  lines.push('   策略：日常对话与简单任务用默认档（便宜）；遇到明显更难的任务时会提示你可以升级。');
+  lines.push(
+    '   ⚠️ 不会自动升级模型——是否花更多钱跑更强的模型，永远由你决定（成本透明 + fail-closed）。',
+  );
+
+  if (target !== undefined) {
+    const quote = quoteSwitch(start, target.id, at);
+    lines.push(
+      `   升级方式（手动 + 确认）：/model ${target.id} —— 同一示例用量约 ¥${quote.toCost.toFixed(4)} vs 现在 ¥${quote.fromCost.toFixed(4)}（约 ${quote.ratio.toFixed(1)} 倍）`,
+    );
+    lines.push(
+      `   示例用量：输入 ${quote.sample.input} / 输出 ${quote.sample.output}（含缓存命中 ${quote.sample.cacheHit}）tokens，与 doctor 月成本预估同口径。`,
+    );
+  } else {
+    lines.push('   当前已是唯一档位，无更强模型可升级。');
+  }
+  return lines;
+}
+
+/** auto 提示用户「可以考虑升级」的文案（仅提示，绝不自动切）。 */
+export function buildUpgradeHint(
+  currentModelId: string,
+  at: Date = new Date(),
+): string | undefined {
+  const target = upgradeTargetFor(currentModelId);
+  if (target === undefined) {
+    return undefined;
+  }
+  const quote = quoteSwitch(currentModelId, target.id, at);
+  return `💡 任务较复杂？可手动升级到 ${target.label}：/model ${target.id}（同一示例用量约 ${quote.ratio.toFixed(1)} 倍成本，需确认后生效）`;
+}

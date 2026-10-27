@@ -538,4 +538,133 @@ describe('App 集成', () => {
     expect(lastFrame()).not.toContain('批准 (y / Enter)');
     unmount();
   });
+
+  // ── v5.0 T6：/model 查看与切换（升级必确认，降级直接生效，无自动切换）──
+  it('/model 显示当前模型与当前时段单价，且不发起模型调用', async () => {
+    // 空脚本：若真的调了模型会抛「FakeModel 脚本耗尽」
+    const model = new FakeModel([]);
+    const { stdin, lastFrame, unmount } = render(
+      <App client={model} registry={registry} ctx={{ cwd: tmp }} model="deepseek-v4-flash" />,
+    );
+    stdin.write('/model');
+    await sleep(50);
+    stdin.write('\r');
+    await waitFor(() => {
+      expect(lastFrame()).toContain('当前模型');
+    });
+    expect(lastFrame()).toContain('DeepSeek V4 Flash');
+    expect(lastFrame()).toContain('百万');
+    unmount();
+  });
+
+  it('/model auto 打印成本策略说明（含「不会自动升级」），不发起模型调用', async () => {
+    const model = new FakeModel([]);
+    const { stdin, lastFrame, unmount } = render(
+      <App client={model} registry={registry} ctx={{ cwd: tmp }} model="deepseek-v4-pro" />,
+    );
+    stdin.write('/model auto');
+    await sleep(50);
+    stdin.write('\r');
+    await waitFor(() => {
+      expect(lastFrame()).toContain('不会自动升级');
+    });
+    // auto 起始档为 flash → 状态条应回落
+    expect(lastFrame()).toContain('deepseek-v4-flash');
+    unmount();
+  });
+
+  it('升级切换先弹审批框（含成本对比），y 批准后状态条切到 pro', async () => {
+    const model = new FakeModel([]);
+    const { stdin, lastFrame, unmount } = render(
+      <App client={model} registry={registry} ctx={{ cwd: tmp }} model="deepseek-v4-flash" />,
+    );
+    stdin.write('/model deepseek-v4-pro');
+    await sleep(50);
+    stdin.write('\r');
+    await waitFor(() => {
+      expect(lastFrame()).toContain('切换模型（成本将上升）');
+    });
+    expect(lastFrame()).toContain('成本对比');
+    stdin.write('y');
+    await waitFor(() => {
+      expect(lastFrame()).toContain('已切换到');
+    });
+    expect(lastFrame()).toContain('deepseek-v4-pro');
+    unmount();
+  });
+
+  it('升级切换按 n 拒绝 → 保持原模型（fail-closed）', async () => {
+    const model = new FakeModel([]);
+    const { stdin, lastFrame, unmount } = render(
+      <App client={model} registry={registry} ctx={{ cwd: tmp }} model="deepseek-v4-flash" />,
+    );
+    stdin.write('/model deepseek-v4-pro');
+    await sleep(50);
+    stdin.write('\r');
+    await waitFor(() => {
+      expect(lastFrame()).toContain('切换模型（成本将上升）');
+    });
+    stdin.write('n');
+    await waitFor(() => {
+      expect(lastFrame()).toContain('已取消切换');
+    });
+    expect(lastFrame()).toContain('deepseek-v4-flash');
+    unmount();
+  });
+
+  it('升级切换按 Esc 拒绝 → 保持原模型（与编辑/命令同一套 fail-closed 决议）', async () => {
+    const model = new FakeModel([]);
+    const { stdin, lastFrame, unmount } = render(
+      <App client={model} registry={registry} ctx={{ cwd: tmp }} model="deepseek-v4-flash" />,
+    );
+    stdin.write('/model deepseek-v4-pro');
+    await sleep(50);
+    stdin.write('\r');
+    await waitFor(() => {
+      expect(lastFrame()).toContain('切换模型（成本将上升）');
+    });
+    stdin.write('\u001b');
+    await waitFor(() => {
+      expect(lastFrame()).toContain('已取消切换');
+    });
+    expect(lastFrame()).toContain('deepseek-v4-flash');
+    unmount();
+  });
+
+  it('降级切换不弹审批框（省钱方向直接生效）', async () => {
+    const model = new FakeModel([]);
+    const { stdin, lastFrame, unmount } = render(
+      <App client={model} registry={registry} ctx={{ cwd: tmp }} model="deepseek-v4-pro" />,
+    );
+    stdin.write('/model deepseek-v4-flash');
+    await sleep(50);
+    stdin.write('\r');
+    await waitFor(() => {
+      expect(lastFrame()).toContain('已切换到');
+    });
+    expect(lastFrame()).toContain('省钱方向');
+    expect(lastFrame()).not.toContain('切换模型（成本将上升）');
+    unmount();
+  });
+
+  it('非 deepseek Provider：/model 拒绝切换并指路 provider switch', async () => {
+    const model = new FakeModel([]);
+    const { stdin, lastFrame, unmount } = render(
+      <App
+        client={model}
+        registry={registry}
+        ctx={{ cwd: tmp }}
+        model="qwen3.6:27b-q4_K_M"
+        providerName="ollama"
+      />,
+    );
+    stdin.write('/model deepseek-v4-pro');
+    await sleep(50);
+    stdin.write('\r');
+    await waitFor(() => {
+      expect(lastFrame()).toContain('仅支持 DeepSeek');
+    });
+    expect(lastFrame()).toContain('provider switch');
+    unmount();
+  });
 });

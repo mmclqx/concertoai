@@ -8,7 +8,28 @@
 
 ## [Unreleased]
 
-> v4.1.0 发布后热修（未发布，待用户手工测试确认后 bump 为 v4.1.1 或并入下版）。117 文件 / 1402 用例全绿（+12）。
+### Added — v5.0 M1 基线承接（T1-T7，2026-10-27 全部完成）
+
+> v5.0 定位：**从「黑盒引擎」到「透明驾驶舱」**——让用户看得见、看得懂、管得住每一步（含花钱）。M1 为「日常可用」基线承接（v4.2 计划并入）。127 文件 / 1582 用例全绿。
+
+- **`npx @concertoai/cli` 零安装可用 + 缺 Key 中文引导**（T1）：隔离目录实测零安装；缺 Key 时给出三种**均真实生效**的配置方式 + 获取链接；修复入口不读 `config.json` 中 `providers.deepseek.apiKey` 的真实缺口；新增 Node 版本中文提示（`engines>=22`，TTY-only，`CONCERTOAI_NO_NODE_WARN=1` 可静默）
+- **`concertoai update`**（T2）：版本对比（fetch 可注入）→ 确认升级 / `--yes`；npx 场景拒绝误升级；非 TTY fail-closed；错误输出截断
+- **`ccai` 短命令**（T3）：`bin` 双入口指向同一 CLI 产物，与 `concertoai` 完全等价
+- **`THIRD_PARTY_NOTICES` 脚本化生成**（T4）：`npm run notices`；修正 `cli-highlight`=ISC、补 highlight.js BSD-3、如实记录 tiktoken 缺 LICENSE
+- **`concertoai init` 一次分析双文件输出**（T5）：`AGENTS.md`（给 AI）+ `PROJECT_GUIDE.md`（给人）；每条结论带 `文件:行号` 证据硬约束（无证据写「未检测到」）；默认不覆盖、非 TTY 不覆盖、`--force` 显式覆盖；有界扫描（400 文件 / 200KB / 跳过构建产物）
+- **`/model` 模型查看与切换 + `model auto` 预设**（T6 / ADR-039）：`/model`（状态+当前时段单价+升级提示）/ `list` / `auto` / `<id>`；**auto = 固定起始档 flash + 手动一键切换，无任何无监督自动升级**；升级方向（变贵）走审批框确认（`kind:'model'`，y/Enter 批准、n/Esc 拒绝、异常 fail-closed），降级方向直接生效；成本对比与 `doctor` 月成本预估同口径；非 deepseek Provider 明确拒绝并指路 `provider switch`
+- **DeepSeek 高峰/空闲双档计价**（T7 / ADR-038）：flash 输入 1.5/3.0、输出 4.5/9.0、缓存命中 0.05/0.10；pro 4.5/9.0、13.5/27.0、0.15/0.30（空闲/高峰，元每百万 token），并发 2500/500；`priceTierFor(at)` / `priceFor(model, tier)` / `tierLabel`；状态条与 `concertoai balance` 标注「高峰价 / 空闲价」
+
+### Changed — v5.0 M1
+
+- **计价时段与 ollama 切换时段解耦**（T7 / R7）：`core/peak-time.ts` 拆 `PRICING_PEAK_RANGES` + `isPricingPeakTime`（厂商定价事实）与 `SWITCH_PEAK_RANGES` + `isPeakTime`（可被用户关闭的切换策略），`PEAK_TIME_RANGES` 保留为切换口径别名；`costFor` / `cacheHitCostFor` / `costForProvider` / `costProfileFor` 统一接受 `at` 时间注入，Provider 层以 `now()` 构造注入（消除「白天测高峰价、晚上测空闲价」的时间依赖 flaky）
+- **审批类别扩展**：`ApprovalRequest.kind` 增加 `'model'`（模型升级确认），与 edit/shell 共用同一 fail-closed 决议机制
+
+> ⚠️ T7 价格数字与高峰时段定义来自任务书给定表格，本轮无联网核验，**未编造来源 URL**；请以 DeepSeek 官方定价页核对（只需改 `PRICING_PEAK_RANGES` + `MODEL_PROFILES` 两处），详见 ADR-038 的如实声明。
+
+> 历史遗留（待 T23.2 文档收尾统一处理）：下方 v4.1.0 热修条目实际已随 v4.1.1 发布，尚未移动到 `[4.1.1]` 小节。
+
+> v4.1.0 发布后热修（v4.1.1 已发布，条目待归档）。117 文件 / 1402 用例全绿（+12）。
 
 ### Fixed
 

@@ -52,7 +52,12 @@ export interface MCPServerEntry {
 
 export interface ConcertoAIConfig {
   schemaVersion: number;
-  /** 默认模型 ID（CLI -m / LUMEN_MODEL 优先）。 */
+  /**
+   * 默认模型 ID（CLI -m / LUMEN_MODEL 优先）。
+   *
+   * v5.0 T6：接受保留值 `'auto'`（自动预设）——含义是「用默认档起步、绝不自动升级」，
+   * 入口层由 `resolveModel` 规范化成具体模型 ID 并提示用户实际模型（见 `src/model/auto.ts`）。
+   */
   defaultModel?: string;
   /** 免审批命令白名单前缀（LUMEN_ALLOWLIST 覆盖）。 */
   allowlist?: string[];

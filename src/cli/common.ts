@@ -7,6 +7,7 @@
  */
 
 import os from 'node:os';
+import { isAutoModel, resolveAutoStartModel, upgradeTargetFor } from '../model/auto';
 import { getDefaultModel, getModel, listModels } from '../model/models';
 import { getActiveAccount, getApiKeyFor } from '../store/accounts';
 import type { MCPServerEntry } from '../store/config';
@@ -35,16 +36,30 @@ export function buildOsHint(): string {
   return `## 运行环境\n操作系统: Linux ${arch}\n终端: bash`;
 }
 
+/**
+ * 解析生效模型 ID。
+ *
+ * v5.0 T6：接受 `auto` 预设值——规范化为起始模型（默认档 flash），并**明确告知**
+ * 用户实际用的是哪个模型、且不会自动升级（模型值不能静默替换，否则用户不知道自己在为谁付费）。
+ */
 export function resolveModel(modelId: string | undefined): string {
   if (modelId === undefined) {
     return getDefaultModel().id;
+  }
+  if (isAutoModel(modelId)) {
+    const start = resolveAutoStartModel();
+    const label = getModel(start)?.label ?? start;
+    console.error(
+      `🤖 auto 预设：使用 ${label}（不会自动升级；如需更强模型请 /model ${upgradeTargetFor(start)?.id ?? start} 手动切换）`,
+    );
+    return start;
   }
   const profile = getModel(modelId);
   if (profile === undefined) {
     console.error(
       `未知模型: ${modelId}（可用: ${listModels()
         .map((m) => m.id)
-        .join(', ')}）`,
+        .join(', ')} / auto）`,
     );
     process.exit(1);
   }

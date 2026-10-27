@@ -22,10 +22,11 @@ export interface ToolContext {
 }
 
 export interface ApprovalRequest {
-  kind: 'edit' | 'shell';
+  /** 审批类别：edit=文件编辑 / shell=命令执行 / model=模型切换（v5.0 T6，成本将上升时确认）。 */
+  kind: 'edit' | 'shell' | 'model';
   /** 给审批者的一句话摘要（中文）。 */
   summary: string;
-  /** 详细内容（edit：统一 diff；shell：命令文本）。 */
+  /** 详细内容（edit：统一 diff；shell：命令文本；model：成本对比与影响）。 */
   detail: string;
 }
 

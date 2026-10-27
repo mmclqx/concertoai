@@ -48,7 +48,7 @@ ConcertoAI 是一款**中文优先**的终端编码助手 CLI（DeepSeek 驱动�
 │   audit.ts   审计日志导出（v3.1，audit export）               │
 │   account.ts 多账号命令（v3.1，login/logout/whoami/account；whoami 修复提示+active 高亮 v3.2 M4）│
 │   crash-handler.ts 进程级崩溃日志（v3.1）                     │
-│   slash/     /agent（list 版本对比 + update --all v3.2 M5）/skill /mcp /memory /review（--fix v4.0 M1）/self-heal /orchestrate /workflow（v4.0 M2）/plugin（v4.0 M4）│
+│   slash/     /agent（list 版本对比 + update --all v3.2 M5）/skill /mcp /memory /review（--fix v4.0 M1）/self-heal /orchestrate /workflow（v4.0 M2）/plugin（v4.0 M4）/model（v5.0 T6）│
 └──────────────────────┬──────────────────────────────────────┘
                        │ render(<App …>) / runLoop(...)
 ┌──────────────────────▼──────────────────────────────────────┐
@@ -77,6 +77,7 @@ ConcertoAI 是一款**中文优先**的终端编码助手 CLI（DeepSeek 驱动�
 │ model/ DeepSeek    │          │ tools/ 工具注册表（src/tools/）│
 │  client.ts  SSE    │          │  registry.ts ToolSpec+zod 分发│
 │  models.ts  模型表  │          │  read.ts   3 个只读工具       │
+│  auto.ts    auto 预设│          │                              │
 │  tokenizer.ts 估算 │          │  edit.ts   SEARCH/REPLACE     │
 └─────────┬──────────┘          │  shell.ts  白名单+审批+超时   │
           │                     │  knowledge.ts knowledge_* 5 工具│
@@ -338,6 +339,7 @@ MCP 服务故障
 | D62 | **失败恢复 F 等待态 + 内部重试归零 + retry 语义重定义**（v4.1 T1.2/T1.3）：`promptLine` 扩展可选 `timeoutMs`（AbortController 竞速，缺省不超时）；F 等待循环 Enter 重试 / a 放弃 / 60s 超时自动放弃回滚 / 非 TTY fail-closed；executor `TaskScheduler({ maxRetries: 0 })` 禁止内部静默重试（进度刷屏根因：内部重试与外部 R/S/F/A 架构冲突）；步骤 `retry` 字段 = 用户恢复后重试上限（缺省不限向后兼容 / 0 不允许 / N 第 N+1 次强制 abort） | 进度刷屏根因修复优先于表面修补；F 真等用户修完再跑；超时防挂起（fail-closed 安全）；retry 缺省不限 = 旧行为不变 | `src/cli/prompt.ts` + `src/cli/workflow.ts` + `src/workflow/{executor,types}.ts` + `tests/workflow/executor.test.ts` |
 | D63 | **preflight 环境预检 + 自动初始化保守边界**（v4.1 T1.4）：`workflow run` 前三维预检（脚本缺失 / 依赖未装 `node_modules/.bin/<tool>` / 缺配置 biome.json）→ 报告 + 操作计划 → 一次 y/N 审批 → 只做事实标准（lint→biome、typecheck→tsc，test 无法猜框架仅提示）→ package.json JSON 读写 + 写入后校验失败不落盘；非 TTY fail-closed 报清单退出 | 「自动装依赖 + 改用户 package.json」有侵入性：只做事实标准 + 完整计划二次审批 + 写入失败回滚不落盘；杜绝「Missing script: lint」裸失败 | `src/workflow/preflight.ts` + `src/cli/workflow.ts` + `tests/workflow/preflight.test.ts` |
 | D64 | **双档计价与切换时段解耦**（v5.0 T7 / ADR-038）：`core/peak-time.ts` 拆两套口径——`PRICING_PEAK_RANGES` + `isPricingPeakTime`（计价事实）与 `SWITCH_PEAK_RANGES` + `isPeakTime`（切 ollama 策略，`PEAK_TIME_RANGES` 保留为切换口径别名）；`model/models.ts` 用 `PriceSet{input,output,cacheHit}` 双档（`offPeak` / `peak`）+ `priceTierFor(at)` / `priceFor(model,tier)` / `tierLabel`；`costFor` / `cacheHitCostFor` / `costForProvider` / `costProfileFor` 统一接受 `at` 时间注入，Provider 层以 `now()` 构造注入；状态条与 `balance` 标注「高峰价 / 空闲价」 | 口径语义不同：切本地模型是**可被用户关闭的策略**，按哪个价档计费是**厂商定价事实**，混用会导致「用户关掉切换 → 顺带关掉正确计价」隐性 bug；独立常量保证 DeepSeek 日后公布官方时段时只改一处、不动用户习惯；时间注入消除「白天测高峰价、晚上测空闲价」的时间依赖 flaky。⚠️ 价格数字与时段定义待用户以官方定价页核对（本轮无联网核验，未编造来源 URL，见 ADR-038 声明） | `src/core/peak-time.ts` + `src/model/models.ts` + `src/model/cost.ts` + `src/model/providers/deepseek.ts` + `src/cli/balance.ts` + `src/ui/StatusBar.tsx` + `tests/model/models.test.ts` + `tests/core/peak-time.test.ts` |
+| D65 | **`model auto` = 固定起始档 + 手动切换 + 升级必确认，无任何无监督自动升级**（v5.0 T6 / ADR-039）：`config.providers.<p>.model: "auto"` 与 `/model auto` 由 `src/model/auto.ts` 解析为默认档（flash）；`/model` 四个子命令（status / list / auto / `<id>`）由 `src/cli/slash/model.ts` 处理；切换按「成本方向」决策——**升级（变贵）→ 走审批框 `kind:'model'` 确认**（y/Enter 批准、n/Esc 拒绝、确认异常即 fail-closed），**降级（变便宜）→ 直接生效**（不增加省钱摩擦）；`quoteSwitch` 复用 `DEFAULT_SESSION_TOKENS` 与 doctor 月成本预估同口径；`normalizeModelValue(value)` 单参数签名，签名层面就传不进复杂度/时刻信号 | 成本风险不可外包给启发式猜测（复杂度判定会误判，用不可靠信号驱动花钱动作 = 默认替用户冒账单风险）；固定起始档让「这次会花多少钱」有确定答案（低成本定位核心）；不自动≠不便利——说明与状态行都直接给可复制命令 + 成本倍数；红线可测试（源码级护栏：`auto.ts` 禁复杂度判定标识、slash 层禁 `setInterval/setTimeout`、`App.tsx` 中 `setModel(` 仅 1 处且在 `/model` 块内） | `src/model/auto.ts`（新增）+ `src/cli/slash/model.ts`（新增）+ `src/cli/common.ts` + `src/store/config.ts` + `src/tools/registry.ts` + `src/ui/App.tsx` + `src/ui/modals.tsx` + `src/i18n/{zh,en}.ts` + `tests/model/auto.test.ts` + `tests/cli/slash-model.test.ts` + `tests/ui/app.test.tsx` |
 
 ## 5. 目录结构说明
 
@@ -400,7 +402,8 @@ concertoai/
 │   │       ├── self-heal.ts /self-heal 斜杠命令（v3.1 M1；onPhase 阶段进度 + selfHealPhaseLabel，v3.2 M4）
 │   │       ├── orchestrate.ts /orchestrate <任务>：chat 内 team 全链路（v3.1 M5）
 │   │       ├── workflow.ts /workflow list|init|run|export|import：chat 内工作流执行（v4.0 M2，进度推送消息 + 审批走统一弹窗）
-│   │       └── plugin.ts   /plugin list|install|remove：chat 内插件管理（v4.0 M4，复用 CLI 实现 + 权限确认）
+│   │       ├── plugin.ts   /plugin list|install|remove：chat 内插件管理（v4.0 M4，复用 CLI 实现 + 权限确认）
+│   │       └── model.ts    /model [list|auto|<id>]：模型查看与切换（v5.0 T6；升级方向走审批框确认、降级直接生效，无自动切换路径）
 │   ├── ui/
 │   │   ├── App.tsx       状态机组件：send/sendPlan/executePlan/审批挂起/消息渲染/错误显示；长任务进度消息推送 + activeTool 阶段更新（v3.2 M4）
 │   │   ├── PromptInput.tsx  光标移动 + 历史浏览 + 多行输入
@@ -435,6 +438,7 @@ concertoai/
 │   │   ├── router.ts     ProviderRouter（选择/切换/启动 fallback ≤1 次 + statusAll）
 │   │   ├── cost.ts       跨 Provider 成本对比（compareCost/estimateMonthlyCost）+ OpenAI 定价表
 │   │   ├── recommend.ts  模型推荐（detectComplexity + recommendProvider：预算×复杂度×本地）
+│   │   ├── auto.ts       `auto` 预设（v5.0 T6，保守方案）：固定起始档 flash + 升级目标/方向判定 + 切换成本对比（quoteSwitch，与 doctor 同口径）+ 策略说明；**无任何自动切换路径**（ADR-039）
 │   │   └── providers/    三 Provider 实现（v4.0 M3）
 │   │       ├── deepseek.ts 包装 DeepSeekClient + 余额 healthCheck
 │   │       ├── openai.ts   OpenAI 兼容（baseUrl 可配 + /models healthCheck + 定价表）

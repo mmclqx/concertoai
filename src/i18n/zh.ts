@@ -121,6 +121,8 @@ export const zh = {
   approval: {
     editTitle: '编辑文件',
     shellTitle: '执行命令',
+    // v5.0 T6：模型切换审批（成本将上升时的确认框标题）
+    modelTitle: '切换模型（成本将上升）',
     summaryEdit: '编辑文件 {path}',
     summaryShell: '执行命令: {command}',
     confirm: '批准 (y / Enter)',
