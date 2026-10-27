@@ -34,6 +34,36 @@
 - **占位符永不出门**：文件路径含空格时（`/review` 按空格拆参数会被拆坏）→ 降级为不含 `{file}` 的文案 + `/review` auto 模式；用例断言终态文案与命令均无 `{}`/`<>` 残留
 - **`tests/setup.ts` 隔离**：测试进程默认 `CONCERTOAI_HINTS=off`，防止 `npm test` 把冷却时间戳写进开发者真实 `hint-state.json`（后果是**开发者自己用 CLI 时提示被莫名静音 10 分钟**，比 T10 那次复盘污染更难排查）
 
+### Added — v5.0 M3 场景可发现 T13：场景提示 UI + 真实 PTY 端到端（2026-10-28 完成）
+
+> 定位：把 T12 的判定结果**呈现成一个用户真的看得见、也关得掉的东西**——输入框上方**一行灰字 + 一条完整可复制命令**，不进消息流、不弹框、不挤压输入框。146 文件 / 1976 用例全绿（+5 文件 / +62 用例）。
+
+- **`src/ui/hint-signals.ts`（新增）**：状态信号采集，只认「数得出来的事实」——`hasProjectRulesFile`（只看 `AGENTS.md`/`CARBON.md` 存在性）/ `countUserTurns`（直接数 user 消息）/ `isVerifyClassCommand`（字面量前缀白名单，**不构造动态正则**，避免把「读错文件」也算成质量关卡失败）/ `nextFailureStreak`（`passed` 必须归零，否则「连续」退化成「累计」）/ `nextRejectStreak`（换文件从 1 起算、批准即归零；无文件上下文不计数）
+- **`src/ui/hint-text.ts`（新增）**：纯字符串排版，**零 Ink / React 依赖**（铁律①：先变字符串，Ink 只上色）。`renderHintLine` 先给「命令 + 分隔符」留足宽度再截断文案，**命令永不截断**；宽度不够时**整句丢文案只留命令**（半条命令 = 负价值）。`resolveHintLine` 一行做完阶段门禁 + 排版；`isHintVisiblePhase` 作为阶段放行的**唯一判据**（新增阶段默认不放行）
+- **`src/ui/HintBar.tsx`（新增）**：只干一件事——把算好的一行字符串染成 `<Text dimColor>`。**不渲染时返回 `null` 而非空 `<Text>`**（空 Text 会白占一行，正是「挤压输入框」）
+- **`src/cli/slash/hints.ts`（新增）**：`/hints on|off|status` **会话级**静音（不写配置文件），回执必带恢复方式（`/hints on`）；`dismiss` 语义与引擎约束⑤「忽略即静默」对齐
+- **`scripts/pty-drive-t13.mjs`（新增）**：真实 TUI + 真实 PTY 的端到端驱动，四条断言补足单测盲区——① 无规则文件项目里发消息后出现 `concertoai init` 提示（组件级渲染覆盖不到「App 真的把 state 传给 HintBar」）② 提示是**灰字**（ANSI dim，只能看真实终端字节）③ 提示是**单行**（💡 与命令同行，不折行）④ `/hints off` 后提示消失且回执给出恢复方式。隔离纪律：项目目录与 `HOME` 全部指向临时目录，绝不污染开发者真实 `hint-state.json`
+
+### Changed — v5.0 T13：`awaiting` 阶段（提示与自救不再押在「这一轮跑成功」上，ADR-045）
+
+- **`HintPhase` 新增 `awaiting`**：`streaming` 内部再分两种——「已有产出」（`streamed` 有字 / 有工具在跑）仍为 `streaming`，提示必须让位；「尚无产出」（已提交、屏幕上只有 spinner）为 `awaiting`，允许提示。判据全部来自**已有状态的确定性组合**，不引入计时器 / 超时阈值（承接 ADR-044「只认确定性事实」）
+- **提示判定解耦于对话成败**：判定层不再看 `phase`，信号源只有「用户已产生输入」（`countUserTurns`，提交那一刻已回填，与 API 成败无关）+ 规则文件存在性；引擎返回 `null` 时**不主动清空**已显示的提示（否则「每会话 1 次」会退化成「闪 1 下」）
+- **输入框在 `awaiting` 保持可用**：`inputActive = idle || awaiting`。真正流式输出期间仍禁用，②不放松
+- **`/hints` 提到 `busy` 守卫之前**：它是纯会话内操作（不碰模型、不碰工具、不排队），而用户最想静音的时刻恰恰是「发了消息正在等回复」——被 `busy` 挡掉就是假按钮
+
+### Fixed — v5.0 T13：三个「单测全绿、真实终端全红」的缺陷
+
+- **提示永不出现（假 Key / 断网）**：原判定挂在 `phase === 'idle'`，而 `runLoop` 挂起时 `phase` 永远是 `streaming` → 「这个项目没有规则文件」这条最该早早告诉用户的提示**一次都没出现**（PTY 四条断言全红的直接原因）。改为判定不看 `phase` + `awaiting` 阶段放行
+- **`/hints off` 敲不进去**：输入框 `active={phase === 'idle'}`，同场景下**整个输入框不接受按键**——提示看得见却关不掉，想静音只能 Ctrl+C 杀掉会话。改为 `awaiting` 也放行
+- **提示行折行把命令劈开**：`HintBar` 把 `process.stdout.columns`（终端列数）直接当排版预算，但它渲染在 `paddingX={1}` 容器**内部** → 100 列终端里可用仅 98 → 排满必然折行（`concertoai init` 的 `init` 掉到下一行，违反「单行」要求）。新增 `HINT_CONTAINER_PADDING_X` 常量按容器内宽换算
+- **等待期提交需求的静默丢弃**：输入框活了以后，等待期敲的普通需求不能排队，但**绝不能静默吞掉** → 新增「⏳ 正在等待模型回复…（Ctrl+C 中断；/hints off 可静音提示）」回执（i18n `prompt.busyWaiting` zh/en）
+
+### 测试（v5.0 T13）
+
+- 新增 5 文件：`tests/ui/hint-text.test.ts`（排版 / 截断 / 阶段门禁 / `isHintVisiblePhase`）、`tests/ui/hint-bar.test.tsx`（**源码护栏**：组件零中文字面量、无 `<Box>`；单行 dimColor；**卡满边界宽度** 100/120/160 三档断言 `displayWidth ≤ columns - padding*2`）、`tests/ui/hint-signals.test.ts`（信号口径：passed 归零 / 换文件重计 / 无文件不计数 / verify 类白名单）、`tests/ui/hint-app.test.tsx`（**App 级集成**：挂起模型 `HangingModel`（`streamChat` 零字节永不 settle）→ 提示照样出现 / 等待期 `/hints off` 有效 / 等待期普通需求给回执不静默）、`tests/cli/slash-hints.test.ts`
+- **端到端**：`scripts/pty-drive-t13.mjs` 四条断言全部 PASS；跑后自证清理（`PTY 1 个已终止 / 临时目录已删除`，`%TEMP%\ccai-*` 与残留进程均为 0）
+- **基线校准**：146 文件 / 1976 用例全绿（`npm run verify`）
+
 ### Added — v5.0 M1 基线承接（T1-T7，2026-10-27 全部完成）
 
 > v5.0 定位：**从「黑盒引擎」到「透明驾驶舱」**——让用户看得见、看得懂、管得住每一步（含花钱）。M1 为「日常可用」基线承接（v4.2 计划并入）。128 文件 / 1609 用例全绿。

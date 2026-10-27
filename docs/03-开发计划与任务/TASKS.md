@@ -1,7 +1,7 @@
 # ConcertoAI 开发任务看板
 
 > 最后更新：2026-10-28
-> 当前里程碑：**🟡 v5.0 开发中（M1 7/7 ✅ + M2 审批透明化 4/4 ✅ 已封板 + M3 T12 ✅，2026-10-28）**（v5.0: M1 **7/7** ✅ · M2 **4/4** ✅ · M3 **1/3** · 下一步 **M3 T13 三场景 UI** · 141 文件 / 1914 用例全绿）
+> 当前里程碑：**🟡 v5.0 开发中（M1 7/7 ✅ + M2 审批透明化 4/4 ✅ 已封板 + M3 T12/T13 ✅，2026-10-28）**（v5.0: M1 **7/7** ✅ · M2 **4/4** ✅ · M3 **2/3** · 下一步 **M3 T14 首次引导 + 首屏精简** · 146 文件 / 1976 用例全绿）
 > 基于：[v5.0 开发计划](./v5.0-dev-plan.md) · [v5.0 开发任务](./v5.0-dev-tasks.md) · 历史：[v4.2 开发任务（已并入 v5.0 M1）](./v4.2-dev-tasks.md) · [v4.1 开发任务](./v4.1-dev-tasks.md) · [v4.0 开发任务](./v4.0-dev-tasks.md)
 
 ---
@@ -14,7 +14,7 @@
 |--------|------|------|------|
 | **M1 基线承接**（v4.2 并入） | T1 npx 实测 · T2 update · T3 ccai · T4 THIRD_PARTY · T5 init 双输出 · T6 model auto · T7 价格表 | **7/7** | ✅ **完成**（2026-10-27） |
 | M2 审批透明化 | T8 风险引擎 ✅ · T9 审批 UI ✅ · T10 复盘记录 ✅ · T11 配置降级 ✅ | **4/4** | ✅ **完成·已封板**（2026-10-28） |
-| M3 场景可发现 | T12 触发表引擎 ✅ · T13 三场景 UI · T14 首次引导 | 1/3 | 🟡 进行中（T12 完成 2026-10-28） |
+| M3 场景可发现 | T12 触发表引擎 ✅ · T13 三场景 UI ✅ · T14 首次引导 | 2/3 | 🟡 进行中（T12/T13 完成 2026-10-28） |
 | M4 CLI 动词化 | T15 check · T16 fix · T17 commit · T18 review · T19 护栏 | 0/5 | ⬜ 待开始 |
 | M5 收敛与度量 | T20 功能冻结 · T21 本地指标 · T22 定位重写 | 0/3 | ⬜ 待开始 |
 | 收尾 | T23.1 回归 · T23.2 文档 · T23.3 手工测试 · T23.4 自审+发布 | 0/4 | ⬜ 待开始 |
@@ -44,6 +44,7 @@
 | 任务 | 状态 | 说明 |
 |------|------|------|
 | **T12 触发表引擎** | ✅ **完成**（2026-10-28） | 「用户卡住时给一条能直接用的命令」的纯逻辑内核（ADR-044 / §4 D74-D75）· `core/suggestion.ts`（**纯判定层 + IO 层严格分离**，对齐 `reflection-store.ts`）：`SUGGESTION_RULES` 三条确定性规则（`missing-project-rules` 10 / `repeated-verify-failure` 20 / `repeated-edit-rejection` 30，**priority 大者优先**）+ `evaluateSuggestion({state, history, now})` + `recordSuggestionShown` / `dismissHints` / `pruneCooldowns` / `isCoolingDown` / `isHintsEnabled`（双轨开关）+ `readHintCooldowns` / `writeHintCooldowns`（原子写 `hint-state.json`，**永不抛错**）· **七条硬约束逐条在引擎内实现**（同时 ≤1 条 / 同 id 每会话 1 次 / 同 id 全局 10 分钟冷却 / **每会话总计 ≤3 条** / **Esc 即本会话全静默** / `hints off` 恒 null / **时间必须注入**）· **命名 `tips` → `hints` 全链路统一**（`config.hints` / `CONCERTOAI_HINTS` / `hint-state.json` / i18n `hints.*`）· **不打空头支票**：三条命令全部当场核实（`concertoai init` / `concertoai self-heal` / `/review <file>`），并落**护栏用例**——实跑 `--help` 断言动词真注册 + 用真实 `parseReviewCommand` 断言斜杠命令可解析；**任务书原写的 `concertoai fix` 至今不存在（属 M4），已按用户拍板改掉并记录** · **占位符永不出门**：路径含空格 → 降级 `repeatedEditRejectionNoFile` 文案 + `/review` auto 模式（不给一条会被拆坏的命令）· `config.ts` 四处接线（`HintsMode` / `hints?` / `isHintsMode` / `validateConfigValues` / `resolveConfig` 合并 env）+ `config set hints on\|off`（非法值 fail-closed）+ `paths.ts` `hintStatePath()` + zh/en `hints.*`（en 无 CJK 由 `en.test.ts` 看住）· `tests/core/suggestion.test.ts`(40) + `tests/store/config.test.ts`(+5) + `tests/setup.ts`（测试环境默认 `CONCERTOAI_HINTS=off`，防污染真实 `hint-state.json`）· **端到端实测**（隔离 HOME）：`config set hints off` 真写盘 / 非法值 exit 1 / `hints on` 回滚均通过 · **141 文件 / 1914 用例全绿** |
+| **T13 场景提示 UI** | ✅ **完成**（2026-10-28） | 「一条灰字、单行、不挤压输入框，用户看得见也关得掉」（ADR-045 / 承接 ADR-044）· **四个新模块**：`ui/hint-signals.ts`（状态信号采集：`hasProjectRulesFile` / `countUserTurns` / `isVerifyClassCommand` / `nextFailureStreak` / `nextRejectStreak`——**只认数出来的事实**）+ `ui/hint-text.ts`（纯字符串排版：`renderHintLine` / `resolveHintLine` / `isHintVisiblePhase`，**零 Ink 依赖**，命令永不截断）+ `ui/HintBar.tsx`（只上色，`memo`，`null` 时不占行）+ `cli/slash/hints.ts`（`/hints on\|off\|status` 会话级开关，不写配置）· **三条硬要求逐条落地**：① 纯字符串渲染 Ink 只上色（源码护栏断言组件零中文字面量、无 `<Box>`）② 单行 + 不挤压输入框（`null` 而非空 `<Text>`；真实容器宽度换算 `HINT_CONTAINER_PADDING_X`）③ 超宽按 `displayWidth` 截断但**命令绝对完整**（宽度不够时丢文案保命令）· **`awaiting` 阶段（本轮核心修正）**：`idle` / `awaiting` 才渲染，`streaming`（有字/有工具）与审批焦点一律不画；输入框 `inputActive = idle \|\| awaiting`——断网/假 Key 时既能看见提示，也**敲得进** `/hints off` · **假按钮防护**：等待期提交普通需求不排队但给「⏳ 正在等待模型回复…」回执，绝不静默吞；`/hints` 提到 `busy` 守卫之前 · **真实 PTY 端到端**（`scripts/pty-drive-t13.mjs`，隔离项目目录 + 隔离 HOME + `try/finally` + `exit`/信号兜底 + Windows `taskkill /T`）：四条断言 ①②③④ **全部 PASS**，且跑后自证「PTY 1 个已终止 / 临时目录已删除 / 残留 0」· **单测抓不到、端到端才暴露的三个真 bug 全部修复**：① 判定绑 `phase==='idle'` → 永远不提示 ② 输入框 `active={phase==='idle'}` → 命令敲不进去 ③ 按终端列数排版 → 100 列终端里 `concertoai init` 被折行劈开 · 测试 6 文件（`hint-text` / `hint-signals` / `hint-bar` / `hint-app` / `slash-hints` 等）· 踩坑 2 条（PTY 清理未放 finally / 提示行按终端列数排版在容器内必然折行）· **146 文件 / 1976 用例全绿** |
 
 
 ---
