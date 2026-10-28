@@ -19,7 +19,9 @@ const LOOP_MAX_TURNS_TEMPLATE =
 
 export const en = {
   cli: {
-    description: 'ConcertoAI — a Chinese-first terminal coding assistant for individual developers',
+    // v5.0 T22: repositioning (matches the zh wording, not a literal translation)
+    description:
+      'ConcertoAI — a personal super CLI you dare to point at production code (terminal AI dev assistant with built-in risk approval and one-command healing)',
     chat: {
       description: 'Start an interactive conversation',
     },
@@ -86,16 +88,23 @@ export const en = {
     },
     doctor: {
       description: 'Environment diagnostics (includes DeepSeek account balance)',
+      // v5.0 T21: local metrics summary switch (off by default; no data means no data)
+      metrics:
+        'Append the local experience metrics summary (last 100 entries: approval latency/reject rate, hint adoption, check pass rate, verb distribution)',
     },
     workflow: {
       description: 'Workflow management (init/run/export/import, DAG execution)',
     },
     lsp: {
-      description: 'Start Language Server (--stdio: diagnose on save + one-click CodeAction fix)',
+      // v5.0 T20: freeze marker (FEATURE_FREEZE.md) — "bugfixes only" stated where users see it
+      description:
+        'Start Language Server (--stdio: diagnose on save + one-click CodeAction fix) · maintenance mode (bugfixes only)',
       stdioRequired: 'lsp command requires --stdio (only stdio transport is supported)',
     },
     plugin: {
-      description: 'Plugin marketplace (install/search/list/remove/browse/recommend/popular)',
+      // v5.0 T20: freeze marker — plugin marketplace is no longer expanded (see FEATURE_FREEZE.md)
+      description:
+        'Plugin marketplace (install/search/list/remove/browse/recommend/popular) · maintenance mode (no new features, bugfixes only)',
     },
     reflect: {
       description: 'Rejection retrospectives (list / clear; local JSONL, never uploaded)',
@@ -494,6 +503,40 @@ export const en = {
     statusOff: '🔇 Scenario hints: disabled (restore with /hints on)',
     usage: 'Usage: /hints on | /hints off | /hints status',
     unknownAction: 'Unknown hints subcommand: {action} (supported: on / off / status)',
+  },
+  // v5.0 T21: `/metrics` slash command (local metrics switch; off by default, never uploaded)
+  metricsCmd: {
+    on: '📊 Local metrics enabled (this session only). Permanent: concertoai config set metrics on　·　Summary: concertoai doctor --metrics',
+    off: '📊 Local metrics disabled (this session only; existing data is kept). Permanent: concertoai config set metrics off',
+    statusOn:
+      '📊 Local metrics: enabled (writes only to {path} on this machine, never uploaded; summary: concertoai doctor --metrics; clear: /metrics clear)',
+    // v5.0 T21: the disabled state still reports the file path — `/metrics status` promises
+    // "on or off + where the file is + how to summarize", and a user who turned it off is the
+    // one most likely to ask where the file is (to clear it / to verify nothing is written)
+    statusOff:
+      '📊 Local metrics: disabled (file: {path}, nothing is written while off; enable with /metrics on; permanently: concertoai config set metrics on)',
+    cleared: '✅ Local metrics cleared ({count} entries removed)',
+    clearedEmpty: 'Local metrics were already empty; nothing to clear.',
+    clearFailed: '❌ Failed to clear local metrics: {message}',
+    usage: 'Usage: /metrics on | /metrics off | /metrics status | /metrics clear',
+    unknownAction: 'Unknown metrics subcommand: {action} (supported: on / off / status / clear)',
+  },
+  // v5.0 T21: `doctor --metrics` summary (last 100 entries; no data means no data, not a wall of 0%)
+  metrics: {
+    title: 'Local experience metrics',
+    enabled: 'enabled (local JSONL, never uploaded)',
+    disabled: 'disabled (off by default; enable with `concertoai config set metrics on`)',
+    fileLine: 'stored at: {path}',
+    empty: 'no metrics yet (data accumulates once enabled)',
+    skipped: '⚠️ skipped {count} corrupted line(s) (manual edit or interrupted write)',
+    approvalLine: 'approvals: {count} | avg {avg}ms | median {median}ms | reject rate {rate}',
+    suggestionLine:
+      'hints: {count} | observable {observed} | adoption {rate} ({unobservable} unobservable)',
+    suggestionLineUnobservable:
+      'hints: {count} | adoption not evaluable (no observable behaviour in this data)',
+    checkLine: 'checks: {count} | pass rate {rate}',
+    verbLine: 'verbs: {list}',
+    noVerbs: '—',
   },
   balance: {
     available: 'Account available',

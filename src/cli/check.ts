@@ -696,6 +696,26 @@ export function formatCheckReport(result: CheckResult): string[] {
 export async function runCheckCommand(options: CheckCommandOptions = {}): Promise<number> {
   const log = options.log ?? ((line: string) => console.log(line));
   const result = await runCheck(options);
+  /**
+   * v5.0 T21：记一条体检指标（只记「几段过 / 几段挂」，不记错误内容）。
+   *
+   * - **默认 off**（`config.metrics` 缺省 `off`）→ 连文件都不会碰；
+   * - `void` 出去，不 await：体检的报告优先级永远高于指标；
+   * - 只有 `concertoai check` 这一条命令记（`commit` 内部复用 `runCheck` 不记，
+   *   否则一次提交会同时留下 verb + check 两条，指标口径会重复）。
+   */
+  void (async () => {
+    try {
+      const { recordCheckMetric } = await import('./metrics');
+      await recordCheckMetric({
+        ok: result.ok,
+        passed: result.stages.filter((stage) => stage.status === 'pass').length,
+        failed: result.failedStages.length,
+      });
+    } catch {
+      // 指标失败静默（不影响体检结论与退出码）
+    }
+  })();
   if (options.json === true) {
     log(JSON.stringify(result, null, 2));
     return result.code;

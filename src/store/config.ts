@@ -7,7 +7,8 @@
  * peakTimeStrategy（高峰时段模型切换策略）、ollamaModel / ollamaBaseUrl
  * （本地模型接入，v2.2 智能成本控制）、pricingHolidays（计价用法定节假日表，v5.0 T7）、
  * approvalInsight / riskRules（审批卡形态与规则开关，v5.0 T8-T11）、
- * reflections（拒绝复盘开关，v5.0 T10）、hints（场景提示开关，v5.0 T12）。
+ * reflections（拒绝复盘开关，v5.0 T10）、hints（场景提示开关，v5.0 T12）、
+ * metrics（本地体验指标开关，v5.0 T21，默认 off）。
  *
  * 优先级：CLI 参数 > 环境变量（LUMEN_*）> 配置文件 > 默认值。
  * 文件不存在 / JSON 损坏 / schema 版本不匹配 → 返回空配置（不抛错）。
@@ -17,6 +18,7 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import { configureHolidayCalendar } from '../core/holidays';
+import { isMetricsEnabled } from '../core/metrics-store';
 import { isReflectionsEnabled } from '../core/reflection-store';
 import { isHintsEnabled } from '../core/suggestion';
 // 轮数上限的**唯一来源**仍在 loop/loop.ts（与 i18n 共用），本模块只读它做默认值兜底。
@@ -71,6 +73,18 @@ export type HintsMode = 'on' | 'off';
 
 /** 场景提示默认值（on：默认可用；噪音风险由引擎侧七条硬约束兜住，不靠「默认关」回避）。 */
 export const DEFAULT_HINTS: HintsMode = 'on';
+
+/**
+ * 本地体验指标开关（v5.0 T21，ADR-049）：`on` = 记录本地 JSONL；`off` = **一个字节都不写**（默认）。
+ *
+ * 为什么默认 off（与 `hints` / `reflections` 的默认 on 相反）：提示与复盘是**给用户用**的
+ * 功能，默认关掉等于没做；指标是**给我们看**的数字，用户默认没义务贡献数据。
+ * 开启后也只在本机，零上传。
+ */
+export type MetricsMode = 'on' | 'off';
+
+/** 指标默认值（off：不开启不产生文件）。 */
+export const DEFAULT_METRICS: MetricsMode = 'off';
 
 /** 高峰时段切换策略默认值：ask（询问用户）。 */
 export const DEFAULT_PEAK_TIME_STRATEGY: PeakTimeStrategy = 'ask';
@@ -155,6 +169,14 @@ export interface ConcertoAIConfig {
    */
   hints?: HintsMode;
   /**
+   * 本地体验指标开关（v5.0 T21）：`off`（默认）/ `on`。
+   *
+   * 开启后把「审批耗时、提示采纳、体检结果、动词使用」追加到
+   * `~/.concertoai/metrics.jsonl`（纯本地、零上传，见 `core/metrics-store.ts`）；
+   * 也可用环境变量 `CONCERTOAI_METRICS=on` 临时开启。
+   */
+  metrics?: MetricsMode;
+  /**
    * 计价用中国法定节假日表（v5.0 T7 修订）。
    *
    * 高峰/空闲双档计价必须排除法定节假日、并纳入调休上班日（见 `core/holidays.ts`）。
@@ -209,6 +231,13 @@ export interface ResolvedConfig {
    * 不要自己再读 `config.hints` 或环境变量——否则优先级会被各入口实现成两套。
    */
   hints: HintsMode;
+  /**
+   * 本地指标开关（v5.0 T21）：**已合并环境变量**的最终值。
+   *
+   * 与 `approvalInsight` / `reflections` / `hints` 同口径：消费者只读这个字段，
+   * 不要自己再读 `config.metrics` 或环境变量。
+   */
+  metrics: MetricsMode;
 }
 
 /** 一条配置值非法记录（供 `loadConfig` 统一提示 + 单测断言，不抛错）。 */
@@ -248,6 +277,10 @@ export function validateConfigValues(config: ConcertoAIConfig): ConfigValidation
   if (config.hints !== undefined && !isHintsMode(config.hints)) {
     issues.push({ key: 'hints', value: config.hints, expected: 'on | off' });
   }
+  // v5.0 T21：指标开关（写错 `on` 会让用户以为在记录，实际没记——必须提示）
+  if (config.metrics !== undefined && !isMetricsMode(config.metrics)) {
+    issues.push({ key: 'metrics', value: config.metrics, expected: 'on | off' });
+  }
   // v5.0 架构修正：轮数上限必须是正整数（0 会让工具循环一轮都不跑，负数/小数同理无效）
   if (config.maxTurns !== undefined && !isValidMaxTurns(config.maxTurns)) {
     issues.push({
@@ -282,6 +315,11 @@ export function isReflectionsMode(value: unknown): value is ReflectionsMode {
 
 /** 是否为合法提示开关（v5.0 T12）。 */
 export function isHintsMode(value: unknown): value is HintsMode {
+  return value === 'on' || value === 'off';
+}
+
+/** 是否为合法指标开关（v5.0 T21）。 */
+export function isMetricsMode(value: unknown): value is MetricsMode {
   return value === 'on' || value === 'off';
 }
 
@@ -509,6 +547,13 @@ export function resolveConfig(
     ? 'on'
     : 'off';
 
+  // v5.0 T21：本地指标开关（环境变量优先于 config；**默认 off**）
+  // 与 hints / reflections 同一套「非法值回落下一层」语义：手滑写 `CONCERTOAI_METRICS=on` 之外
+  // 的无意义值，不该静默推翻用户配置里明确写的 on/off。
+  const metrics: MetricsMode = isMetricsEnabled(file.metrics, env('CONCERTOAI_METRICS'))
+    ? 'on'
+    : 'off';
+
   // v5.0 架构修正：轮数上限优先级 = CLI 传参 > config.maxTurns（合法时）> 默认 50。
   // 非法 CLI 值不在这里判（调用方 `parseMaxTurnsOption` 已过滤）；config 里的非法值
   // 由 `validateConfigValues` 提示后落到默认值——两层都不静默吞掉。
@@ -529,5 +574,6 @@ export function resolveConfig(
     approvalInsight,
     reflections,
     hints,
+    metrics,
   };
 }

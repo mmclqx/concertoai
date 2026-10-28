@@ -17,7 +17,9 @@ const LOOP_MAX_TURNS_TEMPLATE =
 
 export const zh = {
   cli: {
-    description: 'ConcertoAI —— 面向个人开发者的中文优先终端编码助手',
+    // v5.0 T22：定位重写（用户定稿文案，勿改写）——把「安全约束」翻译成「你敢用」的产品价值
+    description:
+      'ConcertoAI —— 敢让你用来改生产代码的个人超级 CLI（终端 AI 开发助手，自带风险审批与一键治愈）',
     chat: {
       description: '进入交互式对话',
     },
@@ -80,16 +82,22 @@ export const zh = {
     },
     doctor: {
       description: '环境诊断（含 DeepSeek 账户余额）',
+      // v5.0 T21：本地指标汇总开关（默认关闭时不记录，也不冒充有数据）
+      metrics: '追加本地体验指标汇总（近 100 条：审批耗时/拒绝率、提示采纳、体检通过率、动词分布）',
     },
     workflow: {
       description: '工作流管理（init/run/export/import，DAG 执行）',
     },
     lsp: {
-      description: '启动 Language Server（--stdio：保存即诊断 + CodeAction 一键修复）',
+      // v5.0 T20：功能冻结标注（FEATURE_FREEZE.md）——「只修不扩」在用户可见处说清楚
+      description:
+        '启动 Language Server（--stdio：保存即诊断 + CodeAction 一键修复）· 维护模式（只修不扩）',
       stdioRequired: 'lsp 命令需要 --stdio 参数（当前仅支持 stdio 传输）',
     },
     plugin: {
-      description: '插件市场（install/search/list/remove/browse/recommend/popular）',
+      // v5.0 T20：功能冻结标注——插件市场停扩（新功能 PR 默认拒绝，见 FEATURE_FREEZE.md）
+      description:
+        '插件市场（install/search/list/remove/browse/recommend/popular）· 维护模式（停扩，只修 bug）',
     },
     reflect: {
       description: '拒绝复盘记录（list 查看 / clear 清空；本地 JSONL，零上传）',
@@ -463,6 +471,38 @@ export const zh = {
     statusOff: '🔇 场景提示：已关闭（恢复：/hints on）',
     usage: '用法：/hints on | /hints off | /hints status',
     unknownAction: '未知 hints 子命令：{action}（支持 on / off / status）',
+  },
+  // v5.0 T21：`/metrics` 斜杠命令（本地指标开关，默认 off、零上传）
+  metricsCmd: {
+    on: '📊 已开启本地指标（仅本次会话）。永久开启：concertoai config set metrics on　·　查看汇总：concertoai doctor --metrics',
+    off: '📊 已关闭本地指标（仅本次会话，已有数据不动）。永久关闭：concertoai config set metrics off',
+    statusOn:
+      '📊 本地指标：已开启（只写本机 {path}，零上传；汇总：concertoai doctor --metrics；清空：/metrics clear）',
+    // v5.0 T21：关闭态也给出文件位置——`/metrics status` 的契约是「开着没 + 文件在哪 +
+    // 怎么汇总」，关了反而更需要知道文件在哪（要清空 / 要确认没在偷偷写）
+    statusOff:
+      '📊 本地指标：已关闭（文件位置：{path}，未开启时不写盘；开启：/metrics on；永久开启：concertoai config set metrics on）',
+    cleared: '✅ 已清空本地指标（清掉 {count} 条）',
+    clearedEmpty: '本地指标本来就是空的，无需清空。',
+    clearFailed: '❌ 清空本地指标失败：{message}',
+    usage: '用法：/metrics on | /metrics off | /metrics status | /metrics clear',
+    unknownAction: '未知 metrics 子命令：{action}（支持 on / off / status / clear）',
+  },
+  // v5.0 T21：`doctor --metrics` 汇总（近 100 条；没数据就说没数据，不打印一堆 0%）
+  metrics: {
+    title: '本地体验指标',
+    enabled: '已开启（本地 JSONL，零上传）',
+    disabled: '未开启（默认关闭；开启：concertoai config set metrics on）',
+    fileLine: '存储位置：{path}',
+    empty: '暂无指标数据（开启后随使用自动累积）',
+    skipped: '⚠️ 跳过 {count} 条损坏行（文件被手工编辑或写入被打断）',
+    approvalLine: '审批：{count} 次 ｜ 平均 {avg}ms ｜ 中位 {median}ms ｜ 拒绝率 {rate}',
+    suggestionLine:
+      '提示：{count} 条 ｜ 可观测 {observed} 条 ｜ 采纳率 {rate}（无法观测 {unobservable} 条）',
+    suggestionLineUnobservable: '提示：{count} 条 ｜ 采纳率无法评估（这份数据里没有可观测的行为）',
+    checkLine: '体检：{count} 次 ｜ 通过率 {rate}',
+    verbLine: '动词使用：{list}',
+    noVerbs: '—',
   },
   balance: {
     available: '账户可用',

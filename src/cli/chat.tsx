@@ -241,6 +241,8 @@ export async function runChat(options: RunChatOptions): Promise<void> {
       // 不传的话 App 只能读环境变量兜底，`config set hints off` 就成了假开关
       // （配置文件写了 off 却一直在提示 = 对用户说假话，同 T11 approvalInsight 的教训）。
       hintsEnabled={resolved.hints === 'on'}
+      // v5.0 T21：本地指标开关（默认 off）——同样从解析结果接，避免入口各读一份环境变量
+      metricsEnabled={resolved.metrics === 'on'}
       memoryInjector={
         mcpManager !== undefined ? new MemoryInjector(mcpManager, {}, knowledgeStore) : undefined
       }

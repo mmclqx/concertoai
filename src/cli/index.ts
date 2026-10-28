@@ -271,6 +271,21 @@ function safeAction<A extends unknown[]>(fn: (...args: A) => Promise<void>): (..
  * 为什么不用 commander 的 `Number()` / `parseInt`：`parseInt('5x')` = 5、`Number('1e3')`
  * = 1000，都会让用户拿到的上限和他写的**不是一回事**（静默改值）。
  */
+/**
+ * 记一条「用了哪个动词」的本地指标（v5.0 T21）。
+ *
+ * **动态 import + fire-and-forget**：指标不是关键路径，绝不该为它拖慢启动
+ * （`./metrics` 会连带加载 `store/config`），也不该因为写盘失败影响命令结果。
+ * 开关判定在 `recordVerbMetric` 内部走 `resolveConfig`（唯一来源）。
+ */
+function recordVerb(verb: 'check' | 'fix' | 'commit' | 'review'): void {
+  void import('./metrics')
+    .then((mod) => mod.recordVerbMetric(verb))
+    .catch(() => {
+      // 静默：指标写不进去不影响用户正在做的事
+    });
+}
+
 function readMaxTurnsOption(raw: string | undefined): number | undefined {
   const parsed = parseMaxTurnsOption(raw);
   if (parsed.invalid) {
@@ -414,13 +429,15 @@ program
 
 program
   .command('team <task>')
+  // v5.0 T20：功能冻结（FEATURE_FREEZE.md）——team 与 `--parallel` 停扩，只修 bug
   .description(
-    'Orchestrator 团队执行（v3.1 M5）：拆解需求 → 对抗性闭环（Architect/Coder/Reviewer/QA）→ 事务回滚兜底',
+    'Orchestrator 团队执行（v3.1 M5）：拆解需求 → 对抗性闭环（Architect/Coder/Reviewer/QA）→ 事务回滚兜底 · 维护模式（停扩，只修 bug）',
   )
   .option('-m, --model <id>', t().cli.model.description)
   .option('--dry-run', '仅输出拆解清单，不执行任何 Agent')
   .option('--auto-approve', '自动批准拆解方案与代码写盘（谨慎使用；默认全部审批）')
-  .option('--parallel', '并行模式：拆解出的独立任务同时执行（也可自然语言触发）')
+  // v5.0 T20：并行模式停扩（维护模式），只修 bug
+  .option('--parallel', '并行模式：拆解出的独立任务同时执行（也可自然语言触发）· 维护模式（停扩）')
   .option('--lang <zh|en>', '界面语言')
   .action(
     async (
@@ -556,6 +573,7 @@ program
   .action(async (options: { json?: boolean }) => {
     const { runCheckCommand } = await import('./check');
     const code = await runCheckCommand({ cwd: process.cwd(), json: options.json === true });
+    recordVerb('check');
     if (code !== 0) {
       process.exitCode = code;
     }
@@ -589,6 +607,7 @@ program
           autoApprove: options.autoApprove === true,
           lang: options.lang,
         });
+        recordVerb('fix');
         if (code !== 0) {
           process.exitCode = code;
         }
@@ -618,6 +637,7 @@ program
         model: options.model,
         lang: options.lang,
       });
+      recordVerb('commit');
       if (code !== 0) {
         process.exitCode = code;
       }
@@ -659,6 +679,7 @@ program
           model: options.model,
           lang: options.lang,
         });
+        recordVerb('review');
         if (code !== 0) {
           process.exitCode = code;
         }
@@ -683,7 +704,9 @@ program
   .command('doctor')
   .description(t().cli.doctor.description)
   .option('--vscode', '追加 VS Code 健康诊断（进程数 / 崩溃转储 / AI 扩展 / argv.json）')
-  .action(async (options: { vscode?: boolean }) => {
+  // v5.0 T21：本地指标汇总（默认 off 时如实显示「未开启」，不冒充有数据）
+  .option('--metrics', t().cli.doctor.metrics)
+  .action(async (options: { vscode?: boolean; metrics?: boolean }) => {
     const { runDoctorCommand } = await import('./doctor');
     // v3.1 M3 T3.3：余额项按解析链（环境变量 > active account）标注账号
     // v3.2 M4 T4.5：走启动期缓存（getApiKey 已解析过则复用，消除二次读盘）
@@ -693,6 +716,7 @@ program
       keySource: resolved.source,
       keyAccountName: resolved.accountName,
       vscode: options.vscode,
+      metrics: options.metrics === true,
     });
     if (code !== 0) {
       process.exitCode = code;
@@ -844,7 +868,7 @@ program
 program
   .command('config <action> [name] [value]')
   .description(
-    '配置管理：config set provider <name> | config set approvalInsight <rich|plain> | config set reflections <on|off> | config set hints <on|off> | config restore',
+    '配置管理：config set provider <name> | config set approvalInsight <rich|plain> | config set reflections <on|off> | config set hints <on|off> | config set metrics <on|off> | config restore',
   )
   .option('--lang <zh|en>', '界面语言')
   .action(async (action: string, name?: string, value?: string) => {
@@ -880,11 +904,18 @@ program
     }
     // v5.0 T10/T11/T12：枚举类配置写入（拒绝提示里承诺的 `config set reflections off`
     // / `config set hints off` 必须真能用——提示里的话是承诺，不能是空头支票）
-    const { isApprovalInsightMode, isHintsMode, isReflectionsMode, loadConfig, writeConfig } =
-      await import('../store/config');
-    const enumKeys = ['approvalInsight', 'reflections', 'hints'] as const;
+    const {
+      isApprovalInsightMode,
+      isHintsMode,
+      isMetricsMode,
+      isReflectionsMode,
+      loadConfig,
+      writeConfig,
+    } = await import('../store/config');
+    // v5.0 T21：`metrics` 也进枚举表——`/metrics on` 的回执里承诺了这条命令，必须真能用
+    const enumKeys = ['approvalInsight', 'reflections', 'hints', 'metrics'] as const;
     if (action === 'set' && name !== undefined && (enumKeys as readonly string[]).includes(name)) {
-      const acceptsOnOff = name === 'reflections' || name === 'hints';
+      const acceptsOnOff = name === 'reflections' || name === 'hints' || name === 'metrics';
       const expected = acceptsOnOff ? 'on | off' : 'rich | plain';
       if (value === undefined) {
         console.error(`用法: concertoai config set ${name} <${expected}>`);
@@ -896,7 +927,9 @@ program
           ? isReflectionsMode(value)
           : name === 'hints'
             ? isHintsMode(value)
-            : isApprovalInsightMode(value);
+            : name === 'metrics'
+              ? isMetricsMode(value)
+              : isApprovalInsightMode(value);
       if (!valid) {
         // 非法值 fail-closed：宁可报错让用户改，也不写入一个「看起来设了但无效」的值
         console.error(`❌ ${name} 仅接受 ${expected}，收到: ${value}`);
@@ -918,6 +951,12 @@ program
             ? '✅ 已关闭场景提示（chat 内 /hints off 也可即时静音本次会话）。'
             : '✅ 已开启场景提示（默认即开启；每会话最多 3 条，10 分钟冷却）。',
         );
+      } else if (name === 'metrics') {
+        console.log(
+          value === 'off'
+            ? '✅ 已关闭本地指标（已有的 metrics.jsonl 不会被删除；需要清空请用 chat 内 /metrics clear）。'
+            : '✅ 已开启本地指标（只写 ~/.concertoai/metrics.jsonl，零上传；汇总：concertoai doctor --metrics）。',
+        );
       } else {
         console.log(
           value === 'plain'
@@ -928,7 +967,7 @@ program
       return;
     }
     console.error(
-      '用法: concertoai config set provider <name> | config set approvalInsight <rich|plain> | config set reflections <on|off> | config set hints <on|off> | config restore',
+      '用法: concertoai config set provider <name> | config set approvalInsight <rich|plain> | config set reflections <on|off> | config set hints <on|off> | config set metrics <on|off> | config restore',
     );
     process.exitCode = 1;
   });

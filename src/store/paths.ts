@@ -11,6 +11,7 @@
  * - Reviewer 全局知识库：~/.concertoai/reviewer/knowledge/
  * - 拒绝复盘记录：~/.concertoai/reflections.jsonl（v5.0 T10）
  * - 场景提示冷却状态：~/.concertoai/hint-state.json（v5.0 T12）
+ * - 本地体验指标：~/.concertoai/metrics.jsonl（v5.0 T21；**默认不创建**，用户显式开启才写）
  *
  * 首次启动（CLI 入口）调用 migrateLegacyHome() 自动迁移旧目录（幂等）：
  * 1. ~/.lumen 不存在 → 无操作（新安装直接用新版目录）；
@@ -136,6 +137,17 @@ export function reflectionsPath(): string {
  */
 export function hintStatePath(): string {
   return path.join(globalDir(), 'hint-state.json');
+}
+
+/**
+ * 本地体验指标文件：~/.concertoai/metrics.jsonl（v5.0 T21）。
+ *
+ * **默认不创建**：`config.metrics` 缺省 `off`，只有用户显式开启（`/metrics on` 或
+ * `concertoai config set metrics on`）后才会出现这个文件。全局单文件（不分项目）：
+ * 「我审批时等了多久」是个人体验指标，按项目切分只会让样本变少。
+ */
+export function metricsPath(): string {
+  return path.join(globalDir(), 'metrics.jsonl');
 }
 
 /** Reviewer 全局知识库目录：~/.concertoai/reviewer/knowledge/。 */

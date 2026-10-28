@@ -16,6 +16,12 @@ import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import { fetchBalance } from '../balance';
+import {
+  defaultMetricsPath,
+  readMetrics,
+  SUMMARY_WINDOW,
+  summarizeMetrics,
+} from '../core/metrics-store';
 import { fmt, t } from '../i18n';
 import { listModels } from '../model/models';
 import { listOllamaModels } from '../model/providers/ollama';
@@ -24,6 +30,7 @@ import { getActiveAccount, getApiKeyFor, listAccounts } from '../store/accounts'
 import { checkMigrationIntegrity } from '../store/migration';
 import { configPath, sessionsDir } from '../store/paths';
 import { type ApiKeySource, maskApiKey } from './common';
+import { formatMetricsSummary, resolveMetricsEnabled } from './metrics';
 import {
   defaultVscodeHealthEnv,
   detectAiExtensions,
@@ -59,6 +66,12 @@ export interface DoctorCommandOptions {
   cwd?: string;
   /** 预算档位（v4.0 M3 T3.2 模型推荐；low / medium / high；默认 medium）。 */
   budget?: 'low' | 'medium' | 'high';
+  /** 是否输出本地指标汇总（v5.0 T21 / `doctor --metrics`）。 */
+  metrics?: boolean;
+  /** 指标文件路径（测试注入；默认 ~/.concertoai/metrics.jsonl）。 */
+  metricsFile?: string;
+  /** 指标开关（测试注入；默认走 `resolveMetricsEnabled` = config + 环境变量）。 */
+  metricsEnabled?: boolean;
 }
 
 interface Diagnostic {
@@ -340,6 +353,25 @@ async function runVscodeDiagnostics(env: VscodeHealthEnv): Promise<Diagnostic[]>
   ];
 }
 
+/**
+ * 本地指标汇总（v5.0 T21 / `doctor --metrics`）。
+ *
+ * **恒为 `ok: true`**：没开指标、一条数据都没有都不是「环境故障」——诊断项的 ok 只用于
+ * 退出码，把「你没开这个可选功能」算成失败会让 `doctor` 白变红（与 `recommend` 同口径）。
+ *
+ * 顺带说明为什么这里只读**近 100 条**：指标的用处是「最近的体验」，全量汇总会让
+ * 三个月前的慢审批一直拖住平均值（`SUMMARY_WINDOW` 是唯一窗口定义处）。
+ */
+async function diagnoseMetrics(options: DoctorCommandOptions): Promise<Diagnostic> {
+  const file = options.metricsFile ?? defaultMetricsPath();
+  const enabled = options.metricsEnabled ?? (await resolveMetricsEnabled());
+  const { entries, skipped } = await readMetrics({ file, limit: SUMMARY_WINDOW });
+  return {
+    ok: true,
+    lines: formatMetricsSummary({ summary: summarizeMetrics(entries), file, enabled, skipped }),
+  };
+}
+
 /** 执行 doctor 命令；返回进程退出码（0 = 全部正常，1 = 存在诊断失败项）。 */
 export async function runDoctorCommand(options: DoctorCommandOptions): Promise<number> {
   console.log(t().doctor.title);
@@ -371,6 +403,11 @@ export async function runDoctorCommand(options: DoctorCommandOptions): Promise<n
     diagnostics.push(
       ...(await runVscodeDiagnostics(options.vscodeEnv ?? defaultVscodeHealthEnv())),
     );
+  }
+
+  // v5.0 T21 / doctor --metrics：追加本地体验指标汇总（默认 off 时如实说「未开启」）
+  if (options.metrics === true) {
+    diagnostics.push(await diagnoseMetrics(options));
   }
 
   let failed = false;

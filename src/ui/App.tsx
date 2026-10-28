@@ -13,6 +13,7 @@ import {
 import { executeHintsCommand, parseHintsCommand } from '../cli/slash/hints';
 import { executeMcpCommand, parseMcpCommand } from '../cli/slash/mcp';
 import { executeMemoryCommand, parseMemoryCommand } from '../cli/slash/memory';
+import { executeMetricsCommand, parseMetricsCommand } from '../cli/slash/metrics';
 import { executeModelCommand, parseModelCommand } from '../cli/slash/model';
 import { executeOrchestrateCommand, parseOrchestrateCommand } from '../cli/slash/orchestrate';
 import { parsePluginCommand, runPluginSlash } from '../cli/slash/plugin';
@@ -31,6 +32,12 @@ import { parseWorkflowCommand, runWorkflowSlash } from '../cli/slash/workflow';
 import { formatTeamProgress, runTeamCommand } from '../cli/team';
 import type { ApprovalInsight } from '../core/approval-insight';
 import { analyzeApproval } from '../core/approval-insight';
+import {
+  appendMetric,
+  buildApprovalMetric,
+  buildSuggestionMetric,
+  isMetricsEnabled,
+} from '../core/metrics-store';
 import { appendReflection, buildReflection, isReflectionsEnabled } from '../core/reflection-store';
 import { activeRiskRules } from '../core/risk-rules';
 import {
@@ -147,6 +154,23 @@ export interface AppProps {
    */
   hintsEnabled?: boolean;
   /**
+   * 本地指标开关（v5.0 T21；由 `resolveConfig().metrics` 决定，**默认 off**）。
+   *
+   * 缺省读环境变量 `CONCERTOAI_METRICS`（无则 off）。关掉时**一个字节都不写**，
+   * 连 `~/.concertoai/metrics.jsonl` 都不会创建——指标是我们想看的，不是用户的义务。
+   * chat 内 `/metrics on|off` 可临时切换本次会话（会话级，不改配置）。
+   *
+   * 与 `reflectionsEnabled` 同口径也读环境变量：测试进程靠它兜底（`tests/setup.ts`），
+   * 否则 `npm test` 会把指标写进开发者真实 home。
+   */
+  metricsEnabled?: boolean;
+  /**
+   * 指标写入注入（**仅测试用**）。
+   *
+   * 生产不传：缺省写 `~/.concertoai/metrics.jsonl`。测试必须隔离到 tmp 目录。
+   */
+  appendMetricForTest?: typeof appendMetric;
+  /**
    * 提示冷却状态读取/写入注入（**仅测试用**）。
    *
    * 生产不传：缺省读写 `~/.concertoai/hint-state.json`。测试必须隔离到 tmp，
@@ -209,6 +233,15 @@ const MAX_DISPLAY_CHARS = 8_000;
 
 /** 流式文本合并刷新间隔（毫秒）：窗口内多个 chunk 只触发一次 Ink 重渲染。 */
 const STREAM_FLUSH_MS = 30;
+
+/**
+ * 「采纳」能被本进程观测到的提示 id（v5.0 T21）。
+ *
+ * 目前只有 `repeated-edit-rejection`：它指向会话内的 `/review`，用户敲下去我们就看得见。
+ * 其余三条指向的是另一个终端里的命令（`concertoai init` / `self-heal`），本进程无法观测
+ * → 指标里记 `null`（无法观测），**不谎报未采纳**。
+ */
+const OBSERVABLE_HINT_IDS: ReadonlySet<string> = new Set(['repeated-edit-rejection']);
 
 /** 单条消息的渲染：角色前缀 + 内容（超长截断显示，助手消息走 Markdown 渲染，工具消息折叠）。 */
 const MessageLine = memo(function MessageLine({
@@ -367,6 +400,8 @@ export function App({
   appendReflectionForTest,
   insightEnv,
   hintsEnabled = isHintsEnabled(undefined, process.env.CONCERTOAI_HINTS),
+  metricsEnabled = isMetricsEnabled(undefined, process.env.CONCERTOAI_METRICS),
+  appendMetricForTest,
   readHintCooldownsForTest,
   writeHintCooldownsForTest,
 }: AppProps) {
@@ -453,6 +488,21 @@ export function App({
    * chat 内 `/hints off|on` 只改这个 state（会话级，不写配置——见 `slash/hints.ts`）。
    */
   const [hintsOn, setHintsOn] = useState(hintsEnabled);
+  /**
+   * 会话内指标开关（v5.0 T21）：`metricsEnabled`（配置 / 环境变量）是**初始值**，
+   * chat 内 `/metrics on|off` 只改这个 state（会话级，不写配置——见 `slash/metrics.ts`）。
+   */
+  const [metricsOn, setMetricsOn] = useState(metricsEnabled);
+  /** 审批框弹出时刻（算「决策耗时」；决议后清空，避免下一次串台）。 */
+  const approvalStartedAt = useRef<number | null>(null);
+  /**
+   * 当前正在展示、尚未结算的提示（v5.0 T21 采纳率数据来源）。
+   *
+   * **为什么要「结算」而不是「出现即记」**：`adopted` 是提示的价值所在；
+   * 出现那一刻还不知道用户会不会照做，只有提示消失（被替换 / 静音）或用户执行了
+   * 指向的动作时才有答案。
+   */
+  const pendingHintMetric = useRef<{ id: string; shownAt: number } | null>(null);
   /** 会话历史（已展示 id / 计数 / 冷却 / 是否已被忽略），纯数据，由引擎解释。 */
   const hintHistory = useRef<HintHistory>(EMPTY_HINT_HISTORY);
   /** 全局冷却是否已从磁盘装载完成（未装载就判定会误以为「从没提示过」）。 */
@@ -468,6 +518,36 @@ export function App({
   /** 冷却状态读写（测试可注入；缺省走 `~/.concertoai/hint-state.json`）。 */
   const readHintState = readHintCooldownsForTest ?? readHintCooldowns;
   const writeHintState = writeHintCooldownsForTest ?? writeHintCooldowns;
+
+  /**
+   * 结算「这条提示有没有被采纳」并记一条指标（v5.0 T21，**永不抛错**）。
+   *
+   * ## 为什么只有一类提示能给出 `true` / `false`
+   *
+   * 「采纳」必须能**观测到**。本进程内唯一能观测的是「提示让你 `/review`，你在会话里真的敲了
+   * `/review`」；其余三条指向的是另一个终端里的命令（`concertoai init` / `fix`），本进程
+   * 看不到 → 记 `null`（无法观测），而不是谎报未采纳。摘要里据此只拿可观测样本当分母。
+   */
+  const resolveHintMetric = useCallback(
+    (adopted: boolean) => {
+      const pendingHint = pendingHintMetric.current;
+      if (pendingHint === null) {
+        return;
+      }
+      pendingHintMetric.current = null;
+      if (!metricsOn) {
+        return;
+      }
+      const observable = OBSERVABLE_HINT_IDS.has(pendingHint.id);
+      const writer = appendMetricForTest ?? appendMetric;
+      void writer(
+        buildSuggestionMetric({ id: pendingHint.id, adopted: observable ? adopted : null }),
+      ).catch(() => {
+        // 指标写不进去不影响会话（G2' 同口径）
+      });
+    },
+    [metricsOn, appendMetricForTest],
+  );
 
   /**
    * 装载全局冷却（v5.0 T13，约束③）。
@@ -548,8 +628,22 @@ export function App({
     hintHistory.current = recordSuggestionShown(hintHistory.current, suggestion.id, now);
     // fire-and-forget：冷却写盘失败最多让这条提示多出现一次，不该影响会话
     void writeHintState(hintHistory.current.cooldowns, { now }).catch(() => {});
+    // v5.0 T21：新提示接手前，先把上一条未结算的提示按「没照做」结掉（否则它永远不会被计数）
+    if (pendingHintMetric.current !== null && pendingHintMetric.current.id !== suggestion.id) {
+      resolveHintMetric(false);
+    }
+    pendingHintMetric.current = { id: suggestion.id, shownAt: now };
     setHint(suggestion);
-  }, [hintCooldownsReady, hintsOn, messages, failureStreak, rejectStreak, ctx.cwd, writeHintState]);
+  }, [
+    hintCooldownsReady,
+    hintsOn,
+    messages,
+    failureStreak,
+    rejectStreak,
+    ctx.cwd,
+    writeHintState,
+    resolveHintMetric,
+  ]);
 
   /** 展示态应用（节流器的 apply）。 */
   const applyToggle = useCallback((patch: { diffFull?: boolean; helpOpen?: boolean }) => {
@@ -659,8 +753,25 @@ export function App({
       if (!approved && request !== undefined && request !== null) {
         recordRejection(request, insight ?? null);
       }
+      // v5.0 T21：记一条审批指标（耗时 / 决策 / 风险等级，不含文件路径）
+      if (metricsOn && request !== undefined && request !== null) {
+        const startedAt = approvalStartedAt.current;
+        approvalStartedAt.current = null;
+        // 降级 ≠ 低风险：未分析（degraded / 分析未到达）记 unknown，不冒充 low（同 D72）
+        const analyzed = insight !== null && insight !== undefined && insight.degraded !== true;
+        const writer = appendMetricForTest ?? appendMetric;
+        void writer(
+          buildApprovalMetric({
+            durationMs: startedAt === null ? undefined : Date.now() - startedAt,
+            approved,
+            level: analyzed ? insight.level : undefined,
+          }),
+        ).catch(() => {
+          // 指标写不进去不影响审批（决议早已 resolve）
+        });
+      }
     },
-    [recordRejection],
+    [recordRejection, metricsOn, appendMetricForTest],
   );
 
   /**
@@ -681,6 +792,8 @@ export function App({
       setPendingInsight(null);
       setPending(request);
       setPhase('approval');
+      // v5.0 T21：记下弹出时刻，决议时算「决策耗时」（含思考时间，正是我们想量的东西）
+      approvalStartedAt.current = Date.now();
       // 模型切换审批是对「成本文案」的确认，没有 diff 可分析 → 不跑洞察
       if (request.kind !== 'model') {
         const hintFile = request.insightHint?.file;
@@ -942,9 +1055,26 @@ export function App({
             // 立刻静默：标记 + 清掉当前正在显示的那一条（等下一帧 effect 太慢，用户会看到它闪一下）
             hintHistory.current = dismissHints(hintHistory.current);
             setHint(null);
+            // v5.0 T21：用户把提示静音 = 没照这条提示做，当场结算（否则永不计数）
+            resolveHintMetric(false);
           } else if (result.dismiss === false) {
             // /hints on：连「已忽略」一并清掉，否则「开了却再也不出提示」= 假按钮
             hintHistory.current = { ...hintHistory.current, dismissed: false };
+          }
+          return;
+        }
+      }
+
+      // v5.0 T21：/metrics —— 本地指标开关 / 状态 / 清空（与 /hints 同位置，纯会话操作）。
+      if (earlyTrimmed !== '') {
+        const metricsCmd = parseMetricsCommand(earlyTrimmed);
+        if (metricsCmd !== null) {
+          setInput('');
+          setTokens((t) => ({ ...t, input: t.input + estimateTokens(text) }));
+          const result = await executeMetricsCommand(metricsCmd, { enabled: metricsOn });
+          setMessages((prev) => [...prev, { role: 'user', content: text }, result.message]);
+          if (result.enabled !== undefined) {
+            setMetricsOn(result.enabled);
           }
           return;
         }
@@ -1027,6 +1157,8 @@ export function App({
       // v2.1 M5：审查命令（/review）→ 启动 Reviewer Agent
       const reviewCmd = parseReviewCommand(trimmed);
       if (reviewCmd !== null && spawner !== undefined) {
+        // v5.0 T21：用户照提示敲了 `/review` → 那条提示算被采纳（唯一可观测的采纳信号）
+        resolveHintMetric(true);
         // v3.0 M5：审查操作记录调用链 + 审计日志
         const startedAt = Date.now();
         traceStore?.record({
@@ -1658,6 +1790,9 @@ export function App({
       // v5.0 T13：/hints status 的回执要反映**当前**开关状态；漏了它就是 stale closure，
       // 会永远报第一次渲染时的值（实测由 biome useExhaustiveDependencies 报红捕获）
       hintsOn,
+      // v5.0 T21：/metrics status 回执与采纳结算都要用**当前**指标开关
+      metricsOn,
+      resolveHintMetric,
       maxTurns,
     ],
   );
@@ -1681,7 +1816,8 @@ export function App({
     if (phase === 'approval') {
       if (input === 'y' || key.return) {
         // 决议**不经节流**：安全按键必须即时响应（G1 / T9.3c 红线）
-        finishApproval(true);
+        // v5.0 T21：批准也把 request/insight 传下去（只用于指标与连续拒绝计数，语义不变）
+        finishApproval(true, pending, pendingInsight);
       } else if (input === 'n' || key.escape || (input === 'c' && key.ctrl)) {
         // v3.1 BUG 修复：审批阶段 Esc / Ctrl+C = 拒绝该操作（fail-closed），不退出应用
         // v5.0 T10：把「拒的是什么 + 当时的风险洞察」交给复盘记录

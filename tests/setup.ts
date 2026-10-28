@@ -31,3 +31,12 @@ process.env.CONCERTOAI_REFLECTIONS = 'off';
  * 或直接注入 `hintsEnabled: true`（测试意图必须写在用例里，不能靠环境巧合）。
  */
 process.env.CONCERTOAI_HINTS = 'off';
+
+/**
+ * v5.0 T21：本地指标同理默认关闭（虽然产品默认就是 off，这里显式写一遍更保险）。
+ *
+ * 需要验证「开启后真的记录」的用例必须显式传 `enabled: true` / `metricsEnabled={true}`
+ * 或注入 `appendMetricForTest`（把写入重定向到 tmp），**绝不允许**让测试写进
+ * `~/.concertoai/metrics.jsonl`——那会让开发者自己的 doctor 汇总里混进测试数据。
+ */
+process.env.CONCERTOAI_METRICS = 'off';
