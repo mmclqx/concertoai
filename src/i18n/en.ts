@@ -71,6 +71,12 @@ export const en = {
       dryRun: 'Diagnose only and print the repair strategy, no writes (no API key needed)',
       autoApprove: 'Approve every repair automatically (careful; by default both gates ask)',
     },
+    // v5.0 T17: commit command (health check → message → approval → local commit)
+    commit: {
+      description:
+        'Commit in one command (health check first, then an approval-gated message; local commit only, nothing is sent to any remote)',
+      yes: 'Skip the message approval (for CI; the health check still runs)',
+    },
     doctor: {
       description: 'Environment diagnostics (includes DeepSeek account balance)',
     },
@@ -205,6 +211,61 @@ export const en = {
     actionLintFix: 'lint auto-fix (npm run lint:fix)',
     actionModelFix: 'model fix (approval before write)',
     actionManual: 'not auto-fixed (hand to a human)',
+  },
+  // v5.0 T17: commit command (health check → message → approval → local commit)
+  commit: {
+    title: '📝 Preparing to commit',
+    branch: '📌 Current branch: {branch}',
+    notRepo: '❌ This directory is not a git repository (no .git found).',
+    notRepoHint:
+      '💡 Initialize it first: `git init`, then `git add` your changes, then run `concertoai commit`.',
+    gitMissing: '❌ The git command was not found (not installed, or not on PATH).',
+    gitMissingHint: '💡 Install git and retry (Windows: https://git-scm.com/download/win).',
+    conflict:
+      '❌ The repository is in the middle of a merge conflict (.git/MERGE_HEAD exists); committing now would record the conflict markers.',
+    conflictHint:
+      '💡 Resolve the conflicts, `git add` the resolved files, then run `concertoai commit` again.',
+    detached: '⚠️  HEAD is detached (you are not on any branch).',
+    detachedHint:
+      '💡 These commits will not belong to any branch and are easy to lose; run `git switch -c <new-branch>` first if you want to keep them.',
+    noStaged: '⚠️  The staging area is empty — there is nothing to commit.',
+    noStagedHint: '💡 Stage your changes first with `git add <file>` (or `git add -A`).',
+    untracked: 'ℹ️  {count} untracked file(s) will not be committed.',
+    addAllPrompt: 'Run `git add -A` to stage every change automatically? [y/N] ',
+    addAllNeedsTty:
+      '❌ An interactive terminal is required to confirm `git add -A` (default N); in non-interactive environments, stage files yourself and retry.',
+    addAllSkipped: 'ℹ️  Nothing was staged automatically (default N).',
+    addAllDone: '✅ Staged {count} file(s).',
+    addAllFailed: '❌ `git add -A` failed: {error}',
+    nothingToCommit: 'Nothing to commit; exiting (nothing was committed).',
+    checking: '[commit] running the health check first (reusing concertoai check)…',
+    checkPassed: '✅ Health check passed ({seconds}s)',
+    checkFailed: '❌ Health check failed, nothing was committed.',
+    checkFailedHint:
+      '💡 Run `concertoai fix` to repair the issues, then `concertoai commit` again.',
+    costNotice: '💡 About to call the model to write the commit message (~{tokens} input tokens).',
+    localNotice:
+      'ℹ️  The model was not called ({reason}): a basic message was built from the real changes — please verify it before approving.',
+    localReasonNoClient: 'no API key configured',
+    localReasonModelFailed: 'the model call failed',
+    localReasonModelEmpty: 'the model returned nothing usable',
+    messageTitle: '📝 Generated commit message:',
+    filesTitle: '📦 Files to be committed ({count}):',
+    filesMore: '  … {count} more file(s)',
+    diffTruncated:
+      'ℹ️  The diff exceeded {limit} characters and was truncated for the model (the message may miss the trailing changes).',
+    confirmPrompt: 'Commit with this message? [y/N] ',
+    needsTty:
+      '❌ An interactive terminal is required to approve the commit message (default N). In non-interactive environments pass --yes explicitly (--yes never skips the health check).',
+    cancelled: 'Cancelled; nothing was committed (the staging area is untouched).',
+    commitOk: '✅ Committed.',
+    commitOutput: '   {line}',
+    commitFailed: '❌ Commit failed: {error}',
+    localOnly: 'ℹ️  Local commit only — nothing was sent to any remote repository.',
+    localSubject: 'chore: update {count} file(s)',
+    localEmptySubject: 'chore: commit staged changes',
+    localBodyPoint: 'change {file}',
+    localMore: '{count} more file(s) in the same commit',
   },
   // v5.0 T2: update command
   update: {

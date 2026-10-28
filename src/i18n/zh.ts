@@ -67,6 +67,11 @@ export const zh = {
       dryRun: '只诊断并给出修复策略，不写盘（零写入，不需要 API Key）',
       autoApprove: '自动批准全部修复（谨慎；默认开跑前与每次写盘都要确认）',
     },
+    // v5.0 T17：commit 命令（先体检 → 生成 message → 审批 → 本地提交）
+    commit: {
+      description: '一条命令提交（先体检，再生成 message 供你审批；只做本地提交，不推送到远程）',
+      yes: '跳过 message 审批直接提交（CI 用；不会跳过体检）',
+    },
     doctor: {
       description: '环境诊断（含 DeepSeek 账户余额）',
     },
@@ -193,6 +198,56 @@ export const zh = {
     actionLintFix: 'lint 直修（npm run lint:fix）',
     actionModelFix: '模型修复（写盘前审批）',
     actionManual: '不自动修（转人工）',
+  },
+  // v5.0 T17：commit 命令（先体检 → 生成 message → 审批 → 本地提交；不碰远程）
+  commit: {
+    title: '📝 准备提交',
+    branch: '📌 当前分支：{branch}',
+    notRepo: '❌ 当前目录不是 git 仓库（找不到 .git）。',
+    notRepoHint:
+      '💡 先初始化仓库：`git init`，然后 `git add` 你的改动，再运行 `concertoai commit`。',
+    gitMissing: '❌ 找不到 git 命令（可能未安装，或不在 PATH 里）。',
+    gitMissingHint: '💡 安装 git 后重试（Windows: https://git-scm.com/download/win）。',
+    conflict: '❌ 仓库正处于合并冲突中（存在 .git/MERGE_HEAD），现在提交会把冲突标记一起提交进去。',
+    conflictHint: '💡 先解决冲突并对已解决的文件 `git add`，再运行 `concertoai commit`。',
+    detached: '⚠️  当前处于 detached HEAD（不在任何分支上）。',
+    detachedHint:
+      '💡 提交后这些提交不属于任何分支，切走后容易丢；如需保留请先 `git switch -c <新分支名>`。',
+    noStaged: '⚠️  暂存区是空的——没有可提交的改动。',
+    noStagedHint: '💡 先 `git add <文件>`（或 `git add -A`）把改动放进暂存区。',
+    untracked: 'ℹ️  还有 {count} 个未跟踪文件（当前不会被提交）。',
+    addAllPrompt: '要自动执行 `git add -A` 把全部改动加入暂存区吗？[y/N] ',
+    addAllNeedsTty:
+      '❌ 需要交互式终端才能确认 `git add -A`（默认 N）；非交互环境请先自己 `git add` 再重试。',
+    addAllSkipped: 'ℹ️  未自动暂存（默认 N）。',
+    addAllDone: '✅ 已暂存 {count} 个文件。',
+    addAllFailed: '❌ `git add -A` 失败：{error}',
+    nothingToCommit: '没有可提交的改动，已退出（一条都没提交）。',
+    checking: '[commit] 先体检（复用 concertoai check）…',
+    checkPassed: '✅ 体检通过（耗时 {seconds}s）',
+    checkFailed: '❌ 体检没过，本次不提交（一条都没提交）。',
+    checkFailedHint: '💡 先运行 `concertoai fix` 修掉问题，再回来 `concertoai commit`。',
+    costNotice: '💡 将调用模型生成 commit message（输入约 {tokens} tokens）。',
+    localNotice: 'ℹ️  未调用模型（{reason}）：已按真实改动生成基础 message，请审批时核对内容。',
+    localReasonNoClient: '未配置 API Key',
+    localReasonModelFailed: '模型调用失败',
+    localReasonModelEmpty: '模型没给出可用内容',
+    messageTitle: '📝 生成的 commit message：',
+    filesTitle: '📦 将提交 {count} 个文件：',
+    filesMore: '  … 另有 {count} 个文件',
+    diffTruncated: 'ℹ️  diff 超过 {limit} 字符，送模型时已截断（message 可能没覆盖最末尾的改动）。',
+    confirmPrompt: '提交这条 message？[y/N] ',
+    needsTty:
+      '❌ 需要交互式终端来审批 commit message（默认 N）。非交互环境请显式加 --yes（--yes 也不会跳过体检）。',
+    cancelled: '已取消，一条都没提交（暂存区保持原样）。',
+    commitOk: '✅ 已提交。',
+    commitOutput: '   {line}',
+    commitFailed: '❌ 提交失败：{error}',
+    localOnly: 'ℹ️  只做了本地提交，本次操作没有推送到任何远程仓库。',
+    localSubject: 'chore: 更新 {count} 个文件',
+    localEmptySubject: 'chore: 提交暂存区改动',
+    localBodyPoint: '修改 {file}',
+    localMore: '另有 {count} 个文件一并提交',
   },
   // v5.0 T2：update 命令
   update: {

@@ -57,6 +57,22 @@ async function getApiKey(): Promise<string> {
 }
 
 /**
+ * 尽力解析 API Key，**缺 Key 不退出**（v5.0 T17）。
+ *
+ * `commit` 与 chat/run 不同：没有 Key 也能提交（message 走本地兜底），所以不能复用
+ * `getApiKey()`——它在缺 Key 时直接 `process.exit(1)`，会把一次本可完成的提交挡在门外。
+ * 解析链与 `getApiKey()` 完全一致（CLI > env > active account > config.json），
+ * 避免「引导里写的方式在这里不生效」的 v4.1.1 同类坑。
+ */
+async function tryGetApiKey(): Promise<string | undefined> {
+  const resolved = await resolveApiKeyCached();
+  if (resolved.key !== undefined) {
+    return resolved.key;
+  }
+  return readConfigDeepseekKey();
+}
+
+/**
  * 解析启动模型（v2.2 智能成本控制）：CLI -m 优先，随后应用高峰时段
  * 切换策略（ask 交互确认 / switch 直接切换 / ignore 保持主模型）。
  * 返回最终生效的模型 ID（可能为本地 ollama 模型）。
@@ -89,8 +105,8 @@ program.name('concertoai').description(t().cli.description).version(VERSION);
  *
  * ## M4 四动词（用户 2026-10-28 拍板：「绝对不允许打空头支票」）
  *
- * `check` / `fix` 已落地（T15 / T16）；`commit` / `review` 属 T17 / T18，**当前未注册**，
- * 因此首屏一个字都不许出现。落地时**只改下面这一个数组**（插到最前面）即可自动出现在
+ * `check` / `fix` / `commit` 已落地（T15 / T16 / T17）；`review` 属 T18，**当前未注册**，
+ * 因此首屏一个字都不许出现。落地时**只改下面这一个数组**（按顺序插入）即可自动出现在
  * 「常用命令」，渲染逻辑不用动。
  * 顺序即产品主张：`check`（提交前能不能提交）→ `fix`（报错自动修）→
  * `commit`（提交）→ `review`（审一遍）是 v5.0 的「提交前主路径」。
@@ -100,6 +116,8 @@ const COMMON_COMMAND_ORDER: readonly string[] = [
   'check',
   // v5.0 T16：`fix` 已落地（check 说「不行」之后的那一步：薄包装 self-heal）。
   'fix',
+  // v5.0 T17：`commit` 已落地（体检 → message 审批 → 本地提交）。
+  'commit',
   'init', // 生成规则文件（也是 T13 场景提示指向的命令）
   'self-heal', // 跑 verify，失败自动修（fix 是它的推荐入口，保留原名不删）
   'doctor', // 环境诊断
@@ -573,6 +591,34 @@ program
         }
       },
     ),
+  );
+
+// v5.0 T17：commit 命令（先体检 → 生成 message → 审批 → 本地提交）
+// ⚠️ 安全边界：只做本地提交；本命令**不**执行任何远程操作、不改写历史、不绕过检查。
+// ⚠️ --yes 只跳过 message 审批，**不跳过体检**（体检是 T15 的意义所在）。
+program
+  .command('commit')
+  .description(t().cli.commit.description)
+  .option('-y, --yes', t().cli.commit.yes)
+  .option('-m, --model <id>', t().cli.model.description)
+  .option('--lang <zh|en>', '界面语言')
+  .action(
+    safeAction(async (options: { yes?: boolean; model?: string; lang?: string }) => {
+      const { runCommitCommand } = await import('./commit');
+      // 没有 Key 也能提交：message 走本地兜底（如实告知未调模型），不因缺 Key 卡死。
+      // 走与 chat/run 同一条解析链（CLI > env > account > config.json），不另读环境变量。
+      const key = await tryGetApiKey();
+      const code = await runCommitCommand({
+        cwd: process.cwd(),
+        yes: options.yes === true,
+        ...(key !== undefined ? { apiKey: key } : {}),
+        model: options.model,
+        lang: options.lang,
+      });
+      if (code !== 0) {
+        process.exitCode = code;
+      }
+    }),
   );
 
 // v5.0 T2：update 命令（检查 npm 最新版并升级）

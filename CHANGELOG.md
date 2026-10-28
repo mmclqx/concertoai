@@ -8,6 +8,38 @@
 
 ## [Unreleased]
 
+### Added — v5.0 M4 T17：`concertoai commit` 一条命令提交（2026-10-28 完成）
+
+> 定位：**写完代码一条命令提交**——先体检、再按真实暂存 diff 生成 message、**展示并审批**后才落成一次**本地**提交。四条线决定它长什么样：绝不越权（不 push / 不改写历史 / 不绕过检查）、体检不可跳过、审批 fail-closed、体检只复用 `check`（G6 薄包装）。148 文件 / 2042 用例 → **150 文件 / 2100 用例**全绿（+2 文件 / +58 用例）。
+
+- **`src/cli/commit.ts`（新增）**：`runCommitCommand`（git / 体检 / 模型 / 读一行回答**全部可注入**，测试绝不真跑 git）+ `createGitRunner`（`spawn('git')`，message 走 **stdin** `commit -F -`：不经 shell、引号/换行/`$` 不被解释、**不落临时文件**）+ `ALLOWED_GIT_SUBCOMMANDS`（白名单，测试逐个核对真实调用）+ `MAX_FILES_SHOWN`(20) / `MAX_GIT_OUTPUT_LINES`(10)（G5 超长输出不淹没终端）
+- **G6 薄包装（专家点名，违反即返工）**：体检**只**调 `./check` 的 `runCheck` + `formatCheckReport`，本文件**零 verify 解析、零自起检测进程**（双份 verify = 双份耗时 + 双份失败面，v4.1.1「装好却跑不通」的同类分叉）
+- **安全边界（决策 D3-B）**：只会用到 `rev-parse` / `symbolic-ref` / `ls-files` / `diff` / `add` / `commit` 这些本地子命令——**无 push / pull / rebase / checkout / merge / reset、无 `--force`、无 `--no-verify`**；测试既核对**真实调用轨迹**，也扫**源码字面量**（去注释后子串检查，避免把 JSDoc 里的「**不**推送」当罪证）
+- **`--yes` 语义被切得极窄**：只跳过 message 审批（CI 场景），**绝不跳过体检**；且**不代答**「暂存区空是否自动 `git add -A`」——暂存范围是「提交什么」的决定，CI 里一次误跑会把敏感文件卷进提交
+- **不静默成功六种状态各自说清**：不是 git 仓库（提示 `git init`）/ **git 没装（与前者分开说，否则人会去白忙 `git init`）** / 合并冲突中（拒绝，附解法）/ 暂存区为空 / 体检没过（打印 `check` 的失败报告 + 指向 `concertoai fix`）/ 用户拒绝或 Ctrl+C（说「已取消」，一个字节都没提交）
+- **「加了等于没加」也要停手**：`git add -A` 退出码 0 但暂存区仍空（改动全被 `.gitignore` 吞掉）→ **明说没有可提交的，不空提交**（判据是 `add` 之后真实的 `diff --staged`，不是退出码——承接 T15「退出码权威 + 只看事实」）
+- **detached HEAD 警告后允许**（用户可能就想试一版，拦下是自作主张，但必须告知这些提交不属于任何分支）
+- **无 Key / 模型失败如实降级**：不调模型就用**真实文件名**拼 message，并把 `no-client` / `model-failed` / `model-empty` 三种原因**分别如实说出口**，绝不假装是模型写的；调用前先报「将调用模型生成 message（约 X tokens）」（R10 成本可预期）
+- **i18n**：`zh.commit.*` / `en.commit.*` **同构**（含标题/分支/暂存与未跟踪清单/体检通过失败/成本提示/本地兜底三原因/message 与文件清单头/截断/审批与取消/需要交互式终端/各类失败与回执）+ `cli.commit.description`，en 无 CJK 由 `en.test.ts` 看住
+
+### Fixed — v5.0 T17 顺带：测试脚手架的「可选函数」类型守卫失效（TS2722）
+
+- **症状**：`tests/cli/commit.test.ts:250` `return rawAsk(question)` 报 **TS2722: Cannot invoke an object which is possibly undefined**（`npm run typecheck` 直接红，全量 verify 卡在第三步）
+- **根因**：`answers()` 的返回类型写成了 `CommitCommandOptions['ask']`——而该属性本身是**可选**的（`ask?: (q) => Promise<string | undefined>`），**索引访问自带 `| undefined`**。于是 `const rawAsk = options.ask ?? answers('y')` 的兜底**右侧本身就是「可能 undefined」**，`??` 什么都没剥掉，`rawAsk` 推断出来仍是「可能 undefined」
+- **修法**（不打 `as any`、不加 `!`）：在类型源头剥掉可选性——新增 `type AskFn = NonNullable<CommitCommandOptions['ask']>`，`answers()` 与 `harness({ ask })` 都改用 `AskFn`。这样「兜底右值一定可调用」由类型保证，调用点无需判空，也没掩盖任何真实问题（详见 `docs/09-踩坑记录/2026-10-28-可选属性索引访问让类型守卫失效.md`）
+
+### 测试（v5.0 T17）
+
+- `tests/cli/commit.test.ts` **29 用例**，按四条线组织（安全边界 / 体检不可跳过 / fail-closed / 薄包装）：
+  - 主路径：体检通过 + 审批 y → `['commit','-F','-']` 且 message **走 stdin**（不拼命令行、不落临时文件）/ 无 Key → 如实说「未调用模型」并用真实文件名兜底 / 注入模型 → 用模型 message 且调用前提示成本 / 模型抛错 → 如实告知原因仍可提交（不卡死）/ `--lang en` → 全英文（字典键无遗漏）
+  - 体检门：体检失败 → 打印 T15 的失败报告 + 指向 `concertoai fix`，**不提交** / `--yes` 只跳审批**不跳体检** / `--yes` + 通过 → 不弹审批直接提交
+  - 审批门（默认 N，fail-closed）：回答 n → 零提交 / **Ctrl+C（undefined）→ 视为拒绝** / 非交互终端且无 `--yes` → 说明需要交互式终端且**一次都不读答案**
+  - 仓库状态门：不是仓库 → 提示 `git init` 且**完全不起体检** / git 没装 → 说「找不到 git」而不冒充「不是仓库」 / 合并冲突（真落 `MERGE_HEAD`）→ 拒绝并给解法 / detached HEAD → 警告后仍提交
+  - 暂存区门：空 + 非 TTY → 拒绝自动 `add` 并退出（CI 不会卷进敏感文件）/ 空 + 回答 n → 保持原样 / 空 + y → `add -A` 后走完体检与提交 / `add -A` 失败 → 如实报错 / **`add` 成功但仍是空暂存区 → 不空提交且连体检都不跑**
+  - 边缘：超长文件清单与超长 diff 截断（`MAX_FILES_SHOWN` / `MAX_DIFF_CHARS`）/ 白名单核对（每个真实 git 调用都必须落在 `ALLOWED_GIT_SUBCOMMANDS` 内）/ 源码护栏（去注释后无 `push` / `pull` / `rebase` / `checkout` / `merge` / `reset` / `--force` / `--no-verify`）
+- `tests/core/commit-message.test.ts` **29 用例**：标题按**显示宽度** ≤72（中文按 2 列）/ body ≤3 点且去重 / 剥围栏与列表符号（含 `**fix(core): x**` 不再留下孤零零的 `*`）/ 空标题 → 回落本地兜底 / `clampDiff` 与 `estimateCommitTokens` 有界（R10）/ 三条降级路径各自带正确的 `fallbackReason`
+- **基线校准**：148 文件 / 2042 用例 → **150 文件 / 2100 用例**全绿（`npm run verify`）
+
 ### Changed — v5.0 架构修正：工具循环轮数上限改为可配置（`-t/--max-turns` + `config.maxTurns`，三层优先级只在一处合并）
 
 > 定位：**上限从「源码里写死的常量」变成「用户能调，且提示不说假话」**。此前上限只能是常量（T16 才手动从 50 调到 200），单个长任务想放宽、短任务想收紧都没有入口；达到上限的提示还把默认值写死在文案里——用户设了别的值，看到的就是一句假话。148 文件 / 2035 用例 → **148 文件 / 2042 用例**全绿（`npm run verify`）。
