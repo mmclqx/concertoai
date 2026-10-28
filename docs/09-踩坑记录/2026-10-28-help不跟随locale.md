@@ -84,7 +84,7 @@ setLocale(resolveLocale(process.env.LUMEN_LOCALE || process.env.LANG));
 | 文件 | 模块级可变状态 | 写入入口 | 泄漏风险 |
 |---|---|---|---|
 | `src/i18n/index.ts` | `currentLocale` | `setLocale()`（chat/run/plan/commit/fix/review/team/self-heal/lsp + T22 入口） | **已踩**：测试进程内调这些命令会改全局，后续中文断言红 |
-| `src/core/holidays.ts` | `activeHolidays` / `activeMakeupWorkdays` / `activeConfigured` | `configureHolidayCalendar()`（被 `loadConfig()` 调用） | 高：任何调 `loadConfig` 的用例都会改写全局节假日表，跨用例影响计价断言 |
+| `src/core/holidays.ts` | `activeHolidays` / `activeMakeupWorkdays` / `activeConfigured` | `configureHolidayCalendar()`（被 `loadConfig()` 调用） | **已实测：不会踩**（见下「实测校正」） |
 | `src/cli/common.ts` | `apiKeyCache` | `resolveApiKeyCached()` | 中：命中缓存会让「换账号/换 Key」类用例读到上一个用例的值 |
 | `src/model/tokenizer.ts` | `_encoder` / `_encoderFallback` | 懒加载（首次调用写入） | 低（幂等缓存，但「首次失败」状态会被后续用例继承） |
 | `src/cli/crash-handler.ts` | `installed` | `installCrashHandlers()` | 低（幂等标志，但会掩盖「二次安装」行为） |
@@ -98,6 +98,40 @@ setLocale(resolveLocale(process.env.LUMEN_LOCALE || process.env.LANG));
    - **谁在进程内调用了写全局状态的函数** → 搜上面清单里的写入入口名
      （`setLocale` / `configureHolidayCalendar` / `resolveApiKeyCached` / `installCrashHandlers`）。
 3. 新增用例若在进程内调用任何写入入口，**必须在 `afterEach` 复位**，不能指望用例执行顺序。
+
+### 实测校正：holidays 的「高风险」是我想当然，实测证明不会踩
+
+上表初稿我把 `holidays.ts` 标成「**风险最高**」，理由是「任何调 `loadConfig` 的用例都会改写全局
+节假日表」。**这是推断，不是证据**。补做实测后结论相反，如实记下：
+
+**测法**（关键在「注入要真的有敏感度」）：
+
+1. 用隔离 `HOME` / `USERPROFILE` 指向临时目录，放入含 `pricingHolidays` 的 `config.json`，
+   再跑全量 `npm run verify` —— 这样任何 in-process `loadConfig()` 都会装载节假日表。
+2. **先自证注入生效**：单独跑一次「`loadConfig()` → `holidayCalendarStatus()`」，
+   确认 `{"holidayCount":1,"configured":true}` 且 `isCnStatutoryHoliday(今天) === true`。
+   不做这一步，探针可能整场空转还显示「全绿」。
+3. **先修正敏感度**：只把「今天」标成节假日是弱扰动（计价测试全都注入日期，如
+   `2026-08-03` 周一，根本碰不到今天）。改为**把 2026 全年 365 天全部标成法定节假日**再跑。
+
+**结果**：155 文件 / 2208 用例**全绿**，无一条计价断言红。
+
+**为什么不会踩（三条叠加，与 locale 那次的差异所在）**：
+
+| 原因 | 说明 |
+|---|---|
+| **vitest 按文件隔离模块注册表**（`isolate` 默认 true） | 全局状态**不可能跨文件泄漏**——这也正好解释 T22 为什么只有 `team-parallel.test.ts`（**同文件内**先跑 `runTeamCommand` 再断言文案）红，其它文件不受影响 |
+| **三处调用方都自己复位** | `balance.test.ts` / `models.test.ts` 有 `afterEach(resetHolidayCalendar)`；`holidays.test.ts` 每条用例自行 `configure` 后再断言 |
+| **计价断言全用注入日期** | `peak-time.test.ts` 用 `at(day, hour)` 造日期，不读「当前时间」，因此不受全局表影响 |
+
+**教训（比结论更值钱）**：
+
+1. **「风险最高」这种判断，没有实测就只能写成「未验证的推断」**。我上轮把它写进清单时用了
+   断言口吻，是靠这次实测才纠回来——**推断与证据在文档里必须可区分**。
+2. **探针要先自证敏感度**，否则「全绿」可能只证明「探针没通电」：① 注入是否被读（自证状态）；
+   ② 扰动是否落在被测断言的取值范围内（本例：只标今天 ≈ 没扰动）。
+3. **`isolate: true` 决定了风险的形状**：跨文件不会串，**只有同一文件内**先写全局再断言才会翻车。
+   排查全局状态泄漏时，先按「文件内」而不是「全仓」找受害者。
 
 ## 教训
 
