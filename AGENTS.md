@@ -156,6 +156,8 @@ UI 测试：Ink 组件需用 ink-testing-library 覆盖
 
 18. **命令形态与长任务编排纪律**：**① 命令形态（防假死 / 假乱码）**——Windows `cmd.exe` 下禁止把「多动作串联 + 输出过滤 + 分页器」压进一条命令（`|` / `&&` / `&` 混搭 `findstr`、`| more`、`| find` 会因分页/交互等待与 GBK 转码**假死到超时 + 输出假乱码**，让人误判「文件被写坏」）；读文件/搜内容一律用 `read_file` / `search_content`（UTF-8 直读），需要过滤时单条 `findstr /c:"..." FILE`（不带分页器）或用 `node -e`；耗时命令（`npm run verify` / `biome check --write` / `npx vitest`）必须**单独一条**执行并显式给足超时（120~300s），不与任何管道/串联混用；**文件是否被写坏只以 `read_file` / `search_content` 回显为准，绝不用控制台回显下结论**（需要编码证据用 `node -e` 读 Buffer）；命令超时/无输出先停手拆解逐条定位，禁止原样重试加长超时。**② 长任务编排（防轮次耗尽）**——开工前给三阶段留预算：代码 ~50% / 测试 + 全量 verify ~30% / 文档 + 提交 ~20%，任何阶段不得挤占文档阶段份额；**代码与测试 verify 全绿后立即 commit（固化可信成果）再写文档**，禁止「代码未提交 + 文档半改」的混合半成品态跨会话存活；文档落盘就是 N 次 `edit_file`，按「一文件一编辑、先骨架后补写」直接做，大文档（ARCHITECTURE / DECISIONS / 任务书）只用 `search_content` 定位改点、**禁止整文读取**；**子代理只用于「不知道东西在哪」的定位型问题**（须给明确问题 + 限定范围 + 期望输出格式），禁止让子代理承担文档改写（它只读，结论回传后主会话还要再编辑一次 = 双倍轮次且拿不到精确原文）；轮次接近上限时先落盘已完成部分 + 在 `TASKS.md` 写清「文档 X/Y」进度留接续点（教训：同一任务两次熔断——CMD 管道串联假死导致 verify 未全量 + 文档半改；子代理滥用导致文档阶段轮次耗尽，见 09-踩坑记录/2026-10-28-Windows管道符串联导致假死与假乱码.md 与 09-踩坑记录/2026-10-28-长任务文档落盘轮次耗尽与子代理滥用.md）
 
+19. **hook 依赖数组与 Biome unsafe fix 纪律**：**① 依赖数组双向核对**——给 `useCallback` / `useMemo` / `useEffect` 闭包新增外部变量（新增 prop / state / 参数）时，必须**全量扫描**该文件所有依赖数组逐个补齐（同一参数常被多个闭包消费，漏一处即 stale closure，且运行时往往不报错）；反向同样成立，闭包内**未使用**的变量禁止塞进依赖数组（多余依赖 = 无谓重算，Biome 会报性能告警）。**② Unsafe fix 果断放行，禁止反复重试撞墙**——Biome 诊断标题的 `FIXABLE` 只表示「有人能修」，不代表 `--write` 会修；当诊断末尾出现 `i Unsafe fix: …` 或 `--write` 输出 `Skipped N suggested fixes.`（附「use the command biome check --write --unsafe」提示）时，一次重试无效即**升级命令**为 `npx biome check --write --unsafe <文件>`，并补跑 `npm run verify` + 读 diff 兜住语义变化；同一手段失败两次仍无新信息必须停手换手段（读完整诊断 / 换命令 / 交人），禁止原样重跑（教训：加 `maxTurns` 参数漏 4 处 useCallback 依赖 + 一处 hint effect 多加依赖，AI 反复重跑 `biome check --write` 无效致熔断，人类一条 `--write --unsafe` 收尾，见 09-踩坑记录/2026-10-28-useCallback新增maxTurns触发依赖闭包地狱.md）
+
 ## 命名与包
 项目	内容
 产品名	ConcertoAI
@@ -381,6 +383,7 @@ v3.4.0 发布门检查（当前，2026-08-12）：
 ### 处理策略
 - 当 `npm run verify` 因 `FIXABLE` 错误失败时，优先执行 `npm run lint:fix` 自动修复
 - 如果 `lint:fix` 无法修复，再分析具体错误内容
+- **`FIXABLE` ≠ `--write` 会修**：`lint:fix` / `biome check --write` 只应用**安全修复**。若命令输出 `Skipped N suggested fixes.`，或诊断末尾有 `i Unsafe fix: …`（如 `useExhaustiveDependencies` 增删依赖数组，两类都属 unsafe），改用 `npx biome check --write --unsafe <文件路径>` 一次放行；随后必须读 diff + 跑 `npm run verify` 确认语义没被改坏。**同一条命令重试两次仍失败即停手换手段，禁止原样重跑**（教训见 09-踩坑记录/2026-10-28-useCallback新增maxTurns触发依赖闭包地狱.md）
 
 ## 开发原则
 单会话串行：一次只做一个任务，不并行
