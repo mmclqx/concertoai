@@ -422,7 +422,7 @@ program
 program
   .command('snapshot')
   .description(t().cli.snapshot.description)
-  .argument('[action]', 'list | clean（默认 list）')
+  .argument('[action]', t().cli.snapshot.argument)
   .option('--lang <zh|en>', t().cli.lang.description)
   .action(async (action?: string) => {
     const { runSnapshotCommand } = await import('./snapshot');

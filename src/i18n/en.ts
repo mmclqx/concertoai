@@ -123,6 +123,7 @@ export const en = {
     // and half Chinese (command/option descriptions) — worse than all-Chinese.
     snapshot: {
       description: 'Manage multi-file transaction snapshots (T3.6)',
+      argument: 'list | clean (default: list)',
     },
     project: {
       description: 'Multi-project management (v3.1 M2): project add/list/remove/info',

@@ -114,6 +114,7 @@ export const zh = {
     // 呈现「英中混排」——比全中文更难看。全部搬进字典后 zh/en 才有机会一致。
     snapshot: {
       description: '管理多文件事务快照（T3.6）',
+      argument: 'list | clean（默认 list）',
     },
     project: {
       description: '多项目管理（v3.1 M2）：project add/list/remove/info',
