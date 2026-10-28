@@ -158,6 +158,10 @@ UI 测试：Ink 组件需用 ink-testing-library 覆盖
 
 19. **hook 依赖数组与 Biome unsafe fix 纪律**：**① 依赖数组双向核对**——给 `useCallback` / `useMemo` / `useEffect` 闭包新增外部变量（新增 prop / state / 参数）时，必须**全量扫描**该文件所有依赖数组逐个补齐（同一参数常被多个闭包消费，漏一处即 stale closure，且运行时往往不报错）；反向同样成立，闭包内**未使用**的变量禁止塞进依赖数组（多余依赖 = 无谓重算，Biome 会报性能告警）。**② Unsafe fix 果断放行，禁止反复重试撞墙**——Biome 诊断标题的 `FIXABLE` 只表示「有人能修」，不代表 `--write` 会修；当诊断末尾出现 `i Unsafe fix: …` 或 `--write` 输出 `Skipped N suggested fixes.`（附「use the command biome check --write --unsafe」提示）时，一次重试无效即**升级命令**为 `npx biome check --write --unsafe <文件>`，并补跑 `npm run verify` + 读 diff 兜住语义变化；同一手段失败两次仍无新信息必须停手换手段（读完整诊断 / 换命令 / 交人），禁止原样重跑（教训：加 `maxTurns` 参数漏 4 处 useCallback 依赖 + 一处 hint effect 多加依赖，AI 反复重跑 `biome check --write` 无效致熔断，人类一条 `--write --unsafe` 收尾，见 09-踩坑记录/2026-10-28-useCallback新增maxTurns触发依赖闭包地狱.md）
 
+20. **React Hook 依赖与 Biome Unsafe Fix 纪律**：修改 `App.tsx` 等 React 组件时，新增的外部变量若被 `useCallback` / `useEffect` 闭包消费，必须立刻**全量扫描**该文件所有相关依赖数组逐个补齐（漏了 → stale closure，运行时往往不报错；多了 → 无谓重算，Biome 报性能警告）。遇到 biome 的 `Unsafe fix` 提示（诊断末尾 `i Unsafe fix: …` 或 `--write` 输出 `Skipped N suggested fixes.`）时，果断执行 `npx biome check --write --unsafe` 一次放行，随后读 diff + 跑 `npm run verify` 兜住语义变化；**严禁同一命令反复重试**（同一手段失败两次即停手换手段，见 09-踩坑记录/2026-10-28-useCallback新增maxTurns触发依赖闭包地狱.md）
+
+21. **UI 状态与业务逻辑严格分离**：UI 层状态（提示开关、面板折叠、临时输入框等）与业务逻辑层（Agent 循环、文件读写、工具调用等）必须严格分离；业务逻辑**不得直接修改 UI 状态**，必须通过纯数据流转（如 Zustand store 或 React context）单向更新，保证业务逻辑可单测、UI 可替换，且避免「渲染副作用里改状态」导致的循环更新与闭包脏读
+
 ## 命名与包
 项目	内容
 产品名	ConcertoAI
