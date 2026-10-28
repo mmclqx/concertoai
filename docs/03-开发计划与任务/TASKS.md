@@ -74,11 +74,13 @@
 | **T21 本地体验指标** | ✅ **完成**（`c3b1ff9` + `8fcf619`，2026-10-28） | 默认 off / 零上传 / 可清空：`core/metrics-store.ts`（JSONL 追加 + 轮转 + 损坏行跳过）+ `cli/metrics.ts`（动词/体检记录 + `doctor --metrics` 渲染）+ `cli/slash/metrics.ts`（`/metrics on\|off\|status\|clear`）+ `config.metrics`。三处测试缺陷修复：隐私护栏裸正则误伤参数签名（改按事件接口字段扫描 + 同义词 `path/cwd/dir` 一并挡 + 自证负例）、`doctor-metrics.test.ts` 0 字节空文件补齐 9 用例、`statusOff` 补 `{path}` 与 `statusOn` 对称。另加 zh↔en 占位符集合一致性护栏（597 键全一致） |
 | **T22 定位重写** | ✅ **完成**（`cb61552` + 本次，2026-10-29） | 对外统一为「敢让你用来改生产代码的个人超级 CLI」：README 首屏重写（定位 + 3 场景 + 30 秒上手，8 行发布说明折叠到文末「历史版本速览」）+ `package.json` description + `--help` 首段 zh/en + CHANGELOG `[Unreleased]` 迁移说明（无破坏性变更；5.0.0 小节按约定留 T23.2）。**顺带修存量缺陷**：`--help` 原先完全不跟随 locale（`setLocale` 只在各命令 action 内调用，而 help 由 commander 解析阶段打印退出）→ 入口在 `new Command()` 前按 `LUMEN_LOCALE > LANG` 定一次语言 + 3 条 locale 护栏用例。**连带修 4 处测试 locale 隔离**（3 处 spawn 钉 `LUMEN_LOCALE=zh` + `team-parallel.test.ts` 的 `afterEach` 复位全局 locale），并用 `LUMEN_LOCALE=en` 跑全量验证无第五处。清理 5 处悬空决策编号引用（`ADR-049` / `D86-D87` 实际不存在，ADR 只到 ADR-047、D 只到 D82） |
 
-### 待办：测试护栏缺口（2026-10-28 记录，本轮不动）
+### 待办：未排期（v5.0 T21 / T22 期间发现，2026-10-29 汇总，本轮不动）
 
 | 项 | 状态 | 说明 |
 |------|------|------|
 | **全 `.skip` / `.todo` 测试文件的静默通过** | ⬜ **待办**（未排期） | **现象**：某测试文件若整篇是 `it.skip(...)` / `it.todo(...)`，vitest 只报 `skipped`、**不会**让 run 失败——文件看起来「在」，实际一条断言没跑。**现状对比**：空文件（0 字节）**不会**漏——vitest 报 `No test suite found in file` 并计入 `Failed Suites`，`npm run verify` 直接红（`vitest.config.ts` 未设 `passWithNoTests`，默认即硬失败），T21 实测已验证。**补法**：加一条扫 `tests/**/*.test.{ts,tsx}` 的用例，发现「只有 skip/todo、无实际 `it(`」即失败。**未做原因**：落点在 `scripts/` 或 CI 配置（T21 目标外），且属独立缺口、与 T21 三类问题不同源；按纪律「需改目标外文件先报告」停手待批。 |
+| **`--help` 选项描述仍硬编码中文（英中混排）** | ⬜ **待办**（未排期，**性质与普通遗留不同**） | **⚠️ 这不是普通遗留，是本轮修复的连带观感问题**：T22 修好 locale 之前英文 help 根本不存在（`--help` 恒中文），用户看不到混排；**修好之后** `LUMEN_LOCALE=en --help` 变成**英中混排**——分段标题、定位句是英文，而 `program.option(...)` 的选项描述（`index.ts` 的 `--project` / `--provider` 等）仍是写死中文。**即：混排比全中文更难看，是本轮修复新暴露出来的可见缺陷，不是历史包袱**。下轮接手须知：若要对外声称「支持英文」，必须先清掉这批硬编码；补法 = 把选项描述搬进 zh/en 字典并逐处替换（涉及 `index.ts` 多处 + 两本字典，回归面较大，建议单开任务）。 |
+| **决策条目 ADR-048/049 + D83+ 统一编** | ⬜ **待办**（归入 T23.2） | T21/T22 的代码与文档引用了 `ADR-049` / `D86-D87` 等**实际不存在**的编号（ADR 只到 ADR-047、D 只到 D82）。已按「只删引用不改语义」清理 5 处，CHANGELOG 加注「决策编号待 T23.2 统一编」。T23.2 文档阶段需补写 T21（本地指标）/ T22（定位重写，含 `--help` locale 修复）的决策条目并统一编号。 |
 
 ---
 
