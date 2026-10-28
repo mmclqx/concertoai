@@ -37,6 +37,11 @@ export interface RunPlanOptions {
   lang?: string;
   /** CLI --provider（v4.0 M3 T3.1）：临时切换 Provider（本次进程生效，不写 config）。 */
   provider?: string;
+  /**
+   * CLI `-t/--max-turns`（v5.0 架构修正）：本次生效的工具循环轮数上限。
+   * 优先级：本参数 > `config.maxTurns` > `MAX_LOOP_TURNS`（50）——合并逻辑在 `resolveConfig`。
+   */
+  maxTurns?: number;
 }
 
 /** 终端确认：批准计划 (y/n)。 */
@@ -58,7 +63,8 @@ export async function runPlan(options: RunPlanOptions): Promise<void> {
 
   // 配置：CLI > 环境变量 > 配置文件 > 默认值
   const config = await loadConfig();
-  const resolved = resolveConfig(config, options.model, options.lang);
+  // -t/--max-turns：CLI > config.maxTurns > 默认 50（优先级只在 resolveConfig 实现一处）
+  const resolved = resolveConfig(config, options.model, options.lang, options.maxTurns);
   setLocale(resolveLocale(resolved.locale));
   // v4.0 M3 T3.1：--provider 临时切换 / config defaultProvider 持久化 → 解析运行时 Provider
   const runtime = await resolveRuntimeProvider(config, {
@@ -99,6 +105,8 @@ export async function runPlan(options: RunPlanOptions): Promise<void> {
     ctx,
     systemPrompt: rules.text === '' ? undefined : rules.text,
     contextWindow: getModel(model)?.contextWindow,
+    // 计划阶段与执行阶段共用同一上限（-t / config.maxTurns / 默认 50 解析后的最终值）
+    maxTurns: resolved.maxTurns,
   };
 
   // 阶段 1：计划
@@ -107,7 +115,9 @@ export async function runPlan(options: RunPlanOptions): Promise<void> {
   const planResult = await runLoop({ ...baseLoopOptions }, baseHistory, planPrompt);
   const plan = planResult.messages.at(-1)?.content ?? '';
   if (planResult.interrupted) {
-    process.stderr.write(`\n${t().errors.loopMaxTurns}\n`);
+    process.stderr.write(
+      `\n${fmt(t().errors.loopMaxTurnsTemplate, { turns: resolved.maxTurns })}\n`,
+    );
     return;
   }
   history = planResult.messages;
@@ -132,7 +142,9 @@ export async function runPlan(options: RunPlanOptions): Promise<void> {
     options.task,
   );
   if (execInterrupted) {
-    process.stderr.write(`\n${t().errors.loopMaxTurns}\n`);
+    process.stderr.write(
+      `\n${fmt(t().errors.loopMaxTurnsTemplate, { turns: resolved.maxTurns })}\n`,
+    );
   }
   const added = execMessages.slice(history.length);
   await store.appendAll(sessionId, added);

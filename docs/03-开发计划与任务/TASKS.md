@@ -1,7 +1,7 @@
 # ConcertoAI 开发任务看板
 
 > 最后更新：2026-10-28
-> 当前里程碑：**🟡 v5.0 开发中（M1 7/7 ✅ + M2 审批透明化 4/4 ✅ + M3 场景可发现 3/3 ✅ 均已封板 + M4 动词化 2/5 🔄，2026-10-28）**（v5.0: M1 **7/7** ✅ · M2 **4/4** ✅ · M3 **3/3** ✅ · M4 **2/5** 🔄 · 下一步 **M4 T17 commit** · 148 文件 / 2035 用例全绿）
+> 当前里程碑：**🟡 v5.0 开发中（M1 7/7 ✅ + M2 审批透明化 4/4 ✅ + M3 场景可发现 3/3 ✅ 均已封板 + M4 动词化 2/5 🔄，2026-10-28）**（v5.0: M1 **7/7** ✅ · M2 **4/4** ✅ · M3 **3/3** ✅ · M4 **2/5** 🔄 · 下一步 **M4 T17 commit** · 148 文件 / 2042 用例全绿）
 > 基于：[v5.0 开发计划](./v5.0-dev-plan.md) · [v5.0 开发任务](./v5.0-dev-tasks.md) · 历史：[v4.2 开发任务（已并入 v5.0 M1）](./v4.2-dev-tasks.md) · [v4.1 开发任务](./v4.1-dev-tasks.md) · [v4.0 开发任务](./v4.0-dev-tasks.md)
 
 ---
@@ -54,6 +54,14 @@
 |------|------|------|
 | **T15 `concertoai check`** | ✅ **完成**（2026-10-28） | 「提交前一条命令判断能不能提交」——**只读，零写入**（`src/cli/check.ts` / `runCheckCommand`）· **G6 薄包装**：四段分类复用 `self-heal` 的 `parseVerifyReport`、失败摘要复用 `utils/error-summary` 的 `extractErrorSummary`，本源码内**没有第二套 verify 解析**（源码护栏盯着）· **退出码权威、解析只做归因**：通过与否只看子进程真实退出码，解析结果只回答「哪段挂了、挂在第几行」——避免「解析不到成功标记」被误判失败、「解析不到错误」被误判通过 · **不静默成功三态**：无 `package.json` → 「这里不是 Node 项目，无法体检」；有 `package.json` 但 build/lint/typecheck/test 全缺 → 「没做检测就不算通过」；退出码非 0 却一条错误都定位不出 → 四段全「结果无法判定」+ 末尾补 `extractErrorSummary` 兜底，三种均 `exit 1` · **`&&` 链诚实**：verify 先跑 test 时，后面 build 标「未执行（前一段失败）」，不冒充通过 · **无 verify 脚本 → 分项检测**（顺序固定 build→lint→type→test，`typecheck`/`type` 两种写法兼容）· **下一步命令不打空头支票**：`npm run lint:fix` 仅在项目真配了该脚本时才给，其余一律指向已注册的 `concertoai self-heal`（M4 的 `fix` 未落地故不许写）· **G5 输出受控**：每段最多 40 行 + `--json` 机器可读（供 T17 commit 复用）· `ChildProcessQaRunner` 增加 `script` 参数（默认 `verify`，行为不变）复用既有 Windows 进程树终止逻辑 · **25 用例**（`tests/cli/check.test.ts`），含真实落盘 mtime 零写入断言 + Ctrl+C 中断路径 + 命令注册护栏（`check --help` 真存在）· **变异测试自证护栏有牙**：改成「顺手跑 lint:fix」→ 2 红；改成「结论永远 ok=true」→ 6 红 · **147 文件 / 2015 用例全绿**（+1 文件 / +25 用例） |
 | **T16 `concertoai fix`** | ✅ **完成**（2026-10-28） | 「报错太复杂，让 AI 试着修」——`self-heal` 的**薄入口**（`src/cli/fix.ts` / `runFixCommand` + `buildFixDiagnosis` + `formatFixPlan`）· **G6 薄包装**：分类复用 `parseVerifyReport`、执行复用 `runSelfHeal`、报告复用 `formatSelfHealReport`，并把「错误 → 修复动作」优先级从 `repair.ts` 的内联 if/else 抽成纯函数 **`strategyFor(error)`**——`repairVerifyReport`（真修）与 `fix --dry-run`（诊断）**共用同一份判定**，本文件内**没有第二套 verify 解析、也没有第二个优先级表**（否则会出现「诊断说 lint 直修、真修却走模型」的自相矛盾，源码护栏用例盯着）· **`--dry-run` 零写入**：只跑 verify + 解析 → 「共 N 个问题 + 每条错误打算怎么修 + 最多尝试几次」，**不调模型（不花钱）、不跑 lint:fix、不建快照、不写盘**，且**不需要 API Key**（第一次进项目、还没配 Key 也能先看清问题）· **退出码权威**（承接 T15 假通过教训）：通过与否只看子进程真实退出码，解析只做归因；退出码非 0 却一条错误都定位不出 → 明说「**没能定位**」并指向 `concertoai check`，**绝不写成「无需修复」** · **两道审批门**：① 开跑前确认（兜住 `lint:fix` 这类本身不弹审批框的确定性修复）② 模型修复每次写盘前逐条确认（复用 `runSelfHeal` 的 `requestApproval`，T8/T9 风险 insight 自动生效）；非 TTY 且无 `--auto-approve` → **fail-closed 拒绝启动**并指路 `--dry-run`；Ctrl+C / 回答不是 y 一律当拒绝（零写盘）· **超限转人工 + 现场保留**：复用既有 `MAX_SELF_HEAL_ATTEMPTS`(2) 与 `RepairVerifyResult.exceeded`；文案只给**真实存在**的命令（`concertoai snapshot list` / `concertoai snapshot clean`）+ 快照目录路径——`snapshot restore` 至今不存在，**一个字都不写**（T10 / T12 空头支票教训，ADR-044）；修复无效的改动由 self-heal 在复验失败时自动回滚，不需要用户手敲回滚 · **无 Key 不静默降级**：明说「只跑 lint 直修，模型修复已跳过」· **G5 输出受控**：诊断最多 20 条 + 单条 200 字符（超长不淹没终端）· **i18n** `zh.fix.*` / `en.fix.*` 同构（en 无 CJK 由 `en.test.ts` 看住）+ `cli.fix.description/dryRun/autoApprove` · **命令注册**：`fix`（`--dry-run` / `--auto-approve` / `-m`）插入 `COMMON_COMMAND_ORDER`（`check` 之后，顺序表非文案表 → 首屏自动跟随）；**`self-heal` 保留不删**（旧脚本 / 文档引用它，改语义 = 静默改变行为）· **20 用例**（`tests/cli/fix.test.ts`）围绕「会不会偷偷写盘 / 会不会假装修好」组织，含无 Key 也能诊断 / 非 TTY fail-closed / Ctrl+C 取消 / 审批拒绝与批准 / 修不好转人工，外加**薄包装源码护栏**（不许自带 verify 解析、不许直接起子进程）· **基线 147 文件 / 2015 用例 → 148 文件 / 2035 用例全绿**（+1 文件 / +20 用例）· **顺带**：`MAX_LOOP_TURNS` 50 → 200（用户手动调整）+ 三处文档同步 |
+
+### 计划外修正：工具循环轮数上限可配置（2026-10-28，非任务书条目）
+
+| 项 | 状态 | 说明 |
+|------|------|------|
+| **轮数上限 `-t/--max-turns` + `config.maxTurns`** | ✅ **完成**（2026-10-28，148 文件 / 2042 用例全绿） | 上限从「源码常量」变成「用户能调且提示不说假话」（§4 D79）：`parseMaxTurnsOption`（`cli/common.ts` 纯函数，唯一校验入口，只认十进制、`1e3`/`0x10`/`1.5`/`0`/负数/超 500 一律 invalid）+ 三层优先级**只**在 `resolveConfig()` 合并（`-t` > `config.maxTurns` > `MAX_LOOP_TURNS`，消费者只读 `ResolvedConfig.maxTurns`）+ 写错**只提示不中断**且**绝不静默夹到 500** + `MAX_LOOP_TURNS` 200→50、新增 `MAX_TURNS_CAP=500` + 达到上限提示改模板 `errors.loopMaxTurnsTemplate` 报**本次真实生效值** · 顺带修 `chat.tsx` 漏传 `hintsEnabled`（导致 `config set hints off` 是假开关） |
+
+> 说明：本条**不在 v5.0 任务书（T1-T23）内**，属开发过程中发现的上限写死问题，按「先修根因再继续」处理；文档三处（CHANGELOG / ARCHITECTURE D79 + §2 §5 / user-guide 参数表 + 配置表 + 安全模型）已同步。
 
 ---
 

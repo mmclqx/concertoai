@@ -12,7 +12,7 @@ ConcertoAI 是一款**中文优先**的终端编码助手 CLI（DeepSeek 驱动�
 
 - **技术栈**：TypeScript (strict) + Node ≥22 + ESM，Ink 7 (React 19) 渲染 TUI，commander 解析 CLI，zod 做工具参数校验，vitest 测试，Biome 检查，tsup 打包
 - **运行时依赖**：`ink` / `react` / `commander` / `zod` / `cli-highlight` / `chalk` / `tiktoken`（v2.0 BPE 精确 Token 计数）
-- **测试现状**：148 个测试文件、2035 个用例，`npm run verify` 全绿，`npm audit` 0 漏洞；已用真实 `DEEPSEEK_API_KEY` 完成端到端冒烟
+- **测试现状**：148 个测试文件、2042 个用例，`npm run verify` 全绿，`npm audit` 0 漏洞；已用真实 `DEEPSEEK_API_KEY` 完成端到端冒烟
 - **安全基线**：编辑与命令一律审批（fail-closed）、路径沙箱、结果截断、白名单免审批——无 yolo 模式
 - **v3.1 新增能力**：AI 自我修复闭环（self-heal）/ 多项目管理（project）/ 多租户登录（account）/ Orchestrator CLI（team、/orchestrate、audit export）/ 结构化错误增强（error-codes）；**v3.1 预留功能（已交付）**：`concertoai balance`（余额查询）/ `concertoai doctor`（环境诊断）、配置目录迁移 `~/.lumen → ~/.concertoai`（`src/store/paths.ts` 单一来源 + 幂等迁移）；**v2.2 智能成本控制**（高峰时段模型自动切换，见 §4 D41）
 - **v3.2 新增能力**：跨平台 CI 矩阵与 spawn 审计（ADR-032）/ UNC 路径与 EXDEV 边界（ADR-031）/ self-heal 模块化拆分（ADR-030）/ audit 损坏行统计 + /orchestrate diagnostics / 长任务进度推送（team onProgress + self-heal onPhase）/ project-account 视觉与 doctor 账号完整性 / 启动期缓存（ADR-029）/ Agent 市场版本对比与 `update --all`
@@ -69,7 +69,7 @@ ConcertoAI 是一款**中文优先**的终端编码助手 CLI（DeepSeek 驱动�
                        │ ctx.requestApproval（审批挂起/恢复）
 ┌──────────────────────▼──────────────────────────────────────┐
 │ loop/ 会话主循环（src/loop/）                                 │
-│   loop.ts     runLoop：消息组装→模型→工具分发→回填（≤200 轮）  │
+│   loop.ts     runLoop：消息组装→模型→工具分发→回填（≤50 轮）   │
 │   context.ts  上下文窗口管理（80% 预算裁剪 + 日志）            │
 │   messages.ts ChatMessage⇄ApiMessage 序列化 / 工具结果格式化   │
 │   types.ts    ChatMessage / ToolCall / Role                  │
@@ -224,7 +224,8 @@ cli/index.ts（无子命令或 chat）
       ④ 有工具调用 → 逐条执行（顺序）：
            JSON.parse(arguments) → registry.run(name, args, ctx)
            → 结果 formatToolResult 截断回填为 tool 消息
-         → 回到 ②（最多 MAX_LOOP_TURNS = 200 轮，超限返回 interrupted 不抛错，已累积结果保留）
+         → 回到 ②（最多 MAX_LOOP_TURNS = 50 轮——可被 `-t/--max-turns` / `config.maxTurns` 覆盖，
+           硬上限 MAX_TURNS_CAP = 500；超限返回 interrupted 不抛错，已累积结果保留）
   → App：消息历史更新、token 估算累计、store.appendAll 落盘
 ```
 
@@ -411,6 +412,7 @@ MCP 服务故障
 | D76 | **提示行「纯字符串排版优先」，Ink 只上色；宽度按容器可用列数而非终端列数**（v5.0 T13 / ADR-045）：`ui/hint-text.ts` 的 `renderHintLine` 是**唯一排版出口**（零 Ink/React 依赖，护栏扫源码），先给「命令 + 分隔符」留足宽度再截文案——**命令永不截断**，宽度不足时**整句丢文案只留命令**（半条命令 = 负价值）；`ui/HintBar.tsx` 只做 `<Text dimColor>`，不渲染时返回 `null`（空 `<Text>` 会白占一行下推输入框）；`HINT_CONTAINER_PADDING_X` 把**终端列数**换算成**容器内可用列数** | ① 与 D70 同一条铁律的延续：文案与排版在纯函数里，Ink 拿不到「拼装」权力就塞不进自己的换行/边框，提示永远是**单行**（这是「不许挤压输入框」的前提）；② 排版预算必须是**容器可用宽度**——实测 100 列终端里按终端列数排满 → `concertoai init` 被折行劈成两行（违反单行要求），而单测用 `columns={120}` 的宽松值永远是绿的（「参数取值把 bug 遮住」） | `src/ui/hint-text.ts` + `src/ui/HintBar.tsx` + `tests/ui/hint-text.test.ts` + `tests/ui/hint-bar.test.tsx` |
 | D77 | **`awaiting` 阶段：等待期是「可交互、可提示」的时刻，不是锁死期**（v5.0 T13 / ADR-045）：`HintPhase` 新增 `awaiting`（判据 = `phase==='streaming' && streamed==='' && 无工具在跑`，**纯已有状态的组合，不引入计时器**）；提示判定**不看 phase**（信号源 = 用户已产生输入 + 规则文件存在性）；渲染门禁 `isHintVisiblePhase` 只放行 `idle` / `awaiting`；输入框 `inputActive = idle \|\| awaiting`；`/hints` 提到 `busy` 守卫**之前**处理；等待期提交的普通需求不排队但**必给可见回执** | ① 假 Key / 断网时 `runLoop` 挂着、`phase` 恒为 `streaming`，若两者都绑 `idle` → 提示永不出现 **且** `/hints off` 敲不进去（提示看得见却关不掉，只能 Ctrl+C 杀会话）——**入口不能小于出口**；② 不做超时猜测（避免阈值调参 + 慢网被误判为故障，承接 D74「只认确定性事实」）；③ 输入框可用却不给回执 = 假按钮（v4.0 客户投诉 F 选项同型）；④ 真流式输出期间仍禁用输入、不渲染提示，②不放松 | `src/ui/App.tsx` + `src/ui/hint-text.ts` + `tests/ui/hint-app.test.tsx` |
 | D78 | **`--help` 首屏给动词不给命令清单；顺序表优先、查不到即不渲染**（v5.0 T14 / ADR-046）：`src/cli/index.ts` 的 `renderGroupedHelp` 是**唯一渲染出口**，四段固定顺序（快速开始 3 步 → 常用命令 → 交互斜杠 → 高级折叠一行），实测 33 行（预算 ≤ 40，防 v4.0「输出淹没」复发）；`COMMON_COMMAND_ORDER` 是**顺序表不是文案表**——命令名与描述一律从 `program.commands` 现取，改名/删除/改描述时首屏自动跟随（不存在第二份手写文案）；`findCommand` **查不到即不渲染**，把 D75「禁止空头支票」从人工核对升级为代码保证；`program.configureHelp({ visibleCommands })` 默认隐藏 commander 平铺清单、`--all` 时显示完整 21 条（`visibleCommands` 读 `process.argv`）：`--help` 被解析即打印退出，同批 `--all` 此刻可能尚未进 `opts`；**M4 预留位**——`check`/`fix`/`commit`/`review` 未注册故首屏一个字不出现，M4 落地后只改这一个数组 | `src/cli/index.ts` + `src/i18n/{zh,en}.ts` + `tests/cli/help.test.ts`（**拿 `--help --all` 的 `Commands:` 段解析出注册表反查首屏**，非拿首屏自证首屏；含 M4 四动词双向不变量） |
+| D79 | **工具循环轮数上限三层优先级只在唯一一处合并；非法值如实告知、绝不静默改值**（v5.0 架构修正）：优先级 = CLI `-t/--max-turns` > `config.maxTurns` > `MAX_LOOP_TURNS`（50），**唯一实现点**是 `resolveConfig()` → `ResolvedConfig.maxTurns`（chat / run / plan / App 只读该字段，不得各自再读 `config.maxTurns`——同一优先级被各入口实现成好几套，是 `approvalInsight` 已踩过的坑）。校验只有一份：`cli/common.ts` 的 `parseMaxTurnsOption`（纯函数无 I/O，`/^\+?\d+$/` 只认十进制——`1e3`=1000、`0x10`=16 这类 `Number()` 宽松解析会让用户拿到的上限和他写的不是一回事）；`0` / 负数 / 小数 / 非数字 / > `MAX_TURNS_CAP`（500）**一律非法**，处理方式是「**提示后继续跑（走下一层）**」而非中断命令（同 `reflect --limit` 口径：一次手滑不该让整条长任务跑不起来），且**绝不静默夹到 500**（写 3000 实跑 500 = 对用户的花费说假话）。达到上限的提示走 `errors.loopMaxTurnsTemplate` + `fmt({ turns })`，**报的是本次真实生效值**而不是默认值（`loopMaxTurns` 保留为「不掌握生效上限」的旧入口）；i18n 里帮助与报错的范围/默认值全部用常量拼（`MAX_TURNS_CAP` / `MAX_LOOP_TURNS`），改常量文案自动跟随 | `src/loop/loop.ts` + `src/store/config.ts` + `src/cli/common.ts` + `src/cli/{index,chat,run,plan}.ts(x)` + `src/ui/App.tsx` + `src/i18n/{zh,en}.ts` + `tests/cli/common.test.ts` + `tests/i18n/zh.test.ts` |
 
 ---
 
@@ -506,7 +508,7 @@ concertoai/
 │   │   ├── error-summary.ts 错误摘要（v4.1 T1.1）：extractErrorSummary 识别 tsc/biome/npm/vitest 关键行
 │   │   └── text-width.ts 终端显示宽度（v5.0 T9）：displayWidth / truncateToWidth / wrapToWidth / stripAnsi——CJK 与全角算 2、emoji 与 VS16 算 2、组合符/零宽/ANSI 算 0；**禁止用 .length 判宽度**；diff 行截断、散文折行两把尺子
 │   ├── loop/
-│   │   ├── loop.ts       runLoop / MAX_LOOP_TURNS=200 / MAX_REPAIRS=2 / LoopEvent（chunk/tool_call/tool_result/usage/error）
+│   │   ├── loop.ts       runLoop / MAX_LOOP_TURNS=50 / MAX_TURNS_CAP=500 / MAX_REPAIRS=2 / LoopEvent（chunk/tool_call/tool_result/usage/error）
 │   │   ├── self-heal/    AI 自我修复闭环（v3.1 M1，v3.2 M2 拆分为 5 模块，详见 §4 D42 / §8）：
 │   │   │   ├── classifier.ts    四段分类器（build/lint/type/test）+ parseVerifyReport + mergeLintPassed（311 行）
 │   │   │   ├── model.ts         模型修复计划生成（isSimpleTypeError / parseModelFixOutput / generateModelFixPlan）
@@ -639,14 +641,14 @@ concertoai/
 │   │   ├── projects.ts   项目注册表（v3.1 M2）：~/.concertoai/projects.json CRUD + 重名/嵌套拒绝 + 路径规范化 + updateConfig（详见 §4 D43）
 │   │   ├── accounts.ts   多账号存储（v3.1 M3）：accounts/<name>/config.json 0600 + active-account 指针（详见 §4 D44）
 │   │   ├── project-rules.ts  loadProjectRules：AGENTS→CARBON 优先级、8k 截断
-│   │   ├── config.ts      loadConfig/writeConfig/resolveConfig（CLI > env > 配置 > 默认；含 mcpServers）
+│   │   ├── config.ts      loadConfig/writeConfig/resolveConfig（CLI > env > 配置 > 默认；含 mcpServers）+ `maxTurns` 三层合并在此一处（`-t` > `config.maxTurns` > 默认 50，详见 §4 D79）
 │   │   ├── migration.ts   config v3→v4 自动迁移器（M0 T0.2 骨架：isV3Config/V4Config/migrateV3ToV4；M3 T3.5 实现，见 10-技术评估/v3-v4-migration-design.md）
 │   │   └── memory-store.ts   MemoryStore：JSONL CRUD + 标签/关键词检索 + 项目隔离（v1.1）
 │   └── i18n/
 │       ├── zh.ts         中文字典 + fmt()（v5.0 T12 新增 hints.* 场景提示文案）
 │       ├── en.ts         英文字典（键与 zh 同构）
 │       └── index.ts      resolveLocale / setLocale / t() / DICTS
-└── tests/                镜像 src 结构（148 个文件 / 2035 用例，v3.4 基线 + M0 迁移器骨架 + M1 autoFix + M2 workflow + M3 Provider 体系 + M4 插件体系 + M5 team-parallel + M6 lsp + v4.0.1 Ctrl+C 崩溃链路 10 用例 + v4.1 体验打磨轮 35 用例 + v5.0 T8 审批洞察（approval-insight / risk-rules / impact-scan / fixtures 标注回归）+ v5.0 T12 场景提示（core/suggestion.test.ts 40 用例：七条硬约束逐条 + 命令护栏实跑 `--help` + IO 层边缘）+ v5.0 T13 提示 UI（ui/hint-text.test.ts 排版截断与阶段门禁 + ui/hint-bar.test.tsx 源码护栏与**卡满边界宽度** + ui/hint-signals.test.ts 信号口径 + ui/hint-app.test.tsx 挂起模型集成 + cli/slash-hints.test.ts + v5.0 T15 提交前体检（cli/check.test.ts 25 用例：假通过三态防线 + 零写入（脚本轨迹 + 真实落盘 mtime）+ Ctrl+C 中断 + 超长截断 + 变异测试自证护栏有牙）+ v5.0 T16 报错自动修（cli/fix.test.ts 20 用例：`--dry-run` 零写入（脚本轨迹）+ 无 Key 也能诊断（不构造模型客户端）+ 退出码非 0 却解析不出错误时**不冒充通过** + 两道审批门（拒绝则文件原样未改 / 批准则恰好 1 次）+ 非 TTY fail-closed（verify 一次都没跑）+ Ctrl+C（undefined）取消 + 修不好转人工只给真实存在的 snapshot 命令 + **薄包装源码护栏**（不许自带 verify 解析、不许直接起子进程））），含 tests/agent/、tests/agents/、tests/balance/、tests/cli/（含 check.test.ts 只读体检 + fix.test.ts 报错自动修 + common.test.ts 启动缓存 + workflow.test.ts / slash-workflow.test.ts + provider.test.ts + plugin.test.ts + team-parallel.test.ts + prompt.test.ts / crash-handler.test.ts / help.test.ts）、tests/core/、tests/e2e/（team-cli/self-heal/project-isolation/platform-e2e）、tests/fixtures/（platform-samples 跨平台样本库 + approval/ 26 条真实 git diff 样本与人工标注 manifest.json）、tests/i18n/、tests/knowledge/、tests/loop/（self-heal/error-reporting）、tests/lsp/（framing/diagnostics/server）、tests/market/、tests/mcp/、tests/model/（client/models/tokenizer/providers/registry/router/recommend）、tests/observable/、tests/orchestrator/、tests/planner/、tests/plugin/（permissions/loader/installer/runtime）、tests/reviewer/（含 autofix.test.ts）、tests/skill/、tests/store/（projects/accounts/accounts-exdev/migration/config）、tests/tools/、tests/ui/（含 review-report.test.tsx）、tests/utils/（error-summary.test.ts）、tests/workflow/（templates/parser/nl-generator/executor/preflight） 等
+└── tests/                镜像 src 结构（148 个文件 / 2042 用例，v3.4 基线 + M0 迁移器骨架 + M1 autoFix + M2 workflow + M3 Provider 体系 + M4 插件体系 + M5 team-parallel + M6 lsp + v4.0.1 Ctrl+C 崩溃链路 10 用例 + v4.1 体验打磨轮 35 用例 + v5.0 T8 审批洞察（approval-insight / risk-rules / impact-scan / fixtures 标注回归）+ v5.0 T12 场景提示（core/suggestion.test.ts 40 用例：七条硬约束逐条 + 命令护栏实跑 `--help` + IO 层边缘）+ v5.0 T13 提示 UI（ui/hint-text.test.ts 排版截断与阶段门禁 + ui/hint-bar.test.tsx 源码护栏与**卡满边界宽度** + ui/hint-signals.test.ts 信号口径 + ui/hint-app.test.tsx 挂起模型集成 + cli/slash-hints.test.ts + v5.0 T15 提交前体检（cli/check.test.ts 25 用例：假通过三态防线 + 零写入（脚本轨迹 + 真实落盘 mtime）+ Ctrl+C 中断 + 超长截断 + 变异测试自证护栏有牙）+ v5.0 T16 报错自动修（cli/fix.test.ts 20 用例：`--dry-run` 零写入（脚本轨迹）+ 无 Key 也能诊断（不构造模型客户端）+ 退出码非 0 却解析不出错误时**不冒充通过** + 两道审批门（拒绝则文件原样未改 / 批准则恰好 1 次）+ 非 TTY fail-closed（verify 一次都没跑）+ Ctrl+C（undefined）取消 + 修不好转人工只给真实存在的 snapshot 命令 + **薄包装源码护栏**（不许自带 verify 解析、不许直接起子进程））），含 tests/agent/、tests/agents/、tests/balance/、tests/cli/（含 check.test.ts 只读体检 + fix.test.ts 报错自动修 + common.test.ts 启动缓存 + `parseMaxTurnsOption` 6 用例（v5.0 架构修正：十进制严格解析 / 0 与负数 / 超上限不夹取 / off-by-one）+ workflow.test.ts / slash-workflow.test.ts + provider.test.ts + plugin.test.ts + team-parallel.test.ts + prompt.test.ts / crash-handler.test.ts / help.test.ts）、tests/core/、tests/e2e/（team-cli/self-heal/project-isolation/platform-e2e）、tests/fixtures/（platform-samples 跨平台样本库 + approval/ 26 条真实 git diff 样本与人工标注 manifest.json）、tests/i18n/、tests/knowledge/、tests/loop/（self-heal/error-reporting）、tests/lsp/（framing/diagnostics/server）、tests/market/、tests/mcp/、tests/model/（client/models/tokenizer/providers/registry/router/recommend）、tests/observable/、tests/orchestrator/、tests/planner/、tests/plugin/（permissions/loader/installer/runtime）、tests/reviewer/（含 autofix.test.ts）、tests/skill/、tests/store/（projects/accounts/accounts-exdev/migration/config）、tests/tools/、tests/ui/（含 review-report.test.tsx）、tests/utils/（error-summary.test.ts）、tests/workflow/（templates/parser/nl-generator/executor/preflight） 等
 ```
 
 ## 6. 5分钟快速体验

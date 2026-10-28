@@ -17,8 +17,10 @@ import {
   clearApiKeyCache,
   clearProjectRegistryCache,
   loadProjectRegistryCached,
+  parseMaxTurnsOption,
   resolveApiKeyCached,
 } from '../../src/cli/common';
+import { MAX_TURNS_CAP } from '../../src/loop/loop';
 import { saveAccount, setActiveAccount } from '../../src/store/accounts';
 import { ProjectRegistry } from '../../src/store/projects';
 
@@ -69,6 +71,55 @@ describe('resolveApiKeyCached（T4.5 启动期缓存）', () => {
     expect(a.accountName).toBe('work');
     const b = await resolveApiKeyCached({ envKey: '', accountsRoot: root2 });
     expect(b.accountName).toBe('work2');
+  });
+});
+
+/**
+ * `-t/--max-turns` 解析（v5.0 架构修正）。
+ *
+ * 这是「手滑不崩任务」的唯一保证点：所有非法输入都必须落成
+ * `{ maxTurns: undefined, invalid: true }`（调用方提示后继续走 config > 默认），
+ * 而不是 NaN / 0 / 静默改值的数字。
+ */
+describe('parseMaxTurnsOption（-t/--max-turns 校验）', () => {
+  it('未传 → undefined 且不算写错（走 config.maxTurns > 默认）', () => {
+    expect(parseMaxTurnsOption(undefined)).toEqual({ maxTurns: undefined, invalid: false });
+  });
+
+  it('合法正整数 → 原值返回，且不报错', () => {
+    for (const raw of ['1', '12', ' 30 ', '+45', String(MAX_TURNS_CAP)]) {
+      const parsed = parseMaxTurnsOption(raw);
+      expect(parsed.invalid).toBe(false);
+      expect(parsed.maxTurns).toBe(Number(raw.trim()));
+    }
+  });
+
+  it('无效字符串 → invalid（不返回 NaN）', () => {
+    for (const raw of ['', '   ', 'abc', '5x', '1.5', '1e3', '0x10', 'NaN', 'Infinity']) {
+      const parsed = parseMaxTurnsOption(raw);
+      expect(parsed).toEqual({ maxTurns: undefined, invalid: true });
+    }
+  });
+
+  it('0 与负数 → invalid（0 会让工具循环一轮都不跑）', () => {
+    for (const raw of ['0', '-1', '-50', '000', '-0']) {
+      expect(parseMaxTurnsOption(raw)).toEqual({ maxTurns: undefined, invalid: true });
+    }
+  });
+
+  it('超过硬上限 → invalid（不静默夹取，提示里告知接受范围）', () => {
+    const parsed = parseMaxTurnsOption(String(MAX_TURNS_CAP + 1));
+    expect(parsed).toEqual({ maxTurns: undefined, invalid: true });
+    // 极端手滑（远超上限 / 长数字串）同样落到 invalid，不会溢出成 Infinity 或 0
+    expect(parseMaxTurnsOption('5000').invalid).toBe(true);
+    expect(parseMaxTurnsOption('9'.repeat(30)).invalid).toBe(true);
+  });
+
+  it('边界：恰好在上下限内合法，差 1 就非法（off-by-one 护栏）', () => {
+    expect(parseMaxTurnsOption(String(MAX_TURNS_CAP)).maxTurns).toBe(MAX_TURNS_CAP);
+    expect(parseMaxTurnsOption(String(MAX_TURNS_CAP + 1)).maxTurns).toBeUndefined();
+    expect(parseMaxTurnsOption('1').maxTurns).toBe(1);
+    expect(parseMaxTurnsOption('0').maxTurns).toBeUndefined();
   });
 });
 

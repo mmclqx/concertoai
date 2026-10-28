@@ -27,8 +27,24 @@ import {
 } from './messages';
 import type { ChatMessage, ToolCall } from './types';
 
-/** 单次输入允许的最大工具循环轮数。 */
-export const MAX_LOOP_TURNS = 200;
+/**
+ * 单次输入允许的最大工具循环轮数（全局默认值）。
+ *
+ * 优先级：CLI `-t/--max-turns` > `config.maxTurns` > 本默认值 50
+ * （解析唯一入口：`resolveConfig()` → `ResolvedConfig.maxTurns`）。
+ */
+export const MAX_LOOP_TURNS = 50;
+
+/**
+ * 工具循环轮数上限的**硬上限**（v5.0 架构修正）：`-t/--max-turns` 的合法范围顶端。
+ *
+ * 为什么需要一道硬上限：每一轮都是一次**真实计费**的模型调用，`-t 5000` 这类手滑
+ * 会直接把账号余额烧穿。默认 50 × 10 = 500 足以覆盖超长重构任务，又不至于失控。
+ *
+ * 超出范围按**非法值**处理并告知用户接受范围——**不静默夹取**：用户写 3000、
+ * 实际跑 500，会让他对自己的花费产生错误预期（与 `parseMaxTurnsOption` 同口径）。
+ */
+export const MAX_TURNS_CAP = 500;
 
 /** 可修复工具失败允许的最大累计次数（超过即终止，T3.2 修复管线）。 */
 export const MAX_REPAIRS = 2;
@@ -46,7 +62,7 @@ export interface LoopOptions {
   signal?: AbortSignal;
   /** 模型上下文窗口（token）：超过 80% 预算时自动裁剪发送给模型的旧消息。 */
   contextWindow?: number;
-  /** 最大工具循环轮数（默认 MAX_LOOP_TURNS = 200；子代理可覆写为更小值）。 */
+  /** 最大工具循环轮数（默认 MAX_LOOP_TURNS = 50；子代理可覆写为更小值）。 */
   maxTurns?: number;
   /** 最大可修复失败次数（默认 MAX_REPAIRS = 2；探索类子代理可设更高值）。 */
   maxRepairs?: number;

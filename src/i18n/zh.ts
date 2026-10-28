@@ -3,7 +3,17 @@
  * 占位符格式 {key}，运行时用 fmt() 替换。
  */
 
-import { MAX_LOOP_TURNS } from '../loop/loop';
+import { MAX_LOOP_TURNS, MAX_TURNS_CAP } from '../loop/loop';
+
+/**
+ * 达到轮数上限的提示模板（`{turns}` = 本次**真实生效**的上限）。
+ *
+ * 为什么是模板而不是写死数字：上限可被 CLI `-t/--max-turns` 或 `config.maxTurns` 覆盖，
+ * 文案若写死默认 50，用户设了 `-t 5` 却看到「已达 50 轮上限」——等于对用户说假话。
+ * 调用方用 `fmt(t().errors.loopMaxTurnsTemplate, { turns })` 填入实际值。
+ */
+const LOOP_MAX_TURNS_TEMPLATE =
+  '工具调用已达 {turns} 轮上限，进度已保留。你可以继续输入以让助手继续工作。';
 
 export const zh = {
   cli: {
@@ -27,6 +37,13 @@ export const zh = {
     },
     model: {
       description: '指定模型（默认 deepseek-v4-flash）',
+    },
+    // v5.0 架构修正：工具循环轮数上限（优先级 -t > config.maxTurns > 默认 MAX_LOOP_TURNS）
+    // 范围与默认值都用常量拼（不写死数字）：改 `MAX_TURNS_CAP` / `MAX_LOOP_TURNS` 时
+    // 帮助与报错自动跟随，不会出现「代码收 1-500、帮助说过 1-100」这种自相矛盾。
+    maxTurns: {
+      description: `工具循环轮数上限（1-${MAX_TURNS_CAP}；优先级：本次传参 > config.maxTurns > 默认 ${MAX_LOOP_TURNS}）`,
+      invalid: `⚠️  -t/--max-turns 只接受 1-${MAX_TURNS_CAP} 的正整数（收到 {value}），已忽略本次传参，按配置或默认值执行。`,
     },
     balance: {
       description: '查询 DeepSeek 账户余额',
@@ -74,8 +91,11 @@ export const zh = {
     noTty:
       'chat 模式需要交互式终端。请直接运行 `concertoai chat`（不要通过管道/脚本调用），或使用 `concertoai run "<任务>"` 一次性执行。',
     modelCallFailed: '模型调用失败：{message}',
+    /** 轮数上限提示模板（调用方用 fmt 填入本次生效上限，见 LOOP_MAX_TURNS_TEMPLATE）。 */
+    loopMaxTurnsTemplate: LOOP_MAX_TURNS_TEMPLATE,
+    /** 不掌握生效上限时的旧入口（等价「默认 MAX_LOOP_TURNS」）。 */
     get loopMaxTurns() {
-      return `工具调用已达 ${MAX_LOOP_TURNS} 轮上限，进度已保留。你可以继续输入以让助手继续工作。`;
+      return fmt(LOOP_MAX_TURNS_TEMPLATE, { turns: MAX_LOOP_TURNS });
     },
     streamAborted: '生成已中断，已保留已生成内容。可重新输入继续。',
     streamInterrupted: '网络中断：{message}。已保留已生成内容，请重试。',

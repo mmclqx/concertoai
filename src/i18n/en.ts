@@ -3,7 +3,19 @@
  * (en.test.ts asserts structural equality).
  */
 
-import { MAX_LOOP_TURNS } from '../loop/loop';
+import { MAX_LOOP_TURNS, MAX_TURNS_CAP } from '../loop/loop';
+// fmt 定义在 zh.ts（占位符替换与语言无关，共用一份实现，避免两份正则漂移）
+import { fmt } from './zh';
+
+/**
+ * Tool-turn limit message template (`{turns}` = the limit actually in effect).
+ *
+ * Template, not a hardcoded number: the limit can be overridden by CLI
+ * `-t/--max-turns` or `config.maxTurns`; hardcoding the default would tell users
+ * "limit reached (50 turns)" even when they asked for `-t 5`.
+ */
+const LOOP_MAX_TURNS_TEMPLATE =
+  'Tool call limit reached ({turns} turns). Progress saved — continue typing to let the assistant resume.';
 
 export const en = {
   cli: {
@@ -27,6 +39,13 @@ export const en = {
     },
     model: {
       description: 'Model ID (default: deepseek-v4-flash)',
+    },
+    // v5.0 architecture fix: tool-turn limit (priority: flag > config.maxTurns > default MAX_LOOP_TURNS)
+    // Range and default are built from the constants so the help/message can never drift
+    // away from what the parser actually accepts.
+    maxTurns: {
+      description: `Max tool loop turns (1-${MAX_TURNS_CAP}; priority: this flag > config.maxTurns > default ${MAX_LOOP_TURNS})`,
+      invalid: `⚠️  -t/--max-turns accepts an integer in 1-${MAX_TURNS_CAP} (got {value}); the flag was ignored, using config or the default instead.`,
     },
     balance: {
       description: 'Query DeepSeek account balance',
@@ -76,8 +95,11 @@ export const en = {
     noTty:
       'chat mode requires an interactive terminal. Run `concertoai chat` directly (not via a pipe/script), or use `concertoai run "<task>"` instead.',
     modelCallFailed: 'Model call failed: {message}',
+    /** Turn-limit template (callers fmt it with the limit in effect — see LOOP_MAX_TURNS_TEMPLATE). */
+    loopMaxTurnsTemplate: LOOP_MAX_TURNS_TEMPLATE,
+    /** Legacy entry for callers that don't know the effective limit (= default MAX_LOOP_TURNS). */
     get loopMaxTurns() {
-      return `Tool call limit reached (${MAX_LOOP_TURNS} turns). Progress saved — continue typing to let the assistant resume.`;
+      return fmt(LOOP_MAX_TURNS_TEMPLATE, { turns: MAX_LOOP_TURNS });
     },
     streamAborted: 'Generation interrupted; generated content was kept. You can continue typing.',
     streamInterrupted: 'Network interrupted: {message}. Generated content was kept; please retry.',

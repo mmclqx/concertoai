@@ -8,6 +8,30 @@
 
 ## [Unreleased]
 
+### Changed — v5.0 架构修正：工具循环轮数上限改为可配置（`-t/--max-turns` + `config.maxTurns`，三层优先级只在一处合并）
+
+> 定位：**上限从「源码里写死的常量」变成「用户能调，且提示不说假话」**。此前上限只能是常量（T16 才手动从 50 调到 200），单个长任务想放宽、短任务想收紧都没有入口；达到上限的提示还把默认值写死在文案里——用户设了别的值，看到的就是一句假话。148 文件 / 2035 用例 → **148 文件 / 2042 用例**全绿（`npm run verify`）。
+
+- **CLI `-t, --max-turns <n>`**：`chat` / `run` / `plan` 三个入口都注册，接受范围 **1-`MAX_TURNS_CAP`(500)**
+- **`parseMaxTurnsOption`（`src/cli/common.ts`，新增纯函数）**：`-t` 的**唯一校验入口**，无 I/O、不打印、不抛错。只认十进制数字串（`/^\+?\d+$/`）——`Number('1e3')`=1000、`Number('0x10')`=16 这类宽松解析会让用户拿到的上限和他写的**不是一回事**；`0` 与负数（`runLoop` 一轮工具都不执行，语义反直觉）、小数、非数字、`> 500` 一律判 `invalid`
+- **写错只提示、不中断命令**（与 `reflect --limit` 同口径）：一次手滑不该让整条长任务跑不起来——`readMaxTurnsOption`（`src/cli/index.ts`）在解析 Key / 模型**之前**就打出 `cli.maxTurns.invalid`，然后按 `config.maxTurns` > 默认值继续跑
+- **绝不静默夹取**：`-t 3000` 不会被写成「按 500 跑」——写 3000 实跑 500 相差 6 倍，会让人对自己的花费产生错误预期
+- **优先级只在唯一一处合并**：`resolveConfig(config, model, locale, cliMaxTurns)` → `ResolvedConfig.maxTurns`（恒有值）。`chat` / `run` / `plan` / `App` **只读这个字段**，不再各自读 `config.maxTurns`（同一优先级被各入口实现成好几套，是 `approvalInsight` 已踩过的坑，见 D73 / D79）
+- **`config.maxTurns`（新配置项）**：正整数；非法值由 `validateConfigValues` 提示一次后落回默认值（判据 `isValidMaxTurns`），**不让 CLI 起不来、也不静默吞掉**
+- **`MAX_LOOP_TURNS` 200 → 50**（默认值回到 T16 之前的口径；需要更长循环时用 `-t` / `config.maxTurns` 显式放宽，最多 500），并新增硬上限常量 **`MAX_TURNS_CAP = 500`**
+- **达到上限的提示不再写死数字**：`errors.loopMaxTurnsTemplate` + `fmt({ turns })`，四处 `interrupted` 分支（App 三条流 + `run` / `plan`）全部改为**报本次真实生效的上限**；`errors.loopMaxTurns` 保留为「不掌握生效上限」的旧入口（等价默认值）
+- **i18n 范围与默认值用常量拼**：`cli.maxTurns.description` / `.invalid`（zh / en 同构）里的 `1-500` 与 `默认 50` 都来自 `MAX_TURNS_CAP` / `MAX_LOOP_TURNS`，改常量文案自动跟随（不会出现「代码收 1-500、帮助说过 1-100」这种自相矛盾）
+
+### Fixed — v5.0 架构修正顺带：`config set hints off` 曾是假开关
+
+- **`src/cli/chat.tsx` 漏传 `AppProps.hintsEnabled`**：`resolveConfig().hints` 早已解析出最终值（配置文件 / `CONCERTOAI_HINTS` 合并后的结果），但 chat 入口没把它接进 `App` → App 只能退回读环境变量，于是**配置文件里写 `"hints": "off"` 的用户仍然一直看到提示**（`config set hints off` 成了对用户说假话的开关）。现补 `hintsEnabled={resolved.hints === 'on'}`，与 `reflectionsEnabled` 同一条接法
+
+### 测试（v5.0 架构修正）
+
+- `tests/cli/common.test.ts` **+6 用例**（`parseMaxTurnsOption`）：未传 → `undefined` 且不算写错 / 合法值（含 `+45` 与上限 `500`）/ 无效字符串（`''`、`abc`、`5x`、`1.5`、`1e3`、`0x10`、`NaN`、`Infinity`）**不返回 NaN** / `0` 与负数非法 / 超上限**不夹取**（含 `9`.repeat(30) 长数字串）/ off-by-one 边界（`500` 合法、`501` 非法、`1` 合法、`0` 非法）
+- `tests/i18n/zh.test.ts` **+1 用例**：文案里的范围与默认值与常量逐字一致（改常量不漂移，防「帮助说的和代码收的不一样」）
+- **基线校准**：148 文件 / 2035 用例 → **148 文件 / 2042 用例**全绿（`npm run verify`）
+
 ### Added — v5.0 M4 T16：`concertoai fix` 报错自动修（2026-10-28 完成）
 
 > 定位：**`check` 说「不行」之后的下一步——一条命令让 AI 试着修。** `fix` 只做 **薄包装**（判断与修复逻辑一个字都不重写），「每次写盘都必须问」不放宽。148 文件 / 2035 用例全绿（+1 文件 / +20 用例）。

@@ -47,7 +47,7 @@ import {
 import { fmt, t } from '../i18n';
 import { retrieveLocalMemories } from '../loop/local-memory';
 import type { LoopEvent } from '../loop/loop';
-import { runLoop } from '../loop/loop';
+import { MAX_LOOP_TURNS, runLoop } from '../loop/loop';
 import type { MemoryInjector } from '../loop/memory-injector';
 import { userMessage } from '../loop/messages';
 import type { ChatMessage, ToolCall } from '../loop/types';
@@ -189,6 +189,14 @@ export interface AppProps {
   providerName?: string;
   /** fallback 提示（v4.0 M3 T3.4）：主 Provider 故障已切备选时传入，状态条黄色警示。 */
   fallbackNote?: string;
+  /**
+   * 工具循环轮数上限（v5.0 架构修正；由 `resolveConfig().maxTurns` 传入，
+   * 已合并 CLI `-t/--max-turns` > `config.maxTurns` > 默认 50）。
+   *
+   * 缺省时退回 `MAX_LOOP_TURNS`（嵌入式调用方不传也能正常工作）；
+   * 达到上限时提示里的轮数用**本 prop 的真实值**，不是写死的默认值。
+   */
+  maxTurns?: number;
 }
 
 /**
@@ -352,6 +360,7 @@ export function App({
   auditLogger,
   providerName = 'deepseek',
   fallbackNote,
+  maxTurns = MAX_LOOP_TURNS,
   approvalInsightMode,
   riskRulesDisabled,
   reflectionsEnabled = isReflectionsEnabled(undefined, process.env.CONCERTOAI_REFLECTIONS),
@@ -783,12 +792,13 @@ export function App({
             onEvent: makeOnEvent(controller),
             signal: controller.signal,
             contextWindow: getModel(model)?.contextWindow,
+            maxTurns,
           },
           history,
           `请为任务「${task}」输出分步执行计划：markdown 列表，每一步说明要执行的操作（读取/编辑/运行命令）。只输出计划本身，不要调用工具。`,
         );
         if (planResult.interrupted) {
-          setError(t().errors.loopMaxTurns);
+          setError(fmt(t().errors.loopMaxTurnsTemplate, { turns: maxTurns }));
           return;
         }
         const added = planResult.messages.slice(history.length);
@@ -830,6 +840,7 @@ export function App({
       systemPrompt,
       makeOnEvent,
       setStreamed,
+      maxTurns,
     ],
   );
 
@@ -862,12 +873,13 @@ export function App({
             onEvent: makeOnEvent(controller),
             signal: controller.signal,
             contextWindow: getModel(model)?.contextWindow,
+            maxTurns,
           },
           execHistory,
           task,
         );
         if (execResult.interrupted) {
-          setError(t().errors.loopMaxTurns);
+          setError(fmt(t().errors.loopMaxTurnsTemplate, { turns: maxTurns }));
         }
         const added = execResult.messages.slice(history.length);
         setMessages(execResult.messages);
@@ -902,6 +914,7 @@ export function App({
       systemPrompt,
       makeOnEvent,
       setStreamed,
+      maxTurns,
     ],
   );
 
@@ -1394,12 +1407,13 @@ export function App({
                   signal: controller.signal,
                   contextWindow: getModel(model)?.contextWindow,
                   maxRepairs: 5,
+                  maxTurns,
                 },
                 history,
                 skillUserMsg,
               );
               if (loopResult.interrupted) {
-                setError(t().errors.loopMaxTurns);
+                setError(fmt(t().errors.loopMaxTurnsTemplate, { turns: maxTurns }));
               }
               const added = loopResult.messages.slice(history.length);
               setMessages(loopResult.messages);
@@ -1576,12 +1590,13 @@ export function App({
             onEvent,
             signal: controller.signal,
             contextWindow: getModel(model)?.contextWindow,
+            maxTurns,
           },
           history,
           text,
         );
         if (result.interrupted) {
-          setError(t().errors.loopMaxTurns);
+          setError(fmt(t().errors.loopMaxTurnsTemplate, { turns: maxTurns }));
         }
         const added = result.messages.slice(history.length);
         setMessages(result.messages);
@@ -1643,6 +1658,7 @@ export function App({
       // v5.0 T13：/hints status 的回执要反映**当前**开关状态；漏了它就是 stale closure，
       // 会永远报第一次渲染时的值（实测由 biome useExhaustiveDependencies 报红捕获）
       hintsOn,
+      maxTurns,
     ],
   );
 

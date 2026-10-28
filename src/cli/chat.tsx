@@ -56,12 +56,18 @@ export interface RunChatOptions {
   lang?: string;
   /** CLI --provider（v4.0 M3 T3.1）：临时切换 Provider（本次进程生效，不写 config）。 */
   provider?: string;
+  /**
+   * CLI `-t/--max-turns`（v5.0 架构修正）：本次生效的工具循环轮数上限。
+   * 优先级：本参数 > `config.maxTurns` > `MAX_LOOP_TURNS`（50）——合并逻辑在 `resolveConfig`。
+   */
+  maxTurns?: number;
 }
 
 export async function runChat(options: RunChatOptions): Promise<void> {
   // 配置：CLI > 环境变量 > 配置文件 > 默认值
   const config = await loadConfig();
-  const resolved = resolveConfig(config, options.model, options.lang);
+  // -t/--max-turns：CLI > config.maxTurns > 默认 50（优先级只在 resolveConfig 实现一处）
+  const resolved = resolveConfig(config, options.model, options.lang, options.maxTurns);
   setLocale(resolveLocale(resolved.locale));
   // v3.1 M2 T2.3：按 cwd 精确探测已注册项目（-p 已在 index.ts preAction 中 chdir）。
   // 命中 → 项目级白名单与全局合并、项目级 MCP 优先；未命中 → 用全局配置。
@@ -231,6 +237,10 @@ export async function runChat(options: RunChatOptions): Promise<void> {
       approvalInsightMode={resolved.approvalInsight}
       riskRulesDisabled={config.riskRules?.disabled}
       reflectionsEnabled={resolved.reflections === 'on'}
+      // v5.0 T13：场景提示开关——**必须从解析结果接**。
+      // 不传的话 App 只能读环境变量兜底，`config set hints off` 就成了假开关
+      // （配置文件写了 off 却一直在提示 = 对用户说假话，同 T11 approvalInsight 的教训）。
+      hintsEnabled={resolved.hints === 'on'}
       memoryInjector={
         mcpManager !== undefined ? new MemoryInjector(mcpManager, {}, knowledgeStore) : undefined
       }
@@ -244,6 +254,7 @@ export async function runChat(options: RunChatOptions): Promise<void> {
       auditLogger={auditLogger}
       providerName={providerName}
       fallbackNote={fallbackNote}
+      maxTurns={resolved.maxTurns}
     />,
   );
 

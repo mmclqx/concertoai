@@ -7,6 +7,7 @@
  */
 
 import os from 'node:os';
+import { MAX_TURNS_CAP } from '../loop/loop';
 import { isAutoModel, resolveAutoStartModel, upgradeTargetFor } from '../model/auto';
 import { getDefaultModel, getModel, listModels } from '../model/models';
 import { getActiveAccount, getApiKeyFor } from '../store/accounts';
@@ -254,6 +255,50 @@ export function mergeAllowlist(
     }
   }
   return merged;
+}
+
+/**
+ * 解析 CLI `-t/--max-turns <n>`（v5.0 架构修正）。
+ *
+ * 这是 `-t` 的**唯一校验入口**：纯函数，无 I/O、不打印、不抛错。
+ * 语义与 `parseReflectLimit` 同口径：**参数写错如实标记（invalid=true），但不中断命令**
+ * ——一次手滑不该让整条长任务跑不起来。调用方负责把 `invalid` 翻译成用户能看见的提示
+ * （i18n `cli.maxTurns.invalid`），并继续走「config.maxTurns > 默认」的下一层。
+ *
+ * 接受范围 = 1 … `MAX_TURNS_CAP`（500），每条边界都有理由：
+ * - **0 / 负数**：`maxTurns = 0` 会让 `runLoop` 一轮工具都不执行（用户以为「不限」，
+ *   实际「一次也不跑」）；负数同理无任何可解释语义 → 非法。
+ * - **小数 / 非数字**：`1.5`、`abc` 没有「轮」的含义 → 非法。
+ * - **宽松解析的坑**：`Number('1e3')` = 1000、`Number('0x10')` = 16——若直接用
+ *   `Number()`，用户写 `-t 1e3` 会静默拿到 1000 轮。故只认十进制数字串
+ *   （`/^\+?\d+$/`），其余一律非法。
+ * - **超过硬上限**：每轮都是真实计费的模型调用，需要一道刹车防止 `-t 5000` 烧穿余额。
+ *   超范围按**非法值**处理（提示里告知接受范围），**不静默夹到 500**——写 3000 实际
+ *   跑 500 相差 6 倍，静默改值等于对用户说假话。
+ *
+ * @param raw commander 传来的原始字符串（`-t` 未传时为 `undefined`）
+ * @returns `maxTurns` 合法时为数值，未传/非法时为 `undefined`（交给下一层兜底）；
+ *          `invalid` 是否写错（调用方据此提示，**不得**据此中断命令）
+ */
+export function parseMaxTurnsOption(raw: string | undefined): {
+  maxTurns: number | undefined;
+  invalid: boolean;
+} {
+  // 未传 = 正常情况（走 config.maxTurns > 默认），不算写错
+  if (raw === undefined) {
+    return { maxTurns: undefined, invalid: false };
+  }
+  const text = raw.trim();
+  // 空串 / `1e3` / `0x10` / `1.5` / `5x` / `abc` / `-3` 全部在这里拦下
+  if (!/^\+?\d+$/.test(text)) {
+    return { maxTurns: undefined, invalid: true };
+  }
+  const value = Number(text);
+  // 0 与超上限同属「写错了」（提示里会告知 1-500 的接受范围）
+  if (value <= 0 || value > MAX_TURNS_CAP) {
+    return { maxTurns: undefined, invalid: true };
+  }
+  return { maxTurns: value, invalid: false };
 }
 
 export function buildRegistry(

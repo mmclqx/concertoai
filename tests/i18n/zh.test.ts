@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { fmt, zh } from '../../src/i18n/zh';
+import { MAX_LOOP_TURNS, MAX_TURNS_CAP } from '../../src/loop/loop';
 
 describe('fmt 占位符替换', () => {
   it('替换字符串占位符', () => {
@@ -26,6 +27,14 @@ describe('zh 文案表', () => {
   it('关键错误文案存在且含指引', () => {
     expect(zh.errors.noApiKey).toContain('DEEPSEEK_API_KEY');
     expect(zh.errors.loopMaxTurns).toContain('轮上限');
+  });
+
+  it('轮数上限文案与实际常量一致（改常量不漂移）', () => {
+    // 帮助与报错都必须说出**解析器真正接受的**范围：范围写 1-100 而代码收 500，
+    // 用户会以为 200 非法（见 AGENTS「常量/默认值同步」）。
+    expect(zh.cli.maxTurns.description).toContain(`1-${MAX_TURNS_CAP}`);
+    expect(zh.cli.maxTurns.invalid).toContain(`1-${MAX_TURNS_CAP}`);
+    expect(zh.cli.maxTurns.description).toContain(String(MAX_LOOP_TURNS));
   });
 
   it('审批框文案齐全', () => {

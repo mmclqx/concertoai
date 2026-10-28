@@ -3,6 +3,7 @@
  *
  * 支持字段：defaultModel（默认模型）、allowlist（命令白名单）、
  * approvalPolicy（ask / allowlist-only）、sessionDir（会话目录）、locale、
+ * maxTurns（工具循环轮数上限，v5.0 架构修正）、
  * peakTimeStrategy（高峰时段模型切换策略）、ollamaModel / ollamaBaseUrl
  * （本地模型接入，v2.2 智能成本控制）、pricingHolidays（计价用法定节假日表，v5.0 T7）、
  * approvalInsight / riskRules（审批卡形态与规则开关，v5.0 T8-T11）、
@@ -18,6 +19,9 @@ import path from 'node:path';
 import { configureHolidayCalendar } from '../core/holidays';
 import { isReflectionsEnabled } from '../core/reflection-store';
 import { isHintsEnabled } from '../core/suggestion';
+// 轮数上限的**唯一来源**仍在 loop/loop.ts（与 i18n 共用），本模块只读它做默认值兜底。
+// 依赖方向检查：loop/loop.ts 不 import 本模块，故不构成循环。
+import { MAX_LOOP_TURNS } from '../loop/loop';
 import { configPath } from './paths';
 import { DEFAULT_SESSION_DIR } from './session';
 
@@ -106,6 +110,14 @@ export interface ConcertoAIConfig {
   locale?: string;
   /** MCP 服务配置列表（v1.1）。 */
   mcpServers?: MCPServerEntry[];
+  /**
+   * 工具循环轮数上限（v5.0 架构修正）。
+   *
+   * 优先级：CLI `-t/--max-turns` > 本字段 > 默认 `MAX_LOOP_TURNS`（50）。
+   * 合法值为**正整数**；非法值（0 / 负数 / 小数 / 字符串）在 `loadConfig` 提示一次后
+   * 按下一层（默认值）处理——写错一个字不该让 CLI 起不来，但用户必须看得见。
+   */
+  maxTurns?: number;
   /** 高峰时段模型切换策略（v2.2）：ask / switch / ignore，默认 ask。 */
   peakTimeStrategy?: PeakTimeStrategy;
   /** 高峰时段切换到的本地模型 ID（Ollama，v2.2）。 */
@@ -165,6 +177,14 @@ export interface ResolvedConfig {
   approvalPolicy: ApprovalPolicy;
   sessionDir: string;
   locale: string;
+  /**
+   * 工具循环轮数上限（v5.0 架构修正）：**已合并 CLI 传参**的最终值，恒有值。
+   *
+   * 优先级在这一处实现一次：`-t/--max-turns` > `config.maxTurns`（合法时）> `MAX_LOOP_TURNS`（50）。
+   * 消费者（chat / run / plan / App）只读这个字段，不要自己再读 `config.maxTurns`
+   * ——否则同一条优先级链会被各入口实现成好几套（项目既有教训，同 `approvalInsight`）。
+   */
+  maxTurns: number;
   /** MCP 服务配置（v1.1）。 */
   mcpServers: MCPServerEntry[];
   /** 高峰时段模型切换策略（v2.2）：ask / switch / ignore，默认 ask。 */
@@ -228,6 +248,14 @@ export function validateConfigValues(config: ConcertoAIConfig): ConfigValidation
   if (config.hints !== undefined && !isHintsMode(config.hints)) {
     issues.push({ key: 'hints', value: config.hints, expected: 'on | off' });
   }
+  // v5.0 架构修正：轮数上限必须是正整数（0 会让工具循环一轮都不跑，负数/小数同理无效）
+  if (config.maxTurns !== undefined && !isValidMaxTurns(config.maxTurns)) {
+    issues.push({
+      key: 'maxTurns',
+      value: config.maxTurns,
+      expected: '正整数（≥1）',
+    });
+  }
   const disabled = config.riskRules?.disabled;
   if (
     disabled !== undefined &&
@@ -255,6 +283,16 @@ export function isReflectionsMode(value: unknown): value is ReflectionsMode {
 /** 是否为合法提示开关（v5.0 T12）。 */
 export function isHintsMode(value: unknown): value is HintsMode {
   return value === 'on' || value === 'off';
+}
+
+/**
+ * 是否为合法的工具循环轮数上限（v5.0 架构修正）：正整数。
+ *
+ * 为什么 0 不算合法：`maxTurns = 0` 会让 `runLoop` 一轮都不跑（用户以为「不限」，
+ * 实际得到「一次也不执行」），语义反直觉，按非法值处理并提示。
+ */
+export function isValidMaxTurns(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value > 0;
 }
 
 /** 空配置（默认值由解析层兜底）。 */
@@ -400,10 +438,17 @@ export function resolveModelFromConfig(
   return file.defaultModel;
 }
 
+/**
+ * 解析生效配置。
+ *
+ * @param cliMaxTurns CLI `-t/--max-turns`（非法值/未传时由调用方传 undefined）——
+ *   优先级最高；这一条链只在本函数实现一次（见 `ResolvedConfig.maxTurns` 注释）。
+ */
 export function resolveConfig(
   file: ConcertoAIConfig,
   cliModel?: string,
   cliLocale?: string,
+  cliMaxTurns?: number,
 ): ResolvedConfig {
   const model = resolveModelFromConfig(file, cliModel);
 
@@ -464,12 +509,19 @@ export function resolveConfig(
     ? 'on'
     : 'off';
 
+  // v5.0 架构修正：轮数上限优先级 = CLI 传参 > config.maxTurns（合法时）> 默认 50。
+  // 非法 CLI 值不在这里判（调用方 `parseMaxTurnsOption` 已过滤）；config 里的非法值
+  // 由 `validateConfigValues` 提示后落到默认值——两层都不静默吞掉。
+  const configMaxTurns = isValidMaxTurns(file.maxTurns) ? file.maxTurns : undefined;
+  const maxTurns = cliMaxTurns ?? configMaxTurns ?? MAX_LOOP_TURNS;
+
   return {
     model,
     allowlist,
     approvalPolicy,
     sessionDir,
     locale,
+    maxTurns,
     mcpServers: file.mcpServers ?? [],
     peakTimeStrategy,
     ollamaModel,

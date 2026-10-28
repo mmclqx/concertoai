@@ -34,6 +34,7 @@ npm update -g @concertoai/cli
 | `-r, --resume [id]` | 恢复会话；不带 ID 时列出全部会话供键盘选择 |
 | `-l, --list` | 仅打印历史会话列表（时间/消息数/首条摘要），不进入对话 |
 | `-m, --model <id>` | 指定模型（默认读取配置，最后兜底 deepseek-v4-flash） |
+| `-t, --max-turns <n>` | 工具循环轮数上限（1-500；优先级：本参数 > `config.maxTurns` > 默认 50）。写错（0 / 负数 / 小数 / 非数字 / 超 500）**只提示不中断**，按配置或默认值执行 |
 | `--lang <zh\|en>` | 界面语言 |
 
 ### `concertoai run "<任务>"` —— 一次性执行
@@ -41,6 +42,7 @@ npm update -g @concertoai/cli
 | 选项 | 说明 |
 | --- | --- |
 | `-m, --model <id>` | 指定模型 |
+| `-t, --max-turns <n>` | 工具循环轮数上限（1-500；优先级：本参数 > `config.maxTurns` > 默认 50）。写错只提示不中断 |
 | `--auto-approve` | 自动批准编辑与命令执行（**谨慎**；默认危险操作全部拒绝） |
 | `--lang <zh\|en>` | 界面语言 |
 
@@ -56,6 +58,7 @@ npm update -g @concertoai/cli
 - **依赖检测**：自动分析步骤间依赖关系，按拓扑顺序调度，循环依赖提前报错；
 - **进度跟踪**：TUI 实时展示每步状态（⏳ 进行中 / ✅ 已完成 / ❌ 失败），失败步骤可跳过或重试；
 - **文件回滚**：编辑前自动快照，步骤失败时可回滚已完成的文件变更。
+- **轮数上限**：`concertoai plan -t <n> "<任务>"`——**计划阶段与执行阶段共用同一上限**（也可写 `config.maxTurns` 持久化；优先级 `-t` > `config.maxTurns` > 默认 50，硬上限 500）。
 
 ### `concertoai snapshot` —— 多文件事务快照管理（v3.0）
 
@@ -517,6 +520,7 @@ concertoai reflect clear --yes     # 非交互环境（脚本/CI）必须显式�
 | `approvalPolicy` | `"ask" \| "allowlist-only"` | ask | 审批策略 |
 | `sessionDir` | string | `~/.concertoai/sessions` | 会话存储目录 |
 | `locale` | `"zh" \| "en"` | zh | 界面语言 |
+| `maxTurns` | number | 50 | 工具循环轮数上限（正整数，硬上限 500）。优先级：CLI `-t/--max-turns` > 本字段 > 默认 50。写 `0` / 负数 / 小数会在启动时提示一次并按默认值执行（**不静默吞掉**，也不会让 0 变成「一轮都不跑」）；达到上限的提示里报的是**本次真实生效**的轮数 |
 | `mcpServers` | `MCPServerEntry[]` | `[]` | MCP 服务连接配置（v1.1 新增），每项含 `name`/`command`/`args`/`env` |
 | `peakTimeStrategy` | `"ask" \| "switch" \| "ignore"` | ask | 高峰时段模型切换策略（v2.2）：`ask`=交互确认 / `switch`=直接切换 / `ignore`=忽略 |
 | `ollamaModel` | string | `qwen3.6:27b-q4_K_M` | 高峰时段切换到的本地模型 ID（v2.2） |
@@ -709,7 +713,7 @@ ConcertoAI 支持项目级跨会话记忆，帮助模型在多次对话中「记
 - 白名单：命令前缀词边界匹配（`npm test` 命中 `npm test --x`，不命中 `npm testx`）；
 - 截断：文件 50k 字符、搜索结果 100 条、工具回填 20k、命令输出 20k、项目规则 8k；
 - 上下文：超模型 80% 预算自动裁剪（保留 system + 最近轮），记录日志；Agent 显式上下文 ≤ 64KB；
-- 防失控：工具循环上限 200 轮；可修复失败累计超 2 次终止；审批拒绝/越界不进入重试管线；对抗性闭环 ≤ 5 次。
+- 防失控：工具循环**默认上限 50 轮**（`-t/--max-turns` 或 `config.maxTurns` 可调，硬上限 500；到上限只截断当前轮并保留进度，提示里报的是本次真实生效值）；可修复失败累计超 2 次终止；审批拒绝/越界不进入重试管线；对抗性闭环 ≤ 5 次。
 
 ## 12. 故障排查
 

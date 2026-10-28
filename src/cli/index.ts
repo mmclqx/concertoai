@@ -8,7 +8,7 @@ import { fmt, t } from '../i18n';
 import { configPath, crashLogPath, migrateLegacyHome } from '../store/paths';
 import { VERSION } from '../version';
 import { buildMissingApiKeyGuide } from './api-key-guide';
-import { readConfigDeepseekKey, resolveApiKeyCached } from './common';
+import { parseMaxTurnsOption, readConfigDeepseekKey, resolveApiKeyCached } from './common';
 import { installCrashHandlers } from './crash-handler';
 import { checkNodeVersion, isNodeWarnSuppressed } from './node-version';
 import { makePermissionConfirm as makeCliPermissionConfirm } from './plugin';
@@ -69,7 +69,6 @@ async function resolveStartupModel(cliModel?: string): Promise<string> {
   });
   return model;
 }
-
 const program = new Command();
 
 program.name('concertoai').description(t().cli.description).version(VERSION);
@@ -240,6 +239,25 @@ function safeAction<A extends unknown[]>(fn: (...args: A) => Promise<void>): (..
   };
 }
 
+/**
+ * 读取 `-t/--max-turns` 并翻译成「本次生效的轮数上限」（v5.0 架构修正）。
+ *
+ * 校验本身在 `parseMaxTurnsOption`（`./common`，纯函数 + 单测），这里只做两件事：
+ * 1. 写错（非法字符串 / 0 / 负数 / 超过硬上限）→ **如实提示但不中断**，与
+ *    `reflect --limit` 同口径：一次手滑不该让整条长任务跑不起来；
+ * 2. 返回 `undefined` 把最终决定权交回 `resolveConfig`（config.maxTurns > 默认）。
+ *
+ * 为什么不用 commander 的 `Number()` / `parseInt`：`parseInt('5x')` = 5、`Number('1e3')`
+ * = 1000，都会让用户拿到的上限和他写的**不是一回事**（静默改值）。
+ */
+function readMaxTurnsOption(raw: string | undefined): number | undefined {
+  const parsed = parseMaxTurnsOption(raw);
+  if (parsed.invalid) {
+    console.error(fmt(t().cli.maxTurns.invalid, { value: raw ?? '' }));
+  }
+  return parsed.maxTurns;
+}
+
 // 无子命令时默认进入 chat（产品定位：cd 项目 && concertoai）
 program.action(
   safeAction(async () => {
@@ -261,9 +279,18 @@ program
   .option('-r, --resume [id]', t().cli.resume.argument)
   .option('-l, --list', t().cli.list.description)
   .option('-m, --model <id>', t().cli.model.description)
+  .option('-t, --max-turns <n>', t().cli.maxTurns.description)
   .action(
-    async (options: { resume?: string | true; model?: string; list?: boolean; lang?: string }) => {
+    async (options: {
+      resume?: string | true;
+      model?: string;
+      list?: boolean;
+      lang?: string;
+      maxTurns?: string;
+    }) => {
       const { runChat } = await import('./chat');
+      // 先解析 -t：写错时**立刻**提示，不必等模型/Key 解析完才让用户知道
+      const maxTurns = readMaxTurnsOption(options.maxTurns);
       // -l 仅列会话：不需要模型，跳过高峰切换（避免 ask 策略阻塞）
       const model =
         options.list === true ? options.model : await resolveStartupModel(options.model);
@@ -276,6 +303,8 @@ program
         lang: options.lang,
         // v4.0 M3 T3.1：--provider 临时切换（本次进程生效，不写 config）
         provider: program.opts().provider,
+        // v5.0 架构修正：-t/--max-turns（CLI > config.maxTurns > 默认 50）
+        maxTurns,
       });
     },
   );
@@ -286,9 +315,15 @@ program
   .option('-m, --model <id>', t().cli.model.description)
   .option('--auto-approve', '自动批准编辑与命令执行（谨慎使用；默认全部拒绝）')
   .option('--lang <zh|en>', '界面语言')
+  .option('-t, --max-turns <n>', t().cli.maxTurns.description)
   .action(
-    async (task: string, options: { model?: string; autoApprove?: boolean; lang?: string }) => {
+    async (
+      task: string,
+      options: { model?: string; autoApprove?: boolean; lang?: string; maxTurns?: string },
+    ) => {
       const { runTask } = await import('./run');
+      // 先解析 -t：写错时立刻提示（不等 Key 解析完才让用户知道）
+      const maxTurns = readMaxTurnsOption(options.maxTurns);
       await runTask({
         cwd: process.cwd(),
         apiKey: await getApiKey(),
@@ -297,6 +332,8 @@ program
         autoApprove: options.autoApprove ?? false,
         lang: options.lang,
         provider: program.opts().provider,
+        // v5.0 架构修正：-t/--max-turns（CLI > config.maxTurns > 默认 50）
+        maxTurns,
       });
     },
   );
@@ -307,9 +344,15 @@ program
   .option('-m, --model <id>', t().cli.model.description)
   .option('--auto-approve', '自动批准计划与编辑/命令执行（谨慎使用）')
   .option('--lang <zh|en>', '界面语言')
+  .option('-t, --max-turns <n>', t().cli.maxTurns.description)
   .action(
-    async (task: string, options: { model?: string; autoApprove?: boolean; lang?: string }) => {
+    async (
+      task: string,
+      options: { model?: string; autoApprove?: boolean; lang?: string; maxTurns?: string },
+    ) => {
       const { runPlan } = await import('./plan');
+      // 先解析 -t：写错时立刻提示（不等 Key 解析完才让用户知道）
+      const maxTurns = readMaxTurnsOption(options.maxTurns);
       await runPlan({
         cwd: process.cwd(),
         apiKey: await getApiKey(),
@@ -318,6 +361,8 @@ program
         autoApprove: options.autoApprove ?? false,
         lang: options.lang,
         provider: program.opts().provider,
+        // v5.0 架构修正：-t/--max-turns（CLI > config.maxTurns > 默认 50）
+        maxTurns,
       });
     },
   );
