@@ -41,18 +41,34 @@ const TSX_CLI = path.join(process.cwd(), 'node_modules', 'tsx', 'dist', 'cli.mjs
  *
  * 隔离 HOME 是必须的：入口会碰 `~/.concertoai`（迁移 / 建目录 / 读技能与规则），
  * 不隔离就写进开发者真实 home，并与同批次用例互相干扰（AGENTS 第 16 条）。
+ *
+ * `locale` 必须显式给定（v5.0 T22）：
+ * 入口现在会在 commander 解析前按 `LUMEN_LOCALE > LANG` 定语言，若沿用开发机 shell 的
+ * 环境变量，同一份用例在「本机是英文环境」时会全红——与 v3.3 `config.test.ts` 漏隔离
+ * `LUMEN_LOCALE` 导致的假失败同型。所以默认钉 `zh`，需要英文/真默认时显式传：
+ * - `'zh'` / `'en'`：显式设置；
+ * - `'none'`：删掉 `LUMEN_LOCALE` 与 `LANG`，验证「两者都没有 → 回退中文」。
  */
-function runCliHelp(args: string[], home: string): string {
+function runCliHelp(args: string[], home: string, locale: 'zh' | 'en' | 'none' = 'zh'): string {
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    NO_COLOR: '1',
+    CONCERTOAI_HINTS: 'off',
+    HOME: home,
+    USERPROFILE: home,
+  };
+  if (locale === 'none') {
+    // 真·无 env：把两个键删干净才等价于「用户根本没配」，
+    // 否则无法证明「什么都不设 → 回退中文」这条默认路径
+    delete env.LUMEN_LOCALE;
+    delete env.LANG;
+  } else {
+    env.LUMEN_LOCALE = locale;
+  }
   return execFileSync(process.execPath, [TSX_CLI, 'src/cli/index.ts', ...args], {
     encoding: 'utf8',
     timeout: 180_000,
-    env: {
-      ...process.env,
-      NO_COLOR: '1',
-      CONCERTOAI_HINTS: 'off',
-      HOME: home,
-      USERPROFILE: home,
-    },
+    env,
   });
 }
 
@@ -105,6 +121,17 @@ function parseRegistered(helpAll: string): Map<string, string> {
     registry.set(name, splitAligned(line)?.[1] ?? '');
   }
   return registry;
+}
+
+/**
+ * 把命令输出压成一行（连续空白合并成单个空格）。
+ *
+ * commander 会把超宽描述**按终端宽度折行**（无 TTY 时 80 列），而 zh/en 两侧文案长度
+ * 不同 → 折行位置也不同。要断言「这串文案真的出现了」，必须先抹平折行差异，
+ * 否则断言会随窗口宽度/文案长度漂移（v5.0 T22 实测：en 描述被断在 `(terminal` 处）。
+ */
+function flatten(text: string): string {
+  return text.replace(/\s+/g, ' ').trim();
 }
 
 /** 去掉尾部空行后的行数（行数预算按「用户真正看到的行」算）。 */
@@ -252,6 +279,101 @@ describe('--help 首屏精简（v5.0 T14，真跑 CLI）', () => {
     for (const key of keys) {
       // 每个键都必须真的被渲染出来（死文案 = 用户看不到的翻译工作量）
       expect(firstScreen, `i18n help.${key} 没有被渲染进首屏（死文案）`).toContain(zh.help[key]);
+    }
+  });
+});
+
+describe('--help 跟随 locale（v5.0 T22 修复的存量缺陷：help 曾无视 locale）', () => {
+  let home: string;
+  /** `LUMEN_LOCALE=en` 下的首屏。 */
+  let enScreen: string;
+  /** 两个 locale 环境变量都不设时的首屏（默认回退中文）。 */
+  let noEnvScreen: string;
+
+  beforeAll(() => {
+    home = mkdtempSync(path.join(os.tmpdir(), 'concertoai-help-locale-'));
+    enScreen = runCliHelp(['--help'], home, 'en');
+    noEnvScreen = runCliHelp(['--help'], home, 'none');
+  }, 300_000);
+
+  afterAll(() => {
+    rmSync(home, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+  });
+
+  it('LUMEN_LOCALE=en → 首行定位文案是英文（与 en 字典逐字一致）', () => {
+    // 这条用例存在的理由：T22 改动前 `--help` 完全无视 locale（setLocale 只在各命令
+    // action 内调用，而 help 由 commander 在解析阶段打印退出），en 字典那行定稿文案
+    // 没有任何路径能显示出来——当时**没有任何用例覆盖英文 help**，所以长期无人发现。
+    //
+    // 为什么必须 `flatten` 再比：commander 会把超宽描述**按终端宽度折行**（无 TTY 时
+    // 宽度 80），长文案在真实输出里被拆成两行，直接 `toContain(整串)` 会假失败
+    // ——这是断言写法的坑，不是文案的坑（实测：en 描述被断在「(terminal / AI dev …)」）。
+    const flatEn = flatten(enScreen);
+    expect(flatEn).toContain(flatten(en.cli.description));
+    expect(flatEn).not.toContain(flatten(zh.cli.description));
+    // 而且必须紧跟 Usage 行——别让「文件里某处出现过」冒充「首行是英文」
+    expect(flatEn).toMatch(
+      /^Usage: concertoai \[options\] \[command\] ConcertoAI — a personal super CLI/,
+    );
+  });
+
+  it('LUMEN_LOCALE / LANG 都不设 → 回退中文（默认行为不许被改坏）', () => {
+    const flatNoEnv = flatten(noEnvScreen);
+    expect(flatNoEnv).toContain(flatten(zh.cli.description));
+    expect(flatNoEnv).not.toContain(flatten(en.cli.description));
+  });
+
+  it('不止定位行：分段标题也跟随 locale（证明是全局 locale 生效，不是只翻译了一行）', () => {
+    expect(enScreen).toContain(en.help.fastStart);
+    expect(noEnvScreen).toContain(zh.help.fastStart);
+    expect(enScreen).not.toContain(zh.help.fastStart);
+  });
+});
+
+describe('对外定位一致性（v5.0 T22 定位重写）', () => {
+  const readme = readFileSync(path.join(process.cwd(), 'README.md'), 'utf8');
+  const cliSource = readFileSync(path.join(process.cwd(), 'src', 'cli', 'index.ts'), 'utf8');
+  /** README 首屏（前 40 行）——与「一屏看不完就等于没有首屏」的验收口径一致。 */
+  const firstScreen = readme.split(/\r?\n/).slice(0, 40).join('\n');
+
+  it('package.json description 与 --help 首段是同一句话（npm 页与终端不许说两套）', () => {
+    const pkg = JSON.parse(readFileSync(path.join(process.cwd(), 'package.json'), 'utf8')) as {
+      description?: string;
+    };
+    // 两处都面向「第一次接触这个工具的人」，漂移了就会出现「npm 页面说 A、装完 --help 说 B」
+    expect(pkg.description).toBe(zh.cli.description);
+  });
+
+  it('README 首屏给定位 + 3 场景 + 30 秒上手，且旧说法不再出现', () => {
+    expect(firstScreen).toContain('敢让你用来改生产代码的个人超级 CLI');
+    expect(firstScreen).toContain('30 秒上手');
+    for (const old of ['终端编码助手', '终端 AI 开发平台', '守护代码']) {
+      expect(firstScreen, `README 首屏仍有旧定位措辞「${old}」`).not.toContain(old);
+    }
+  });
+
+  it('首屏推荐的三个场景命令都真实注册（不打空头支票）', () => {
+    for (const verb of ['init', 'check', 'commit']) {
+      expect(firstScreen).toContain(`concertoai ${verb}`);
+      expect(
+        new RegExp(`\\.command\\('${verb}'`).test(cliSource),
+        `${verb} 在 README 首屏被推荐但 CLI 里没有注册（空头支票）`,
+      ).toBe(true);
+    }
+  });
+
+  it('历史版本说明是折叠不是删除（首屏干净但信息不丢）', () => {
+    expect(readme).toContain('历史版本速览（v4.0 及以前）');
+    // 原先挤在首屏的那几条版本说明必须仍能在文件里找到，否则「精简」就变成了「丢记录」
+    for (const marker of [
+      'v4.0 新增',
+      'v3.4 新增',
+      'v3.3 新增',
+      'v3.2 新增',
+      'v3.0 新增',
+      'v2.1 新增',
+    ]) {
+      expect(readme, `${marker} 被删掉了（折叠不该丢信息）`).toContain(marker);
     }
   });
 });

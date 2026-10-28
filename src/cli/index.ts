@@ -4,7 +4,7 @@
  */
 
 import { Command } from 'commander';
-import { fmt, t } from '../i18n';
+import { fmt, resolveLocale, setLocale, t } from '../i18n';
 import { configPath, crashLogPath, migrateLegacyHome } from '../store/paths';
 import { VERSION } from '../version';
 import { buildMissingApiKeyGuide } from './api-key-guide';
@@ -85,6 +85,22 @@ async function resolveStartupModel(cliModel?: string): Promise<string> {
   });
   return model;
 }
+// ═══ v5.0 T22：启动期先定语言（修复存量缺陷：--help 曾无视 locale） ═══
+//
+// 为什么必须在这里、且只调这一次：
+// `--help` / `--version` / 参数校验失败这类输出由 commander 在**解析阶段直接打印并退出**，
+// 根本进不到任何命令的 action，而 `setLocale` 此前只在各命令 action 内调用（chat / run /
+// plan / commit / fix / review / team / self-heal / lsp）——于是 `--help` 永远用默认 zh，
+// `en.ts` 那行定稿定位文案**没有任何路径能显示出来**（v5.0 T22 实测发现）。
+// `description(...)` 在下面第 90 行就会取 `t()`，所以必须先定语言再建 `program`。
+//
+// 只认环境变量（LUMEN_LOCALE > LANG，与 `store/config.ts` 的解析优先级一致）：
+// - 这个阶段没有命令上下文，拿不到各命令自己的 `--lang`；
+// - 刻意**不读配置文件**：`--help` 要即时，且 `loadConfig()` 会在配置非法时往 stderr
+//   打告警——让用户敲 `--help` 先看到一堆配置告警是新的噪音。命令内部仍会按
+//   「--lang > 环境变量 > 配置」完整解析一次（各处 `setLocale` 调用保持不变，幂等兜底）。
+setLocale(resolveLocale(process.env.LUMEN_LOCALE || process.env.LANG));
+
 const program = new Command();
 
 program.name('concertoai').description(t().cli.description).version(VERSION);

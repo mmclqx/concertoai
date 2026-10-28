@@ -1,17 +1,39 @@
 # ConcertoAI
 
-ConcertoAI —— 面向个人开发者的**中文优先**终端编码助手 CLI（DeepSeek 驱动）。
+**ConcertoAI —— 敢让你用来改生产代码的个人超级 CLI。**
 
-在项目目录里启动：读取代码 → 提出 diff 方案 → 征求命令许可 → 跑验证 → 留下可续接的会话记录。
+终端里的 AI 开发助手，自带「风险审批」与「一键治愈」。
 
-> 状态：**v4.1.1 已发布**（`npm run verify` 全绿，1404 用例 / 117 测试文件；`npm audit` 0 漏洞；CI 三平台；4.1.1 P0 热修：循环依赖友好失败 / Windows stderr 合并 / preflight 完整初始化（biome 2.x 模板 + tsconfig 自动生成 + tsc help 摘要）；4.1.0 体验打磨轮：智能错误摘要 + 步骤输出截断 / F 等待态 60s 超时 / preflight 环境预检自动初始化 / 错误「下一步」指引 / --help 分组示例 / 首次欢迎引导）。
-> v4.0 新增：**插件市场**（`plugin install/search/browse/recommend` + 六类权限 + 4 内置插件）/ **多 Provider 切换**（DeepSeek/OpenAI/Ollama + `--provider` + config v3→v4 自动迁移）/ **工作流引擎**（`workflow init/run/export/import`，DAG + 审批节点 + 失败恢复）/ **`/review --fix` 一键修复**（A/B 分批 + 快照回滚 + 修复报告）/ **`team --parallel` 多 Agent 并行**（自然触发 + 冲突提示）/ **`lsp --stdio` 三来源诊断**（biome/tsc/self-heal + CodeAction 一键修复）。
-> v3.4 新增：审查建议闭环（collectKeys maxDepth / feedback 数据层 i18n / 正则去 gm 全项目复核 / en 字典 CJK 校验）+ `concertoai doctor --vscode`（进程数 / 崩溃转储 / AI 扩展 / argv.json 四维健康诊断）。
-> v3.3 新增：消化 v3.2 审查遗留（lint:fix 失败语义显式化 / 全局正则去 g / self-heal 文案 i18n / 缓存语义注释 / 解析测试样本统一）。
-> v3.2 新增：跨平台 CI 矩阵 + spawn/UNC/EXDEV 边界 / self-heal 模块化重构 + 增量 verify / 长任务进度推送（team、self-heal）/ project-account 视觉与 doctor 账号完整性 / 启动期缓存 / Agent 市场版本对比与批量更新 / audit 损坏行统计。
-> 新特性：AI 自我修复闭环（self-heal）/ 多项目管理（project）/ 多账号（account）/ Orchestrator CLI（team、audit export）/ 结构化错误增强；智能成本控制（高峰时段自动切换本地 ollama 模型，peakTimeStrategy 可配）、`concertoai balance` 余额查询、`concertoai doctor` 环境诊断。
-> v3.0 新增：多 Agent 协作（Orchestrator + 对抗性闭环）/ Agent 市场 / 可观测性面板 / 多文件事务回滚。
-> v2.1 新增：知识图谱 / Reviewer Agent / 技能市场与嵌套 / 子代理 MCP 工具。
+- **不知道项目怎么跑？** `concertoai init`，一次分析，给你和 AI 两份指南。
+- **担心 AI 瞎改代码？** 高风险编辑自动预警，影响面、风险点、关注行一目了然。
+- **提交前心里没底？** `concertoai check` 体检，`concertoai commit` 自动生成优雅的 commit message。
+
+## 30 秒上手
+
+```bash
+# 零安装试用（不落盘）；长期使用请全局安装，之后可用 concertoai update 升级
+npx @concertoai/cli
+npm install -g @concertoai/cli
+```
+
+```bash
+# 1. 配置 API Key（PowerShell 用 $env:DEEPSEEK_API_KEY="sk-..."）
+export DEEPSEEK_API_KEY=sk-...
+
+# 2. 进项目目录，直接开聊
+cd your-project
+concertoai
+
+# 3. 或者直接用动词（不用进对话）
+concertoai init      # 生成 AGENTS.md（给 AI）+ PROJECT_GUIDE.md（给你）
+concertoai check     # 提交前体检（只读，不改任何文件）
+concertoai commit    # 体检通过后生成 commit message 并本地提交
+```
+
+> 首次运行会引导你配置 Key（三种方式任选），详见下方「环境要求 / 安装」。
+
+> 状态：**v4.1.1 已发布**（`npm run verify` 全绿，1404 用例 / 117 测试文件；`npm audit` 0 漏洞；CI 三平台）。v4.0 及更早的版本说明见文末「历史版本速览」。
+
 
 ## 环境要求
 
@@ -410,6 +432,18 @@ ConcertoAI 支持项目级跨会话记忆，存储位置为项目根目录的 `.
 | `npm run typecheck` | TypeScript 严格类型检查 |
 | `npm run build` | tsup 打包到 `dist/`（ESM + d.ts + CLI 入口） |
 | `npm run verify` | 验收主命令：build + lint + typecheck + test |
+
+## 历史版本速览（v4.0 及以前）
+
+> 首屏只留一句话定位与 30 秒上手；版本轨迹折叠到这里，避免新手一进门就被 8 行发布说明淹没。
+
+> v4.0 新增：**插件市场**（`plugin install/search/browse/recommend` + 六类权限 + 4 内置插件）/ **多 Provider 切换**（DeepSeek/OpenAI/Ollama + `--provider` + config v3→v4 自动迁移）/ **工作流引擎**（`workflow init/run/export/import`，DAG + 审批节点 + 失败恢复）/ **`/review --fix` 一键修复**（A/B 分批 + 快照回滚 + 修复报告）/ **`team --parallel` 多 Agent 并行**（自然触发 + 冲突提示）/ **`lsp --stdio` 三来源诊断**（biome/tsc/self-heal + CodeAction 一键修复）。
+> v3.4 新增：审查建议闭环（collectKeys maxDepth / feedback 数据层 i18n / 正则去 gm 全项目复核 / en 字典 CJK 校验）+ `concertoai doctor --vscode`（进程数 / 崩溃转储 / AI 扩展 / argv.json 四维健康诊断）。
+> v3.3 新增：消化 v3.2 审查遗留（lint:fix 失败语义显式化 / 全局正则去 g / self-heal 文案 i18n / 缓存语义注释 / 解析测试样本统一）。
+> v3.2 新增：跨平台 CI 矩阵 + spawn/UNC/EXDEV 边界 / self-heal 模块化重构 + 增量 verify / 长任务进度推送（team、self-heal）/ project-account 视觉与 doctor 账号完整性 / 启动期缓存 / Agent 市场版本对比与批量更新 / audit 损坏行统计。
+> v3.1 新增：AI 自我修复闭环（self-heal）/ 多项目管理（project）/ 多账号（account）/ Orchestrator CLI（team、audit export）/ 结构化错误增强；智能成本控制（高峰时段自动切换本地 ollama 模型，peakTimeStrategy 可配）、`concertoai balance` 余额查询、`concertoai doctor` 环境诊断。
+> v3.0 新增：多 Agent 协作（Orchestrator + 对抗性闭环）/ Agent 市场 / 可观测性面板 / 多文件事务回滚。
+> v2.1 新增：知识图谱 / Reviewer Agent / 技能市场与嵌套 / 子代理 MCP 工具。
 
 ## 文档
 

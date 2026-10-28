@@ -8,6 +8,24 @@
 
 ## [Unreleased]
 
+### Changed — v5.0 T22：对外定位重写（2026-10-28 完成）
+
+> **新定位（对外统一说法）**：**ConcertoAI —— 敢让你用来改生产代码的个人超级 CLI。**
+> 终端里的 AI 开发助手，自带「风险审批」与「一键治愈」。旧说法「终端 AI 开发平台 + 守护代码」退场——把 L3 安全约束翻译成 L7 产品价值（D86-D87）。
+>
+> **迁移说明（重要：无破坏性变更）**
+> - **配置格式不变**：`config.json` schema 版本、字段名、路径（`~/.concertoai/`）与 v4.x 完全一致，**无需任何迁移动作**；
+> - **会话格式不变**：既有 JSONL 会话记录仍可直接 `concertoai resume` 续接；
+> - **命令与参数不变**：v4.x 的全部命令、斜杠命令、配置文件键名保持原名（改名只发生在**文案**层，不涉及任何标识符）；
+> - **环境变量不变**：`LUMEN_*` / `CONCERTOAI_*` 双轨并存（向后兼容），无需改动 CI 或脚本；
+> - 因此从 v4.x 升级到本版**不需要**任何手工迁移步骤，`npm install -g @concertoai/cli@latest` 即为全部操作。
+
+- **`README.md` 首屏重写**：从「8 行发布说明堆叠」改为「一句话定位 + 3 个真实场景（`init` 双文件 / 高风险审批 / `check`+`commit`）+ 30 秒上手」；版本轨迹折叠到文末「历史版本速览（v4.0 及以前）」，**信息不丢、首屏不淹**（保留最近 1 条状态）。
+- **`package.json` `description`** 与新定位一致（npm 页面首句即定位）。
+- **`src/i18n/zh.ts` / `en.ts` 的 `cli.description`**：`--help` 首段采用同一定位（中文定稿原句；英文 `ConcertoAI — a personal super CLI you dare to point at production code`）。
+- **修复存量缺陷：`--help` 此前完全不跟随 locale**。`setLocale()` 原先只在各命令 action 内调用（chat / run / plan / commit / fix / review / team / self-heal / lsp），而 `--help` / `--version` / 参数校验失败由 commander 在**解析阶段直接打印并退出**，根本进不到 action → 永远用默认 `zh`，`en.ts` 的英文定位文案**没有任何路径能显示出来**。现在入口在 `new Command()` 之前按 `LUMEN_LOCALE > LANG` 定一次语言（不读配置文件，保持 `--help` 即时且不打印配置告警）；命令内部原有的 `setLocale` 调用保持不变（幂等兜底）。
+  - **回归护栏**：`tests/cli/help.test.ts` 新增 3 条用例——`LUMEN_LOCALE=en` 下 `--help` 首行与分段标题为英文、两变量都不设时回退中文、断言按空白归一化比对（commander 会按终端宽度折行，直接比对整串会假失败）。此前**没有任何用例覆盖英文 help**，这正是该缺陷长期未被发现的原因。
+
 ### Added — v5.0 M4 T18：`concertoai review` 命令行直达 9 维审查（2026-10-28 完成）
 
 > 定位：**写完代码不离开终端就能审一遍**——`concertoai review` 把 TUI 里 `/review` 的能力搬到命令行，并保证**和 TUI 说的是同一套话**（ADR-047 / §4 D81）。150 文件 / 2100 用例 → **152 文件 / 2146 用例**全绿（+2 文件 / +46 用例：review 34 + verbs-guard 12）。
