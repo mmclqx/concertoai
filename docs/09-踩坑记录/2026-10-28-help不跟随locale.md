@@ -76,6 +76,29 @@ setLocale(resolveLocale(process.env.LUMEN_LOCALE || process.env.LANG));
 第 4 个是本条最值得记的：它不在 `...process.env` 的搜索范围内，
 只有真的在 `LUMEN_LOCALE=en` 下跑全量才能暴露——**「只改不验」会漏掉它**。
 
+## 这是「一类」缺陷，不是一个个案：全仓模块级可变状态清单
+
+第 4 个受害点的本质是「**模块级可变状态被某个命令写入，跨用例串味**」，与 locale 无关——
+换任何一个模块级状态都会重演。截至本文档时的全部清单（`grep -n "^let " src`，顶层无缩进）：
+
+| 文件 | 模块级可变状态 | 写入入口 | 泄漏风险 |
+|---|---|---|---|
+| `src/i18n/index.ts` | `currentLocale` | `setLocale()`（chat/run/plan/commit/fix/review/team/self-heal/lsp + T22 入口） | **已踩**：测试进程内调这些命令会改全局，后续中文断言红 |
+| `src/core/holidays.ts` | `activeHolidays` / `activeMakeupWorkdays` / `activeConfigured` | `configureHolidayCalendar()`（被 `loadConfig()` 调用） | 高：任何调 `loadConfig` 的用例都会改写全局节假日表，跨用例影响计价断言 |
+| `src/cli/common.ts` | `apiKeyCache` | `resolveApiKeyCached()` | 中：命中缓存会让「换账号/换 Key」类用例读到上一个用例的值 |
+| `src/model/tokenizer.ts` | `_encoder` / `_encoderFallback` | 懒加载（首次调用写入） | 低（幂等缓存，但「首次失败」状态会被后续用例继承） |
+| `src/cli/crash-handler.ts` | `installed` | `installCrashHandlers()` | 低（幂等标志，但会掩盖「二次安装」行为） |
+
+**检出手段（可执行，别靠肉眼）**：
+
+1. 改了任何**启动期 / 全局状态**相关的代码后，必须换一个「非默认环境」跑全量：
+   `LUMEN_LOCALE=en npm run verify`（locale 类）、`LANG=en_US.UTF-8 npm run verify`（LANG 兜底类）。
+2. 扫受害者**两条路径都要扫**：
+   - 谁传了 `...process.env` → `search_content` 搜 `process.env`；
+   - **谁在进程内调用了写全局状态的函数** → 搜上面清单里的写入入口名
+     （`setLocale` / `configureHolidayCalendar` / `resolveApiKeyCached` / `installCrashHandlers`）。
+3. 新增用例若在进程内调用任何写入入口，**必须在 `afterEach` 复位**，不能指望用例执行顺序。
+
 ## 教训
 
 1. **改了「启动期行为」就要按最坏环境跑一遍全量**，不能只看本机绿。
