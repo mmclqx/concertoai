@@ -26,6 +26,10 @@ function isolatedEnv(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env };
   delete env.DEEPSEEK_API_KEY;
   delete env.LUMEN_API_KEY;
+  // v5.0 T22：入口按 LUMEN_LOCALE > LANG 在 commander 解析前定语言，不钉死会随开发机
+  // shell 漂移——本文件断言的是中文引导文案，在英文环境的机器上会全红
+  // （同 v3.3「shell 预设 LUMEN_LOCALE 导致 config.test.ts 假失败」的教训）。
+  env.LUMEN_LOCALE = 'zh';
   env.HOME = tmpHome;
   env.USERPROFILE = tmpHome;
   return env;

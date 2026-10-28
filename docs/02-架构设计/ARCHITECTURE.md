@@ -199,6 +199,17 @@ orchestrator/（协议/调度/闭环/事务） ──► agents/（4 专业 Agen
 ### 3.1 启动装配（chat 模式）
 
 ```
+cli/index.ts（模块顶层，先于 commander 解析）
+  → installCrashHandlers()：最早阶段装全局崩溃处理器（v3.1 M3）
+  → setLocale(resolveLocale(LUMEN_LOCALE || LANG))（v5.0 T22）
+      ⚠️ 必须早于 new Command()：--help / --version / 参数校验失败由 commander
+         在解析阶段直接打印并退出，进不到任何命令 action，而各命令的 setLocale
+         调用都在 action 内 → 不在这里定一次语言，这些输出恒用默认 zh。
+      只认环境变量、刻意不读配置文件（--help 要即时，且 loadConfig 会对非法配置
+      往 stderr 打告警）；命令内部仍按「--lang > 环境变量 > 配置」完整解析一次，
+      各处 setLocale 保留为幂等兜底。
+  → new Command()：program.description(t().cli.description) 在这里取 t()，所以顺序不能反
+
 cli/index.ts（无子命令或 chat）
   → getApiKey()：DEEPSEEK_API_KEY 缺失则报错退出
   → resolveStartupModel()（v2.2）：CLI -m 优先 → maybeSwitchModel 读取配置

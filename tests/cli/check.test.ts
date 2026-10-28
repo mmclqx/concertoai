@@ -593,6 +593,10 @@ describe('runCheckCommand（v5.0 T15）', () => {
           ...process.env,
           NO_COLOR: '1',
           CONCERTOAI_HINTS: 'off',
+          // v5.0 T22：入口现在按 LUMEN_LOCALE > LANG 在 commander 解析前定语言，
+          // 不钉死就会随开发机 shell 的语言漂移（断言的是中文描述），
+          // 与 v3.3「漏隔离 LUMEN_LOCALE 导致 config.test.ts 假失败」同型。
+          LUMEN_LOCALE: 'zh',
           HOME: root,
           USERPROFILE: root,
         },

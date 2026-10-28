@@ -17,6 +17,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { QaReport } from '../../src/agents';
 import type { OrchestratorTask } from '../../src/agents/orchestrator';
 import { formatTeamProgress, runTeamCommand } from '../../src/cli/team';
+import { setLocale } from '../../src/i18n';
 import type { ChatCompletionChunk, ModelClient, StreamChatParams } from '../../src/model/client';
 import type { AgentContext, CoderLike, QaLike, ReviewerLike } from '../../src/orchestrator';
 import {
@@ -166,6 +167,12 @@ beforeEach(() => {
 
 afterEach(() => {
   rmSync(tmp, { recursive: true, force: true });
+  // v5.0 T22 补漏：`runTeamCommand` 内部会 `setLocale(resolveLocale(resolved.locale))`
+  // （src/cli/team.ts），而 resolved.locale 会读环境变量 LUMEN_LOCALE → 本文件前面的
+  // runTeamCommand 集成用例在 `LUMEN_LOCALE=en` 的机器上会把**全局 locale 改成 en**，
+  // 于是后面 formatTeamProgress 的中文断言全红（实测：`🔁 task t1 …` ≠ `🔁 任务 t1 …`）。
+  // i18n 的 locale 是模块级可变状态，跨用例泄漏必须显式复位。
+  setLocale('zh');
 });
 
 // ── T5.1 并行意图识别 ─────────────────────────────────────────

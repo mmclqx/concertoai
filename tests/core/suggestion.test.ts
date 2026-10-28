@@ -339,6 +339,9 @@ describe('命令可用性护栏（T10 教训：提示里的话是承诺）', () 
           ...process.env,
           NO_COLOR: '1',
           CONCERTOAI_HINTS: 'off',
+          // v5.0 T22：入口按 LUMEN_LOCALE > LANG 定语言，不钉死会随开发机 shell 漂移
+          // （下面的断言拿 zh 字典比对；同 v3.3 漏隔离 LUMEN_LOCALE 的教训）。
+          LUMEN_LOCALE: 'zh',
           HOME: home,
           USERPROFILE: home,
         },

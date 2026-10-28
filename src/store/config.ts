@@ -75,7 +75,7 @@ export type HintsMode = 'on' | 'off';
 export const DEFAULT_HINTS: HintsMode = 'on';
 
 /**
- * 本地体验指标开关（v5.0 T21，ADR-049）：`on` = 记录本地 JSONL；`off` = **一个字节都不写**（默认）。
+ * 本地体验指标开关（v5.0 T21）：`on` = 记录本地 JSONL；`off` = **一个字节都不写**（默认）。
  *
  * 为什么默认 off（与 `hints` / `reflections` 的默认 on 相反）：提示与复盘是**给用户用**的
  * 功能，默认关掉等于没做；指标是**给我们看**的数字，用户默认没义务贡献数据。
