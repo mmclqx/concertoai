@@ -753,4 +753,19 @@ interface AgentDef {
 
 ---
 
+## ADR-047：M4 四个动词收口的两种保证——「一致性门」（同一个渲染器）与「护栏测试」（不越权、不重复）
+
+| 字段 | 内容 |
+|------|------|
+| **状态** | 已采纳（v5.0 T18 + T19） |
+| **日期** | 2026-10-28 |
+| **上下文** | M4 把 `check` / `fix` / `commit` / `review` 四个动词搬上 CLI 之后，风险从「功能没做」变成「**做歪了没人发现**」，而且歪的方式极其安静：① **CLI 与 TUI 各写一套渲染**——同一份 `ReviewReport` 在 `concertoai review` 与 `/review` 里显示不同条数/不同措辞，用户无法判断哪个算数；② **CLI 自带第二套 verify 解析或第二条修复闭环**——双份耗时 + 双份失败面，正是 v4.1.1「装好却跑不通」的同类分叉（G6 薄包装纪律）；③ **越权**——为了「方便」顺手 `git push`、顺手加个 `--force`/`--no-verify`，而这类代码永远不会有人主动更新文档。这三类腐化都**不是靠人读文档能防住的**，必须变成代码层面的不变量。另有一处**命名撞车**必须写清：`review` 的严重程度 `A`（决定退出码）与 `--fix` 的修复批次 `A`（决定修什么）是两个不同的「A」。 |
+| **选项** | ① 只在 `ARCHITECTURE.md` / `CLAUDE.md` 写「四个动词必须薄包装、不得 push」，靠代码评审执行 ② 给每个动词写端到端用例，靠行为断言间接覆盖 ③ **一致性门（同一渲染器 + 三块结构断言）+ 护栏测试（源码级正/负样本双断言）**（选此） |
+| **结论** | 采用 ③，分两层落地：<br>**（1）一致性门（T18 / D81）**：`src/cli/review.ts` 的审查 = `ReviewerEngine.review`、渲染 = `ReviewerEngine.formatReport`、修复 = `ReviewerEngine.autoFix`，本文件**零维度提示词、零问题解析、零第二套渲染器**；输出固定三块——CLI 专属范围提示 → **报告块逐行等于 TUI `/review` 的 `formatReport`** → 9 维分级（A/B/C + 每维 ≤3 条 `文件:行号` 证据）+ 退出码结论。用例既断言三块结构与内容，也**在源码级断言两侧是同一个渲染器**（`formatReport`/`autoFix` 在场，`createReviewAgents`/`parseReviewOutput`/`runAutoFix`/`dedupAndSort` 不在场）。默认范围 = **git 改动文件三路合并**（工作区 `diff --name-only` + 暂存 `--staged` + 未跟踪 `ls-files --others`）——已 add 的改动**正是要提交的那批**，漏掉暂存区等于审了个空。退出码 `0 = 无 A 级`、`1 = 有 A 级或判不了`。<br>**（2）护栏测试（T19 / D82）**：`tests/cli/verbs-guard.test.ts` 用纯函数 `findVerbViolations` 扫 `src/cli/**`，**真实源码与合成负样本走同一条判定**——① **不越权**：危险子命令（push/pull/fetch/rebase/merge/reset/checkout/switch/cherry-pick/revert/stash/remote/tag/clean/filter-branch）与危险开关（`--force`/`--force-with-lease`/`--no-verify`）一律违规；`--force` **唯一豁免**是 `init` 的文件覆盖开关（判定片段写死 + 「最近 `.command(` 归属必须是 `init`」双重断言）；三种写法都扫：命令字符串、`git([…])`/`listGit([…])` 参数数组、`spawn('git',[…])`/`execFile('git',[…])`（绕过注入点的直连形态）。② **不重复**：`commit.ts` 必须 `from './check'` 且缺省实参是 `runCheck({ cwd: dir })`、消费 `formatCheckReport`；四个动词禁 `execSync` / `npm run verify`；`function parseVerify*` 全项目**只有** `agents/qa.ts` 与 `loop/self-heal/classifier.ts` 两处（`src/cli` 零处）。③ **反向验证**：9 条故意违规的合成源码必须被抓到，8 条无害样本（数组 `push` / `fs.rm { force: true }` / 只读 git 调用 / 注释里提 `git push`）必须不误报。 |
+| **理由** | (a) **两个出口 = 两份真话**：同一份报告只能有一个渲染器，否则「CLI 说 7 个问题、TUI 说 9 个」时用户无法裁决——一致性门用「逐行相等」把这条变成可执行断言；(b) **薄包装必须可断言**：`execSync('npm run verify')` 这类偷懒只有源码级扫描抓得住，行为用例（跑一次体检）照样全绿；(c) **永远绿的护栏等于没有护栏**：每条红线都配负面样本，护栏自己先证明「会失败」，才配被相信；(d) **判定前先剥注释**：JSDoc 里写「**不**推送」会被裸子串检查当成罪证——这是护栏最容易自己制造假阳性的地方；(e) **两个「A」必须用完整措辞区分**（严重程度 A 决定退出码 / 修复批次 A 决定修什么），否则 `--fix` 会被读成「修掉所有严重问题」；(f) 「判不了」不能算通过，延续 T15「退出码权威、解析只做归因」。 |
+| **红线（改动前必读）** | ① `src/cli/review.ts` **禁止**出现维度提示词、问题解析、第二套渲染器；渲染只走 `formatReport`（与 TUI `/review` 同一函数）；② 四个动词**禁止** `execSync` / 自行 `npm run verify`，体检/分类**只能**复用 `check` / `self-heal` / `error-summary`；③ `src/cli/**` **禁止**任何远程类 git 子命令与 `--force`/`--no-verify`，新增强制开关必须显式改 `FORCE_ALLOWLIST_FRAGMENT` 豁免表（否则立刻红）；④ 新增红线时**必须同时补一条负面样本**（否则扩的是「永远绿」的护栏）；⑤ `--fix` 的写盘路径必须走审批，非 TTY 一个字节不写。 |
+| **已知局限（如实记录）** | ① `findVerbViolations` 是**正则 + 子串**级静态扫描，不是 AST：把 git 子命令拼成变量（`git([sub]`）或从配置读出来，静态扫不到——这属于「护栏的第一道网」，动词源码本来就应该只写常量；② 护栏只覆盖 `src/cli/**`，`src/reviewer/**` 等下层如未来自行起 git 进程不在扫描范围（当前下层无 git 调用）；③ 一致性门断言的是「同一个函数」，若有人把 `formatReport` 内部分叉成 CLI/TUI 两条路径，需要另加断言才能发现。 |
+
+---
+
 *当重要决策做出后，请在此追加新条目。*

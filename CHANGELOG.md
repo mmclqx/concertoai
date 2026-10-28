@@ -8,6 +8,28 @@
 
 ## [Unreleased]
 
+### Added — v5.0 M4 T18：`concertoai review` 命令行直达 9 维审查（2026-10-28 完成）
+
+> 定位：**写完代码不离开终端就能审一遍**——`concertoai review` 把 TUI 里 `/review` 的能力搬到命令行，并保证**和 TUI 说的是同一套话**（ADR-047 / §4 D81）。150 文件 / 2100 用例 → **152 文件 / 2146 用例**全绿（+2 文件 / +46 用例：review 34 + verbs-guard 12）。
+
+- **`src/cli/review.ts`（新增）**：`runReviewCommand`（引擎/渲染/修复/交互**全部可注入**，`ReviewEngineLike` + `GitNameLister`，测试绝不真调模型、绝不真跑 git）+ `resolveReviewScope`（默认范围 = 工作区 `diff --name-only` + 暂存 `--staged` + 未跟踪 `ls-files --others` **三路合并去重**）+ `countGrades` / `reviewExitCode` / `formatDimensionOverview` / `formatReviewVerdict` / `parseReviewSeverity` 等纯函数
+- **G6 薄包装（一致性门）**：审查**只**调 `ReviewerEngine.review`、渲染**只**调 `ReviewerEngine.formatReport`、修复**只**调 `ReviewerEngine.autoFix`（A/B 分批 / 批量审批 / 快照 / 增量体检 / 回滚全在 `reviewer/autofix.ts`）——本文件**零维度提示词、零问题解析、零第二套渲染器**，源码护栏断言 `createReviewAgents` / `parseReviewOutput` / `runAutoFix` / `dedupAndSort` **不在场**
+- **「和 TUI 一致」写成断言**：输出固定三块——① 范围提示（CLI 专属）② **报告块逐行等于 TUI `/review` 的 `formatReport`** ③ 9 维分级（A/B/C + 每维 ≤3 条 `文件:行号` 证据）+ 退出码结论；用例既断言三块结构与内容，也断言两侧调用的是**同一个渲染器**
+- **默认范围 = git 改动文件**：暂存区**必须算**（已 add 的改动正是要提交的那批，漏掉等于审了个空）；排除 `node_modules`/`dist` 等、跳过已删除文件、上限 `MAX_REVIEW_FILES`(30) 并明示截断
+- **退出码口径**：`0 = 无 A 级（🔴 严重）`、`1 = 有 A 级或判不了`（非 git 仓库 / 没装 git / 缺 Key 一律**不冒充通过**）
+- **`--fix` 只修「可自动修的那类」**（`categorizeIssue === 'A'`，与「严重程度 A 决定退出码」用完整措辞区分，避免被读成「修掉所有严重问题」）；写盘必审批、非 TTY **一个字节不写**
+- **i18n**：`zh.review.*` / `en.review.*` 同构 + `cli.review.description`；`review` 进 `COMMON_COMMAND_ORDER`（首屏随顺序表自动跟随，`help.test.ts` 用真实进程断言 4 动词上首屏）
+
+### Added — v5.0 M4 T19：动词一致性护栏（2026-10-28 完成）
+
+> 定位：把「4 个动词不跑偏」从**文档口号**变成**代码级断言**（ADR-047 / §4 D82）。`tests/cli/verbs-guard.test.ts` **12 用例**。
+
+- **护栏一（不越权，D3-B）**：纯函数 `findVerbViolations` 扫 `src/cli/**` —— ① `git push/pull/fetch/rebase/merge/reset/checkout/switch/…` 命令字符串 ② `git([…])` / `listGit([…])` / `spawn('git',[…])` / `execFile('git',[…])` 参数数组里的危险子命令与 `--no-verify` / `--force-with-lease` ③ `--force` **唯一豁免**是 `init` 的文件覆盖开关（判定片段写死 + 「所在命令块必须是 `init`」双重断言，新增一个强制参数立刻红）
+- **护栏二（不重复，G6）**：`commit.ts` 必须 `from './check'` 且缺省实参是 `runCheck({ cwd: dir })`、消费 `formatCheckReport`；四动词源码禁 `execSync` / `npm run verify`；全项目 `function parseVerify*` **只有** `src/agents/qa.ts` 与 `src/loop/self-heal/classifier.ts`、`src/cli` **零处**；四段摘要只从 `utils/error-summary` 取
+- **护栏三（注册齐全）**：4 动词都在入口注册，且 `COMMON_COMMAND_ORDER` 表内**每一项都真实注册**（不打空头支票）
+- **反向验证（护栏自己有牙）**：9 条故意违规的合成源码必须被抓到 + 8 条无害样本（数组 `push` / `fs.rm { force: true }` / 只读 git 调用 / 注释里提 `git push`）必须不误报——「永远绿的护栏等于没有护栏」
+- **自查暴露两处真实缺口并修掉**：`spawn('git', ['fetch'])` 形态原本漏扫（补 `execFile`/`spawn` 两种绕过写法）、`--force` 豁免断言原本按同行判断（改按「最近 `.command(` 归属」判定）；详见 `docs/09-踩坑记录/2026-10-28-护栏测试自查暴露两处漏扫.md`
+
 ### Added — v5.0 M4 T17：`concertoai commit` 一条命令提交（2026-10-28 完成）
 
 > 定位：**写完代码一条命令提交**——先体检、再按真实暂存 diff 生成 message、**展示并审批**后才落成一次**本地**提交。四条线决定它长什么样：绝不越权（不 push / 不改写历史 / 不绕过检查）、体检不可跳过、审批 fail-closed、体检只复用 `check`（G6 薄包装）。148 文件 / 2042 用例 → **150 文件 / 2100 用例**全绿（+2 文件 / +58 用例）。

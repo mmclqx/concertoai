@@ -105,19 +105,22 @@ program.name('concertoai').description(t().cli.description).version(VERSION);
  *
  * ## M4 四动词（用户 2026-10-28 拍板：「绝对不允许打空头支票」）
  *
- * `check` / `fix` / `commit` 已落地（T15 / T16 / T17）；`review` 属 T18，**当前未注册**，
- * 因此首屏一个字都不许出现。落地时**只改下面这一个数组**（按顺序插入）即可自动出现在
- * 「常用命令」，渲染逻辑不用动。
- * 顺序即产品主张：`check`（提交前能不能提交）→ `fix`（报错自动修）→
- * `commit`（提交）→ `review`（审一遍）是 v5.0 的「提交前主路径」。
+ * `check` / `fix` / `commit` / `review` 四个动词**已全部落地**（T15 / T16 / T17 / T18）。
+ * 本表是它们的唯一登记处：**只改下面这一个数组**（按顺序插入）即可自动出现在
+ * 「常用命令」，渲染逻辑不用动；顺序表里的名字若没注册，`findCommand` 会把它过滤掉
+ * （不打空头支票），`tests/cli/help.test.ts` 另有双向不变量盯着。
+ * 顺序即产品主张：`check`（能不能提交）→ `fix`（报错自动修）→ `commit`（提交）→
+ * `review`（审一遍）是 v5.0 的「提交前主路径」。
  */
 const COMMON_COMMAND_ORDER: readonly string[] = [
-  // v5.0 T15：`check` 已落地（提交前主路径的第一步，只读最安全）。
+  // v5.0 T15：`check`（提交前主路径的第一步，只读最安全）。
   'check',
-  // v5.0 T16：`fix` 已落地（check 说「不行」之后的那一步：薄包装 self-heal）。
+  // v5.0 T16：`fix`（check 说「不行」之后的那一步：薄包装 self-heal）。
   'fix',
-  // v5.0 T17：`commit` 已落地（体检 → message 审批 → 本地提交）。
+  // v5.0 T17：`commit`（体检 → message 审批 → 本地提交）。
   'commit',
+  // v5.0 T18：`review`（9 维审查，与 TUI 的 /review 同引擎同输出）。
+  'review',
   'init', // 生成规则文件（也是 T13 场景提示指向的命令）
   'self-heal', // 跑 verify，失败自动修（fix 是它的推荐入口，保留原名不删）
   'doctor', // 环境诊断
@@ -619,6 +622,48 @@ program
         process.exitCode = code;
       }
     }),
+  );
+
+// v5.0 T18：review 命令（9 维审查，CLI 层直达；与 TUI 的 /review 同引擎同输出）
+// ⚠️ 退出码语义：0 = 无 A 级（严重）问题；1 = 有 A 级（含「判不了」：非仓库 / 没装 git / 缺 Key）。
+// ⚠️ 默认只读：不带 --fix 时零写入；带 --fix 时每次写盘都审批（非交互终端一个字节都不写）。
+program
+  .command('review [path]')
+  .description(t().cli.review.description)
+  .option('--fix', t().cli.review.fix)
+  .option('--severity <level>', t().cli.review.severity)
+  .option('-m, --model <id>', t().cli.model.description)
+  .option('--lang <zh|en>', '界面语言')
+  .action(
+    safeAction(
+      async (
+        p: string | undefined,
+        options: { fix?: boolean; severity?: string; model?: string; lang?: string },
+      ) => {
+        const { formatInvalidSeverity, parseReviewSeverity, runReviewCommand } = await import(
+          './review'
+        );
+        // 参数错误先报（别让「缺 Key」把「severity 写错」掩盖掉）；校验规则只此一处
+        const severity = parseReviewSeverity(options.severity);
+        if (!severity.ok) {
+          console.error(formatInvalidSeverity(severity.value));
+          process.exitCode = 1;
+          return;
+        }
+        const code = await runReviewCommand({
+          cwd: process.cwd(),
+          ...(p !== undefined ? { path: p } : {}),
+          fix: options.fix === true,
+          ...(severity.severity !== undefined ? { severity: severity.severity } : {}),
+          apiKey: await getApiKey(),
+          model: options.model,
+          lang: options.lang,
+        });
+        if (code !== 0) {
+          process.exitCode = code;
+        }
+      },
+    ),
   );
 
 // v5.0 T2：update 命令（检查 npm 最新版并升级）

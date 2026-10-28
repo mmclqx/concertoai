@@ -77,6 +77,13 @@ export const en = {
         'Commit in one command (health check first, then an approval-gated message; local commit only, nothing is sent to any remote)',
       yes: 'Skip the message approval (for CI; the health check still runs)',
     },
+    // v5.0 T18: review command (9-dimension review from the CLI, same engine/output as /review)
+    review: {
+      description:
+        'Review code across 9 dimensions (defaults to the files changed in git; same engine as /review)',
+      fix: 'Auto-fix the fixable suggestions after reviewing (every write asks first)',
+      severity: 'Review threshold: strict / normal / lenient (default normal)',
+    },
     doctor: {
       description: 'Environment diagnostics (includes DeepSeek account balance)',
     },
@@ -266,6 +273,47 @@ export const en = {
     localEmptySubject: 'chore: commit staged changes',
     localBodyPoint: 'change {file}',
     localMore: '{count} more file(s) in the same commit',
+  },
+  // v5.0 T18: review command (9-dimension review from the CLI; --fix repairs the fixable ones)
+  review: {
+    scopeChanged: '📂 Scope: {count} changed file(s) (worktree + staged + untracked)',
+    scopeTruncated:
+      '  … {count} more file(s) are not reviewed this time (at most {limit} per run; pass a path to review in batches)',
+    scopeGiven: '📂 Scope: {path}',
+    noChanges:
+      'ℹ️  Nothing to review (the worktree, the staging area and untracked files are all empty).',
+    noChangesHint: '💡 Review an explicit path instead: `concertoai review <file-or-dir>`.',
+    notRepo: '❌ This directory is not a git repository, so the changed files cannot be detected.',
+    notRepoHint: '💡 Pass the path to review explicitly: `concertoai review src/`.',
+    gitMissing: '❌ The git command was not found (not installed, or not on PATH).',
+    gitMissingHint:
+      '💡 Install git and retry (Windows: https://git-scm.com/download/win), or pass a path directly: `concertoai review src/`.',
+    invalidSeverity: '❌ Invalid severity value: {value}. Valid values: {values}',
+    needsApiKey: '❌ Reviewing needs an API key (the 9 dimensions are reviewed by 5 sub-agents).',
+    needsApiKeyHint: '💡 Set DEEPSEEK_API_KEY first, or run `concertoai provider auth deepseek`.',
+    reviewing:
+      '[review] Reviewing {scope} (5 review sub-agents in parallel, this may take 1-2 minutes)…',
+    gradingTitle: '🧮 9 dimensions, graded (A = critical / B = medium / C = suggestion)',
+    dimLine: '  {dimension}: A{a} · B{b} · C{c}{evidence}',
+    dimLineEmpty: '  {dimension}: no issues',
+    evidence: '  evidence {locations}{more}',
+    evidenceMore: ' and {count} more',
+    conclusionClean: '✅ Verdict: no A-level (critical) issue, you can continue (exit code 0).',
+    conclusionBlocked:
+      '❌ Verdict: {count} A-level (critical) issue(s); fix them before committing / merging (exit code 1).',
+    nextStep:
+      '💡 Next: `concertoai review --fix` repairs the fixable suggestions (every write asks first); critical / medium issues need your judgement.',
+    fixScope:
+      '🔧 --fix scope: the fixable suggestions (suggestion level, locatable file); critical / medium issues are always handed to you and your logic is left untouched.',
+    fixNoAuto: 'ℹ️  There is nothing to auto-fix; nothing was changed.',
+    fixNeedsTty:
+      '❌ An interactive terminal is required to approve the repairs (every edit asks first); in non-interactive environments, read the report and fix by hand.',
+    fixProgress: '[review --fix] Repairing issue {fixed}/{total}…',
+    approvalTitle: '🔧 About to write: {summary}',
+    approvalPrompt: 'Approve writing this repair? [y/N] ',
+    fixDone: '🔧 Repair result: {fixed} fixed / {manual} need you / {rolledBack} rolled back.',
+    fixRollbackHint:
+      'ℹ️  Repairs that failed the health check were rolled back; the code is unchanged.',
   },
   // v5.0 T2: update command
   update: {

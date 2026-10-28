@@ -72,6 +72,12 @@ export const zh = {
       description: '一条命令提交（先体检，再生成 message 供你审批；只做本地提交，不推送到远程）',
       yes: '跳过 message 审批直接提交（CI 用；不会跳过体检）',
     },
+    // v5.0 T18：review 命令（CLI 直达 9 维审查，与 TUI /review 同一引擎同一输出）
+    review: {
+      description: '按 9 个维度审查代码（默认审 git 改动的文件；与 /review 同一引擎）',
+      fix: '审查后自动修可自动修的问题（建议级；每次写盘都会审批）',
+      severity: '审查阈值：strict / normal / lenient（默认 normal）',
+    },
     doctor: {
       description: '环境诊断（含 DeepSeek 账户余额）',
     },
@@ -248,6 +254,42 @@ export const zh = {
     localEmptySubject: 'chore: 提交暂存区改动',
     localBodyPoint: '修改 {file}',
     localMore: '另有 {count} 个文件一并提交',
+  },
+  // v5.0 T18：review 命令（CLI 直达 9 维审查；默认审 git 改动文件，--fix 修可自动修的问题）
+  review: {
+    scopeChanged: '📂 审查范围：{count} 个改动文件（工作区 + 暂存区 + 未跟踪）',
+    scopeTruncated:
+      '  … 另有 {count} 个文件未纳入本次审查（一次最多审 {limit} 个；可显式传 path 分批审）',
+    scopeGiven: '📂 审查范围：{path}',
+    noChanges: 'ℹ️  没有可审查的改动（工作区 / 暂存区 / 未跟踪文件都是空的）。',
+    noChangesHint: '💡 指定路径审查：`concertoai review <文件或目录>`。',
+    notRepo: '❌ 当前目录不是 git 仓库，无法自动确定改动文件。',
+    notRepoHint: '💡 请显式指定要审查的路径：`concertoai review src/`。',
+    gitMissing: '❌ 找不到 git 命令（可能未安装，或不在 PATH 里）。',
+    gitMissingHint:
+      '💡 安装 git 后重试（Windows: https://git-scm.com/download/win），或直接指定路径：`concertoai review src/`。',
+    invalidSeverity: '❌ 非法 severity 值: {value}。合法值: {values}',
+    needsApiKey: '❌ 审查需要 API Key（9 维审查由 5 个审查子代理并行完成）。',
+    needsApiKeyHint: '💡 先设置 DEEPSEEK_API_KEY，或运行 `concertoai provider auth deepseek`。',
+    reviewing: '[review] 正在审查 {scope}（5 个审查子代理并行，可能要 1-2 分钟）…',
+    gradingTitle: '🧮 9 维分级（A 级 = 严重 / B 级 = 中等 / C 级 = 建议）',
+    dimLine: '  {dimension}：A{a} · B{b} · C{c}{evidence}',
+    dimLineEmpty: '  {dimension}：无问题',
+    evidence: '  证据 {locations}{more}',
+    evidenceMore: ' 等 {count} 处',
+    conclusionClean: '✅ 结论：无 A 级（严重）问题，可以继续（退出码 0）。',
+    conclusionBlocked: '❌ 结论：{count} 个 A 级（严重）问题，先修再提交 / 合并（退出码 1）。',
+    nextStep:
+      '💡 下一步：`concertoai review --fix` 自动修可自动修的问题（建议级；每次写盘都会审批）；严重 / 中等级问题需你判断。',
+    fixScope:
+      '🔧 --fix 修复范围：可自动修的问题（建议级且能定位文件）；严重 / 中等级一律转人工，不动你的逻辑。',
+    fixNoAuto: 'ℹ️  没有可自动修的问题，未做任何改动。',
+    fixNeedsTty: '❌ 需要交互式终端来审批修复（编辑一律审批）；非交互环境请看完报告后人工修复。',
+    fixProgress: '[review --fix] 正在修复第 {fixed}/{total} 个问题…',
+    approvalTitle: '🔧 即将写入：{summary}',
+    approvalPrompt: '批准这次修复写盘？[y/N] ',
+    fixDone: '🔧 修复结果：已修 {fixed} 个 / 需人工 {manual} 个 / 已回滚 {rolledBack} 个。',
+    fixRollbackHint: 'ℹ️  修复后体检没通过的问题已自动回滚，代码保持原样。',
   },
   // v5.0 T2：update 命令
   update: {
