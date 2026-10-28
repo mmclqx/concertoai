@@ -234,9 +234,9 @@ program.addHelpText('afterAll', () => renderGroupedHelp(program));
 // v3.1 M2 T2.3：全局 `-p, --project <name>` —— 启动前校验项目存在并 chdir 到项目路径
 // （等价 cd 后启动）。preAction hook 在任意子命令 action 前执行，保证 chat/run/plan 等
 // 都以项目路径为 cwd 装配。未注册项目 → 报错退出（fail-closed）。
-program.option('-p, --project <name>', '按已注册项目启动（等价 cd 到项目目录）');
+program.option('-p, --project <name>', t().cli.globalOptions.project);
 // v4.0 M3 T3.1：--provider 临时切换（本次进程生效，不写盘）
-program.option('--provider <name>', '临时切换 Provider（本次进程生效；不写 config）');
+program.option('--provider <name>', t().cli.globalOptions.provider);
 program.hook('preAction', async () => {
   const projectName = program.opts().project as string | undefined;
   if (projectName === undefined) {
@@ -365,8 +365,8 @@ program
   .command('run <task>')
   .description(t().cli.run.description)
   .option('-m, --model <id>', t().cli.model.description)
-  .option('--auto-approve', '自动批准编辑与命令执行（谨慎使用；默认全部拒绝）')
-  .option('--lang <zh|en>', '界面语言')
+  .option('--auto-approve', t().cli.run.autoApprove)
+  .option('--lang <zh|en>', t().cli.lang.description)
   .option('-t, --max-turns <n>', t().cli.maxTurns.description)
   .action(
     async (
@@ -394,8 +394,8 @@ program
   .command('plan <task>')
   .description(t().cli.plan.description)
   .option('-m, --model <id>', t().cli.model.description)
-  .option('--auto-approve', '自动批准计划与编辑/命令执行（谨慎使用）')
-  .option('--lang <zh|en>', '界面语言')
+  .option('--auto-approve', t().cli.plan.autoApprove)
+  .option('--lang <zh|en>', t().cli.lang.description)
   .option('-t, --max-turns <n>', t().cli.maxTurns.description)
   .action(
     async (
@@ -421,9 +421,9 @@ program
 
 program
   .command('snapshot')
-  .description('管理多文件事务快照（T3.6）')
+  .description(t().cli.snapshot.description)
   .argument('[action]', 'list | clean（默认 list）')
-  .option('--lang <zh|en>', '界面语言')
+  .option('--lang <zh|en>', t().cli.lang.description)
   .action(async (action?: string) => {
     const { runSnapshotCommand } = await import('./snapshot');
     await runSnapshotCommand({ cwd: process.cwd(), action });
@@ -431,8 +431,8 @@ program
 
 program
   .command('project <action> [name] [path]')
-  .description('多项目管理（v3.1 M2）：project add/list/remove/info')
-  .option('--lang <zh|en>', '界面语言')
+  .description(t().cli.project.description)
+  .option('--lang <zh|en>', t().cli.lang.description)
   .action(async (action: string, name?: string, p?: string) => {
     const { runProjectCommand } = await import('./project');
     await runProjectCommand({
@@ -446,15 +446,13 @@ program
 program
   .command('team <task>')
   // v5.0 T20：功能冻结（FEATURE_FREEZE.md）——team 与 `--parallel` 停扩，只修 bug
-  .description(
-    'Orchestrator 团队执行（v3.1 M5）：拆解需求 → 对抗性闭环（Architect/Coder/Reviewer/QA）→ 事务回滚兜底 · 维护模式（停扩，只修 bug）',
-  )
+  .description(t().cli.team.description)
   .option('-m, --model <id>', t().cli.model.description)
-  .option('--dry-run', '仅输出拆解清单，不执行任何 Agent')
-  .option('--auto-approve', '自动批准拆解方案与代码写盘（谨慎使用；默认全部审批）')
+  .option('--dry-run', t().cli.team.dryRun)
+  .option('--auto-approve', t().cli.team.autoApprove)
   // v5.0 T20：并行模式停扩（维护模式），只修 bug
-  .option('--parallel', '并行模式：拆解出的独立任务同时执行（也可自然语言触发）· 维护模式（停扩）')
-  .option('--lang <zh|en>', '界面语言')
+  .option('--parallel', t().cli.team.parallel)
+  .option('--lang <zh|en>', t().cli.lang.description)
   .action(
     async (
       task: string,
@@ -488,8 +486,8 @@ program
 program
   .command('lsp')
   .description(t().cli.lsp.description)
-  .option('--stdio', 'stdio 模式（Content-Length 帧，供 VS Code 等客户端连接）')
-  .option('--lang <zh|en>', '界面语言')
+  .option('--stdio', t().cli.lsp.stdio)
+  .option('--lang <zh|en>', t().cli.lang.description)
   .action(async (options: { stdio?: boolean; lang?: string }) => {
     if (options.stdio !== true) {
       process.stderr.write(`❌ ${t().cli.lsp.stdioRequired}\n`);
@@ -502,10 +500,10 @@ program
 
 program
   .command('self-heal')
-  .description('AI 自我修复闭环（v3.1 M1）：执行 npm run verify，失败自动分类→修复→验证→回滚')
+  .description(t().cli.selfHeal.description)
   .option('-m, --model <id>', t().cli.model.description)
-  .option('--auto-approve', '自动批准模型修复（谨慎使用；默认全部拒绝）')
-  .option('--lang <zh|en>', '界面语言')
+  .option('--auto-approve', t().cli.selfHeal.autoApprove)
+  .option('--lang <zh|en>', t().cli.lang.description)
   .action(async (options: { model?: string; autoApprove?: boolean; lang?: string }) => {
     const { runSelfHealCommand } = await import('./self-heal');
     await runSelfHealCommand({
@@ -519,8 +517,8 @@ program
 
 program
   .command('audit <action>')
-  .description('审计日志（v3.1 M5）：audit export [--out <file>] 导出保序 JSON')
-  .option('--out <file>', '导出目标文件（缺省打印 stdout）')
+  .description(t().cli.audit.description)
+  .option('--out <file>', t().cli.audit.out)
   .action(async (action: string, options: { out?: string }) => {
     const { runAuditCommand } = await import('./audit');
     if (action !== 'export') {
@@ -604,7 +602,7 @@ program
   .option('--dry-run', t().cli.fix.dryRun)
   .option('--auto-approve', t().cli.fix.autoApprove)
   .option('-m, --model <id>', t().cli.model.description)
-  .option('--lang <zh|en>', '界面语言')
+  .option('--lang <zh|en>', t().cli.lang.description)
   .action(
     safeAction(
       async (options: {
@@ -639,7 +637,7 @@ program
   .description(t().cli.commit.description)
   .option('-y, --yes', t().cli.commit.yes)
   .option('-m, --model <id>', t().cli.model.description)
-  .option('--lang <zh|en>', '界面语言')
+  .option('--lang <zh|en>', t().cli.lang.description)
   .action(
     safeAction(async (options: { yes?: boolean; model?: string; lang?: string }) => {
       const { runCommitCommand } = await import('./commit');
@@ -669,7 +667,7 @@ program
   .option('--fix', t().cli.review.fix)
   .option('--severity <level>', t().cli.review.severity)
   .option('-m, --model <id>', t().cli.model.description)
-  .option('--lang <zh|en>', '界面语言')
+  .option('--lang <zh|en>', t().cli.lang.description)
   .action(
     safeAction(
       async (
@@ -719,7 +717,7 @@ program
 program
   .command('doctor')
   .description(t().cli.doctor.description)
-  .option('--vscode', '追加 VS Code 健康诊断（进程数 / 崩溃转储 / AI 扩展 / argv.json）')
+  .option('--vscode', t().cli.doctor.vscode)
   // v5.0 T21：本地指标汇总（默认 off 时如实显示「未开启」，不冒充有数据）
   .option('--metrics', t().cli.doctor.metrics)
   .action(async (options: { vscode?: boolean; metrics?: boolean }) => {
@@ -741,8 +739,8 @@ program
 
 program
   .command('login <name>')
-  .description('登录账号（v3.1 M3）：交互输入 API Key 不回显；--key 非交互注入')
-  .option('--key <key>', '非交互注入 API Key（CI 场景）')
+  .description(t().cli.login.description)
+  .option('--key <key>', t().cli.login.key)
   .action(async (name: string, options: { key?: string }) => {
     const { runLoginCommand } = await import('./account');
     await runLoginCommand({ name, key: options.key });
@@ -750,8 +748,8 @@ program
 
 program
   .command('logout <name>')
-  .description('登出账号（v3.1 M3）：清除 active 指针；--purge 删除账号文件')
-  .option('--purge', '同时删除账号目录（含 Key 配置）')
+  .description(t().cli.logout.description)
+  .option('--purge', t().cli.logout.purge)
   .action(async (name: string, options: { purge?: boolean }) => {
     const { runLogoutCommand } = await import('./account');
     await runLogoutCommand({ name, purge: options.purge });
@@ -759,7 +757,7 @@ program
 
 program
   .command('whoami')
-  .description('显示当前账号（v3.1 M3）：账号名 + Key 后 4 位（打码）')
+  .description(t().cli.whoami.description)
   .action(async () => {
     const { runWhoamiCommand } = await import('./account');
     await runWhoamiCommand({});
@@ -767,7 +765,7 @@ program
 
 program
   .command('account <action> [name]')
-  .description('账号管理（v3.1 M3）：account list / switch <name>')
+  .description(t().cli.account.description)
   .action(async (action: string, name?: string) => {
     const { runAccountListCommand, runAccountSwitchCommand } = await import('./account');
     if (action === 'list') {
@@ -788,7 +786,7 @@ program
 program
   .command('workflow <action> [param]')
   .description(t().cli.workflow.description)
-  .option('--lang <zh|en>', '界面语言')
+  .option('--lang <zh|en>', t().cli.lang.description)
   .action(
     safeAction(async (action: string, param?: string) => {
       const { runWorkflowCli } = await import('./workflow');
@@ -821,8 +819,8 @@ program
 program
   .command('plugin <action> [param]')
   .description(t().cli.plugin.description)
-  .option('-y, --yes', '自动批准权限（非交互安装；默认逐项确认，fail-closed）')
-  .option('--lang <zh|en>', '界面语言')
+  .option('-y, --yes', t().cli.plugin.yes)
+  .option('--lang <zh|en>', t().cli.lang.description)
   .action(async (action: string, param: string | undefined, options: { yes?: boolean }) => {
     const { runPluginCli } = await import('./plugin');
     const code = await runPluginCli({
@@ -839,10 +837,10 @@ program
 // v4.0 M3 T3.1/T3.2b：Provider 命令族（list / auth / switch）
 program
   .command('provider <action> [name]')
-  .description('Provider 管理（v4.0 M3）：provider list / auth <name> [--verify] / switch <name>')
-  .option('--key <key>', '非交互注入 API Key（auth 场景；CI 使用）')
-  .option('--verify', '仅验证 Key 不保存（auth 场景）')
-  .option('--lang <zh|en>', '界面语言')
+  .description(t().cli.provider.description)
+  .option('--key <key>', t().cli.provider.key)
+  .option('--verify', t().cli.provider.verify)
+  .option('--lang <zh|en>', t().cli.lang.description)
   .action(
     async (
       action: string,
@@ -883,10 +881,8 @@ program
 // v4.0 M3 T3.5：config 命令族（config set provider <name> / config restore）
 program
   .command('config <action> [name] [value]')
-  .description(
-    '配置管理：config set provider <name> | config set approvalInsight <rich|plain> | config set reflections <on|off> | config set hints <on|off> | config set metrics <on|off> | config restore',
-  )
-  .option('--lang <zh|en>', '界面语言')
+  .description(t().cli.config.description)
+  .option('--lang <zh|en>', t().cli.lang.description)
   .action(async (action: string, name?: string, value?: string) => {
     const { configPath } = await import('../store/paths');
     const { copyFile, rm } = await import('node:fs/promises');

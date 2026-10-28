@@ -328,6 +328,22 @@ describe('--help 跟随 locale（v5.0 T22 修复的存量缺陷：help 曾无视
     expect(noEnvScreen).toContain(zh.help.fastStart);
     expect(enScreen).not.toContain(zh.help.fastStart);
   });
+
+  it('英文 `--help --all` 全程零中文：命令与选项描述都必须来自字典（防「英中混排」）', () => {
+    // 这条挡的是 T22 的一个真实退化形态：入口定好 locale 后，分段标题变英文了，
+    // 但 `program.option(...)` / `.command(...).description(...)` 里还写着中文字面量，
+    // 于是英文 help 变成「英文标题 + 中文命令说明」的混排——**比全中文更难读**。
+    // 断言「零 CJK」比逐条断言「某键等于某值」更难被绕过：任何人再往 index.ts 里
+    // 写一句中文字面量，这条都会红。
+    const enAll = runCliHelp(['--help', '--all'], home, 'en');
+    const cjkLines = enAll.split(/\r?\n/).filter((line) => /[\u4e00-\u9fff]/.test(line));
+    expect(cjkLines, `英文 help 仍有 ${cjkLines.length} 行中文：\n${cjkLines.join('\n')}`).toEqual(
+      [],
+    );
+    // 反向自证：中文 help 必须**有**中文，否则上面那条可能因「根本没输出」而假绿
+    const zhAll = runCliHelp(['--help', '--all'], home, 'zh');
+    expect(/[\u4e00-\u9fff]/.test(zhAll)).toBe(true);
+  }, 300_000);
 });
 
 describe('对外定位一致性（v5.0 T22 定位重写）', () => {

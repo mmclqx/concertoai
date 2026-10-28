@@ -28,6 +28,8 @@ export const en = {
     run: {
       description: 'Run a one-shot task',
       argument: 'Task description',
+      autoApprove:
+        'Approve every edit and command automatically (careful; default is to reject all)',
     },
     resume: {
       description: 'Resume a previous session',
@@ -38,6 +40,7 @@ export const en = {
     },
     plan: {
       description: 'Generate an execution plan first, then execute after approval',
+      autoApprove: 'Approve the plan and every edit/command automatically (careful)',
     },
     model: {
       description: 'Model ID (default: deepseek-v4-flash)',
@@ -91,6 +94,8 @@ export const en = {
       // v5.0 T21: local metrics summary switch (off by default; no data means no data)
       metrics:
         'Append the local experience metrics summary (last 100 entries: approval latency/reject rate, hint adoption, check pass rate, verb distribution)',
+      vscode:
+        'Append VS Code health diagnostics (processes / crash dumps / AI extensions / argv.json)',
     },
     workflow: {
       description: 'Workflow management (init/run/export/import, DAG execution)',
@@ -100,16 +105,81 @@ export const en = {
       description:
         'Start Language Server (--stdio: diagnose on save + one-click CodeAction fix) · maintenance mode (bugfixes only)',
       stdioRequired: 'lsp command requires --stdio (only stdio transport is supported)',
+      stdio: 'stdio mode (Content-Length framing, for clients such as VS Code)',
     },
     plugin: {
       // v5.0 T20: freeze marker — plugin marketplace is no longer expanded (see FEATURE_FREEZE.md)
       description:
         'Plugin marketplace (install/search/list/remove/browse/recommend/popular) · maintenance mode (no new features, bugfixes only)',
+      yes: 'Approve all permissions automatically (non-interactive install; default asks item by item, fail-closed)',
     },
     reflect: {
       description: 'Rejection retrospectives (list / clear; local JSONL, never uploaded)',
       limit: 'Number of entries to show (default 20)',
       yes: 'Skip the confirmation prompt (required in non-interactive environments)',
+    },
+    // ═══ v5.0 T22: these used to be **hardcoded Chinese inside cli/index.ts** ═══
+    // Consequence: once locale worked, the English help was half English (section headings)
+    // and half Chinese (command/option descriptions) — worse than all-Chinese.
+    snapshot: {
+      description: 'Manage multi-file transaction snapshots (T3.6)',
+    },
+    project: {
+      description: 'Multi-project management (v3.1 M2): project add/list/remove/info',
+    },
+    team: {
+      description:
+        'Orchestrator team run (v3.1 M5): decompose → adversarial loop (Architect/Coder/Reviewer/QA) → transaction rollback · maintenance mode (no new features, bugfixes only)',
+      dryRun: 'Only print the task breakdown, run no agents',
+      autoApprove:
+        'Approve the breakdown and every code write automatically (careful; default asks both)',
+      parallel:
+        'Parallel mode: independent tasks from the breakdown run at the same time (also triggered by natural language) · maintenance mode (no new features)',
+    },
+    selfHeal: {
+      description:
+        'AI self-healing loop (v3.1 M1): run npm run verify, then classify → repair → re-verify → rollback on failure',
+      autoApprove: 'Approve every model repair automatically (careful; default is to reject all)',
+    },
+    audit: {
+      description: 'Audit log (v3.1 M5): audit export [--out <file>] exports order-preserving JSON',
+      out: 'Export target file (defaults to stdout)',
+    },
+    login: {
+      description:
+        'Log in an account (v3.1 M3): the interactive prompt does not echo the API key; --key for non-interactive use',
+      key: 'Inject the API key non-interactively (CI scenarios)',
+    },
+    logout: {
+      description:
+        'Log out an account (v3.1 M3): clears the active pointer; --purge also deletes the account files',
+      purge: 'Also delete the account directory (including the stored key)',
+    },
+    whoami: {
+      description:
+        'Show the current account (v3.1 M3): name + last 4 characters of the key (masked)',
+    },
+    account: {
+      description: 'Account management (v3.1 M3): account list / switch <name>',
+    },
+    provider: {
+      description:
+        'Provider management (v4.0 M3): provider list / auth <name> [--verify] / switch <name>',
+      key: 'Inject the API key non-interactively (auth scenarios; for CI)',
+      verify: 'Only verify the key, do not save it (auth scenarios)',
+    },
+    config: {
+      description:
+        'Configuration: config set provider <name> | config set approvalInsight <rich|plain> | config set reflections <on|off> | config set hints <on|off> | config set metrics <on|off> | config restore',
+    },
+    /** Shared option: `--lang` (carried by a dozen commands). */
+    lang: {
+      description: 'Interface language',
+    },
+    /** Global (top-level) options: `concertoai --project` / `--provider`. */
+    globalOptions: {
+      project: 'Start against a registered project (same as cd into its directory)',
+      provider: 'Temporarily switch provider (this process only; config is not written)',
     },
   },
   errors: {

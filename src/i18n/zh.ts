@@ -26,6 +26,7 @@ export const zh = {
     run: {
       description: '一次性执行任务',
       argument: '任务描述',
+      autoApprove: '自动批准编辑与命令执行（谨慎使用；默认全部拒绝）',
     },
     resume: {
       description: '继续上次会话',
@@ -36,6 +37,7 @@ export const zh = {
     },
     plan: {
       description: '先生成执行计划，批准后自动执行',
+      autoApprove: '自动批准计划与编辑/命令执行（谨慎使用）',
     },
     model: {
       description: '指定模型（默认 deepseek-v4-flash）',
@@ -84,6 +86,7 @@ export const zh = {
       description: '环境诊断（含 DeepSeek 账户余额）',
       // v5.0 T21：本地指标汇总开关（默认关闭时不记录，也不冒充有数据）
       metrics: '追加本地体验指标汇总（近 100 条：审批耗时/拒绝率、提示采纳、体检通过率、动词分布）',
+      vscode: '追加 VS Code 健康诊断（进程数 / 崩溃转储 / AI 扩展 / argv.json）',
     },
     workflow: {
       description: '工作流管理（init/run/export/import，DAG 执行）',
@@ -93,16 +96,75 @@ export const zh = {
       description:
         '启动 Language Server（--stdio：保存即诊断 + CodeAction 一键修复）· 维护模式（只修不扩）',
       stdioRequired: 'lsp 命令需要 --stdio 参数（当前仅支持 stdio 传输）',
+      stdio: 'stdio 模式（Content-Length 帧，供 VS Code 等客户端连接）',
     },
     plugin: {
       // v5.0 T20：功能冻结标注——插件市场停扩（新功能 PR 默认拒绝，见 FEATURE_FREEZE.md）
       description:
         '插件市场（install/search/list/remove/browse/recommend/popular）· 维护模式（停扩，只修 bug）',
+      yes: '自动批准权限（非交互安装；默认逐项确认，fail-closed）',
     },
     reflect: {
       description: '拒绝复盘记录（list 查看 / clear 清空；本地 JSONL，零上传）',
       limit: '展示条数（默认 20）',
       yes: '清空时跳过确认（非交互环境必需）',
+    },
+    // ═══ v5.0 T22：以下文案此前**硬编码中文写在 cli/index.ts 里** ═══
+    // 后果：修好 locale 之后，英文 help 只剩分段标题是英文、命令与选项描述仍中文，
+    // 呈现「英中混排」——比全中文更难看。全部搬进字典后 zh/en 才有机会一致。
+    snapshot: {
+      description: '管理多文件事务快照（T3.6）',
+    },
+    project: {
+      description: '多项目管理（v3.1 M2）：project add/list/remove/info',
+    },
+    team: {
+      description:
+        'Orchestrator 团队执行（v3.1 M5）：拆解需求 → 对抗性闭环（Architect/Coder/Reviewer/QA）→ 事务回滚兜底 · 维护模式（停扩，只修 bug）',
+      dryRun: '仅输出拆解清单，不执行任何 Agent',
+      autoApprove: '自动批准拆解方案与代码写盘（谨慎使用；默认全部审批）',
+      parallel: '并行模式：拆解出的独立任务同时执行（也可自然语言触发）· 维护模式（停扩）',
+    },
+    selfHeal: {
+      description: 'AI 自我修复闭环（v3.1 M1）：执行 npm run verify，失败自动分类→修复→验证→回滚',
+      autoApprove: '自动批准模型修复（谨慎使用；默认全部拒绝）',
+    },
+    audit: {
+      description: '审计日志（v3.1 M5）：audit export [--out <file>] 导出保序 JSON',
+      out: '导出目标文件（缺省打印 stdout）',
+    },
+    login: {
+      description: '登录账号（v3.1 M3）：交互输入 API Key 不回显；--key 非交互注入',
+      key: '非交互注入 API Key（CI 场景）',
+    },
+    logout: {
+      description: '登出账号（v3.1 M3）：清除 active 指针；--purge 删除账号文件',
+      purge: '同时删除账号目录（含 Key 配置）',
+    },
+    whoami: {
+      description: '显示当前账号（v3.1 M3）：账号名 + Key 后 4 位（打码）',
+    },
+    account: {
+      description: '账号管理（v3.1 M3）：account list / switch <name>',
+    },
+    provider: {
+      description:
+        'Provider 管理（v4.0 M3）：provider list / auth <name> [--verify] / switch <name>',
+      key: '非交互注入 API Key（auth 场景；CI 使用）',
+      verify: '仅验证 Key 不保存（auth 场景）',
+    },
+    config: {
+      description:
+        '配置管理：config set provider <name> | config set approvalInsight <rich|plain> | config set reflections <on|off> | config set hints <on|off> | config set metrics <on|off> | config restore',
+    },
+    /** 跨命令共享选项：`--lang`（十几个命令都带）。 */
+    lang: {
+      description: '界面语言',
+    },
+    /** 全局（顶层）选项：`concertoai --project` / `--provider`。 */
+    globalOptions: {
+      project: '按已注册项目启动（等价 cd 到项目目录）',
+      provider: '临时切换 Provider（本次进程生效；不写 config）',
     },
   },
   errors: {
