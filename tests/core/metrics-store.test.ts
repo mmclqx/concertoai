@@ -318,6 +318,33 @@ describe('汇总（固定样本断言数字）', () => {
   });
 });
 
+/** `export interface *Metric` 块数量（护栏自证用：0 块 = 空循环假绿）。 */
+function countEventInterfaces(text: string): number {
+  return [...text.matchAll(/export interface \w*Metric \{\r?\n/g)].length;
+}
+
+/**
+ * 找出事件接口里出现的**路径类字段**（隐私契约：只记数字，不记路径）。
+ *
+ * 只扫 `export interface *Metric` 块内的字段声明：裸 `/file:\s*string/` 会把函数参数
+ * （如 `rotateIfNeeded(file: string, …)`）一并误判成事件字段，让这条守卫永远报红——
+ * 守卫要盯的是「事件里记了什么」，不是「哪儿出现过字符串」。
+ *
+ * `file|path|cwd|dir` 一并挡：语义都是「文件路径」，只挡 `file` 等于留后门
+ * （改名 path 就能悄悄把路径写进指标）。
+ */
+function pathFieldViolations(text: string): string[] {
+  const violations: string[] = [];
+  for (const block of text.matchAll(/export interface \w*Metric \{\r?\n([\s\S]*?)\r?\n\}/g)) {
+    for (const line of (block[1] ?? '').split(/\r?\n/)) {
+      if (/^\s*(file|path|cwd|dir)\??\s*:/.test(line)) {
+        violations.push(line.trim());
+      }
+    }
+  }
+  return violations;
+}
+
 describe('隐私：零网络（源码扫描断言）', () => {
   const source = readFileSync(path.join(process.cwd(), 'src', 'core', 'metrics-store.ts'), 'utf8');
 
@@ -342,18 +369,30 @@ describe('隐私：零网络（源码扫描断言）', () => {
   });
 
   it('事件里没有文件路径字段（不记内容，只记数字）', () => {
-    // 只扫**事件接口**的字段：裸 `/file:\s*string/` 会把函数参数签名
-    // （如 `rotateIfNeeded(file: string, …)` 的 path 参数）一并误判成事件字段，
-    // 让这条守卫永远报红——守卫要盯的是「事件里记了什么」，不是「哪儿出现过字符串」。
-    const eventInterfaces = [
-      ...source.matchAll(/export interface \w*Metric \{\r?\n([\s\S]*?)\r?\n\}/g),
-    ];
     // 正则失效（写错接口名 / 换格式）会变成 0 块的空循环假绿，必须先自证匹配到了 4 类事件
-    expect(eventInterfaces.length).toBeGreaterThanOrEqual(4);
-    for (const match of eventInterfaces) {
-      expect(match[1] ?? '').not.toMatch(/^\s*file\??:/m);
-    }
+    expect(countEventInterfaces(source)).toBeGreaterThanOrEqual(4);
+    expect(pathFieldViolations(source)).toEqual([]);
     // 审批事件的字段清单写死，新增字段必须显式改这里（防悄悄收集更多数据）
     expect(DEFAULT_METRICS_EXPECTATION).toEqual(['ts', 'kind', 'durationMs', 'decision', 'level']);
+  });
+
+  // 隐私守卫本身也要被守卫：守卫静默失效 = 「以为没收集、其实在收集」，
+  // 这比没有守卫更危险（同 tests/core/suggestion.test.ts 的「切片取空 → 永远通过」教训）
+  it('护栏自证：真出现路径字段就会被抓（file / path 都挡，函数参数不误报）', () => {
+    expect(
+      pathFieldViolations('export interface FakeMetric {\n  ts: number;\n  file: string;\n}'),
+    ).toEqual(['file: string;']);
+    // 换个名字（path）同样是「记文件路径」，只挡 file 等于留后门
+    expect(
+      pathFieldViolations('export interface FakeMetric {\n  ts: number;\n  path?: string;\n}'),
+    ).toEqual(['path?: string;']);
+    // 函数参数签名不算事件字段——这正是旧裸正则 `/file:\s*string/` 误报的原因
+    expect(pathFieldViolations('async function rotate(file: string) {}')).toEqual([]);
+    // 块外出现路径字段也不该误报（只看 export interface *Metric 块内）
+    expect(
+      pathFieldViolations(
+        'export interface Options {\n  file?: string;\n}\nexport interface FakeMetric {\n  ts: number;\n}',
+      ),
+    ).toEqual([]);
   });
 });
