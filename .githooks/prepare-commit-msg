@@ -1,0 +1,44 @@
+#!/bin/sh
+# ConcertoAI -- 给每条提交追加 Agent 标识 trailer
+#
+# 为什么是 prepare-commit-msg 而不是 commit-msg：
+#   实测（Git for Windows 2.45.1）git commit --no-verify 会绕过 pre-commit 与
+#   commit-msg，但【不会】绕过 prepare-commit-msg。要「跑不掉」，只能选它。
+#
+# 身份解析顺序：
+#   1) 环境变量 CONCERTOAI_AGENT -- 显式声明，权威
+#        Windows cmd : set CONCERTOAI_AGENT=concertoai-loop&& git commit ...
+#        POSIX       : CONCERTOAI_AGENT=concertoai-loop git commit ...
+#   2) git config agent.detect.<id> <环境变量名> -- 外部 agent 自动识别
+#        默认无任何配置，因此零额外开销；确认对方的环境变量后再加一行
+#   3) 兜底 unmarked -- 未声明。按约定，无 trailer 或 unmarked 即「不是我提交的」
+#
+# 生成物示例（提交信息末尾）：
+#   Agent: concertoai-loop
+#
+msg_file="$1"
+
+# 幂等：先清掉旧的 Agent 行与尾部空行，避免 --amend / 重复触发时叠加
+tmp_file="$msg_file.concertoai-tmp"
+awk '!/^Agent: / { if (NF) { for (i = 0; i < pending; i++) print ""; pending = 0; print; next } pending++ }' \
+  "$msg_file" > "$tmp_file" 2>/dev/null && mv "$tmp_file" "$msg_file"
+
+agent="${CONCERTOAI_AGENT:-}"
+
+if [ -z "$agent" ]; then
+  # 配置驱动的外部 agent 识别（默认无配置，循环体不执行）
+  for key in $(git config --get-regexp '^agent\.detect\.' 2>/dev/null | awk '{print $1}'); do
+    env_name=$(git config --get "$key" 2>/dev/null)
+    [ -z "$env_name" ] && continue
+    eval "env_value=\${$env_name}"
+    if [ -n "$env_value" ]; then
+      agent="${key#agent.detect.}"
+      break
+    fi
+  done
+fi
+
+[ -z "$agent" ] && agent="unmarked"
+
+printf '\nAgent: %s\n' "$agent" >> "$msg_file"
+exit 0
