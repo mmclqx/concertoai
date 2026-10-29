@@ -41,6 +41,19 @@ import path from 'node:path';
 
 import pty from 'node-pty';
 
+/**
+ * 【已知噪音——勿吞】脚本退出时 stderr 会打若干段 `Error: AttachConsole failed`
+ * （来自 `node-pty/lib/conpty_console_list_agent.js`）。
+ *
+ * 成因：ConPTY 在控制台拆除阶段 attach 失败，属 node-pty 上游行为，本仓库无法从根上消除。
+ * 位置：发生在**全部断言 PASS 之后**的清理阶段，**不影响退出码（exitCode 0）与断言语义**。
+ *
+ * 【为什么刻意不吞掉 stderr】
+ * 如果把这里的 stderr 重定向到 /dev/null 或 try/catch 掉，就同时吞掉了「上游行为变了」的信号——
+ * 有朝一日它从清理阶段**提前到断言阶段**（真 bug），吞掉后我们将完全看不见。
+ * 保留噪音 = 保留这条早期信号。若将来它真的前移，本注释即为排查入口。
+ */
+
 const REPO = process.cwd();
 const CLI = path.join(REPO, 'dist', 'cli', 'index.js');
 const NODE = process.execPath;
