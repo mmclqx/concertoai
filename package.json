@@ -40,6 +40,7 @@
     "lint:fix": "biome check --write src tests",
     "typecheck": "tsc --noEmit",
     "check:tests": "node scripts/check-skipped-tests.mjs",
+    "lock": "node scripts/agent-lock.mjs",
     "notices": "node scripts/gen-third-party-notices.mjs",
     "bench:approval": "node scripts/bench-approval.mjs",
     "bench:approval-ui": "node scripts/bench-approval-ui.mjs",
