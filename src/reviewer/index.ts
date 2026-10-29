@@ -4,13 +4,28 @@
 
 export type { AutoFixItem, AutoFixOptions, AutoFixResult, FixCategory, FixStatus } from './autofix';
 export { categorizeIssue, parseReviewFixOutput, runAutoFix } from './autofix';
-export { createReviewAgents } from './dimensions';
-export { formatContextArtifacts, ReviewerEngine } from './engine';
+export {
+  classifySubagentFailure,
+  createReviewAgents,
+  parseReviewOutput,
+  tryParseReviewOutput,
+} from './dimensions';
+export {
+  formatContextArtifacts,
+  formatTestStatus,
+  hasVerifyScript,
+  incompleteReasonAction,
+  incompleteReasonText,
+  ReviewerEngine,
+} from './engine';
 export { formatKnowledgeContext, loadKnowledgeBase } from './knowledge';
 export type {
   ReviewAction,
+  ReviewAgentGroup,
   ReviewContextArtifact,
   ReviewDimension,
+  ReviewIncomplete,
+  ReviewIncompleteReason,
   ReviewIssue,
   ReviewOptions,
   ReviewReport,
@@ -20,9 +35,13 @@ export type {
   Severity,
 } from './types';
 export {
+  AGENT_DIMENSIONS,
   ALL_DIMENSIONS,
   buildReviewResult,
   determineReviewAction,
+  incompleteCount,
+  isReviewIncomplete,
   REVIEW_SEVERITIES,
+  reviewedDimensionCount,
   SEVERITY_ICON,
 } from './types';

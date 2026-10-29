@@ -6,7 +6,13 @@
  */
 
 import type { SubagentDef } from '../agent/types';
-import type { ReviewAgentGroup, ReviewDimension, ReviewIssue, Severity } from './types';
+import type {
+  ReviewAgentGroup,
+  ReviewDimension,
+  ReviewIncompleteReason,
+  ReviewIssue,
+  Severity,
+} from './types';
 
 /** 维度 → 严重程度倾向映射。 */
 const DIMENSION_SEVERITY: Record<ReviewDimension, Severity> = {
@@ -144,14 +150,23 @@ export function createReviewAgents(knowledgeCtx: string): SubagentDef[] {
 
 /**
  * 解析子代理输出的 JSON 为 ReviewIssue[]。
- * 解析失败返回空数组（该维度视为审查未完成）。
+ *
+ * 解析失败返回 `null`（**无法解析 ≠ 没有发现问题**）。
+ *
+ * K16（v5.0 T23.3 实测）：旧实现解析失败直接返回 `[]`，与「子代理说没有发现问题」
+ * 完全同形 —— 5 个组全部回了乱码/报错文案时，报告就渲染成「✅ 未发现明显问题」+ exit 0。
+ * 现在把「解析不了」与「解析出空数组」分开：前者计入「该维度未完成」。
  */
-export function parseReviewOutput(raw: string, group: ReviewAgentGroup): ReviewIssue[] {
+export function tryParseReviewOutput(raw: string, group: ReviewAgentGroup): ReviewIssue[] | null {
   try {
     // 提取 JSON 块
     const jsonMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/) ?? [null, raw];
     const jsonStr = (jsonMatch[1] ?? raw).trim();
-    const arr = JSON.parse(jsonStr) as Array<Record<string, unknown>>;
+    const parsed: unknown = JSON.parse(jsonStr);
+    if (!Array.isArray(parsed)) {
+      return null;
+    }
+    const arr = parsed as Array<Record<string, unknown>>;
     const dimensions = AGENT_DIMENSIONS_MAP[group];
 
     return arr.map(
@@ -166,8 +181,75 @@ export function parseReviewOutput(raw: string, group: ReviewAgentGroup): ReviewI
       }),
     );
   } catch {
-    return [];
+    return null;
   }
+}
+
+/**
+ * 解析子代理输出的 JSON 为 ReviewIssue[]（兼容旧行为：解析失败返回空数组）。
+ *
+ * ⚠️ **审查链路不要用它**——用 `tryParseReviewOutput` 才能区分「没审到」与「没问题」。
+ * 保留本函数只为不破坏既有调用方的签名（内部已改为委托）。
+ */
+export function parseReviewOutput(raw: string, group: ReviewAgentGroup): ReviewIssue[] {
+  return tryParseReviewOutput(raw, group) ?? [];
+}
+
+// ── 失败分类（K16：未完成原因要说清是 401 / 超时 / 网络）──────────
+
+/** 失败分类结果。 */
+export interface FailureClassification {
+  reason: ReviewIncompleteReason;
+  /** 便于人读的原因摘要（保留原始错误里最有诊断价值的那一句）。 */
+  detail: string;
+}
+
+/** 从错误文本里提炼「一句话原因」：优先保留 HTTP 状态码与中文说明，去掉堆栈与超长 JSON。 */
+function condense(text: string): string {
+  const oneLine = text.replace(/\s+/g, ' ').trim();
+  return oneLine.length > 160 ? `${oneLine.slice(0, 160)}…` : oneLine;
+}
+
+/**
+ * 把子代理的失败原因归类（纯函数：只读字符串，无 IO、无时钟）。
+ *
+ * 判据按「用户下一步该做什么」划分，而不是按错误对象类型：
+ * - 401/403 → 检查 Key（`concertoai doctor` / `concertoai login`）
+ * - 402 / 余额不足 → 充值
+ * - 连不上（DNS / 拒绝连接 / 代理）→ 查网络
+ * - 超时 → 加大超时或缩小审查范围
+ * - 轮数上限 → 缩小范围
+ * - 解析失败 → 模型输出不可用（可重试）
+ */
+export function classifySubagentFailure(error: string | undefined): FailureClassification {
+  const text = `${error ?? ''}`;
+  const detail = condense(text) || '未提供错误详情';
+
+  // 余额 / 配额优先于 401：DeepSeek 余额不足返回 402，若误判成 Key 问题会让人白折腾
+  if (/HTTP\s*402|Insufficient\s+Balance|余额不足|insufficient_quota|quota/i.test(text)) {
+    return { reason: 'quota', detail };
+  }
+  if (
+    /HTTP\s*401|HTTP\s*403|Authentication\s+Fails|invalid\s+api\s+key|Unauthorized|Forbidden|api\s*key\s*.*invalid/i.test(
+      text,
+    )
+  ) {
+    return { reason: 'unauthorized', detail };
+  }
+  if (/超时|timeout|timed\s*out|TimeoutError|AbortError/i.test(text)) {
+    return { reason: 'timeout', detail };
+  }
+  if (
+    /fetch\s+failed|ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|EAI_AGAIN|getaddrinfo|socket\s+hang\s+up|network|代理|proxy/i.test(
+      text,
+    )
+  ) {
+    return { reason: 'network', detail };
+  }
+  if (/轮上限|maxTurns|max\s*turns/i.test(text)) {
+    return { reason: 'turn-limit', detail };
+  }
+  return { reason: 'error', detail };
 }
 
 /** Agent group → dimensions 映射（从 types.ts 复制）。 */

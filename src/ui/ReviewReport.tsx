@@ -7,8 +7,9 @@
 import { Box, Text } from 'ink';
 import type { FC } from 'react';
 
+import { formatTestStatus, incompleteReasonText } from '../reviewer';
 import type { ReviewReport } from '../reviewer/types';
-import { ALL_DIMENSIONS } from '../reviewer/types';
+import { ALL_DIMENSIONS, incompleteCount, isReviewIncomplete } from '../reviewer/types';
 
 interface ReviewReportProps {
   report: ReviewReport;
@@ -18,6 +19,9 @@ export const ReviewReportView: FC<ReviewReportProps> = ({ report }) => {
   const critical = report.issues.filter((i) => i.severity === 'critical');
   const medium = report.issues.filter((i) => i.severity === 'medium');
   const suggestions = report.issues.filter((i) => i.severity === 'suggestion');
+  // K16：审查不完整时不许说「未发现明显问题」（TUI 与 CLI 同口径）
+  const incomplete = isReviewIncomplete(report);
+  const missingDimensions = incompleteCount(report);
 
   return (
     <Box flexDirection="column">
@@ -27,17 +31,35 @@ export const ReviewReportView: FC<ReviewReportProps> = ({ report }) => {
       <Box flexDirection="column" marginY={1}>
         <Text>审查范围：{report.scope}</Text>
         <Text>审查时间：{report.timestamp}</Text>
-        <Text>
-          自动测试：
-          {report.testPassed === null ? '未运行' : report.testPassed ? ' ✅ 通过' : ' ❌ 失败'}
-        </Text>
+        <Text>自动测试：{formatTestStatus(report)}</Text>
         <Text>
           严重程度：🔴 严重 × {critical.length} · 🟡 中等 × {medium.length} · 🟢 建议 ×{' '}
           {suggestions.length}
         </Text>
       </Box>
 
-      {report.issues.length === 0 && <Text color="green">✅ 未发现明显问题，代码质量良好。</Text>}
+      {incomplete && (
+        <Box flexDirection="column" marginY={1}>
+          <Text bold color="yellow">
+            ⚠️ 本次审查未完成（{ALL_DIMENSIONS.length - missingDimensions}/9 维已审）
+          </Text>
+          <Text dimColor>这不是「没问题」——下面这些维度没有审到，请先解决原因再重跑。</Text>
+          {(report.incomplete ?? []).map((item) => (
+            <Text key={item.group} color="yellow">
+              • {item.dimensions.join(' / ')}：{incompleteReasonText(item.reason)}（{item.detail}）
+            </Text>
+          ))}
+        </Box>
+      )}
+
+      {report.issues.length === 0 &&
+        (incomplete ? (
+          <Text color="yellow">
+            ⚠️ 本次没有发现问题，但审查未完成（见上），不能当作「代码没问题」。
+          </Text>
+        ) : (
+          <Text color="green">✅ 未发现明显问题，代码质量良好。</Text>
+        ))}
 
       {critical.length > 0 && (
         <Box flexDirection="column" marginY={1}>

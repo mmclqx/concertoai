@@ -11,14 +11,18 @@
  */
 
 import { execSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+
 import type { SubagentSpawner } from '../agent/spawner';
 import { fmt, t } from '../i18n';
 import { type AutoFixOptions, runAutoFix } from './autofix';
-import { createReviewAgents, parseReviewOutput } from './dimensions';
+import { classifySubagentFailure, createReviewAgents, tryParseReviewOutput } from './dimensions';
 import { formatKnowledgeContext, loadKnowledgeBase } from './knowledge';
 import type {
   ReviewAgentGroup,
   ReviewContextArtifact,
+  ReviewIncomplete,
   ReviewIssue,
   ReviewOptions,
   ReviewReport,
@@ -26,7 +30,34 @@ import type {
   ReviewSeverity,
   Severity,
 } from './types';
-import { ALL_DIMENSIONS, SEVERITY_ICON } from './types';
+import { AGENT_DIMENSIONS, ALL_DIMENSIONS, incompleteCount, SEVERITY_ICON } from './types';
+
+/**
+ * 项目里是否定义了 `npm run verify` 脚本（K7）。
+ *
+ * **读 package.json，不解析 npm 输出**：靠 `Missing script` 之类英文串判「有没有脚本」
+ * 是把第三方输出当协议（AGENTS 第 10 条同类教训）。读文件是确定性的，且能省掉一次 npm 启动。
+ * 读不到 / 不是项目 → 视为没有脚本（`review` 在非项目目录本来就已经被范围解析拦住）。
+ */
+export function hasVerifyScript(cwd: string): boolean {
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(path.join(cwd, 'package.json'), 'utf8'));
+    const scripts = (parsed as { scripts?: Record<string, unknown> }).scripts;
+    const verify = scripts?.verify;
+    return typeof verify === 'string' && verify.trim() !== '';
+  } catch {
+    return false;
+  }
+}
+
+/** 把子代理的原始回复压成一句可展示的原因（解析失败时用）。 */
+function condenseForReport(raw: string): string {
+  const oneLine = raw.replace(/\s+/g, ' ').trim();
+  if (oneLine === '') {
+    return '模型未返回内容';
+  }
+  return oneLine.length > 120 ? `${oneLine.slice(0, 120)}…` : oneLine;
+}
 
 /** 严重程度排序权重。 */
 const SEVERITY_ORDER: Record<Severity, number> = {
@@ -74,27 +105,66 @@ export class ReviewerEngine {
     );
 
     // Step 4: 结果聚合
+    //
+    // K16（v5.0 T23.3 实测）：此前失败分支只是「静默跳过」，于是 5 个组全失败 = 0 条问题
+    // = 报告「✅ 未发现明显问题」+ exit 0。断网 / Key 过期 / 余额耗尽 / 代理不通任何一种，
+    // `review` 都会变成绿灯放行。现在失败必须**逐组记账**（含原因分类），报告与退出码都要表态。
     const allIssues: ReviewIssue[] = [];
-    for (const r of agentResults) {
-      if (r.status === 'fulfilled') {
-        const { group, result } = r.value;
-        if (result.ok) {
-          const issues = parseReviewOutput(result.summary, group);
-          allIssues.push(...issues);
-        }
-        // 子代理失败 → 该维度标记为审查未完成（静默跳过）
+    const incomplete: ReviewIncomplete[] = [];
+    for (let i = 0; i < agentResults.length; i += 1) {
+      const def = agents[i];
+      const r = agentResults[i];
+      if (def === undefined || r === undefined) {
+        continue;
       }
+      const group = def.name as ReviewAgentGroup;
+      const dimensions = AGENT_DIMENSIONS[group];
+      if (r.status === 'rejected') {
+        const classified = classifySubagentFailure(
+          r.reason instanceof Error ? r.reason.message : String(r.reason),
+        );
+        incomplete.push({ group, dimensions, ...classified });
+        continue;
+      }
+      const { result } = r.value;
+      if (!result.ok) {
+        // 子代理自己的失败原因（含 HTTP 状态 / 超时毫秒 / 网络错误）
+        const classified = classifySubagentFailure(result.error ?? result.summary);
+        incomplete.push({ group, dimensions, ...classified });
+        continue;
+      }
+      const parsed = tryParseReviewOutput(result.summary, group);
+      if (parsed === null) {
+        // 回了，但不是可解析的 JSON —— 同样等于「这维没审到」，不能算「没问题」
+        incomplete.push({
+          group,
+          dimensions,
+          reason: 'parse-failed',
+          detail: condenseForReport(result.summary),
+        });
+        continue;
+      }
+      allIssues.push(...parsed);
     }
 
     const issues = this.dedupAndSort(allIssues);
 
     // Step 5: 自动测试
+    //
+    // K7（v5.0 T23.3 实测）：项目**没有** `verify` 脚本时，跑 `npm run verify` 会得到
+    // Missing script → 旧实现判成「❌ 失败」，读起来像「你的测试挂了」。先看 package.json，
+    // 没有脚本就压根不跑（省一次 npm 启动），并如实标 `no-verify-script`。
     let testPassed: boolean | null = null;
-    try {
-      execSync('npm run verify', { cwd: this.cwd, timeout: 120_000, stdio: 'pipe' });
-      testPassed = true;
-    } catch {
-      testPassed = false;
+    let testNotRunReason: ReviewReport['testNotRunReason'];
+    if (hasVerifyScript(this.cwd)) {
+      try {
+        execSync('npm run verify', { cwd: this.cwd, timeout: 120_000, stdio: 'pipe' });
+        testPassed = true;
+      } catch {
+        testPassed = false;
+      }
+    } else {
+      testNotRunReason = 'no-verify-script';
     }
 
     // Step 6: 汇总
@@ -106,6 +176,8 @@ export class ReviewerEngine {
       scope: scopeDesc,
       timestamp: new Date().toISOString(),
       testPassed,
+      ...(testNotRunReason !== undefined ? { testNotRunReason } : {}),
+      ...(incomplete.length > 0 ? { incomplete } : {}),
       severity,
       issues,
       summary,
@@ -147,19 +219,38 @@ export class ReviewerEngine {
    * 生成审查报告的 markdown 文本。
    */
   static formatReport(report: ReviewReport): string {
+    const dict = t().reviewer;
     const critical = report.issues.filter((i) => i.severity === 'critical');
     const medium = report.issues.filter((i) => i.severity === 'medium');
     const suggestions = report.issues.filter((i) => i.severity === 'suggestion');
+    const missing = incompleteCount(report);
 
     const lines: string[] = [
       '## 📋 Reviewer Agent 审查报告',
       '',
       `**审查范围**：${report.scope}`,
       `**审查时间**：${report.timestamp}`,
-      `**自动测试**：${report.testPassed === null ? '未运行' : report.testPassed ? '✅ 通过' : '❌ 失败'}`,
+      `**自动测试**：${formatTestStatus(report)}`,
       `**严重程度**：🔴 严重 × ${critical.length} · 🟡 中等 × ${medium.length} · 🟢 建议 × ${suggestions.length}`,
       '',
     ];
+
+    // K16：审查不完整必须**排在问题列表之前**——否则用户先看到「🔴×0」就走人了
+    if (report.incomplete !== undefined && report.incomplete.length > 0) {
+      lines.push(`### ${fmt(dict.incompleteTitle, { done: ALL_DIMENSIONS.length - missing })}`, '');
+      lines.push(dict.incompleteHint, '');
+      for (const item of report.incomplete) {
+        lines.push(
+          fmt(dict.incompleteItem, {
+            dimensions: item.dimensions.join(' / '),
+            reason: incompleteReasonText(item.reason),
+            detail: item.detail,
+            action: incompleteReasonAction(item.reason),
+          }),
+        );
+      }
+      lines.push('');
+    }
 
     if (critical.length > 0) {
       lines.push('### 🔴 严重问题', '');
@@ -183,7 +274,8 @@ export class ReviewerEngine {
     }
 
     if (report.issues.length === 0) {
-      lines.push('✅ 未发现明显问题，代码质量良好。');
+      // K16：「没有发现问题」只有在**审完**时才能这么说
+      lines.push(missing > 0 ? dict.incompleteNoIssues : '✅ 未发现明显问题，代码质量良好。');
     }
 
     lines.push('', '### 📊 汇总', '');
@@ -309,8 +401,51 @@ function compactDiff(diff: string | undefined): string {
   return `  \`\`\`diff\n  ${shown.join('\n  ')}\n  \`\`\`${suffix}`;
 }
 
-/** 格式化单个问题为 markdown。 */
-function formatIssue(issue: ReviewIssue): string {
+/**
+ * 「自动测试」一行的文案（K7 三态）。
+ *
+ * `passed` / `failed` / `未运行（项目未定义 verify 脚本）` 三者必须**互相区分**：
+ * 旧实现把「没脚本」也算「失败」，用户看到 ❌ 会去查自己的测试，而实际原因是没有脚本。
+ */
+export function formatTestStatus(report: ReviewReport): string {
+  const dict = t().reviewer;
+  if (report.testPassed === null) {
+    return report.testNotRunReason === 'no-verify-script' ? dict.testNotRunNoScript : '未运行';
+  }
+  return report.testPassed ? '✅ 通过' : '❌ 失败';
+}
+
+/** 未完成原因 → 用户能读的短语（K16）。 */
+export function incompleteReasonText(reason: ReviewIncomplete['reason']): string {
+  const dict = t().reviewer;
+  const map: Record<ReviewIncomplete['reason'], string> = {
+    unauthorized: dict.reasonUnauthorized,
+    quota: dict.reasonQuota,
+    network: dict.reasonNetwork,
+    timeout: dict.reasonTimeout,
+    'parse-failed': dict.reasonParseFailed,
+    'turn-limit': dict.reasonTurnLimit,
+    error: dict.reasonError,
+  };
+  return map[reason];
+}
+
+/** 未完成原因 → 下一步该做什么（K16：不只说「未完成」，要说「然后呢」）。 */
+export function incompleteReasonAction(reason: ReviewIncomplete['reason']): string {
+  const dict = t().reviewer;
+  const map: Record<ReviewIncomplete['reason'], string> = {
+    unauthorized: dict.actionUnauthorized,
+    quota: dict.actionQuota,
+    network: dict.actionNetwork,
+    timeout: dict.actionTimeout,
+    'parse-failed': dict.actionParseFailed,
+    'turn-limit': dict.actionTurnLimit,
+    error: dict.actionError,
+  };
+  return map[reason];
+}
+
+/** 格式化单个问题为 markdown。 */ function formatIssue(issue: ReviewIssue): string {
   const icon = SEVERITY_ICON[issue.severity];
   const location = issue.line !== undefined ? `${issue.file}:${issue.line}` : issue.file;
   const lines = [

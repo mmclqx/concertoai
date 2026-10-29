@@ -111,7 +111,6 @@ describe('ReviewerEngine.formatReport', () => {
 });
 
 // ── 上下文工件格式化（v3.0 I2 修复）───────────────────────
-
 describe('formatContextArtifacts（Reviewer 可见上下文代码工件）', () => {
   it('无工件（undefined / 空数组）→ 返回空字符串', () => {
     expect(formatContextArtifacts(undefined)).toBe('');

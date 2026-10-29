@@ -47,8 +47,13 @@ import { SnapshotManager } from '../orchestrator/transaction';
 import {
   ALL_DIMENSIONS,
   type AutoFixOptions,
+  incompleteCount,
+  incompleteReasonText,
+  isReviewIncomplete,
   REVIEW_SEVERITIES,
+  type ReviewDimension,
   ReviewerEngine,
+  type ReviewIncomplete,
   type ReviewOptions,
   type ReviewReport,
   type ReviewSeverity,
@@ -286,8 +291,16 @@ export function countGrades(report: ReviewReport): Record<ReviewGrade, number> {
   return counts;
 }
 
-/** 退出码：有 A 级（严重）问题 → 1；否则 0（「判不了」由调用方直接返回 1）。 */
+/**
+ * 退出码：有 A 级（严重）问题 → 1；**审查不完整 → 1**（K16）；否则 0。
+ *
+ * K16 的理由：`exit 0` 在脚本/CI 里的含义是「审过了，没问题」。
+ * 有维度没审到还给 0，等于把「没看」报成「通过」——断网、Key 过期、余额耗尽都会触发。
+ */
 export function reviewExitCode(report: ReviewReport): 0 | 1 {
+  if (isReviewIncomplete(report)) {
+    return 1;
+  }
   return report.issues.some((issue) => issue.severity === 'critical') ? 1 : 0;
 }
 
@@ -305,7 +318,45 @@ function evidenceOf(issue: ReviewReport['issues'][number]): string {
 export function formatDimensionOverview(report: ReviewReport): string[] {
   const dict = t().review;
   const lines: string[] = [dict.gradingTitle];
+  // K16：没审到的维度不能写「无问题」——那是把「没看」说成「干净」
+  const incompleteByDimension = new Map<ReviewDimension, ReviewIncomplete>();
+  for (const item of report.incomplete ?? []) {
+    for (const dimension of item.dimensions) {
+      incompleteByDimension.set(dimension, item);
+    }
+  }
   for (const dimension of ALL_DIMENSIONS) {
+    const missing = incompleteByDimension.get(dimension);
+    if (missing !== undefined) {
+      // 有半组审到时仍可能带问题：先照常列出计数，再补一行「未审完」
+      const issues = report.issues.filter((issue) => issue.dimension === dimension);
+      if (issues.length > 0) {
+        const counts: Record<ReviewGrade, number> = { A: 0, B: 0, C: 0 };
+        for (const issue of issues) {
+          counts[GRADE_OF_SEVERITY[issue.severity]] += 1;
+        }
+        const shown = issues.slice(0, MAX_EVIDENCE_PER_DIMENSION).map(evidenceOf);
+        const hidden = issues.length - shown.length;
+        const more = hidden > 0 ? fmt(dict.evidenceMore, { count: hidden }) : '';
+        lines.push(
+          fmt(dict.dimLine, {
+            dimension,
+            a: counts.A,
+            b: counts.B,
+            c: counts.C,
+            evidence: fmt(dict.evidence, { locations: shown.join(' / '), more }),
+          }),
+        );
+        continue;
+      }
+      lines.push(
+        fmt(dict.dimLineIncomplete, {
+          dimension,
+          reason: incompleteReasonText(missing.reason),
+        }),
+      );
+      continue;
+    }
     const issues = report.issues.filter((issue) => issue.dimension === dimension);
     if (issues.length === 0) {
       lines.push(fmt(dict.dimLineEmpty, { dimension }));
@@ -335,6 +386,14 @@ export function formatDimensionOverview(report: ReviewReport): string[] {
 export function formatReviewVerdict(report: ReviewReport): string[] {
   const dict = t().review;
   const counts = countGrades(report);
+  // K16：审查不完整时，结论**不许**说「可以继续」——即使一条问题都没发现
+  if (isReviewIncomplete(report)) {
+    const missing = incompleteCount(report);
+    const reasons = [...new Set((report.incomplete ?? []).map((item) => item.reason))]
+      .map((reason) => incompleteReasonText(reason))
+      .join(' / ');
+    return [fmt(dict.conclusionIncomplete, { missing, reasons }), dict.incompleteNextStep];
+  }
   const lines: string[] = [
     counts.A > 0 ? fmt(dict.conclusionBlocked, { count: counts.A }) : dict.conclusionClean,
   ];

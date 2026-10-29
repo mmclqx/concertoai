@@ -346,10 +346,17 @@ export const zh = {
     gradingTitle: '🧮 9 维分级（A 级 = 严重 / B 级 = 中等 / C 级 = 建议）',
     dimLine: '  {dimension}：A{a} · B{b} · C{c}{evidence}',
     dimLineEmpty: '  {dimension}：无问题',
+    // v5.0 K16：没审到的维度不许写「无问题」
+    dimLineIncomplete: '  {dimension}：⚠ 未审到（{reason}）',
     evidence: '  证据 {locations}{more}',
     evidenceMore: ' 等 {count} 处',
     conclusionClean: '✅ 结论：无 A 级（严重）问题，可以继续（退出码 0）。',
     conclusionBlocked: '❌ 结论：{count} 个 A 级（严重）问题，先修再提交 / 合并（退出码 1）。',
+    // v5.0 K16：审查不完整 → 明说「没审完」，并且给退出码
+    conclusionIncomplete:
+      '⚠️ 结论：本次审查不完整（{missing}/9 维没审到：{reasons}）——不代表「没问题」，退出码 1。',
+    incompleteNextStep:
+      '💡 下一步：按上面的「未完成」原因逐条处理后重跑 `concertoai review`；没审完的报告不能当作通过。',
     nextStep:
       '💡 下一步：`concertoai review --fix` 自动修可自动修的问题（建议级；每次写盘都会审批）；严重 / 中等级问题需你判断。',
     fixScope:
@@ -686,6 +693,29 @@ export const zh = {
     fixItemManual: '⚠ {location} — {title}（{reason}）',
     reasonVerifyFailed: '修复后验证失败，已自动撤销',
     reasonManual: '需人工处理',
+    // v5.0 K16：审查未完成（子代理失败/解析失败时不许说「未发现问题」）
+    incompleteTitle: '本次审查未完成（{done}/9 维已审）',
+    incompleteHint: '> ⚠️ 这不是「没问题」——下面这些维度**没有审到**，请先解决原因再重跑。',
+    incompleteItem: '- {dimensions}：{reason}（{detail}）→ {action}',
+    incompleteNoIssues:
+      '⚠️ 本次没有发现任何问题，但**审查未完成**（见上）——不能当作「代码没问题」。',
+    reasonUnauthorized: '认证失败（API Key 无效或已过期）',
+    reasonQuota: '账户余额不足 / 配额用尽',
+    reasonNetwork: '网络不可达（断网 / DNS / 代理不通）',
+    reasonTimeout: '子代理超时',
+    reasonParseFailed: '模型回复无法解析为审查结果',
+    reasonTurnLimit: '子代理达到轮数上限，结论不完整',
+    reasonError: '其他错误',
+    actionUnauthorized:
+      '检查 Key：concertoai doctor；或重新登录：concertoai login <name> --key sk-...',
+    actionQuota: '充值后重试：concertoai balance 查看余额',
+    actionNetwork: '恢复网络后重试；用代理请确认代理可达 api.deepseek.com',
+    actionTimeout: '缩小审查范围（指定单个文件）或稍后重试',
+    actionParseFailed: '重跑一次；反复出现请反馈（concertoai review 的模型输出无法解析）',
+    actionTurnLimit: '缩小审查范围（指定单个文件）后重试',
+    actionError: '稍后重试；持续失败请运行 concertoai doctor 排查环境',
+    // v5.0 K7：自动测试三态（「没脚本」不等于「测试挂了」）
+    testNotRunNoScript: '未运行（项目未定义 verify 脚本）',
   },
   workflow: {
     // v4.0 M2 T2.6：工作流文案（concertoai workflow + /workflow）

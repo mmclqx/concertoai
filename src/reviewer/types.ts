@@ -63,6 +63,36 @@ export interface ReviewIssue {
   suggestion?: string;
 }
 
+// ── 审查未完成（K16）────────────────────────────────────────
+
+/**
+ * 「这一维没审到」的原因代码。
+ *
+ * 为什么要分类而不只写「未完成」（v5.0 K16 用户要求）：用户看到「3/9 维未完成」时，
+ * 下一步动作完全取决于原因——**401 要去检查 Key、超时要去加大超时、断网要恢复网络、
+ * 余额耗尽要充值**。只写「未完成」等于把排查成本全丢回给用户。
+ */
+export type ReviewIncompleteReason =
+  | 'unauthorized' // 401/403：Key 无效 / 过期 / 未授权
+  | 'quota' // 402 / 余额不足：账户没钱了
+  | 'network' // 连不上（DNS / 拒绝连接 / 断网 / 代理不通）
+  | 'timeout' // 子代理超时或请求超时
+  | 'parse-failed' // 模型回了，但不是可解析的 JSON
+  | 'turn-limit' // 子代理达到轮数上限，结论不完整
+  | 'error'; // 其他未归类错误
+
+/** 一个「没审到」的子代理组（含它负责的维度）。 */
+export interface ReviewIncomplete {
+  /** 子代理组名。 */
+  group: ReviewAgentGroup;
+  /** 该组负责的维度（报告逐维标注用）。 */
+  dimensions: ReviewDimension[];
+  /** 原因代码（决定给用户什么建议）。 */
+  reason: ReviewIncompleteReason;
+  /** 原始原因摘要（含 HTTP 状态 / 超时毫秒 / 网络错误），用于具体排查。 */
+  detail: string;
+}
+
 // ── 审查报告 ────────────────────────────────────────────────
 
 /** 审查范围类型。 */
@@ -79,6 +109,21 @@ export interface ReviewReport {
   timestamp: string;
   /** 自动测试是否通过（null = 未运行）。 */
   testPassed: boolean | null;
+  /**
+   * 「未运行」的具体原因（`testPassed === null` 时才有意义）。
+   *
+   * K7（v5.0 T23.3 实测）：项目没有 `verify` 脚本时，旧实现跑 `npm run verify` 得到
+   * Missing script → 被判成「❌ 失败」，读起来像「你的测试挂了」。现在**先看 package.json**，
+   * 没有脚本就压根不跑，并标成 `no-verify-script`（报告显示「未运行（项目未定义 verify 脚本）」）。
+   */
+  testNotRunReason?: 'no-verify-script';
+  /**
+   * 未完成的子代理组（K16）。
+   *
+   * 空 / 缺省 = 9 维全部审到；非空 = **本次审查不完整**，调用方必须给 `exit 1`，
+   * 报告也不许写「未发现明显问题」。这是「判不了绝不冒充通过」红线的执行点。
+   */
+  incomplete?: ReviewIncomplete[];
   /** 审查严重程度阈值（v3.1 M5 / T5.4；可选，缺省 normal）。 */
   severity?: ReviewSeverity;
   /** 发现的问题列表。 */
@@ -181,6 +226,16 @@ export interface ReviewResult {
 }
 
 /**
+ * 审查是否完整（K16）：只要有一个子代理组没审到，就算**不完整**。
+ *
+ * 调用方（CLI 退出码 / TUI 结论文案 / 对抗性闭环 action）统一用它判断，
+ * 避免「一处认为审过了、另一处认为没审」的分叉。
+ */
+export function isReviewIncomplete(report: ReviewReport): boolean {
+  return (report.incomplete?.length ?? 0) > 0;
+}
+
+/**
  * 判定审查动作（T3.3 对抗性闭环 + v3.1 M5 / T5.4 severity 阈值）。
  *
  * severity 三档（缺省 normal 保持 v3.0 语义）：
@@ -188,11 +243,18 @@ export interface ReviewResult {
  * - normal：🔴 critical → 必 reject；🟡 medium → 结合自动测试（testPassed=false 时 reject，
  *   即「medium 可 reject」）；仅 🟢 / 无问题 → approve；
  * - lenient：仅 🔴 critical → reject；🟡 medium 不阻断。
+ *
+ * **审查不完整一律 reject**（K16）：`approve` 的含义是「我看过了，可以进」——
+ * 有维度没审到还敢 approve，就是把「没看」说成「没问题」。
  */
 export function determineReviewAction(
   issues: ReviewIssue[],
-  options: { severity?: ReviewSeverity; testPassed?: boolean | null } = {},
+  options: { severity?: ReviewSeverity; testPassed?: boolean | null; incomplete?: boolean } = {},
 ): ReviewAction {
+  // K16：先判「审完没」——再谈严重程度。三档 severity 都不豁免这一条。
+  if (options.incomplete === true) {
+    return 'reject';
+  }
   const severity = options.severity ?? 'normal';
   const hasCritical = issues.some((i) => i.severity === 'critical');
   const hasMedium = issues.some((i) => i.severity === 'medium');
@@ -213,17 +275,34 @@ export function determineReviewAction(
   return 'approve';
 }
 
-/** 从 v2.1 ReviewReport 构建对抗性闭环 ReviewResult（判定 action + 生成中文摘要）。 */
-export function buildReviewResult(report: ReviewReport, severity?: ReviewSeverity): ReviewResult {
+/** 从 v2.1 ReviewReport 构建对抗性闭环 ReviewResult（判定 action + 生成中文摘要）。 */ export function buildReviewResult(
+  report: ReviewReport,
+  severity?: ReviewSeverity,
+): ReviewResult {
+  const incomplete = isReviewIncomplete(report);
   const action = determineReviewAction(report.issues, {
     severity,
     testPassed: report.testPassed,
+    incomplete,
   });
   const critical = report.issues.filter((i) => i.severity === 'critical').length;
   const medium = report.issues.filter((i) => i.severity === 'medium').length;
   const suggestion = report.issues.filter((i) => i.severity === 'suggestion').length;
   const actionText = action === 'reject' ? '打回 Coder 修复' : '通过，进入 QA';
   const testText = report.testPassed === null ? '未运行' : report.testPassed ? '通过' : '失败';
-  const summary = `审查发现 🔴×${critical} 🟡×${medium} 🟢×${suggestion}；自动测试${testText}；动作：${actionText}`;
+  // K16：不完整时摘要必须点明「没审完」，不能被「🔴×0 🟡×0」读成「很干净」
+  const incompleteText =
+    incomplete === true ? `**审查未完成 ${incompleteCount(report)}/9 维**；` : '';
+  const summary = `审查发现 🔴×${critical} 🟡×${medium} 🟢×${suggestion}；${incompleteText}自动测试${testText}；动作：${actionText}`;
   return { action, issues: report.issues, summary, testPassed: report.testPassed, report };
+}
+
+/** 已审到的维度数（9 - 未完成的维度数）。 */
+export function reviewedDimensionCount(report: ReviewReport): number {
+  return ALL_DIMENSIONS.length - incompleteCount(report);
+}
+
+/** 未审到的维度数（一个子代理组可能覆盖 2 个维度，故按**维度**计）。 */
+export function incompleteCount(report: ReviewReport): number {
+  return (report.incomplete ?? []).reduce((sum, item) => sum + item.dimensions.length, 0);
 }

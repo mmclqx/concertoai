@@ -376,11 +376,18 @@ export const en = {
     gradingTitle: '🧮 9 dimensions, graded (A = critical / B = medium / C = suggestion)',
     dimLine: '  {dimension}: A{a} · B{b} · C{c}{evidence}',
     dimLineEmpty: '  {dimension}: no issues',
+    // v5.0 K16: a dimension that was not reviewed must not be reported as "no issues"
+    dimLineIncomplete: '  {dimension}: ⚠ not reviewed ({reason})',
     evidence: '  evidence {locations}{more}',
     evidenceMore: ' and {count} more',
     conclusionClean: '✅ Verdict: no A-level (critical) issue, you can continue (exit code 0).',
     conclusionBlocked:
       '❌ Verdict: {count} A-level (critical) issue(s); fix them before committing / merging (exit code 1).',
+    // v5.0 K16: incomplete review must say so and exit non-zero
+    conclusionIncomplete:
+      '⚠️ Verdict: this review is incomplete ({missing}/9 dimensions were not reviewed: {reasons}) — it does NOT mean "no problems"; exit code 1.',
+    incompleteNextStep:
+      '💡 Next: handle each reason above and re-run `concertoai review`; an incomplete review must not be treated as a pass.',
     nextStep:
       '💡 Next: `concertoai review --fix` repairs the fixable suggestions (every write asks first); critical / medium issues need your judgement.',
     fixScope:
@@ -734,6 +741,31 @@ export const en = {
     fixItemManual: '⚠ {location} — {title} ({reason})',
     reasonVerifyFailed: 'verify failed after fix; auto-reverted',
     reasonManual: 'needs manual review',
+    // v5.0 K16: incomplete review (never say "no issues found" when dimensions were not reviewed)
+    incompleteTitle: 'Review incomplete ({done}/9 dimensions reviewed)',
+    incompleteHint:
+      '> ⚠️ This does NOT mean "no problems" — the dimensions below were **not reviewed**. Fix the cause and re-run.',
+    incompleteItem: '- {dimensions}: {reason} ({detail}) → {action}',
+    incompleteNoIssues:
+      '⚠️ No issues were found, but the **review is incomplete** (see above) — do not treat this as "code is fine".',
+    reasonUnauthorized: 'authentication failed (API key invalid or expired)',
+    reasonQuota: 'insufficient balance / quota exhausted',
+    reasonNetwork: 'network unreachable (offline / DNS / proxy)',
+    reasonTimeout: 'sub-agent timed out',
+    reasonParseFailed: 'model reply could not be parsed as review results',
+    reasonTurnLimit: 'sub-agent hit its turn limit; conclusions are incomplete',
+    reasonError: 'other error',
+    actionUnauthorized:
+      'check the key: concertoai doctor; or log in again: concertoai login <name> --key sk-...',
+    actionQuota: 'top up and retry: concertoai balance shows the current balance',
+    actionNetwork:
+      'retry once the network is back; with a proxy, make sure api.deepseek.com is reachable',
+    actionTimeout: 'narrow the scope (review a single file) or retry later',
+    actionParseFailed: 'run once more; if it keeps happening, please report it',
+    actionTurnLimit: 'narrow the scope (review a single file) and retry',
+    actionError: 'retry later; if it persists, run concertoai doctor to check the environment',
+    // v5.0 K7: three-state auto-test line ("no script" is not "tests failed")
+    testNotRunNoScript: 'not run (project has no verify script)',
   },
   workflow: {
     // v4.0 M2 T2.6: workflow copy (concertoai workflow + /workflow)
