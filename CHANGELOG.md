@@ -8,6 +8,28 @@
 
 ## [Unreleased]
 
+（当前无未发布变更——v5.0.0 的内容已落版到下方 `## [5.0.0]` 小节）
+
+## [5.0.0] — 2026-10-30
+
+> **定位换挡**：从「能改代码的黑盒引擎」到「**敢让你用来改生产代码的个人超级 CLI**」——v5.0 的每一处改动都在回答同一个问题：怎么让用户**看得见、拦得住、说得出理由**。对外一句话定位、审批前告诉你风险在哪、拒绝后能复盘、审查不完整绝不冒充通过。（哲学换挡说明见 `docs/02-架构设计/ARCHITECTURE.md` §1 与 D68-D85）
+>
+> **无破坏性变更**：v4.x 的 `config.json` / 会话 JSONL 格式**完全兼容**，升级即用，无需迁移动作。本版本以「增量能力 + 假绿缺陷修复」为主。
+>
+> **发布门实测**：`npm run verify` 全绿（**155 测试文件 / 2254 用例**，v4.1.1 为 117 文件 / 1404 用例）；`LUMEN_LOCALE=en` 换环境复跑全绿（进程级全局状态隔离）；`bench` 8/8 达标（审批 P95 16.11ms / 预算 150ms）；真实 401 探针、真 Key `doctor`、PTY 审批、`--fix` 端到端均实跑取证（8 场景 124 PASS / 1 FAIL，唯一 FAIL 已在发布前修复为 K10）。
+>
+> **依赖审计（如实声明，不声称 0 漏洞）**：`npm audit` 实测 **4 high + 2 moderate**，其中运行时直接依赖 `zod` 需 ≥4.6.6、开发依赖 `vitest` 需 >4.1.10；依赖**不打进 tarball**，用户安装时解析到已修复版本，受影响的是本仓库 `node_modules` / lockfile，已记录待升级（`TASKS.md` C6）。
+
+### Fixed — v5.0 K16：审查子代理全失败却报「✅ 未发现明显问题」（🔴 假绿，2026-10-30 修复）
+
+> 本条是本版本**最严重**的修复：断网 / Key 过期 / 余额耗尽 / 代理不通时，`concertoai review` 会把「我没看」说成「我看过，没问题」，并给 **exit 0** —— CI 里直接放行。
+
+- **K16 假绿（假通过）**：任一审查子代理失败，该维度问题列表为空，报告照常输出「未发现明显问题」+ 退出码 0。根因是 `engine.ts` 失败分支的**注释写着「标记为审查未完成」，代码里没有这句实现**（注释被当成了实现证据）。修法：`ReviewReport` 新增 `incomplete[]`（含 `group` / `dimensions` / `reason` / `detail`），`reason` 分 7 类（`unauthorized` / `quota` / `network` / `timeout` / `parse-failed` / `turn-limit` / `error`）——因为用户下一步动作完全取决于原因；`isReviewIncomplete()` / `incompleteCount()` / `reviewedDimensionCount()` 作为**唯一判定入口**（CLI 退出码、TUI 结论、对抗性闭环 `action` 三处共用）；`determineReviewAction` 把「不完整一律 reject」放在 severity 三档**之前**——`approve` 的含义是「我看过了」，没审完还敢 approve 就是把「没看」说成「没问题」
+- **K16 修假绿时引入的崩溃（同版本内修掉）**：第一版修复用 `def.name as ReviewAgentGroup` 取维度，而子代理真名是 `review-architecture-style`、`AGENT_DIMENSIONS` 的键是 `architecture-style` → `undefined` → 只要有一条子代理失败就 `TypeError` 崩掉（比假绿更难排查）。修法：`reviewGroupOfAgentName()` 作为唯一映射入口（**取不到返回 `undefined`，绝不猜**）+ `incompleteCount()` 加 `Array.isArray` 守卫（「宁可少算一维，不许整条命令崩」）+ 花 token **之前**先校验映射（编程缺陷在付费前暴露）+ 删掉 `dimensions.ts` 里重复的维度表（防两处漂移）
+- **K7 顺带修（「没有 verify 脚本」≠「测试挂了」）**：项目未定义 `verify` 脚本时，旧实现跑 `npm run verify` 得 `Missing script` → 被渲染成「❌ 失败」，读起来像「你的测试挂了」。改为**先读 `package.json`**，没有脚本就压根不跑，标 `no-verify-script`，报告显示「未运行（项目未定义 verify 脚本）」
+- **顺带修误分类**：`classifySubagentFailure` 把「子代理达到 5 轮上限」归成 `network`（network 正则里有裸的「代理」二字），`turn-limit` 判定前移 + 正则改为「代理连接 / 代理不可用 / 代理不通」
+- **测试（+29，全部锁「失败时是否变红」）**：`engine.test.ts` 27 条（映射正反向 / 维度计数含 `undefined` 防御 / 原因分类 8 类含边界 / `formatTestStatus` 三态 / `hasVerifyScript` 读文件判定 / 三档 severity 均 reject）+ `cli/review.test.ts` 4 条端到端（真 `ReviewerEngine` + 假 spawner：401 全失败 → exit 1 且「0/9 维已审」+「认证失败」、部分失败 → 8/9、全成功反向自证 exit 0、乱码 → `parse-failed`）。**探针通电已自证**：把 `as` 硬转放回则 3 条 e2e 立刻红
+
 ### Fixed — v5.0 T23.3 手工测试发现的三个阻塞缺陷（K10 / K1 / K2，2026-10-29 修复）
 
 > 来源：`docs/07.11-手工测试报告-v5.0.md`（8 场景实测，¥0.88 币值成本）。这三条都属于「用户完全按提示操作仍然失败」，用户裁决**发布前必修**。
