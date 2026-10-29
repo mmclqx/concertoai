@@ -115,6 +115,7 @@
 | **C3 `review` 在非 git + 无 Key 时先报「缺 Key」（🟢，自审发现）** | ⬜ **待办**（低优先） | 空目录跑 `review`，第一反馈是「未检测到 API Key」，没有先提「这里不是 git 仓库 / 没有可审查的改动」。两种顺序都说得通（配了 Key 后会继续走并有明确提示），故仅记为体验项。 |
 | **C4 审查报告「📊 汇总」表在 0 问题时只剩表头（🟢，自审发现）** | ⬜ **待办**（低优先，存量行为） | `ReviewerEngine.formatReport` 只列「有问题的维度」，全 0 时输出两行表头，读起来像渲染坏了。**非本轮引入**。修法：0 问题时省掉表格，或明确写「9 维均无问题」。 |
 | **C5 未完成行的 detail 内嵌原始 JSON 偏长（🟢，自审发现）** | ⬜ **待办**（低优先） | K16 报告里每行形如 `认证失败（…）（DeepSeek API 请求失败（HTTP 401）: {"error":{"message":"…"},"t…）`，截断 160 字仍偏长、括号套三层。信息量够（含 request_id 便于排查），纯可读性问题。修法：detail 只取 `error.message` 一句话。 |
+| **C6 依赖审计：6 条漏洞，其中 zod 是运行时直接依赖（🔴 发布前需裁决，2026-10-30 版本联动时实测发现）** | ⬜ **待裁决**（升级属依赖改动，超出「版本联动 6 处」范围，需授权） | **实测 `npm audit`：4 high + 2 moderate（总数 6，非 0）**。旧 README 状态行写的「`npm audit` 0 漏洞」为**过期声明**，已改成指向本条。逐条：**zod 4.4.3（high，直接运行时依赖）**——GHSA-mrhx-c7xc-m3w5「验证超大受限集合时内存耗尽」→ **会随包发布给用户**，需 ≥4.6.6（当前 latest 4.6.7）；**vitest 4.1.10（moderate，直接开发依赖）**——@vitest/mocker 路径穿越/任意文件读，需 >4.1.10；其余 4 条均为开发依赖传递（vite 8.2.1 / nanoid 3.3.17 / source-map-js 1.2.1 / @vitest/mocker）。**`npm audit fix` 跑不了**：`npm error Cannot read properties of null (reading 'edgesOut')`（npm 自身 bug），必须显式 `npm install zod@^4.6.6 vitest@^4.1.11` + 全量复验。修法选项：① 发布前升（推荐，zod 同 major 内 minor，风险低但必须重跑 verify）；② 接受并保持 README 如实声明（现状）。 |
 
 ---
 

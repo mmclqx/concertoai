@@ -43,7 +43,7 @@ function verifyOutput(segments: Array<[stage: string, body: string]>): {
   stderr: string;
 } {
   return {
-    stdout: segments.map(([stage, body]) => `> @concertoai/cli@4.1.1 ${stage}\n${body}`).join('\n'),
+    stdout: segments.map(([stage, body]) => `> @concertoai/cli@5.0.0 ${stage}\n${body}`).join('\n'),
     stderr: '',
   };
 }
@@ -59,9 +59,9 @@ const VERIFY_PASS = verifyOutput([
 /** lint 段失败（Biome）；build 通过，type/test 因 `&&` 短路未执行。 */
 const VERIFY_LINT_FAIL = {
   stdout: [
-    '> @concertoai/cli@4.1.1 build',
+    '> @concertoai/cli@5.0.0 build',
     'Build success.',
-    '> @concertoai/cli@4.1.1 lint',
+    '> @concertoai/cli@5.0.0 lint',
     'src/foo.ts:1:5  lint/suspicious/noExplicitAny  FIXABLE  ━━━',
     '  × Unexpected any. Specify a different type.',
   ].join('\n'),
@@ -71,11 +71,11 @@ const VERIFY_LINT_FAIL = {
 /** type 段失败（tsc 错误写在 stderr——真实行为）。 */
 const VERIFY_TYPE_FAIL = {
   stdout: [
-    '> @concertoai/cli@4.1.1 build',
+    '> @concertoai/cli@5.0.0 build',
     'Build success.',
-    '> @concertoai/cli@4.1.1 lint',
+    '> @concertoai/cli@5.0.0 lint',
     'All checks passed.',
-    '> @concertoai/cli@4.1.1 typecheck',
+    '> @concertoai/cli@5.0.0 typecheck',
     '> tsc --noEmit',
   ].join('\n'),
   stderr: "src/foo.ts(1,1): error TS2304: Cannot find name 'bar'.\n",
@@ -210,7 +210,7 @@ describe('runCheck：verify 模式（v5.0 T15）', () => {
         verify: {
           ok: false,
           stdout: [
-            '> @concertoai/cli@4.1.1 test',
+            '> @concertoai/cli@5.0.0 test',
             'Test Files  1 failed (1)',
             '  FAIL src/foo.test.ts',
             '  ✗ 加法应该正确',

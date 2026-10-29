@@ -45,7 +45,7 @@ function verifyOutput(segments: Array<[stage: string, body: string]>): {
   stderr: string;
 } {
   return {
-    stdout: segments.map(([stage, body]) => `> @concertoai/cli@4.1.1 ${stage}\n${body}`).join('\n'),
+    stdout: segments.map(([stage, body]) => `> @concertoai/cli@5.0.0 ${stage}\n${body}`).join('\n'),
     stderr: '',
   };
 }
@@ -219,7 +219,7 @@ describe('buildFixDiagnosis（诊断纯函数）', () => {
   });
 
   it('退出码非 0 但解析不出错误 → passed 仍为 false（不冒充通过，T15 假通过教训）', () => {
-    const silent = { stdout: '> @concertoai/cli@4.1.1 verify\n（无法识别的输出形态）', stderr: '' };
+    const silent = { stdout: '> @concertoai/cli@5.0.0 verify\n（无法识别的输出形态）', stderr: '' };
     const diagnosis = buildFixDiagnosis({ passed: false, report: reportOf(silent) });
     expect(diagnosis.passed).toBe(false);
     expect(diagnosis.entries).toEqual([]);

@@ -1,6 +1,6 @@
 {
   "name": "@concertoai/cli",
-  "version": "4.1.1",
+  "version": "5.0.0",
   "description": "ConcertoAI —— 敢让你用来改生产代码的个人超级 CLI（终端 AI 开发助手，自带风险审批与一键治愈）",
   "type": "module",
   "license": "MIT",
