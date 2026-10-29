@@ -40,5 +40,12 @@ fi
 
 [ -z "$agent" ] && agent="unmarked"
 
+# 未声明身份时当场告警（不阻断提交）。用 ASCII 输出，避免 cmd 代码页把中文打成乱码。
+# 目的：让「忘了声明」在提交那一刻可见，而不是事后翻 log 才发现落成 unmarked。
+if [ "$agent" = "unmarked" ]; then
+  echo "concertoai: agent identity NOT declared -> tagged 'Agent: unmarked'." >&2
+  echo "concertoai: declare with CONCERTOAI_AGENT=<id> (see AGENTS rule 30)." >&2
+fi
+
 printf '\nAgent: %s\n' "$agent" >> "$msg_file"
 exit 0
