@@ -32,7 +32,7 @@ concertoai commit    # 体检通过后生成 commit message 并本地提交
 
 > 首次运行会引导你配置 Key（三种方式任选），详见下方「环境要求 / 安装」。
 
-> 状态：**v5.0.0 待发布**（代码已就绪：`npm run verify` 全绿，2254 用例 / 155 测试文件；npm 上最新仍为 `4.1.1`，发布被账号侧 2FA 阻断，处理中）。依赖审计见 [TASKS](docs/03-开发计划与任务/TASKS.md) 的 C6 条目 —— **不声称 0 漏洞**：实测 4 high + 2 moderate，其中 `zod`（运行时直接依赖）需 ≥4.6.6、`vitest`（开发依赖）需 >4.1.10；依赖不打进 tarball，用户安装时解析到已修复版本，受影响的是本仓库 `node_modules`/lockfile，已记录待升级。v4.0 及更早的版本说明见文末「历史版本速览」。
+> 版本：**v5.0.0**（`npm i -g @concertoai/cli` 或 `npx @concertoai/cli`；`npm run verify` 全绿，2254 用例 / 155 测试文件）。依赖审计见 [TASKS](docs/03-开发计划与任务/TASKS.md) 的 C6 条目 —— **不声称 0 漏洞**：实测 4 high + 2 moderate，其中 `zod`（运行时直接依赖）需 ≥4.6.6、`vitest`（开发依赖）需 >4.1.10；依赖不打进 tarball，用户安装时解析到已修复版本，受影响的是本仓库 `node_modules`/lockfile，已记录待升级。v4.0 及更早的版本说明见文末「历史版本速览」。
 
 ## 环境要求
 
