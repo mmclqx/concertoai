@@ -427,7 +427,26 @@ chat 内 `/plugin list|install|remove` 可用。插件开发见 [plugin-dev-guid
 
 保存 .ts/.tsx → Problems 面板三来源诊断：biome lint（Warning）/ tsc type（Error）/ self-heal 静态规则（Information：未使用 import、显式 any、console.log）；CodeAction「🔧 用 ConcertoAI 修复」/「移除未使用的 import」一键修复（服务端只产出 diff，不直接改用户文件）。
 
-### `concertoai review --fix` —— 一键修复（v4.0 M1）
+### `concertoai review` —— 9 维审查（v5.0 T18）
+
+**写完代码不离开终端就能审一遍**。默认审「这次改动的文件」，与 TUI 里的 `/review` 是**同一个引擎、同一份报告**（一致性门有测试盯着）。
+
+```bash
+$ concertoai review                   # 默认：审 git 改动的文件
+$ concertoai review src/api/fetch.ts  # 指定文件/目录
+$ concertoai review --severity strict # strict / normal（缺省）/ lenient
+$ concertoai review --fix             # 只修「能自动修的那类」，每次写盘都审批
+```
+
+| 特性 | 说明 |
+| --- | --- |
+| **默认范围 = 改动文件** | 工作区 `git diff` + 暂存区 `git diff --staged` + 未跟踪 `git ls-files --others` **三路合并去重**（已 `git add` 的改动正是要提交的那批，漏掉等于审了个空）；排除 `node_modules` / `dist` 等，跳过已删除文件；上限 30 个文件，超出会明说被截掉多少 |
+| **与 TUI `/review` 同源** | 审查只调 `ReviewerEngine.review`、渲染只调 `formatReport`——报告块**逐行等于** TUI 的输出（同一个函数，有护栏测试） |
+| **退出码** | `0` = 无 A 级（🔴 严重）问题；`1` = 有 A 级**或判不了**（非 git 仓库 / 没装 git / 缺 Key 一律不冒充通过） |
+| **`--fix` 的边界** | 只修「建议级（suggestion）且能定位文件」的问题：A/B 分批 → 批量审批 diff → 快照 → 增量 verify → 失败自动回滚；**非交互终端一个字节都不写** |
+| **四种边缘各自说清** | 没装 git / 不是仓库 / 没有改动（退出 `0`，但明说「审的是零个文件」，不冒充「审完没问题」）/ `--severity` 写错（先报参数错误，不让「缺 Key」把它掩盖） |
+
+### `/review --fix` —— chat 内一键修复（v4.0 M1）
 
 `/review --fix`（chat 内）：审查完成后自动进入修复模式——A/B 类分批 → 批量审批 diff 摘要 → snapshot-guard 快照回滚 → 增量 verify → 报告底部「修复结果」区块（✅已修复 / ⚠需人工 / ❌自动回滚），≤2 次交互。
 

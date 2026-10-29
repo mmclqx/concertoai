@@ -10,7 +10,7 @@
 
 ### Added — v5.0 M5 T21：本地体验指标（2026-10-29 完成）
 
-> 定位：**「v5.0 到底变好了没有」需要可度量、可复盘的数字**——审批平均耗时、拒绝率、提示采纳率、体检通过率、动词使用分布。这些数字只对用户自己有意义，所以**默认关、零上传**。
+> 定位：**「v5.0 到底变好了没有」需要可度量、可复盘的数字**——审批平均耗时、拒绝率、提示采纳率、体检通过率、动词使用分布。这些数字只对用户自己有意义，所以**默认关、零上传**（ADR-049 / §4 D84）。
 
 - **`src/core/metrics-store.ts`（新增）**：与 `reflection-store.ts` 同一套范式——JSONL + **O_APPEND** 单次追加（进程被 Ctrl+C 打断最多留半行，读取端宽容跳过并计数）、轮转防无限膨胀、读取端倒序；导出 `isMetricsEnabled` / `defaultMetricsPath` / `buildApprovalMetric` / `buildSuggestionMetric` / `buildCheckMetric` / `buildVerbMetric` / `appendMetric` / `readMetrics` / `clearMetrics` / `summarizeMetrics`（构建函数是纯函数，IO 集中在 append/read/clear）
 - **四条铁律（逐条有护栏用例）**：① **默认关**（`config.metrics` 缺省 `off`，不开就**一个字节都不写**、连文件都不创建）② **零网络**（源码断言无 `fetch`/`http`/`net`/`axios`，只 import `node:fs/promises` / `node:path` / 本地路径模块）③ **不干扰主流程**（`appendMetric` 内全 `try/catch`、**永不抛错**、调用方 fire-and-forget）④ **不记内容**（事件里无文件路径、无代码片段、无提示词——只有耗时 / 决策 / 计数 / 动词名这类结构化数字）
@@ -20,18 +20,18 @@
 
 ### Changed — v5.0 M5 T20：功能冻结落文档（2026-10-29 完成）
 
-> 定位：**把「不做什么」写死，防止下个版本又长回来。**
+> 定位：**把「不做什么」写死，防止下个版本又长回来。**（ADR-048 / §4 D83）
 
 - **`docs/FEATURE_FREEZE.md`（新增）**：三层清单——**冻结（停扩）** = 插件市场（`src/plugin/`、`src/market/`）+ Agent 市场 + `team --parallel`（只修 bug，新功能 PR 默认拒绝）；**只修不扩** = LSP（`src/lsp/`，不加新协议方法）；**活跃** = 审批透明化 / 场景提示 / 4 动词 / 体验度量。另含**测试策略**（既有用例全保留、仅允许删「冻结功能的深层边界用例」、**边缘路径用例一个不动**）、**机械判定三条**（命令数 / 新一级目录 / 冻结层文件数）、**解冻条件**、**违反记录表**
 - **`--help` 冻结标注**：`lsp` → `· 维护模式（只修不扩）`、`plugin` → `· 维护模式（停扩，只修 bug）`、`team --parallel` → `· 维护模式（停扩）`（`src/i18n/{zh,en}.ts`）
-- **`ARCHITECTURE.md` 三处同步**：v5.0 状态行新增冻结说明 + §5 目录树补 `core/metrics.ts` 与 `core/metrics-store.ts`
+- **`ARCHITECTURE.md` 三处同步**：v5.0 状态行新增冻结说明 + §5 目录树补 `core/metrics-store.ts`、`cli/metrics.ts`（指标 CLI 胶水层）与 T5 遗留的 `core/project-scan.ts` / `core/guide-render.ts`
 - **Known limitation**：T20 计划中的 `tests/cli/freeze.test.ts`（**代码级断言冻结层未扩写**）至今未建立 → 当前判定只能靠人工按「机械判定三条」核对，已记 `TASKS.md` 待办
 
 ### Changed — v5.0 T22：对外定位重写（2026-10-28 完成）
 
 > **新定位（对外统一说法）**：**ConcertoAI —— 敢让你用来改生产代码的个人超级 CLI。**
 > 终端里的 AI 开发助手，自带「风险审批」与「一键治愈」。旧说法「终端 AI 开发平台 + 守护代码」退场——把安全约束翻译成产品价值：用户真正想听的不是「我们有审批机制」，而是「你敢拿它改生产代码」。
-> （决策编号待 T23.2 统一编——本条目刻意不写 ADR/D 编号，避免引用尚未落盘的悬空编号。）
+> （决策记录：**ADR-050 / §4 D85**，2026-10-29 随 T23.2 文档收尾统一编入 `DECISIONS.md`。）
 >
 > **迁移说明（重要：无破坏性变更）**
 > - **配置格式不变**：`config.json` schema 版本、字段名、路径（`~/.concertoai/`）与 v4.x 完全一致，**无需任何迁移动作**；
