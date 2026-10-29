@@ -134,6 +134,66 @@ $ concertoai self-heal
 → 修复后 verify 失败 → 快照回滚，保留报告转人工
 ```
 
+### `concertoai check` —— 提交前体检（v5.0 T15）
+
+**提交前一条命令判断「能不能提交」**。只读、零写入——不改一个字节，不跑 `lint:fix`，不建快照。
+
+```bash
+$ concertoai check
+✓ build       通过
+✓ lint        通过
+✗ typecheck   失败
+✗ test        未执行（前一段失败）
+```
+
+| 特性 | 说明 |
+| --- | --- |
+| **退出码权威** | `0` = 四段全过；`1` = 任一段失败或判不了。通过与否只看子进程**真实退出码**，解析结果只用来回答「哪段挂了、挂在第几行」 |
+| **不静默成功（三态）** | ① 无 `package.json` → 「这里不是 Node 项目，无法体检」② 有 `package.json` 但 build/lint/typecheck/test 全缺 → 「没做检测就不算通过」③ 退出码非 0 却一条错误都定位不出 → 四段全「结果无法判定」。**三种均 exit 1** |
+| **`&&` 链诚实** | verify 里前一段失败时，后面标「未执行（前一段失败）」，不冒充通过 |
+| **无 verify 脚本也可用** | 自动退回分项检测，顺序固定 build → lint → type → test |
+| **下一步不打空头支票** | 只推荐**真实存在**的命令：项目真配了 `lint:fix` 才给 `npm run lint:fix`，否则指向 `concertoai self-heal` |
+| **输出受控** | 每段最多 40 行；`--json` 输出机器可读结果（供 `concertoai commit` 复用） |
+
+```bash
+$ concertoai check --json       # 供脚本/CI 消费
+```
+
+失败后怎么办：直接 `concertoai fix`（见下节），或自己按报错行修。
+
+### `concertoai commit` —— 一条命令本地提交（v5.0 T17）
+
+**只做本地提交，绝不 push**。
+
+```bash
+$ concertoai commit
+→ 体检中 … ✓ 通过
+→ 生成 message（约 380 tokens）…
+────────────────────────────────────
+fix(cli): 修正 commit 标题按显示宽度截断
+
+- src/cli/commit.ts: 标题改按 displayWidth 截断
+- tests/cli/commit.test.ts: 补中文标题用例
+────────────────────────────────────
+提交这 2 个文件？（y/N）: y
+✓ 已提交 afb7bdb
+```
+
+| 特性 | 说明 |
+| --- | --- |
+| **体检不可跳过** | 内部**只调** `concertoai check`（同一个函数，不重写解析）。`--yes` 只跳 message 审批，**绝不跳体检** |
+| **安全边界** | git 子命令收在白名单内：`rev-parse` / `symbolic-ref` / `status` / `ls-files` / `diff` / `add` / `commit`。**无 push / pull / rebase / checkout / merge / reset、无 `--force`、无 `--no-verify`**（有护栏测试盯着） |
+| **message 走 stdin** | `git commit -F -`，不经 shell：引号/换行/`$` 不被解释，且**不落临时文件** |
+| **调模型前先报成本** | 显示「约 X tokens」，避免不知不觉花钱 |
+| **无 Key 如实降级** | 用**真实文件名**拼兜底 message，并把 `no-client` / `model-failed` / `model-empty` 三种原因分别说出口，不假装模型写过 |
+| **默认拒绝（fail-closed）** | message 与文件清单**先展示再问**；回答 `n` / `Ctrl+C` / 非 TTY → **一个字节都不提交** |
+| **六种状态各自说清** | 非仓库（提示 `git init`）/ git 没装（与「不是仓库」分开说）/ 冲突中（给解法）/ 暂存区空 / 体检没过（打 `check` 报告 + 指向 `fix`）/ 用户拒绝——**没有一种是静默成功** |
+| **detached HEAD** | 警告后仍允许（你可能就想试一版），但明确告知这些提交不属于任何分支 |
+
+```bash
+$ concertoai commit --yes        # CI 用：只跳 message 审批，体检照跑
+```
+
 ### `concertoai fix` —— 报错自动修（v5.0 T16，`self-heal` 的推荐入口）
 
 `concertoai check` 说「不行」之后的下一步：跑 `npm run verify`，失败就按既有 self-heal 闭环**分类 → 修复 → 复验 → 回滚**，最多尝试 2 次，超限转人工并保留现场。
@@ -503,6 +563,48 @@ concertoai reflect clear --yes     # 非交互环境（脚本/CI）必须显式�
 
 关闭方式（双轨，任一即可）：`concertoai config set reflections off`，或临时 `CONCERTOAI_REFLECTIONS=off`。
 关掉后**拒绝照常工作**，只是不写记录、不显示提示行。
+
+### 场景提示：卡住时给你一条能直接用的命令（v5.0 T12 + T13）
+
+输入框上方偶尔会出现**一行灰字**，附一条**完整可复制**的命令。它只在真正卡住时出现，不是横幅、不是弹窗、不挤占输入框。
+
+```
+💡 这个项目还没有 AGENTS.md，AI 不了解你的规则 → concertoai init
+```
+
+| 规则 | 说明 |
+| --- | --- |
+| **同时最多 1 条** | 再多也只会显示一条，绝不刷屏 |
+| **同一条每会话最多 1 次** | 看过就不再打扰 |
+| **同一条全局 10 分钟冷却** | 换个会话也不会立刻再来 |
+| **每会话总计 ≤3 条** | 硬上限 |
+| **`Esc` 即本会话全静默** | 按一次 Esc，本次会话不再出现任何提示 |
+| **流式输出期间不显示** | 正在生成回复时不打扰（但**等待模型回复时**仍显示，且输入框保持可用） |
+| **命令永不截断** | 终端不够宽时先丢文案、保命令——宁可少说一句，也不给你一条被截断的命令 |
+| **不打空头支票** | 提示里的每条命令都在测试里**实跑 `--help`** 验证过真注册，不存在「照着敲却说不存在」 |
+
+三种触发场景：
+
+| 场景 | 提示命令 |
+| --- | --- |
+| 项目里没有规则文件 | `concertoai init` |
+| `verify` 连续失败 | `concertoai self-heal` |
+| 连续多次拒绝编辑 | `/review <file>` |
+
+**关掉它**（三选一）：
+
+```bash
+/hints off                        # 本会话关掉（立即生效，输入框仍可敲）
+concertoai config set hints off   # 永久关掉
+CONCERTOAI_HINTS=off              # 临时关（环境变量）
+```
+
+```bash
+/hints status                     # 看当前开关状态
+/hints on                         # 会话内重新打开
+```
+
+> 为什么「等待回复时也显示提示」是刻意的：AI 断网 / Key 失效时，你既看得见「该怎么办」，也敲得进 `/hints off`——这两个能力都不能押在「这一轮跑成功」上。
 
 ### 对话内计划（/plan）
 

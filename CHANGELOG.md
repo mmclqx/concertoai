@@ -8,6 +8,25 @@
 
 ## [Unreleased]
 
+### Added — v5.0 M5 T21：本地体验指标（2026-10-29 完成）
+
+> 定位：**「v5.0 到底变好了没有」需要可度量、可复盘的数字**——审批平均耗时、拒绝率、提示采纳率、体检通过率、动词使用分布。这些数字只对用户自己有意义，所以**默认关、零上传**。
+
+- **`src/core/metrics-store.ts`（新增）**：与 `reflection-store.ts` 同一套范式——JSONL + **O_APPEND** 单次追加（进程被 Ctrl+C 打断最多留半行，读取端宽容跳过并计数）、轮转防无限膨胀、读取端倒序；导出 `isMetricsEnabled` / `defaultMetricsPath` / `buildApprovalMetric` / `buildSuggestionMetric` / `buildCheckMetric` / `buildVerbMetric` / `appendMetric` / `readMetrics` / `clearMetrics` / `summarizeMetrics`（构建函数是纯函数，IO 集中在 append/read/clear）
+- **四条铁律（逐条有护栏用例）**：① **默认关**（`config.metrics` 缺省 `off`，不开就**一个字节都不写**、连文件都不创建）② **零网络**（源码断言无 `fetch`/`http`/`net`/`axios`，只 import `node:fs/promises` / `node:path` / 本地路径模块）③ **不干扰主流程**（`appendMetric` 内全 `try/catch`、**永不抛错**、调用方 fire-and-forget）④ **不记内容**（事件里无文件路径、无代码片段、无提示词——只有耗时 / 决策 / 计数 / 动词名这类结构化数字）
+- **开关双轨**：`concertoai config set metrics on|off` + 环境变量 `CONCERTOAI_METRICS`（非法值 fail-closed 不写盘）
+- **`concertoai doctor --metrics`** 查看当前统计（`src/cli/doctor.ts`），会话内 `/metrics on|off|status`
+- **测试**：`tests/core/metrics-store.test.ts` + `tests/cli/doctor-metrics.test.ts` + `tests/cli/slash-metrics.test.ts`，含「默认关时零写入」「零网络源码扫描」「写盘失败不抛错」三类护栏
+
+### Changed — v5.0 M5 T20：功能冻结落文档（2026-10-29 完成）
+
+> 定位：**把「不做什么」写死，防止下个版本又长回来。**
+
+- **`docs/FEATURE_FREEZE.md`（新增）**：三层清单——**冻结（停扩）** = 插件市场（`src/plugin/`、`src/market/`）+ Agent 市场 + `team --parallel`（只修 bug，新功能 PR 默认拒绝）；**只修不扩** = LSP（`src/lsp/`，不加新协议方法）；**活跃** = 审批透明化 / 场景提示 / 4 动词 / 体验度量。另含**测试策略**（既有用例全保留、仅允许删「冻结功能的深层边界用例」、**边缘路径用例一个不动**）、**机械判定三条**（命令数 / 新一级目录 / 冻结层文件数）、**解冻条件**、**违反记录表**
+- **`--help` 冻结标注**：`lsp` → `· 维护模式（只修不扩）`、`plugin` → `· 维护模式（停扩，只修 bug）`、`team --parallel` → `· 维护模式（停扩）`（`src/i18n/{zh,en}.ts`）
+- **`ARCHITECTURE.md` 三处同步**：v5.0 状态行新增冻结说明 + §5 目录树补 `core/metrics.ts` 与 `core/metrics-store.ts`
+- **Known limitation**：T20 计划中的 `tests/cli/freeze.test.ts`（**代码级断言冻结层未扩写**）至今未建立 → 当前判定只能靠人工按「机械判定三条」核对，已记 `TASKS.md` 待办
+
 ### Changed — v5.0 T22：对外定位重写（2026-10-28 完成）
 
 > **新定位（对外统一说法）**：**ConcertoAI —— 敢让你用来改生产代码的个人超级 CLI。**

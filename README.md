@@ -34,7 +34,6 @@ concertoai commit    # 体检通过后生成 commit message 并本地提交
 
 > 状态：**v4.1.1 已发布**（`npm run verify` 全绿，1404 用例 / 117 测试文件；`npm audit` 0 漏洞；CI 三平台）。v4.0 及更早的版本说明见文末「历史版本速览」。
 
-
 ## 环境要求
 
 - Node.js ≥ 22（Node 20 会给出中文提示，命令仍可用但部分功能可能异常）
@@ -108,6 +107,10 @@ concertoai plan "重构这个模块"
 | `concertoai doctor` | 环境诊断：Node/平台/API Key/配置/会话目录/模型表 + 账户余额 |
 | `concertoai reflect list [--limit N]` | 回看拒绝复盘（本地 JSONL，零上传）：时间 / 级别 / 文件 / 风险类别（v5.0 T10） |
 | `concertoai reflect clear [--yes]` | 清空复盘记录（交互需 `y` 确认，**回车 = 取消**；非 TTY 无 `--yes` 直接拒绝） |
+| `concertoai check` | **提交前体检**（v5.0 T15）：只读零写入，四段结果 + 退出码权威（`0` 通过 / `1` 失败或判不了）；`--json` 机器可读 |
+| `concertoai fix` | **报错自动修**（v5.0 T16）：`self-heal` 的推荐入口；`--dry-run` 零写入诊断（不花钱、不需要 Key）、`--auto-approve` |
+| `concertoai commit` | **一条命令本地提交**（v5.0 T17）：体检 → 生成 message（先报 token 量）→ 审批 → 提交；**绝不 push**，`--yes` 只跳 message 审批 |
+| `concertoai review [--fix]` | **9 维代码审查**（v5.0 T18）：与 TUI `/review` 同一渲染器；默认审 git 改动文件；退出码 `0` 无 A 级 / `1` 有 A 级 |
 
 ## 智能成本控制
 
