@@ -185,6 +185,8 @@ function harness(params: {
     severity?: string;
     isTTY?: boolean;
     apiKey?: string;
+    /** 显式 `-m`（K10 用例区分「不传」与「传了」两条路径）。 */
+    model?: string;
     requestApproval?: (request: ApprovalRequest) => Promise<boolean> | boolean;
     runVerify?: () => Promise<{ passed: boolean }>;
     ask?: (question: string) => Promise<string | undefined>;
@@ -206,6 +208,7 @@ function harness(params: {
       ...(args.severity !== undefined ? { severity: args.severity } : {}),
       ...(args.isTTY !== undefined ? { isTTY: args.isTTY } : {}),
       ...(args.apiKey !== undefined ? { apiKey: args.apiKey } : {}),
+      ...(args.model !== undefined ? { model: args.model } : {}),
       ...(args.requestApproval !== undefined ? { requestApproval: args.requestApproval } : {}),
       ...(args.runVerify !== undefined ? { runVerify: args.runVerify } : {}),
       ...(args.ask !== undefined ? { ask: args.ask } : {}),
@@ -675,6 +678,63 @@ describe('--fix', () => {
     ) => Promise<boolean> | boolean;
     // 真实的 autofix 会拿这个回调问一次；Ctrl+C / 空回答一律当拒绝（fail-closed）
     expect(await approve({ kind: 'edit', summary: 'x', detail: 'y' })).toBe(false);
+  });
+});
+
+// ── K10（v5.0 T23.3 手工测试实测缺陷）：--fix 必须拿到「生效模型」──
+
+/**
+ * 症状（实测）：同一进程刚用模型审完 9 个维度，`--fix` 却把每一条都标成
+ * 「（未配置模型，无法生成修复补丁）」→ **有可修点也 100% 修不动，且原因说反**。
+ *
+ * 病根：审查阶段用 `options.model ?? resolveModel(undefined)`（有默认值），
+ * `--fix` 却拿原始的 `options.model`（用户不敲 `-m` 时是 undefined）。
+ *
+ * 这组用例锁三件事：
+ * 1. 不传 `-m` → `autoFix` 收到的 `model` 必须是一个**非空字符串**（= 解析后的默认模型）；
+ * 2. 传了 `-m` → 原样透传（不能被默认值覆盖）；
+ * 3. 审查与 `--fix` 用的是**同一个** model（不许两处各解析一次）。
+ */
+describe('K10：--fix 的模型解析（不传 -m 也要能修）', () => {
+  beforeEach(() => {
+    setLocale('zh');
+  });
+
+  it('★ 不传 -m → autoFix 仍拿到生效模型（旧版这里是 undefined，导致一条都修不动）', async () => {
+    const base = makeReport([issue('suggestion', { file: 'src/a.ts' })]);
+    const fake = fakeEngine(base);
+    const ctx = harness({
+      engine: fake.engine,
+      report: base,
+      args: { fix: true, isTTY: true, requestApproval: () => true },
+    });
+    await ctx.run();
+    expect(fake.fixCalls).toHaveLength(1);
+    const fixOptions = fake.fixCalls[0] as AutoFixOptions;
+    expect(typeof fixOptions.model).toBe('string');
+    expect(fixOptions.model).toBeTruthy();
+  });
+
+  it('显式传 -m → 原样透传（不能被默认模型顶掉）', async () => {
+    const base = makeReport([issue('suggestion', { file: 'src/a.ts' })]);
+    const fake = fakeEngine(base);
+    const ctx = harness({
+      engine: fake.engine,
+      report: base,
+      args: { fix: true, isTTY: true, model: 'deepseek-v4-pro', requestApproval: () => true },
+    });
+    await ctx.run();
+    expect((fake.fixCalls[0] as AutoFixOptions).model).toBe('deepseek-v4-pro');
+  });
+
+  it('源码护栏：`model` 只在命令入口解析一次，`--fix` 用的是解析结果', async () => {
+    const here = path.dirname(fileURLToPath(import.meta.url));
+    const source = await readFile(path.join(here, '../../src/cli/review.ts'), 'utf8');
+    // 只解析一次（`options.model ?? resolveModel(...)` 全文件出现 1 次）
+    expect(source.match(/options\.model \?\? resolveModel/g) ?? []).toHaveLength(1);
+    // `--fix` 阶段不许再拿原始 options.model
+    expect(source).not.toMatch(/model: options\.model/);
+    expect(source).toMatch(/model,\n\s+engine: activeEngine/);
   });
 });
 

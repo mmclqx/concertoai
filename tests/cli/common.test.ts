@@ -7,7 +7,7 @@
  * - loadProjectRegistryCached：同 registryFile 命中缓存（同一实例），clear 后重载。
  */
 
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -19,6 +19,7 @@ import {
   loadProjectRegistryCached,
   parseMaxTurnsOption,
   resolveApiKeyCached,
+  resolveApiKeyWithConfigFallback,
 } from '../../src/cli/common';
 import { MAX_TURNS_CAP } from '../../src/loop/loop';
 import { saveAccount, setActiveAccount } from '../../src/store/accounts';
@@ -71,6 +72,97 @@ describe('resolveApiKeyCached（T4.5 启动期缓存）', () => {
     expect(a.accountName).toBe('work');
     const b = await resolveApiKeyCached({ envKey: '', accountsRoot: root2 });
     expect(b.accountName).toBe('work2');
+  });
+});
+
+/**
+ * `resolveApiKeyWithConfigFallback`（v5.0 K2 修复的核心）。
+ *
+ * 这条链是**「引导里写的三种方式」与「doctor 报告的 Key 状态」共用的唯一实现**：
+ * 少一层回退，用户就会遇到「照引导配好 → 照引导去 doctor 验证 → 被告知未设置」。
+ *
+ * 契约（按优先级）：
+ * 1. CLI / 环境变量 / active 账号（沿用 `resolveApiKey` 既有链，`source` 原样透传）；
+ * 2. 都没有时回退到 `config.json` 的 `providers.deepseek.apiKey`，`source = 'config'`；
+ * 3. 仍然没有 → `{ key: undefined, source: 'none' }`（**不抛错、不退出**，由调用方决定怎么办）。
+ */
+describe('resolveApiKeyWithConfigFallback（K2：config 回退）', () => {
+  const writeConfig = (body: unknown): string => {
+    const file = path.join(tmp, 'config.json');
+    writeFileSync(file, JSON.stringify(body), 'utf8');
+    return file;
+  };
+
+  it('★ 只有 config.json 里有 key（无 env / 无账号）→ 返回它且 source=config', async () => {
+    const file = writeConfig({
+      schemaVersion: 2,
+      defaultProvider: 'deepseek',
+      providers: {
+        deepseek: { type: 'deepseek', apiKey: 'sk-config-only', model: 'deepseek-v4-flash' },
+      },
+    });
+    const resolved = await resolveApiKeyWithConfigFallback({
+      envKey: '',
+      accountsRoot: root,
+      configFile: file,
+    });
+    expect(resolved).toEqual({ key: 'sk-config-only', source: 'config' });
+  });
+
+  it('环境变量优先于 config.json（既有优先级不被打乱）', async () => {
+    const file = writeConfig({
+      schemaVersion: 2,
+      defaultProvider: 'deepseek',
+      providers: { deepseek: { type: 'deepseek', apiKey: 'sk-from-config' } },
+    });
+    const resolved = await resolveApiKeyWithConfigFallback({
+      envKey: 'sk-from-env',
+      accountsRoot: root,
+      configFile: file,
+    });
+    expect(resolved).toMatchObject({ key: 'sk-from-env', source: 'env' });
+  });
+
+  it('哪里都没有 key → source=none（不抛错，由调用方决定报错还是继续）', async () => {
+    const file = writeConfig({ schemaVersion: 2, providers: {} });
+    const resolved = await resolveApiKeyWithConfigFallback({
+      envKey: '',
+      accountsRoot: root,
+      configFile: file,
+    });
+    expect(resolved).toEqual({ key: undefined, source: 'none' });
+  });
+
+  it('config.json 不存在 / 损坏 / apiKey 为空串 → 一律 source=none（不抛错）', async () => {
+    const missing = path.join(tmp, 'nope.json');
+    for (const file of [missing]) {
+      const resolved = await resolveApiKeyWithConfigFallback({
+        envKey: '',
+        accountsRoot: root,
+        configFile: file,
+      });
+      expect(resolved.source).toBe('none');
+    }
+    const broken = path.join(tmp, 'broken.json');
+    writeFileSync(broken, 'not-json{', 'utf8');
+    expect(
+      (
+        await resolveApiKeyWithConfigFallback({
+          envKey: '',
+          accountsRoot: root,
+          configFile: broken,
+        })
+      ).source,
+    ).toBe('none');
+    const blank = writeConfig({
+      schemaVersion: 2,
+      defaultProvider: 'deepseek',
+      providers: { deepseek: { type: 'deepseek', apiKey: '   ' } },
+    });
+    expect(
+      (await resolveApiKeyWithConfigFallback({ envKey: '', accountsRoot: root, configFile: blank }))
+        .source,
+    ).toBe('none');
   });
 });
 

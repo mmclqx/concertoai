@@ -8,6 +8,16 @@
 
 ## [Unreleased]
 
+### Fixed — v5.0 T23.3 手工测试发现的三个阻塞缺陷（K10 / K1 / K2，2026-10-29 修复）
+
+> 来源：`docs/07.11-手工测试报告-v5.0.md`（8 场景实测，¥0.88 币值成本）。这三条都属于「用户完全按提示操作仍然失败」，用户裁决**发布前必修**。
+> 修复后复验：`npm run verify` 全绿（155 文件 / **2225** 用例，+16）；`doctor` 端到端 11 断言全过；`review --fix` 端到端 9 断言全过。
+
+- **K10（`review --fix` 恒失效且原因说反）**：用户**不敲 `-m`** 时 `--fix` 一条也修不动，并把每条问题标成「未配置模型，无法生成修复补丁」——而同一进程刚刚用模型审完 9 个维度。病根是**同一个事实两处各解析一次**：审查阶段用 `options.model ?? resolveModel(undefined)`（有默认值），`--fix` 却拿到原始的 `options.model`（`undefined`）。修法：模型在命令入口**只解析一处**（`const model = options.model ?? resolveModel(undefined)`），审查与 `--fix` 共用；`FixPhaseParams.model` 从可选改为**必填**（忘了传在编译期就红）。另把「缺少客户端」与「缺少模型」两种降级原因**分开说**（`reviewer/autofix.ts`），不再用一句「未配置模型」掩盖真实原因
+- **K1（`doctor` 屏幕全绿却 `exit 1`）**：迁移项把「config 现在是 v4 形态（`migrated`）」与「本机存在 `.v3.bak`（`backupExists`）」绑成 `ok = migrated && backupExists`——v4 起才装的用户、手写 v4 配置的用户同样是 v4 形态，却从没发生过迁移，凭什么要有备份？结果新用户第一次跑 `doctor` 就「全绿 + exit 1」，CI 里恒失败且日志毫无线索。修法：`MigrationIntegrity` 新增 **`everMigrated`**（证据 = 迁移写盘时留下的 `_migrated: true`），只有「**真迁过、但备份丢了**」才判失败；该行失败时**同时打 `❌`**（屏幕与退出码一起表态）；新增文案 `migrationBackupLost` / `migrationBackupNotNeeded`（不再用「备份缺失」一概而论）
+- **K2（缺 Key 引导让人去验证，`doctor` 却说不认识）**：引导的「方式 ③：写入 `config.json` 的 `providers.deepseek.apiKey`」对 `chat`/`run`/`plan` 真生效，但 `doctor` 只走不带 config 回退的 `resolveApiKeyCached()` → 报「❌ API Key: 未设置」。而引导的下一步恰好是「运行 `concertoai doctor` 验证」。修法：`common.ts` 新增 **`resolveApiKeyWithConfigFallback()`**（CLI > env > active account > config.json 的**唯一链路**），`getApiKey()` / `tryGetApiKey()` / `doctor` 三处全部改用它（此前是三处各写一遍，必然打架）；新增 `keySource: 'config'` 的来源标注（`（来自配置文件 providers.deepseek.apiKey）`），并把 `doctor` 两处 Key 来源标注收敛到同一个 `keySourceNote()`；缺 Key 时的余额行改为给出三种真实生效的配置方式（不再只写 `DEEPSEEK_API_KEY`）
+- **测试（+16 用例，全部锁「用户视角的失败」而非实现细节）**：`tests/cli/review.test.ts` 3 条（不传 `-m` 也拿到生效模型 / 显式 `-m` 原样透传 / **源码护栏**：`options.model ?? resolveModel` 全文件只出现 1 次且 `--fix` 不再拿原始值）；`tests/reviewer/autofix.test.ts` 2 条（缺 client 与缺 model 的 reason 必须可区分）；`tests/cli/doctor.test.ts` 6 条（新用户 exit 0 且无 ❌ / 迁过但备份丢失 exit 1 且出现 ❌ / 迁过且有备份 exit 0 / **一致性铁律**：任何 ok=false 的项输出里必须有 ❌ / `config` 来源标注 / env·account 标注不回归）；`tests/store/migration.test.ts` 2 条（`everMigrated` 真伪两态）；`tests/cli/common.test.ts` 4 条（config 回退 / 优先级不被打乱 / 哪里都没有 → `none` / 不存在·损坏·空串一律 `none` 不抛错）
+
 ### Added — v5.0 M5 T21：本地体验指标（2026-10-29 完成）
 
 > 定位：**「v5.0 到底变好了没有」需要可度量、可复盘的数字**——审批平均耗时、拒绝率、提示采纳率、体检通过率、动词使用分布。这些数字只对用户自己有意义，所以**默认关、零上传**（ADR-049 / §4 D84）。

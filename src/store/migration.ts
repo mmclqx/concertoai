@@ -165,8 +165,21 @@ export async function migrateV3ToV4(
 
 /** 迁移完整性检测结果（doctor 消费）。 */
 export interface MigrationIntegrity {
-  /** config 是否已迁移（schemaVersion=2 + defaultProvider + providers[defaultProvider] 存在）。 */
+  /**
+   * config 是否**已是 v4 形态**（schemaVersion=2 + defaultProvider + providers[defaultProvider]）。
+   *
+   * ⚠️ 它只回答「现在是不是 v4 形状」，**不回答「本机执行过迁移没有」**——
+   * v4 起才装的用户、手写 v4 配置的用户同样是 v4 形状。两者混用会让 doctor 误判（见 everMigrated）。
+   */
   migrated: boolean;
+  /**
+   * 本机是否**真的执行过** v3→v4 迁移（证据：迁移写盘时留下的 `_migrated: true` 标记）。
+   *
+   * 为什么必须与 `migrated` 分开（v5.0 T23.3 K1 实测）：旧判定用
+   * `ok = migrated && backupExists` —— 新用户第一次跑 `doctor` 就是「v4 形状 + 无 .v3.bak」
+   * → 屏幕全绿却 `exit 1`，CI 里恒失败且日志无线索。而「从未迁移过」的人本来就不该有备份。
+   */
+  everMigrated: boolean;
   /** 备份是否存在（config.v3.bak）。 */
   backupExists: boolean;
   /** 会话格式是否兼容（v4 只新增字段不破坏 v3 会话）。 */
@@ -186,15 +199,19 @@ export async function checkMigrationIntegrity(
 ): Promise<MigrationIntegrity> {
   const backupExists = await fileExists(`${configPath}.v3.bak`);
   let migrated = false;
+  let everMigrated = false;
   try {
     const raw = await readFile(configPath, 'utf8');
-    const parsed = JSON.parse(raw) as Partial<V4Config>;
+    const parsed = JSON.parse(raw) as Partial<V4Config> & { _migrated?: unknown };
     migrated =
       parsed.schemaVersion === V4_CONFIG_SCHEMA_VERSION &&
       typeof parsed.defaultProvider === 'string' &&
       parsed.providers?.[parsed.defaultProvider] !== undefined;
+    // `_migrated` 只由 migrateV3ToV4 写入 → 是「本机迁过」的唯一可靠证据
+    everMigrated = parsed._migrated === true;
   } catch {
     migrated = false;
+    everMigrated = false;
   }
   let sessionCompatible = true;
   if (sessionDir !== undefined) {
@@ -207,7 +224,7 @@ export async function checkMigrationIntegrity(
     }
   }
   // 幂等：检测本身只读不写盘 → 恒为 true（重复调用无副作用）
-  return { migrated, backupExists, sessionCompatible, idempotent: true };
+  return { migrated, everMigrated, backupExists, sessionCompatible, idempotent: true };
 }
 
 async function fileExists(file: string): Promise<boolean> {

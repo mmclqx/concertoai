@@ -448,6 +448,16 @@ export async function runReviewCommand(options: ReviewCommandOptions = {}): Prom
   const client =
     options.client ??
     (options.apiKey !== undefined ? new DeepSeekClient({ apiKey: options.apiKey }) : undefined);
+  /**
+   * 生效模型：**整个命令只解析这一处**，审查与 `--fix` 共用同一个值。
+   *
+   * K10（v5.0 T23.3 手工测试实测）：此前只在「现场造引擎」分支里解析当前模型，
+   * 而 `--fix` 拿到的是**未解析的 model** —— 用户不敲 `-m` 时恒为 `undefined`，
+   * `reviewer/autofix.ts` 据此判定「未配置模型，无法生成修复补丁」，于是
+   * **有可修点也 100% 修不动，且原因说反**（同一进程刚刚用模型审完 9 个维度）。
+   * 「同一个事实在两个地方各解析一次」是这类『说法与事实不符』的温床，故收敛成一个变量。
+   */
+  const model = options.model ?? resolveModel(undefined);
   let engine = options.engine;
   if (engine === undefined) {
     if (client === undefined) {
@@ -455,7 +465,6 @@ export async function runReviewCommand(options: ReviewCommandOptions = {}): Prom
       log(dict.needsApiKeyHint);
       return 1;
     }
-    const model = options.model ?? resolveModel(undefined);
     engine = new ReviewerEngine(new SubagentSpawner(client, { cwd }, model), cwd);
   }
   const activeEngine = engine;
@@ -477,7 +486,9 @@ export async function runReviewCommand(options: ReviewCommandOptions = {}): Prom
     report = await runFixPhase(report, {
       cwd,
       client,
-      model: options.model,
+      // K10：**必须是上面解析出的生效模型**，不能是原始的 `options.model`
+      //（否则用户不敲 `-m` 时恒 undefined → 一条也修不动）
+      model,
       engine: activeEngine,
       dict,
       log,
@@ -514,7 +525,13 @@ export async function runReviewCommand(options: ReviewCommandOptions = {}): Prom
 interface FixPhaseParams {
   cwd: string;
   client: ModelClient | undefined;
-  model: string | undefined;
+  /**
+   * 生效模型 ID（**必填**：命令入口已解析出「用户没写 `-m` 时的默认模型」）。
+   *
+   * 这里刻意不给可选——K10 的病根就是「两处各拿一次，一处解析一处不解析」，
+   * 类型上把它钉成必有，能让「忘了传」在编译期就红，而不是等用户跑出「未配置模型」。
+   */
+  model: string;
   engine: ReviewEngineLike;
   dict: ReturnType<typeof t>['review'];
   log: (line: string) => void;
@@ -573,7 +590,8 @@ async function runFixPhase(report: ReviewReport, params: FixPhaseParams): Promis
   const result = await params.engine.autoFix(report, {
     cwd: params.cwd,
     ...(params.client !== undefined ? { client: params.client } : {}),
-    ...(params.model !== undefined ? { model: params.model } : {}),
+    // `model` 必填（见 FixPhaseParams）→ 无条件透传，不再有「undefined 就不传」的分支
+    model: params.model,
     requestApproval,
     runVerify,
     snapshots,

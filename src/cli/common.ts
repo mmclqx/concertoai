@@ -144,6 +144,33 @@ export async function readConfigDeepseekKey(configFile?: string): Promise<string
   }
 }
 
+/**
+ * 解析 API Key（**含 config.json 回退**），永不抛错、**不退出**。
+ *
+ * 这是「给用户看的 Key 状态」与「真正拿去调模型」共用的**唯一链路**：
+ * CLI > 环境变量 > active account > `config.json` 的 `providers.deepseek.apiKey`。
+ *
+ * 为什么必须收敛成一个函数（K2，v5.0 T23.3 手工测试实测）：
+ * `getApiKey()`（chat/run/plan 用）与 `tryGetApiKey()`（commit 用）各自在内联同一套回退，
+ * 而 `doctor` 只调了不带回退的 `resolveApiKeyCached()` —— 于是用户按缺 Key 引导的
+ * 「方式 ③：写入配置文件」配好后，chat 能用、`doctor` 却报「❌ API Key: 未设置」，
+ * 而引导的下一步恰好就是「运行 concertoai doctor 验证」。**同一事实两处各判一次，必然打架。**
+ *
+ * @param options 解析选项（测试注入；`configFile` 可覆盖 config.json 路径）
+ */
+export async function resolveApiKeyWithConfigFallback(
+  options: ResolveApiKeyOptions & { configFile?: string } = {},
+): Promise<ResolvedApiKey> {
+  const resolved = await resolveApiKeyCached(options);
+  if (resolved.key !== undefined) {
+    return resolved;
+  }
+  const configKey = await readConfigDeepseekKey(options.configFile);
+  return configKey !== undefined
+    ? { key: configKey, source: 'config' }
+    : { key: undefined, source: 'none' };
+}
+
 /** 打码 API Key：`sk-****abcd`（仅显示后 4 位；短 Key 全部掩码）。 */
 export function maskApiKey(key: string): string {
   const trimmed = key.trim();

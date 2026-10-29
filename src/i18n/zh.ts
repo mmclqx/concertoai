@@ -614,7 +614,8 @@ export const zh = {
     balanceLabel: '账户余额',
     balanceAvailable: '账户可用',
     balanceUnavailable: '账户不可用',
-    balanceSkipped: '未查询（缺少 DEEPSEEK_API_KEY）',
+    balanceSkipped:
+      '未查询（未配置 API Key：环境变量 / concertoai login / 写 config.json 任一方式即可）',
     balanceFailed: '查询失败：{message}',
     balanceEntry: '{currency}: 总额 {total} ｜ 赠送 {granted} ｜ 充值 {toppedUp}',
     // VS Code 健康诊断（v3.4 M3 / doctor --vscode）
@@ -663,8 +664,16 @@ export const zh = {
     migrationNotMigrated: '配置仍为 v3 格式（schema v1），启动时将自动迁移',
     migrationBackupOk: '备份存在: {path}',
     migrationBackupMissing: '备份缺失（未找到 config.v3.bak）',
+    // v5.0 K1 修复：把「迁过但备份丢了」与「从没迁过、本来不需要备份」分开说
+    migrationBackupLost:
+      '备份丢失（本机做过 v3→v4 迁移，但找不到 config.v3.bak，无法回滚；如需回滚请从备份恢复）',
+    migrationBackupNotNeeded: '无需备份（本机未做过 v3→v4 迁移，config 一开始就是 v4 格式）',
     migrationSessionOk: '会话格式兼容（v4 只新增字段不破坏 v3 会话）',
     migrationIdempotentOk: '幂等（检测只读，重复执行无副作用）',
+    // v5.0 K2 修复：Key 来源标注（config 回退让「引导写配置文件」这条真正可验证）
+    apiKeyNoteEnv: '（环境变量优先）',
+    apiKeyNoteConfig: '（来自配置文件 providers.deepseek.apiKey）',
+    apiKeyNoteAccount: '（账号: {name} {masked}）',
   },
   reviewer: {
     // v4.0 M1 T1.6：autoFix 文案（/review --fix，审查→修复闭环）

@@ -77,7 +77,10 @@ describe('runDoctorCommand', () => {
     const out = output();
     expect(out).toContain('❌ API Key');
     expect(out).toContain('未设置（无法查询余额）');
-    expect(out).toContain('未查询（缺少 DEEPSEEK_API_KEY）');
+    // v5.0 K2：措辞不能只说「缺 DEEPSEEK_API_KEY」——三种来源任意一种都算配好了
+    expect(out).toContain('未查询（未配置 API Key');
+    expect(out).toContain('concertoai login');
+    expect(out).toContain('config.json');
   });
 
   it('余额查询失败时返回 1 且输出失败原因', async () => {
@@ -229,5 +232,118 @@ describe('runDoctorCommand', () => {
     const out = output();
     expect(out).toContain('✅ 配置迁移完整性');
     expect(out).toContain('配置仍为 v3 格式');
+  });
+});
+
+// ── K1（v5.0 T23.3 手工测试实测缺陷）：退出码与屏幕必须同时表态 ──────────
+
+describe('K1：doctor 的退出码与屏幕一致性', () => {
+  /** 造一份「v4 形状、无 .v3.bak、无 _migrated 标记」的配置 = 新用户（v4 起才装）。 */
+  const writeV4Config = (extra: Record<string, unknown> = {}): string => {
+    const cfg = path.join(tmp, 'config.json');
+    writeFileSync(
+      cfg,
+      JSON.stringify({
+        schemaVersion: 2,
+        defaultProvider: 'deepseek',
+        providers: { deepseek: { type: 'deepseek', model: 'deepseek-v4-flash' } },
+        ...extra,
+      }),
+      'utf8',
+    );
+    return cfg;
+  };
+
+  const run = (cfg: string): Promise<number> =>
+    runDoctorCommand({
+      apiKey: 'k',
+      configPath: cfg,
+      sessionDir: path.join(tmp, 'sessions'),
+      fetchImpl: async () => jsonResponse(okBalance),
+    });
+
+  it('★ 新用户（v4 形状 + 无 .v3.bak + 无 _migrated）→ 全绿且 exit 0（旧版这里 exit 1）', async () => {
+    const code = await run(writeV4Config());
+    expect(code).toBe(0);
+    const out = output();
+    expect(out).toContain('✅ 配置迁移完整性');
+    // 不许出现 ❌ —— 「屏幕全绿 + exit 1」正是 K1 的原始症状
+    expect(out).not.toContain('❌ 配置迁移完整性');
+    // 也不许说「备份缺失」：没迁过的人本来就不需要备份
+    expect(out).toContain('无需备份');
+  });
+
+  it('★ 曾迁移过（_migrated: true）但 .v3.bak 丢失 → 屏幕出现 ❌ 且 exit 1（真故障）', async () => {
+    const code = await run(writeV4Config({ _migrated: true }));
+    expect(code).toBe(1);
+    const out = output();
+    expect(out).toContain('❌ 配置迁移完整性');
+    expect(out).toContain('备份丢失');
+  });
+
+  it('曾迁移过 + 备份仍在 → ✅ 且 exit 0', async () => {
+    const cfg = writeV4Config({ _migrated: true });
+    writeFileSync(`${cfg}.v3.bak`, '{"schemaVersion":1}', 'utf8');
+    expect(await run(cfg)).toBe(0);
+    expect(output()).toContain('✅ 配置迁移完整性');
+  });
+
+  it('一致性铁律：任何 ok=false 的项，它的输出里必须出现 ❌（防「全绿 exit 1」再犯）', async () => {
+    // 造两种失败：备份丢失（迁移项）+ 余额查询失败
+    const cfg = writeV4Config({ _migrated: true });
+    const code = await runDoctorCommand({
+      apiKey: 'k',
+      configPath: cfg,
+      sessionDir: path.join(tmp, 'sessions'),
+      fetchImpl: async () => new Response('{}', { status: 500 }),
+    });
+    expect(code).toBe(1);
+    expect(output()).toContain('❌');
+    expect(output()).toContain('❌ 配置迁移完整性');
+  });
+});
+
+// ── K2（v5.0 T23.3 手工测试实测缺陷）：Key 来源标注 ────────────────────
+
+describe('K2：doctor 认 config 来源的 Key', () => {
+  it('★ keySource=config（来自 config.json）→ 报「已设置」并注明来源，exit 0', async () => {
+    const code = await runDoctorCommand({
+      apiKey: 'sk-config-only',
+      keySource: 'config',
+      configPath: path.join(tmp, 'missing.json'),
+      sessionDir: path.join(tmp, 'sessions'),
+      fetchImpl: async () => jsonResponse(okBalance),
+    });
+    expect(code).toBe(0);
+    const out = output();
+    expect(out).toContain('✅ API Key: 已设置');
+    expect(out).toContain('来自配置文件');
+    // 余额行也要标同一来源（两处说法一致，不能一处说 env 一处说 config）
+    expect(out).toContain('账户可用');
+  });
+
+  it('keySource=env / account 的既有标注保持不变（不因新增 config 分支而回退）', async () => {
+    await runDoctorCommand({
+      apiKey: 'sk-env-xxxx',
+      keySource: 'env',
+      configPath: path.join(tmp, 'missing.json'),
+      sessionDir: path.join(tmp, 'sessions'),
+      fetchImpl: async () => jsonResponse(okBalance),
+    });
+    expect(output()).toContain('环境变量优先');
+
+    log?.mockClear();
+    await runDoctorCommand({
+      apiKey: 'sk-acct-xxxx',
+      keySource: 'account',
+      keyAccountName: 'work',
+      configPath: path.join(tmp, 'missing.json'),
+      sessionDir: path.join(tmp, 'sessions'),
+      fetchImpl: async () => jsonResponse(okBalance),
+    });
+    expect(output()).toContain('账号: work');
+    // maskApiKey：`sk-acct-xxxx` 含连字符 → 不加 `sk-` 前缀，只留后 4 位
+    expect(output()).toContain('****xxxx');
+    expect(output()).not.toContain('sk-acct-xxxx');
   });
 });

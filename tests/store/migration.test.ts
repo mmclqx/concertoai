@@ -112,11 +112,36 @@ describe('migrateV3ToV4（M3 T3.5）', () => {
     expect(integrity.backupExists).toBe(true);
     expect(integrity.sessionCompatible).toBe(true);
     expect(integrity.idempotent).toBe(true);
+    // v5.0 K1：真迁过 → everMigrated=true（doctor 据此才敢要求备份存在）
+    expect(integrity.everMigrated).toBe(true);
   });
 
   it('checkMigrationIntegrity：未迁移（v3）→ migrated=false', async () => {
     writeV3({ schemaVersion: 1, defaultModel: 'deepseek-chat' });
     const integrity = await checkMigrationIntegrity(cfgPath());
     expect(integrity.migrated).toBe(false);
+    expect(integrity.everMigrated).toBe(false);
+  });
+
+  /**
+   * v5.0 K1 的核心区分：**「现在是 v4 形状」≠「本机迁过」**。
+   *
+   * 新用户（v4 起才装）／手写 v4 配置的人都是「v4 形状 + 无 .v3.bak + 无 _migrated」——
+   * 旧判定把他们当成「迁移备份丢失」→ doctor 屏幕全绿却 exit 1。
+   */
+  it('checkMigrationIntegrity：v4 形状但没迁过（无 _migrated）→ migrated=true / everMigrated=false', async () => {
+    writeFileSync(
+      cfgPath(),
+      JSON.stringify({
+        schemaVersion: 2,
+        defaultProvider: 'deepseek',
+        providers: { deepseek: { type: 'deepseek', model: 'deepseek-v4-flash' } },
+      }),
+      'utf8',
+    );
+    const integrity = await checkMigrationIntegrity(cfgPath());
+    expect(integrity.migrated).toBe(true);
+    expect(integrity.everMigrated).toBe(false);
+    expect(integrity.backupExists).toBe(false);
   });
 });

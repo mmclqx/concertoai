@@ -8,7 +8,7 @@ import { fmt, resolveLocale, setLocale, t } from '../i18n';
 import { configPath, crashLogPath, migrateLegacyHome } from '../store/paths';
 import { VERSION } from '../version';
 import { buildMissingApiKeyGuide } from './api-key-guide';
-import { parseMaxTurnsOption, readConfigDeepseekKey, resolveApiKeyCached } from './common';
+import { parseMaxTurnsOption, resolveApiKeyWithConfigFallback } from './common';
 import { installCrashHandlers } from './crash-handler';
 import { checkNodeVersion, isNodeWarnSuppressed } from './node-version';
 import { makePermissionConfirm as makeCliPermissionConfirm } from './plugin';
@@ -40,16 +40,11 @@ migrateLegacyHome((message) => console.error(message));
  * 无任何来源 → 报错退出（fail-closed，与现状一致）。
  */
 async function getApiKey(): Promise<string> {
-  // v3.2 M4 / T4.5：启动期一次性解析并缓存（同一进程后续命令复用，消除重复读盘）
-  const resolved = await resolveApiKeyCached();
+  // v5.0 K2：**含 config.json 回退的唯一链路**（doctor / chat / run / plan / commit 共用，
+  // 避免「引导里的方式 ③ 在某个命令里不生效」的 v4.1.1 同类坑）
+  const resolved = await resolveApiKeyWithConfigFallback();
   if (resolved.key !== undefined) {
     return resolved.key;
-  }
-  // v5.0 T1：回退到 config.json 的 providers.deepseek.apiKey。
-  // 此前入口不读该字段 → 引导里的「方式 3：写入配置文件」写了也不生效（v4.1.1 同类坑）。
-  const configKey = await readConfigDeepseekKey();
-  if (configKey !== undefined) {
-    return configKey;
   }
   // v5.0 T1：缺 Key → 中文引导（三种真实生效的配置方式 + 获取地址），非静默崩溃
   console.error(buildMissingApiKeyGuide({ configPath: configPath() }).join('\n'));
@@ -61,15 +56,10 @@ async function getApiKey(): Promise<string> {
  *
  * `commit` 与 chat/run 不同：没有 Key 也能提交（message 走本地兜底），所以不能复用
  * `getApiKey()`——它在缺 Key 时直接 `process.exit(1)`，会把一次本可完成的提交挡在门外。
- * 解析链与 `getApiKey()` 完全一致（CLI > env > active account > config.json），
- * 避免「引导里写的方式在这里不生效」的 v4.1.1 同类坑。
+ * 解析链与 `getApiKey()` 完全一致（同一个函数），避免「引导里写的方式在这里不生效」的 v4.1.1 同类坑。
  */
 async function tryGetApiKey(): Promise<string | undefined> {
-  const resolved = await resolveApiKeyCached();
-  if (resolved.key !== undefined) {
-    return resolved.key;
-  }
-  return readConfigDeepseekKey();
+  return (await resolveApiKeyWithConfigFallback()).key;
 }
 
 /**
@@ -723,8 +713,10 @@ program
   .action(async (options: { vscode?: boolean; metrics?: boolean }) => {
     const { runDoctorCommand } = await import('./doctor');
     // v3.1 M3 T3.3：余额项按解析链（环境变量 > active account）标注账号
-    // v3.2 M4 T4.5：走启动期缓存（getApiKey 已解析过则复用，消除二次读盘）
-    const resolved = await resolveApiKeyCached();
+    // v3.2 M4 T4.5：走启动期缓存（同一进程内复用，消除二次读盘）
+    // v5.0 K2：**补 config.json 回退** —— 缺 Key 引导的方式 ③ 写的是这个字段，
+    // 若 doctor 不认它，「按引导配好 → 按引导去验证」必然得到「未设置」。
+    const resolved = await resolveApiKeyWithConfigFallback();
     const code = await runDoctorCommand({
       apiKey: resolved.key,
       keySource: resolved.source,

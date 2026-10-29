@@ -125,7 +125,7 @@ describe('generateReviewFixPlan', () => {
 // ── 修复执行引擎（T1.3 + T1.5）─────────────────────────────
 
 describe('runAutoFix（执行引擎）', () => {
-  it('无模型能力 → A 类全部 manual，不写盘', async () => {
+  it('无客户端也无模型 → A 类全部 manual，不写盘', async () => {
     writeFileSync(path.join(tmp, 'a.ts'), 'const old = 1;', 'utf8');
     const report = makeReport([
       makeIssue('style', 'suggestion', 'a.ts', '命名'),
@@ -138,6 +138,38 @@ describe('runAutoFix（执行引擎）', () => {
     expect(result.fixed).toBe(0);
     expect(result.manual).toBe(2);
     expect(readFileSync(path.join(tmp, 'a.ts'), 'utf8')).toBe('const old = 1;');
+  });
+
+  /**
+   * K10（v5.0 T23.3 手工测试实测）：**「没有客户端」与「没有模型」必须分开说**。
+   *
+   * 旧代码把两者并成同一句「未配置模型，无法生成修复补丁」，于是 CLI 侧一个参数传递缺陷
+   * （`--fix` 拿到未解析的 `model`）被渲染成「用户没配模型」——用户明明配好了，
+   * 排查方向被直接带偏（实测症状：同一进程刚用模型审完 9 维，`--fix` 却说未配置模型）。
+   */
+  it('★ 有客户端但缺 model → 原因必须点名「未配置模型」（不是含糊的同一句）', async () => {
+    writeFileSync(path.join(tmp, 'a.ts'), 'const old = 1;', 'utf8');
+    const report = makeReport([makeIssue('style', 'suggestion', 'a.ts', '命名')]);
+    const result = await runAutoFix(report, {
+      cwd: tmp,
+      client: mockClient('{"search":"const old = 1","replace":"const old = 2"}'),
+      requestApproval: async () => true,
+    });
+    expect(result.fixed).toBe(0);
+    expect(result.items[0]?.reason).toBe('未配置模型，无法生成修复补丁');
+  });
+
+  it('★ 有 model 但缺 client → 原因必须说「缺少模型客户端」（与上一条可区分）', async () => {
+    writeFileSync(path.join(tmp, 'a.ts'), 'const old = 1;', 'utf8');
+    const report = makeReport([makeIssue('style', 'suggestion', 'a.ts', '命名')]);
+    const result = await runAutoFix(report, {
+      cwd: tmp,
+      model: 'test-model',
+      requestApproval: async () => true,
+    });
+    expect(result.fixed).toBe(0);
+    expect(result.items[0]?.reason).toContain('缺少模型客户端');
+    expect(result.items[0]?.reason).not.toBe('未配置模型，无法生成修复补丁');
   });
 
   it('批量审批拒绝（fail-closed）→ 全部 manual，不写盘', async () => {

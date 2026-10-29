@@ -246,8 +246,21 @@ export async function runAutoFix(
       continue;
     }
 
-    // A 类：无模型能力 → 降级 manual
-    if (options.client === undefined || options.model === undefined) {
+    // A 类：缺少「生成补丁」的两件必需品 → 降级 manual。
+    // **两种缺失必须分开说**：v5.0 T23.3 K10 就是因为把「没有客户端」与「没有模型」
+    // 并成同一句「未配置模型」，把 CLI 侧的一个参数传递缺陷（`--fix` 拿到未解析的 model）
+    // 谎报成「用户没配模型」——用户明明配好了，排查方向被直接带偏。
+    if (options.client === undefined) {
+      items.push({
+        issue,
+        category,
+        status: 'manual',
+        reason: '缺少模型客户端，无法生成修复补丁',
+      });
+      continue;
+    }
+
+    if (options.model === undefined) {
       items.push({
         issue,
         category,

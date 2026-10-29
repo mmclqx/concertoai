@@ -657,7 +657,8 @@ export const en = {
     balanceLabel: 'Account balance',
     balanceAvailable: 'Account available',
     balanceUnavailable: 'Account unavailable',
-    balanceSkipped: 'not queried (missing DEEPSEEK_API_KEY)',
+    balanceSkipped:
+      'not queried (no API key: use env var / concertoai login / config.json — any one works)',
     balanceFailed: 'query failed: {message}',
     balanceEntry: '{currency}: total {total} | granted {granted} | topped-up {toppedUp}',
     // VS Code health diagnostics (v3.4 M3 / doctor --vscode)
@@ -708,9 +709,18 @@ export const en = {
       'Config is still v3 format (schema v1); it will be auto-migrated at startup',
     migrationBackupOk: 'backup exists: {path}',
     migrationBackupMissing: 'backup missing (config.v3.bak not found)',
+    // v5.0 K1 fix: distinguish "migrated but backup lost" from "never migrated, no backup needed"
+    migrationBackupLost:
+      'backup lost (this machine ran the v3→v4 migration but config.v3.bak is gone; cannot roll back)',
+    migrationBackupNotNeeded:
+      'backup not needed (no v3→v4 migration happened here; config was born as v4)',
     migrationSessionOk:
       'session format compatible (v4 only adds fields; v3 sessions are not broken)',
     migrationIdempotentOk: 'idempotent (check is read-only; repeated runs have no side effects)',
+    // v5.0 K2 fix: API key source notes (config fallback makes guide option ③ verifiable)
+    apiKeyNoteEnv: ' (environment variable takes precedence)',
+    apiKeyNoteConfig: ' (from config file providers.deepseek.apiKey)',
+    apiKeyNoteAccount: ' (account: {name} {masked})',
   },
   reviewer: {
     // v4.0 M1 T1.6: autoFix copy (/review --fix, review-to-fix loop)

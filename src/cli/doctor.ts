@@ -3,13 +3,15 @@
  *
  * 逐项检查（单项失败不中断，全部执行完再汇总退出码）：
  * 1. Node.js 版本 / 平台
- * 2. DEEPSEEK_API_KEY 是否设置（不泄露内容）
+ * 2. API Key 是否可用（**环境变量 / active 账号 / config.json 三种来源任一**，不泄露内容）
  * 3. 配置文件 ~/.concertoai/config.json 可读性（区分不存在/损坏）
  * 4. 会话目录可写性（mkdir + 探测文件写入后删除）
  * 5. 模型表是否可加载
  * 6. 账户余额（有 key 时查询，展示总额/赠送/充值）
  *
  * 任一 ❌ 项存在 → 返回 1；全部 ✅ → 返回 0。
+ * **铁律（v5.0 T23.3 K1 教训）：`ok: false` 的项，它的 `lines` 里必须有一个 `❌`** ——
+ * 退出码与屏幕必须同时表态，否则用户面对「屏幕全绿 + exit 1」无从排查，CI 里也没有线索。
  */
 
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
@@ -79,6 +81,35 @@ interface Diagnostic {
   lines: string[];
 }
 
+/**
+ * Key 来源标注（**唯一来源**，不泄露完整 Key）。
+ *
+ * - `env` / `config` 只标来源；
+ * - `account` 附打码后的后 4 位（用户能对上自己那把 Key）。
+ *
+ * K2（v5.0 T23.3 手工测试实测）：缺 Key 引导的「方式 ③ 写 config.json」对 chat 真生效，
+ * 但 doctor 走的是不带 config 回退的解析链 → 让用户去验证却被告知「未设置」。
+ * 现在 doctor 与 chat/run/plan 共用同一条链（`resolveApiKeyWithConfigFallback`），
+ * 且 `config` 来源会被明确标注出来——「按引导配好了」与「doctor 说已设置」不再互相打架。
+ */
+function keySourceNote(
+  source: ApiKeySource | undefined,
+  accountName: string | undefined,
+  apiKey: string,
+): string {
+  const dict = t().doctor;
+  if (source === 'env') {
+    return dict.apiKeyNoteEnv;
+  }
+  if (source === 'config') {
+    return dict.apiKeyNoteConfig;
+  }
+  if (source === 'account' && accountName !== undefined) {
+    return fmt(dict.apiKeyNoteAccount, { name: accountName, masked: maskApiKey(apiKey) });
+  }
+  return '';
+}
+
 function diagnoseApiKey(
   apiKey: string | undefined,
   source: ApiKeySource | undefined,
@@ -88,13 +119,8 @@ function diagnoseApiKey(
   if (apiKey === undefined || apiKey === '') {
     return { ok: false, lines: [`${dict.fail} ${dict.apiKeyLabel}: ${dict.apiKeyMissing}`] };
   }
-  // v3.1 M3 T3.3：标注 Key 来源（环境变量优先 / 账号），不泄露完整 Key
-  let note = '';
-  if (source === 'env') {
-    note = '（环境变量优先）';
-  } else if (source === 'account' && accountName !== undefined) {
-    note = `（账号: ${accountName} ${maskApiKey(apiKey)}）`;
-  }
+  // v3.1 M3 T3.3：标注 Key 来源（环境变量优先 / 账号 / 配置文件），不泄露完整 Key
+  const note = keySourceNote(source, accountName, apiKey);
   return { ok: true, lines: [`${dict.ok} ${dict.apiKeyLabel}: ${dict.apiKeySet}${note}`] };
 }
 
@@ -219,13 +245,8 @@ async function diagnoseBalance(options: DoctorCommandOptions): Promise<Diagnosti
       fetchImpl: options.fetchImpl,
     });
     const status = balance.is_available ? dict.balanceAvailable : dict.balanceUnavailable;
-    // v3.1 M3 T3.3：余额行标注使用的账号（如 账号: work (sk-****abcd)）
-    const accountNote =
-      options.keySource === 'account' && options.keyAccountName !== undefined
-        ? `（账号: ${options.keyAccountName} ${maskApiKey(options.apiKey)}）`
-        : options.keySource === 'env'
-          ? '（环境变量优先）'
-          : '';
+    // v3.1 M3 T3.3：余额行标注 Key 来源（账号附打码后 4 位；env / config 只标来源）
+    const accountNote = keySourceNote(options.keySource, options.keyAccountName, options.apiKey);
     const lines = [`${dict.money} ${dict.balanceLabel}: ${status}${accountNote}`];
     for (const info of balance.balance_infos) {
       lines.push(
@@ -319,21 +340,34 @@ async function diagnoseMigration(options: DoctorCommandOptions): Promise<Diagnos
   const cfgPath = options.configPath ?? configPath();
   const sessionDir = options.sessionDir ?? sessionsDir();
   const integrity = await checkMigrationIntegrity(cfgPath, sessionDir);
-  // 语义：v3 待迁移 → ok（loadConfig 启动时自动迁移，非环境故障）；配置不存在 → ok（无配置可迁移）；
-  // 仅「已迁移但备份缺失」（迁移成功但 config.v3.bak 被删，无法回滚）→ fail。
-  const migrated = integrity.migrated;
-  const ok = migrated ? integrity.backupExists : true;
+  /**
+   * 判定（K1，v5.0 T23.3 手工测试实测修复）：
+   *
+   * 旧判定 `ok = migrated && backupExists` 把**两个不同的事实**绑在一起：
+   * `migrated` 只说明「现在是不是 v4 形状」——**v4 起才装的用户、手写 v4 配置的用户也是 v4 形状**，
+   * 但他们从没发生过迁移，凭什么要有 `config.v3.bak`？结果是新用户第一次跑 `doctor`
+   * 就得到「屏幕全绿 + exit 1」，在 CI 里恒失败、日志里又找不到是哪一项。
+   *
+   * 现在只有**「本机真迁过、但备份丢了（无法回滚）」**才算失败；其余都是正常。
+   */
+  const rollbackBroken = integrity.everMigrated && !integrity.backupExists;
+  const ok = !rollbackBroken;
   const lines: string[] = [];
-  if (migrated) {
-    lines.push(`${dict.ok} ${dict.migrationLabel}: ${dict.migrationOk}`);
-    lines.push(
-      integrity.backupExists
-        ? `  ${fmt(dict.migrationBackupOk, { path: `${cfgPath}.v3.bak` })}`
-        : `  ${dict.migrationBackupMissing}`,
-    );
+  if (integrity.migrated) {
+    // 失败时该行必须带 `❌`：退出码与屏幕**同时表态**，用户才能从输出看出哪项挂了
+    lines.push(`${ok ? dict.ok : dict.fail} ${dict.migrationLabel}: ${dict.migrationOk}`);
+    if (integrity.backupExists) {
+      lines.push(`  ${fmt(dict.migrationBackupOk, { path: `${cfgPath}.v3.bak` })}`);
+    } else if (integrity.everMigrated) {
+      // 迁过但没有备份 = 无法回滚（唯一真故障）
+      lines.push(`  ${dict.migrationBackupLost}`);
+    } else {
+      // 从没迁过（v4 起才装 / 手写 v4 配置）→ 本来就不需要备份，如实说，不冒充故障
+      lines.push(`  ${dict.migrationBackupNotNeeded}`);
+    }
   } else {
     lines.push(`${dict.ok} ${dict.migrationLabel}: ${dict.migrationNotMigrated}`);
-    lines.push(`  ${dict.migrationBackupMissing}`);
+    lines.push(`  ${dict.migrationBackupNotNeeded}`);
   }
   lines.push(integrity.sessionCompatible ? `  ${dict.migrationSessionOk}` : '');
   lines.push(integrity.idempotent ? `  ${dict.migrationIdempotentOk}` : '');

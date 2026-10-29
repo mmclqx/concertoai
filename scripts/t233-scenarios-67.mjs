@@ -186,6 +186,15 @@ const strip = (s) => redact(s.replace(/\u001b\[[0-9;?]*[A-Za-z]/g, ''));
 const GATE_GRACE_MS = 30000;
 
 /**
+ * 单次 TUI 会话的总预算（毫秒）。
+ *
+ * 为什么要可配：场景 7 的 `--fix` 在**修好 K10 之后**会真的生成补丁（模型调用 + 写盘审批），
+ * 耗时比「一条都修不动」时长得多。写死 300s 会把外层 `run_command` 的 300s 超时吃满，
+ * 外层被杀 → 拿不到断言结果（实测踩到一次）。默认 180s，可用 `T233_TUI_BUDGET_MS` 覆盖。
+ */
+const TUI_BUDGET_MS = Number(process.env.T233_TUI_BUDGET_MS ?? 180000);
+
+/**
  * 跑一次 TUI。`after` 是就绪门（等它出现才发键）；审批这类**等模型**的步骤给更长 grace。
  * `answer` 为 `{ after, write }` 的步骤会在门开后自动回车（用于审批 y）。
  */
@@ -402,18 +411,22 @@ const run = async () => {
       JSON.stringify({ name: 's7demo', version: '1.0.0', type: 'module', scripts: { verify: 'node -e "process.exit(0)"' } }, null, 2),
     );
     fs.mkdirSync(path.join(dir, 'src'), { recursive: true });
-    // 单文件、小 diff、含「建议级」可修点（命名与注释不一致 / 无意义包装函数）
+    /**
+     * fixture（**2026-10-29 第二次调整，理由如下**）：
+     *
+     * 首版是「注释与实现不符」的 `sum` 文件，实测会被审出 **14 条**建议级问题 →
+     * K10 修好之后 `--fix` 会逐条调模型生成补丁，14 次调用把 TUI 预算跑满、
+     * 断言拿不到「修复结果」行（既慢又贵，还测不清）。
+     *
+     * 改成**只有一处**明显可修点（多余中间变量 + 可读性），让断言聚焦在
+     * 「`--fix` 到底会不会真的修」这一件事上：1 条建议 → 1 次补丁生成 → 一次审批 → 一行结果。
+     */
     const target = path.join(dir, 'src', 'calc.js');
     fs.writeFileSync(
       target,
-      [
-        '// 计算两个数的差（注释与实现不符）',
-        'export function sum(a, b) {',
-        '  const result = a - b;',
-        '  return result;',
-        '}',
-        '',
-      ].join('\n'),
+      ['export function sum(a, b) {', '  const result = a + b;', '  return result;', '}', ''].join(
+        '\n',
+      ),
     );
     fs.writeFileSync(path.join(dir, 'AGENTS.md'), '# 规则\n\n- 这是 T23.3 手工测试项目（review 场景）\n');
     git(dir, ['init', '-q']);
@@ -430,10 +443,17 @@ const run = async () => {
       dir,
       home,
       [
-        // 报告出来后 `--fix` 才会弹审批；用「批准这次修复写盘」当就绪门
-        { atMs: 3000, write: 'y', after: /批准这次修复写盘/, graceMs: 240000 },
+        /**
+         * 报告 + 补丁生成完成后 `--fix` 才弹审批；用「批准这次修复写盘」当就绪门。
+         *
+         * ⚠️ **必须两步（`y` + `\r`）**：审批走的是 `promptLine`（读一整行），
+         * 只写 `y` 不回车 → 进程一直等输入 → 被预算计时器杀掉、拿不到「修复结果」行
+         * （实测踩到两次，误以为是预算不够）。
+         */
+        { atMs: 3000, write: 'y', after: /批准这次修复写盘/, graceMs: 120000 },
+        { atMs: 3600, write: '\r', after: /批准这次修复写盘/, graceMs: 120000 },
       ],
-      300000,
+      TUI_BUDGET_MS,
       {},
       ['review', '--fix', '--severity', 'lenient', 'src/calc.js'],
     );
@@ -457,6 +477,21 @@ const run = async () => {
     if (approvalShown) {
       check(7, '批准后给出修复结果三数（已修 / 需人工 / 已回滚）', /已修\s*\d+/.test(rev.raw), rev.raw.match(/修复结果：[^\r\n]*/)?.[0] ?? '');
     }
+    /**
+     * **K10 端到端回归**（这是本脚本在 K10 修复后新增的唯一断言，也是最有价值的一条）。
+     *
+     * 修复前的症状：同一进程刚用模型审完 9 维，`--fix` 却把每条都标成
+     * 「（未配置模型，无法生成修复补丁）」→ 有可修点也一条都修不动，且**原因说反**。
+     * 修复后：不传 `-m` 时 `--fix` 与审查共用同一个「生效模型」，
+     * 因此**这条文案在任何情况下都不该出现**（真缺 client 时会说「缺少模型客户端」）。
+     */
+    check(
+      7,
+      '★K10 回归：`--fix` 不再谎报「未配置模型」（不传 -m 也拿到生效模型）',
+      !/未配置模型/.test(rev.raw),
+      rev.raw.match(/未配置模型[^\r\n]*/)?.[0] ?? '（未出现，符合预期）',
+    );
+    note(`修复后文件内容：${JSON.stringify(fs.readFileSync(target, 'utf8').trim())}`);
 
     const after = balance(dir, home);
     costs.push({ scenario: 7, before, after });
