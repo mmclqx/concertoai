@@ -43,5 +43,6 @@ export {
   isReviewIncomplete,
   REVIEW_SEVERITIES,
   reviewedDimensionCount,
+  reviewGroupOfAgentName,
   SEVERITY_ICON,
 } from './types';

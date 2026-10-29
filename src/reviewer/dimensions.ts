@@ -13,6 +13,7 @@ import type {
   ReviewIssue,
   Severity,
 } from './types';
+import { AGENT_DIMENSIONS } from './types';
 
 /** 维度 → 严重程度倾向映射。 */
 const DIMENSION_SEVERITY: Record<ReviewDimension, Severity> = {
@@ -167,7 +168,7 @@ export function tryParseReviewOutput(raw: string, group: ReviewAgentGroup): Revi
       return null;
     }
     const arr = parsed as Array<Record<string, unknown>>;
-    const dimensions = AGENT_DIMENSIONS_MAP[group];
+    const dimensions = AGENT_DIMENSIONS[group];
 
     return arr.map(
       (item: Record<string, unknown>): ReviewIssue => ({
@@ -216,10 +217,17 @@ function condense(text: string): string {
  * 判据按「用户下一步该做什么」划分，而不是按错误对象类型：
  * - 401/403 → 检查 Key（`concertoai doctor` / `concertoai login`）
  * - 402 / 余额不足 → 充值
- * - 连不上（DNS / 拒绝连接 / 代理）→ 查网络
- * - 超时 → 加大超时或缩小审查范围
  * - 轮数上限 → 缩小范围
+ * - 超时 → 加大超时或缩小审查范围
+ * - 连不上（DNS / 拒绝连接 / 代理）→ 查网络
  * - 解析失败 → 模型输出不可用（可重试）
+ *
+ * ## 判定顺序是有讲究的（写测试时抓到的真 bug）
+ *
+ * 初版把 `network` 排在 `turn-limit` 前面，而 network 的正则里含「代理」二字——
+ * 于是 `子代理达到 5 轮上限，结论可能不完整`（**spawner 自己造的原话**）被归成「网络不可达」，
+ * 让用户去查网络。这是「关键词匹配撞上本项目自己的领域词」的典型翻车（同一个仓库里
+ * 「子代理 / 代理」天天出现）。所以：**越具体的判定越往前放，且正则不许用会撞领域词的裸词**。
  */
 export function classifySubagentFailure(error: string | undefined): FailureClassification {
   const text = `${error ?? ''}`;
@@ -236,27 +244,20 @@ export function classifySubagentFailure(error: string | undefined): FailureClass
   ) {
     return { reason: 'unauthorized', detail };
   }
+  // 必须早于 network：`子代理达到 N 轮上限` 含「代理」二字（见上方说明）
+  if (/轮上限|maxTurns|max\s*turns|轮数上限/i.test(text)) {
+    return { reason: 'turn-limit', detail };
+  }
   if (/超时|timeout|timed\s*out|TimeoutError|AbortError/i.test(text)) {
     return { reason: 'timeout', detail };
   }
+  // 注意：这里**不写裸「代理」**——本项目自己天天说「子代理」，会误命中
   if (
-    /fetch\s+failed|ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|EAI_AGAIN|getaddrinfo|socket\s+hang\s+up|network|代理|proxy/i.test(
+    /fetch\s+failed|ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|EAI_AGAIN|getaddrinfo|socket\s+hang\s+up|network|proxy|代理连接|代理不可用|代理不通/i.test(
       text,
     )
   ) {
     return { reason: 'network', detail };
   }
-  if (/轮上限|maxTurns|max\s*turns/i.test(text)) {
-    return { reason: 'turn-limit', detail };
-  }
   return { reason: 'error', detail };
 }
-
-/** Agent group → dimensions 映射（从 types.ts 复制）。 */
-const AGENT_DIMENSIONS_MAP: Record<ReviewAgentGroup, ReviewDimension[]> = {
-  'architecture-style': ['architecture', 'style'],
-  'types-errors': ['types', 'errors'],
-  'tests-docs': ['tests', 'docs'],
-  security: ['security'],
-  'performance-maintainability': ['performance', 'maintainability'],
-};

@@ -20,7 +20,6 @@ import { type AutoFixOptions, runAutoFix } from './autofix';
 import { classifySubagentFailure, createReviewAgents, tryParseReviewOutput } from './dimensions';
 import { formatKnowledgeContext, loadKnowledgeBase } from './knowledge';
 import type {
-  ReviewAgentGroup,
   ReviewContextArtifact,
   ReviewIncomplete,
   ReviewIssue,
@@ -30,7 +29,13 @@ import type {
   ReviewSeverity,
   Severity,
 } from './types';
-import { AGENT_DIMENSIONS, ALL_DIMENSIONS, incompleteCount, SEVERITY_ICON } from './types';
+import {
+  AGENT_DIMENSIONS,
+  ALL_DIMENSIONS,
+  incompleteCount,
+  reviewGroupOfAgentName,
+  SEVERITY_ICON,
+} from './types';
 
 /**
  * 项目里是否定义了 `npm run verify` 脚本（K7）。
@@ -88,6 +93,15 @@ export class ReviewerEngine {
 
     // Step 2: 知识激活 → 创建审查子代理
     const agents = createReviewAgents(knowledgeCtx);
+    // 名字 → 分组映射必须**先校验再花 token**（K16 崩溃根因）：名字与维度表对不上是
+    // 编程缺陷，越早吵越好——等到聚合阶段才炸，用户已经付了 5 个子代理的钱。
+    for (const def of agents) {
+      if (reviewGroupOfAgentName(def.name) === undefined) {
+        throw new Error(
+          `审查子代理名与维度表对不上：${def.name}（可用分组：${Object.keys(AGENT_DIMENSIONS).join(' / ')}）`,
+        );
+      }
+    }
     const ag = this.spawner;
     for (const def of agents) {
       ag.register(def);
@@ -100,7 +114,7 @@ export class ReviewerEngine {
           agentName: def.name,
           prompt: `请审查以下代码质量：\n${scope}${artifactCtx}\n\n严格按照你负责的维度进行审查，输出 JSON 格式结果。`,
         });
-        return { group: def.name as ReviewAgentGroup, result };
+        return { result };
       }),
     );
 
@@ -117,7 +131,11 @@ export class ReviewerEngine {
       if (def === undefined || r === undefined) {
         continue;
       }
-      const group = def.name as ReviewAgentGroup;
+      const group = reviewGroupOfAgentName(def.name);
+      if (group === undefined) {
+        // 不可达：Step 2 已校验。留着是为了让类型收窄，而不是靠 `as` 骗编译器。
+        continue;
+      }
       const dimensions = AGENT_DIMENSIONS[group];
       if (r.status === 'rejected') {
         const classified = classifySubagentFailure(

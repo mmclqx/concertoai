@@ -26,7 +26,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
-
+import type { SubagentSpawner } from '../../src/agent/spawner';
+import type { SubagentResult, SubagentTask } from '../../src/agent/types';
 import {
   countGrades,
   formatDimensionOverview,
@@ -735,6 +736,171 @@ describe('K10：--fix 的模型解析（不传 -m 也要能修）', () => {
     // `--fix` 阶段不许再拿原始 options.model
     expect(source).not.toMatch(/model: options\.model/);
     expect(source).toMatch(/model,\n\s+engine: activeEngine/);
+  });
+});
+
+// ── K16 端到端：子代理失败 → 退出码与报告都要表态 ────────────
+
+/**
+ * 这一组用**真 `ReviewerEngine`** + 假 spawner（不调模型、不联网、不跑 npm），
+ * 走完整链路：`review()` 聚合 → `formatReport` → `formatDimensionOverview` →
+ * `formatReviewVerdict` → `reviewExitCode`。
+ *
+ * 为什么必须端到端而不是只测纯函数：K16 第一版修复的 `TypeError` 就发生在
+ * 「聚合 → 格式化」之间（`Group 名字 ≠ 维度表键`），单测纯函数全绿也照样炸。
+ */
+describe('K16 端到端：审查未完成 → exit 1 + 报告写清 N/9 与原因', () => {
+  let dir: string;
+  /** 本 describe 造过的临时目录，统一清理（Windows EBUSY 带重试）。 */
+  const created: string[] = [];
+
+  beforeEach(async () => {
+    setLocale('zh');
+    dir = await mkdtemp(path.join(os.tmpdir(), 'concertoai-review-k16-'));
+    created.push(dir);
+    // 真实可审目录：有 src 文件（范围解析要过磁盘存在性），有 package.json 但**没有** verify 脚本
+    await mkdir(path.join(dir, 'src'), { recursive: true });
+    await writeFile(path.join(dir, 'src/a.ts'), 'export const a = 1;\n', 'utf8');
+    await writeFile(
+      path.join(dir, 'package.json'),
+      JSON.stringify({ name: 'demo', scripts: { test: 'echo ok' } }),
+      'utf8',
+    );
+  });
+
+  afterAll(async () => {
+    for (const target of created) {
+      await rm(target, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+    }
+  });
+
+  /** 假 spawner：所有子代理都返回同一个结果（engine 只依赖 `register` / `spawn`）。 */
+  function fixedSpawner(result: SubagentResult): SubagentSpawner {
+    return {
+      register: () => undefined,
+      spawn: async (): Promise<SubagentResult> => result,
+    } as unknown as SubagentSpawner;
+  }
+
+  /** 假 spawner：按子代理名逐个决定成败（用于「部分组失败」）。 */
+  function selectiveSpawner(failNames: string[]): SubagentSpawner {
+    return {
+      register: () => undefined,
+      spawn: async (task: SubagentTask): Promise<SubagentResult> => {
+        if (failNames.includes(task.agentName)) {
+          return {
+            ok: false,
+            summary: '子代理执行失败: HTTP 401 Authentication Fails, Your api key is invalid',
+            error: 'HTTP 401: Authentication Fails, Your api key is invalid',
+            toolCallCount: 0,
+            durationMs: 5,
+          };
+        }
+        return {
+          ok: true,
+          summary: '```json\n[]\n```',
+          toolCallCount: 1,
+          durationMs: 5,
+        };
+      },
+    } as unknown as SubagentSpawner;
+  }
+
+  it('★ 401 全失败 → exit 1，且报告写「0/9 维已审」+「认证失败」+「未定义 verify 脚本」', async () => {
+    const engine = new ReviewerEngine(
+      fixedSpawner({
+        ok: false,
+        summary: '子代理执行失败: HTTP 401 Authentication Fails, Your api key is invalid',
+        error: 'HTTP 401: Authentication Fails, Your api key is invalid',
+        toolCallCount: 0,
+        durationMs: 5,
+      }),
+      dir,
+    );
+    const ctx = harness({
+      cwd: dir,
+      engine,
+      git: fakeGit({ unstaged: ['src/a.ts'] }),
+    });
+
+    const code = await ctx.run();
+    const text = ctx.text();
+
+    expect(code).toBe(1);
+    // 维度计数（这一行曾经因为 TypeError 根本渲染不出来）
+    expect(text).toContain('0/9 维已审');
+    // 原因分类 + 下一步（用户要知道「去查 Key」而不是「去查网络」）
+    expect(text).toContain('认证失败');
+    expect(text).toContain('concertoai doctor');
+    // K7：没有 verify 脚本时不许说「❌ 失败」
+    expect(text).toContain('未运行（项目未定义 verify 脚本）');
+    expect(text).not.toContain('❌ 失败');
+    // 红线：没审完绝不许说「未发现明显问题，代码质量良好」
+    expect(text).not.toContain('未发现明显问题，代码质量良好');
+    // 逐维分级里每维都应标「未审到」
+    expect(text).toContain('architecture：⚠ 未审到');
+    expect(text).toContain('security：⚠ 未审到');
+  });
+
+  it('部分失败：只有 security 组 401 → 「8/9 维已审」且只标这一维', async () => {
+    const engine = new ReviewerEngine(selectiveSpawner(['review-security']), dir);
+    const ctx = harness({
+      cwd: dir,
+      engine,
+      git: fakeGit({ unstaged: ['src/a.ts'] }),
+    });
+
+    const code = await ctx.run();
+    const text = ctx.text();
+
+    expect(code).toBe(1);
+    expect(text).toContain('8/9 维已审');
+    expect(text).toContain('security：⚠ 未审到');
+    // 审到的维度照常写「无问题」（不能被一维失败整片染红）
+    expect(text).toContain('architecture：无问题');
+    expect(text).toContain('types：无问题');
+  });
+
+  it('反向自证：9 维全审到 + 零问题 → exit 0 且写「✅ 未发现明显问题」（成功路径没被 K16 改坏）', async () => {
+    const engine = new ReviewerEngine(
+      fixedSpawner({ ok: true, summary: '```json\n[]\n```', toolCallCount: 1, durationMs: 5 }),
+      dir,
+    );
+    const ctx = harness({
+      cwd: dir,
+      engine,
+      git: fakeGit({ unstaged: ['src/a.ts'] }),
+    });
+
+    const code = await ctx.run();
+    const text = ctx.text();
+
+    expect(code).toBe(0);
+    expect(text).toContain('✅ 未发现明显问题，代码质量良好。');
+    expect(text).not.toContain('维已审'); // 没未完成区块
+    expect(text).not.toContain('未审到');
+    // K7 的第三态：全绿时候仍如实说「测试未运行（没脚本）」，但那是事实不是失败
+    expect(text).toContain('未运行（项目未定义 verify 脚本）');
+  });
+
+  it('模型回了非 JSON（乱码）→ 也算「没审到」，记 parse-failed 并 exit 1', async () => {
+    const engine = new ReviewerEngine(
+      fixedSpawner({
+        ok: true,
+        summary: '抱歉，我无法完成这个审查。',
+        toolCallCount: 1,
+        durationMs: 5,
+      }),
+      dir,
+    );
+    const ctx = harness({ cwd: dir, engine, git: fakeGit({ unstaged: ['src/a.ts'] }) });
+
+    const code = await ctx.run();
+    const text = ctx.text();
+
+    expect(code).toBe(1);
+    expect(text).toContain('0/9 维已审');
+    expect(text).toContain('模型回复无法解析为审查结果');
   });
 });
 

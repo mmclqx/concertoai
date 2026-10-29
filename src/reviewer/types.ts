@@ -166,6 +166,45 @@ export const AGENT_DIMENSIONS: Record<ReviewAgentGroup, ReviewDimension[]> = {
   'performance-maintainability': ['performance', 'maintainability'],
 };
 
+/**
+ * 审查子代理名（`SubagentDef.name`）的统一前缀。
+ *
+ * `createReviewAgents` 造出的 5 个名字都长这样：`review-architecture-style`，
+ * 而 `AGENT_DIMENSIONS` 的键是**去掉前缀**的分组名（`architecture-style`）。
+ */
+export const REVIEW_AGENT_PREFIX = 'review-';
+
+/** 分组名的合法取值（从 AGENT_DIMENSIONS 的键派生，不另写一份清单）。 */
+const AGENT_GROUP_NAMES = Object.keys(AGENT_DIMENSIONS) as ReviewAgentGroup[];
+
+/**
+ * 子代理名 → 审查分组。**取不到就返回 `undefined`，绝不猜**。
+ *
+ * ## 为什么要这个函数（v5.0 K16 线上崩溃的根因）
+ *
+ * 修 K16 时把「子代理失败计入未完成」写进了 `engine.ts`，取维度用的是：
+ *
+ * ```ts
+ * const group = def.name as ReviewAgentGroup;   // ❌ 'review-architecture-style'
+ * const dimensions = AGENT_DIMENSIONS[group];   // ❌ undefined（键是 'architecture-style'）
+ * ```
+ *
+ * `as` 把「名字 ≠ 键」这个事实盖掉了：`undefined` 一路流进 `ReviewIncomplete.dimensions`，
+ * 直到 `incompleteCount()` 里 `item.dimensions.length` 才炸，**5 个组全中**。
+ * 结果：只要有一条审查子代理失败（401 / 断网 / 超时），`review` 就打 `TypeError` 崩掉，
+ * 而不是告诉用户「几维没审到、为什么」——恰恰是 K16 要修的那个场景修不成。
+ *
+ * 教训：**跨命名的映射必须是函数 + 校验，禁止 `as` 硬转**。`as` 只改类型不改值，
+ * 它把「编译期能查出来的错」变成了「运行期才炸的 undefined」。
+ */
+export function reviewGroupOfAgentName(name: string): ReviewAgentGroup | undefined {
+  if (!name.startsWith(REVIEW_AGENT_PREFIX)) {
+    return undefined;
+  }
+  const candidate = name.slice(REVIEW_AGENT_PREFIX.length);
+  return AGENT_GROUP_NAMES.find((group) => group === candidate);
+}
+
 // ── 审查配置 ────────────────────────────────────────────────
 
 /**
@@ -302,7 +341,19 @@ export function reviewedDimensionCount(report: ReviewReport): number {
   return ALL_DIMENSIONS.length - incompleteCount(report);
 }
 
-/** 未审到的维度数（一个子代理组可能覆盖 2 个维度，故按**维度**计）。 */
+/**
+ * 未审到的维度数（一个子代理组可能覆盖 2 个维度，故按**维度**计）。
+ *
+ * `Array.isArray` 守卫不是多余的：**这里就是 K16 那次线上崩溃的爆点**
+ * （`dimensions` 曾经因为 `as` 硬转而是 `undefined`，`item.dimensions.length` 直接抛
+ * `Cannot read properties of undefined`，把「报告说清几维没审到」变成了 `TypeError`）。
+ * 类型上现在由 `reviewGroupOfAgentName` 保证不会发生，但这条守卫的语义是：
+ * **宁可少算一个维度，也不许整条 `review` 命令崩掉**——报告少一行是可修的，
+ * 崩掉会让用户拿不到任何「哪几维没审」的信息，比假绿更难排查。
+ */
 export function incompleteCount(report: ReviewReport): number {
-  return (report.incomplete ?? []).reduce((sum, item) => sum + item.dimensions.length, 0);
+  return (report.incomplete ?? []).reduce(
+    (sum, item) => sum + (Array.isArray(item.dimensions) ? item.dimensions.length : 0),
+    0,
+  );
 }
