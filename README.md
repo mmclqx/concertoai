@@ -433,6 +433,23 @@ ConcertoAI 支持项目级跨会话记忆，存储位置为项目根目录的 `.
 | `npm run build` | tsup 打包到 `dist/`（ESM + d.ts + CLI 入口） |
 | `npm run verify` | 验收主命令：build + lint + typecheck + test |
 
+### 开发环境补充说明（贡献者）
+
+端到端 PTY 驱动脚本（`scripts/pty-drive*.mjs`）依赖 **`node-pty`**（`devDependencies`，不进运行时依赖，对安装本 CLI 的用户零影响）。
+
+`node-pty` 自带预编译二进制覆盖：**Windows x64/arm64**、**macOS arm64/x64**，这四类平台 `npm install` 开箱可用。
+
+**Linux 需从源码编译**（上游未提供 linux 预编译包），因此 Linux 开发者需要构建工具链：
+
+```bash
+# Debian / Ubuntu
+sudo apt-get install -y build-essential python3
+# Fedora / RHEL
+sudo dnf groupinstall -y "Development Tools" && sudo dnf install -y python3
+```
+
+缺工具链时 `npm install` 会在 `node-pty` 的 install 阶段报 `node-gyp` 失败。**这只影响开发期 PTY 脚本**，不含任何运行时功能——`npm run verify` 不调用 PTY 脚本。
+
 ## 历史版本速览（v4.0 及以前）
 
 > 首屏只留一句话定位与 30 秒上手；版本轨迹折叠到这里，避免新手一进门就被 8 行发布说明淹没。
