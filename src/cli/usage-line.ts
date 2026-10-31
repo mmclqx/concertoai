@@ -21,6 +21,12 @@
 import { type Dict, fmt } from '../i18n';
 import type { UsageTotals } from '../model/usage-tally';
 
+/** 渲染选项（K14：端点决定金额是不是「账单」）。 */
+export interface UsageLineOptions {
+  /** 端点非官方（企业代理 / 自建中转 / Ollama 网关）→ 金额只是按公开价估算。 */
+  customEndpoint?: boolean;
+}
+
 /** 金额格式化：≥ ¥0.01 保留 4 位，更小的保留 6 位（不让小额显示成 0.0000）。 */
 export function formatCny(cost: number): string {
   const value = Number.isFinite(cost) && cost > 0 ? cost : 0;
@@ -32,26 +38,38 @@ export function formatCny(cost: number): string {
  *
  * @param totals 客户端上报的累计用量（`undefined` = 客户端不上报 usage）
  * @param dict 当前语言的 `usage` 文案段
+ * @param options 端点信息（K14：自定义端点下金额只是**按公开价估算**，不是账单）
  */
-export function formatUsageLine(totals: UsageTotals | undefined, dict: Dict['usage']): string {
+export function formatUsageLine(
+  totals: UsageTotals | undefined,
+  dict: Dict['usage'],
+  options: UsageLineOptions = {},
+): string {
   if (totals === undefined || !totals.measured) {
     return dict.unmeasured;
   }
   const cost = formatCny(totals.cost);
+  // K14：自定义端点（企业代理 / 自建中转 / Ollama 网关）的真实计费口径我们不知道，
+  // 说「≈¥X」会被读成账单。量到了 + 端点非官方 → 如实标注「按公开价估算」。
+  const note = options.customEndpoint === true ? dict.endpointNote : '';
   if (!totals.priced) {
-    return fmt(dict.unpriced, {
+    return (
+      fmt(dict.unpriced, {
+        calls: totals.calls,
+        input: totals.input,
+        output: totals.output,
+        cost,
+        models: totals.unknownModels.join(', '),
+      }) + note
+    );
+  }
+  return (
+    fmt(dict.line, {
       calls: totals.calls,
       input: totals.input,
       output: totals.output,
+      cacheHit: totals.cacheHit,
       cost,
-      models: totals.unknownModels.join(', '),
-    });
-  }
-  return fmt(dict.line, {
-    calls: totals.calls,
-    input: totals.input,
-    output: totals.output,
-    cacheHit: totals.cacheHit,
-    cost,
-  });
+    }) + note
+  );
 }

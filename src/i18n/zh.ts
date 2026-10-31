@@ -709,7 +709,11 @@ export const zh = {
     actionUnauthorized:
       '检查 Key：concertoai doctor；或重新登录：concertoai login <name> --key sk-...',
     actionQuota: '充值后重试：concertoai balance 查看余额',
-    actionNetwork: '恢复网络后重试；用代理请确认代理可达 api.deepseek.com',
+    // K14：这里原先写死「确认代理可达 api.deepseek.com」——但在自定义端点
+    // （企业代理 / 自建中转 / Ollama 网关）下，那句话会把人引到**错误的地址**。
+    // 端点已可配置，提示词就不能再点名某一个域名。
+    actionNetwork:
+      '恢复网络后重试；若走了代理，请确认代理可达你配置的端点（默认 api.deepseek.com）',
     actionTimeout: '缩小审查范围（指定单个文件）或稍后重试',
     actionParseFailed: '重跑一次；反复出现请反馈（concertoai review 的模型输出无法解析）',
     actionTurnLimit: '缩小审查范围（指定单个文件）后重试',
@@ -950,6 +954,9 @@ export const zh = {
     unpriced:
       '💰 本次消耗：{calls} 次调用 ｜ 输入 {input} / 输出 {output} tokens ≈ ¥{cost}（{models} 不在价格表里，这部分未计价）',
     unmeasured: 'ℹ️  本次未能统计消耗（当前客户端不上报 usage），费用未知。',
+    // K14：自定义端点（企业代理 / 自建中转 / Ollama 网关）的真实计费口径未知，
+    // 这行金额只是「按 DeepSeek 公开价估算」——不能让用户把它当账单。
+    endpointNote: '（自定义端点：金额按 DeepSeek 公开价估算，非账单）',
   },
   help: {
     // v5.0 T14：首屏精简——分层只留「快速开始 → 常用 → 交互 → 高级折叠」，

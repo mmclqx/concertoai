@@ -44,12 +44,12 @@ import {
   type VerifyReport,
   type VerifyStage,
 } from '../loop/self-heal';
-import { DeepSeekClient, type ModelClient } from '../model/client';
+import type { ModelClient } from '../model/client';
 import { readUsageTotals } from '../model/usage-tally';
 import { SNAPSHOT_ROOT } from '../orchestrator/transaction';
 import type { ApprovalRequest } from '../tools/registry';
-import { resolveModel } from './common';
 import { promptLine } from './prompt';
+import { resolveVerbClient, type VerbRuntimeInfo } from './provider-runtime';
 import { formatSelfHealReport } from './slash/self-heal';
 import { formatUsageLine } from './usage-line';
 
@@ -117,8 +117,15 @@ export interface FixCommandOptions {
   lang?: string;
   /** 单条命令超时（默认与 verify 一致）。 */
   timeoutMs?: number;
-  /** 模型客户端（测试注入；缺省按 apiKey 构造）。 */
+  /** 模型客户端（测试注入；缺省按 provider 运行时构造）。 */
   client?: ModelClient;
+  /**
+   * 入口注入的 provider 运行时（K14）：传了才读 `config.providers.<p>.baseUrl`
+   * 与 `defaultProvider`；不传且无 `apiKey` 时按「没有可用端点」处理（不读盘）。
+   */
+  runtime?: VerbRuntimeInfo;
+  /** 测试注入：fetch（断言请求真的打到 baseUrl，不联网）。 */
+  fetchImpl?: typeof fetch;
   /** 测试注入：执行 verify（缺省 spawn `npm run verify`，退出码参与判定）。 */
   runVerify?: () => Promise<VerifyOutcome>;
   /** 测试注入：执行 `npm run lint:fix`（透传给 self-heal）。 */
@@ -339,14 +346,27 @@ export async function runFixCommand(options: FixCommandOptions): Promise<number>
       ? async (): Promise<boolean> => true
       : (options.requestApproval ?? promptApproval);
 
-  const client =
-    options.client ??
-    (options.apiKey !== undefined ? new DeepSeekClient({ apiKey: options.apiKey }) : undefined);
+  /**
+   * 客户端与模型：**走 provider 运行时（K14）**，不再 `new DeepSeekClient({ apiKey })`。
+   *
+   * 原先那种写法丢掉 `config.providers.deepseek.baseUrl`：配了企业代理 / 自建中转 /
+   * Ollama 网关的用户，`fix` 会静默改打官方端点（401 或按官方价真花钱），
+   * 且 K15 的成本回执会据此报出「不是这笔账」的金额。
+   */
+  const resolved = await resolveVerbClient({
+    ...(options.client !== undefined ? { client: options.client } : {}),
+    ...(options.runtime !== undefined ? { runtime: options.runtime } : {}),
+    ...(options.fetchImpl !== undefined ? { fetchImpl: options.fetchImpl } : {}),
+    ...(options.model !== undefined ? { model: options.model } : {}),
+    ...(options.apiKey !== undefined ? { apiKey: options.apiKey } : {}),
+  });
+  const client = resolved.client;
   if (client === undefined) {
     // 没有 Key 也能修 lint；模型修复自动跳过（如实告知，不静默降级）
     log(dict.noApiKey);
   }
-  const model = client === undefined ? undefined : (options.model ?? resolveModel(undefined));
+  // 没有客户端就不传模型名：传了会让下游以为「有模型可用」（K10 那类说法与事实不符）
+  const model = client === undefined ? undefined : resolved.model;
 
   const result = await runSelfHeal({
     cwd: options.cwd,
@@ -369,7 +389,11 @@ export async function runFixCommand(options: FixCommandOptions): Promise<number>
   // ── 成本回执（K15）：self-heal 每轮每错都可能调一次模型，这里打一次总账 ──
   // 没有 client（纯 lint:fix 路径）时一个 token 都没花，不打这行。
   if (client !== undefined) {
-    log(formatUsageLine(readUsageTotals(client), t().usage));
+    log(
+      formatUsageLine(readUsageTotals(client), t().usage, {
+        customEndpoint: !resolved.officialEndpoint,
+      }),
+    );
   }
   if (result.passed) {
     return 0;

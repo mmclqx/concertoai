@@ -31,12 +31,14 @@ import {
   MAX_DIAGNOSIS_ENTRIES,
   runFixCommand,
 } from '../../src/cli/fix';
+import type { VerbRuntimeInfo } from '../../src/cli/provider-runtime';
 import { fmt } from '../../src/i18n';
 import { zh } from '../../src/i18n/zh';
 import { MAX_SELF_HEAL_ATTEMPTS, parseVerifyReport } from '../../src/loop/self-heal';
 import type { ModelClient } from '../../src/model/client';
 import { emptyUsageTotals } from '../../src/model/usage-tally';
 import { SNAPSHOT_ROOT } from '../../src/orchestrator/transaction';
+import { sseChatFetch } from '../fixtures/provider-endpoint';
 
 // ── 样本 ──────────────────────────────────────────────────────
 
@@ -654,6 +656,72 @@ describe('runFixCommand 真修（每次写盘审批 + fail-closed）', () => {
     expect(code).toBe(0);
     expect(out.text).not.toContain('本次消耗');
     expect(out.text).not.toContain('未能统计');
+  });
+});
+
+// ── K14 端到端：配置了自定义端点 → 请求必须打到它 ─────────────
+
+/**
+ * 这一组是 K14 的**回归牙**（`fix` 分支）。
+ *
+ * 病根与 `review` / `commit` 相同：原先 `new DeepSeekClient({ apiKey })` 不传 `baseUrl`，
+ * 配了企业代理 / 自建中转 / Ollama 网关的用户，`fix` 会静默打官方端点。
+ *
+ * ⚠️ 这条在 K14 修完后会**更容易**被用户撞到（端点终于生效了），所以它必须
+ * 有回归用例，而不是靠「我记得试过一次」。
+ */
+describe('K14：fix 必须使用配置里的自定义端点', () => {
+  const CUSTOM_BASE = 'http://127.0.0.1:9/v1';
+
+  function customRuntime(): VerbRuntimeInfo {
+    return {
+      provider: 'deepseek',
+      model: 'deepseek-v4-flash',
+      baseUrl: CUSTOM_BASE,
+      apiKey: 'sk-probe',
+      officialEndpoint: false,
+    };
+  }
+
+  it('★ 模型修复请求打到配置的 baseUrl，绝不碰官方域名', async () => {
+    await withWorkspace('export const a = bar;\n', async ({ cwd }) => {
+      const out = collector();
+      const fake = sseChatFetch({
+        content: JSON.stringify({
+          file: 'src/foo.ts',
+          search: 'export const a = bar;',
+          replace: 'export const a = foo;',
+        }),
+      });
+      let fixed = false;
+      const code = await runFixCommand({
+        cwd,
+        isTTY: true,
+        ask: async () => 'y',
+        runtime: customRuntime(),
+        fetchImpl: fake.fetchImpl,
+        model: 'deepseek-v4-flash',
+        requestApproval: () => {
+          fixed = true;
+          return true;
+        },
+        runVerify: async () =>
+          fixed ? { ok: true, ...VERIFY_PASS } : { ok: false, ...TYPE_MISSING_IMPORT },
+        runLintFix: async () => ({ ok: true }),
+        log: out.log,
+        logErr: (line) => out.errors.push(line),
+      });
+      expect(code).toBe(0);
+      // 探针通电：假 fetch 真的被调用过
+      expect(fake.requests.length).toBeGreaterThan(0);
+      for (const request of fake.requests) {
+        expect(request.url.startsWith(`${CUSTOM_BASE}/chat/completions`)).toBe(true);
+        expect(request.url).not.toContain('api.deepseek.com');
+      }
+      // K14 × K15 接缝：自定义端点下成本行必须标注「非账单」
+      expect(out.text).toContain('本次消耗');
+      expect(out.text).toContain('非账单');
+    });
   });
 });
 

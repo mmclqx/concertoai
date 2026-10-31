@@ -42,12 +42,12 @@ import {
   type StagedDiff,
 } from '../core/commit-message';
 import { fmt, resolveLocale, setLocale, t } from '../i18n';
-import { DeepSeekClient, type ModelClient } from '../model/client';
+import type { ModelClient } from '../model/client';
 import { readUsageTotals } from '../model/usage-tally';
 // G6 薄包装：体检完全复用 T15（禁止在本文件里跑 verify / 解析 verify 输出）
 import { type CheckResult, formatCheckReport, runCheck } from './check';
-import { resolveModel } from './common';
 import { promptLine } from './prompt';
+import { resolveVerbClient, type VerbRuntimeInfo } from './provider-runtime';
 import { formatUsageLine } from './usage-line';
 
 // ── 常量 ──────────────────────────────────────────────────────
@@ -146,8 +146,15 @@ export interface CommitCommandOptions {
   runGit?: GitRunner;
   /** 测试注入：体检（缺省 `runCheck`，即 T15）。 */
   check?: (cwd: string) => Promise<CheckResult>;
-  /** 测试注入：模型客户端（缺省按 apiKey 构造；无 apiKey 则不调模型）。 */
+  /** 测试注入：模型客户端（缺省按 apiKey / provider 运行时构造；无可用端点则不调模型）。 */
   client?: ModelClient;
+  /**
+   * 入口注入的 provider 运行时（K14）：传了才读 `config.providers.<p>.baseUrl`
+   * 与 `defaultProvider`；不传且无 `apiKey` 时按「没有可用端点」处理（不读盘）。
+   */
+  runtime?: VerbRuntimeInfo;
+  /** 测试注入：fetch（断言请求真的打到 baseUrl，不联网）。 */
+  fetchImpl?: typeof fetch;
   /** 测试注入：读一行回答（缺省走 `promptLine`）。 */
   ask?: (question: string) => Promise<string | undefined>;
 }
@@ -299,18 +306,30 @@ export async function runCommitCommand(options: CommitCommandOptions = {}): Prom
     branch,
   };
 
-  const client =
-    options.client ??
-    (options.apiKey !== undefined ? new DeepSeekClient({ apiKey: options.apiKey }) : undefined);
-  const model = client === undefined ? undefined : (options.model ?? resolveModel(undefined));
+  const resolved = await resolveVerbClient({
+    ...(options.client !== undefined ? { client: options.client } : {}),
+    ...(options.runtime !== undefined ? { runtime: options.runtime } : {}),
+    ...(options.fetchImpl !== undefined ? { fetchImpl: options.fetchImpl } : {}),
+    ...(options.model !== undefined ? { model: options.model } : {}),
+    ...(options.apiKey !== undefined ? { apiKey: options.apiKey } : {}),
+  });
+  const client = resolved.client;
+  // 没有可用的客户端就不调模型（message 走本地兜底），此时 model 必须是 undefined：
+  // 传一个模型名会让下游以为「有模型可用」，是 K10 那类「说法与事实不符」的起点。
+  const model = client === undefined ? undefined : resolved.model;
   if (client !== undefined) {
     log(fmt(dict.costNotice, { tokens: estimateCommitTokens(staged) }));
   }
   const message: CommitMessage = await generateCommitMessage({ diff: staged, client, model });
   // 成本回执（K15）：message 生成之后立即打，用户审批前就知道这次花了多少。
   // 走降级（`source: 'local'`）时同样要打：要么「未统计」，要么如实给出失败前已消耗的 token。
+  // 自定义端点（K14）下金额只是按公开价估算，标注出来，别让用户当账单。
   if (client !== undefined) {
-    log(formatUsageLine(readUsageTotals(client), t().usage));
+    log(
+      formatUsageLine(readUsageTotals(client), t().usage, {
+        customEndpoint: !resolved.officialEndpoint,
+      }),
+    );
   }
   if (message.source === 'local') {
     // 如实说明「这次没调模型」——不能让用户以为 message 是模型写的

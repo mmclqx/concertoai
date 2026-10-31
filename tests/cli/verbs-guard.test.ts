@@ -302,6 +302,64 @@ describe('护栏二：薄包装，不重复造轮子（G6）', () => {
   });
 });
 
+// ── 护栏四：端点解析唯一 + 指标不丢（K14）──────────────────────────
+
+/**
+ * K14 的病根是**端点解析各写一遍**：三个花钱动词各自
+ * `new DeepSeekClient({ apiKey })`，谁都没传 `baseUrl`。
+ *
+ * 这种病的特点：不报错、不崩、编译过、单测也绿——只是**钱花在别的端点上**。
+ * 所以必须有一条「源码里不许出现第二个客户端构造点」的断言，
+ * 否则下次（为了某个小需求）在动词里手搓一个 client，回归用例一条都不会红。
+ *
+ * 同理，`recordVerb('review')` 在 K14 改入口时被误删过一次（指标静默丢失，
+ * 没有任何测试会红）——所以「四个动词都记账」也写成断言。
+ */
+describe('护栏四：端点解析只有一个入口 + 四动词都记指标（K14）', () => {
+  /** 走 provider 运行时的三个「要花钱」动词（check 是只读体检，不调模型）。 */
+  const MODEL_VERBS = ['fix', 'commit', 'review'] as const;
+
+  it('三个花钱动词都不自己造客户端（只经 resolveVerbClient）', () => {
+    for (const verb of MODEL_VERBS) {
+      const source = stripComments(readFileSync(path.join(ROOT, `src/cli/${verb}.ts`), 'utf8'));
+      expect(
+        source,
+        `${verb}.ts 里又出现了 new DeepSeekClient（端点会再次被静默丢弃）`,
+      ).not.toContain('new DeepSeekClient');
+      expect(source, `${verb}.ts 没有走 resolveVerbClient`).toContain('resolveVerbClient(');
+      // 端点/模型/Key 的解析不许在动词里二次展开（同一事实只解析一处）
+      expect(source, `${verb}.ts 里又出现了 new URL(`).not.toContain('OFFICIAL_DEEPSEEK_HOST');
+    }
+  });
+
+  /**
+   * 反向验证（AGENTS「探针通电」）：上面那条是**否定式断言**，
+   * 如果 `stripComments` 哪天把 `new DeepSeekClient` 一起削掉了，
+   * 它会**永远绿**——所以这里喂它一段 K14 之前的真实写法，必须判定为「违规」。
+   */
+  it('反向验证：旧写法（options.client ?? new DeepSeekClient({ apiKey })）必须被判违规', () => {
+    const legacy =
+      'const client = options.client ?? (options.apiKey !== undefined ? new DeepSeekClient({ apiKey: options.apiKey }) : undefined);';
+    expect(stripComments(legacy)).toContain('new DeepSeekClient');
+  });
+
+  it('入口把 runtime 传给三个动词（否则 config 里的 baseUrl 依然不生效）', () => {
+    const source = stripComments(readFileSync(path.join(ROOT, 'src/cli/index.ts'), 'utf8'));
+    // 三次解析（fix / commit / review 各一次），不是零次也不是四次
+    expect(source.match(/resolveVerbRuntime\(/g) ?? []).toHaveLength(3);
+    expect(source.match(/^\s+runtime,$/gm) ?? []).toHaveLength(3);
+  });
+
+  it('四个动词都在 CLI 入口记一条指标（recordVerb 一个都不许少）', () => {
+    const source = stripComments(readFileSync(path.join(ROOT, 'src/cli/index.ts'), 'utf8'));
+    for (const verb of VERBS) {
+      expect(source, `index.ts 缺少 recordVerb('${verb}')（指标会静默丢失）`).toContain(
+        `recordVerb('${verb}')`,
+      );
+    }
+  });
+});
+
 // ── 护栏三：四动词都已注册（与 help.test.ts 的首屏断言互为表里）──────
 
 describe('护栏三：四动词在 CLI 入口注册齐全', () => {

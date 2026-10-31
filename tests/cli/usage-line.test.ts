@@ -97,4 +97,39 @@ describe('formatUsageLine', () => {
     expect(line).toContain('¥0.000000');
     expect(line).not.toContain('未能统计');
   });
+
+  /**
+   * K14：自定义端点（企业代理 / 自建中转 / Ollama 网关）的真实计费口径我们不知道。
+   *
+   * 这时仍打出 `≈ ¥0.0129` 会被读成**账单**——而它只是「把 token 数乘以
+   * DeepSeek 公开价」。所以量到了也必须加一句「非账单」，否则 K15 修好的
+   * 「诚实成本」在自定义端点下又变成一句假话。
+   */
+  it('★ 自定义端点：量到了也要说清「按公开价估算，非账单」', () => {
+    const line = formatUsageLine(totals(), zh.usage, { customEndpoint: true });
+    expect(line).toContain('¥0.0129');
+    expect(line).toContain(zh.usage.endpointNote.trim());
+    expect(line).toContain('非账单');
+  });
+
+  it('官方端点（缺省）不出现那句标注——不给绝大多数用户添噪音', () => {
+    expect(formatUsageLine(totals(), zh.usage)).not.toContain('非账单');
+    expect(formatUsageLine(totals(), zh.usage, { customEndpoint: false })).not.toContain('非账单');
+  });
+
+  it('自定义端点 + 未计价模型 → 两种实话都在（金额既是下限、也不是账单）', () => {
+    const line = formatUsageLine(
+      totals({ priced: false, unknownModels: ['custom-model'], cost: 0 }),
+      zh.usage,
+      { customEndpoint: true },
+    );
+    expect(line).toContain('未计价');
+    expect(line).toContain('非账单');
+  });
+
+  it('自定义端点 + 量不到 → 仍是「未能统计」，不因端点不同而改口', () => {
+    const line = formatUsageLine(undefined, zh.usage, { customEndpoint: true });
+    expect(line).toContain('未能统计');
+    expect(line).not.toContain('¥0');
+  });
 });

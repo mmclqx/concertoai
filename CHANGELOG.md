@@ -8,6 +8,17 @@
 
 ## [Unreleased]
 
+### Fixed — K14：三个花钱动词静默换端点（🟡，2026-10-31 修复）
+
+> 事故形态：**配置被静默忽略，钱花在别处**。用户在 `config.providers.deepseek.baseUrl` 里配了企业代理 / 自建中转 / Ollama 网关后，`chat` / `run` / `plan` 走配置的端点，而 `review` / `commit` / `fix` 仍打 `api.deepseek.com` —— 要么 401，要么按官方价**真花钱**，且 K15 新加的成本回执会据此报出「不是这笔账」的金额（本地 Ollama 真实成本 0，回执写「≈¥0.06」）。
+
+- **端点/模型/Key 单点解析**（`src/cli/provider-runtime.ts` 新增 `resolveVerbRuntime` / `resolveVerbClient` / `buildVerbClient` / `needsVerbApiKey` / `isOfficialDeepSeekEndpoint`）：三个花钱动词不再各自 `new DeepSeekClient({ apiKey })`（那行**不传 `baseUrl`**，缺省就落回官方端点）；解析复用既有 `resolveRuntimeProvider`，**不写第二套优先级**；只有 `deepseek` 走 `resolveModel()` 模型表校验（否则 `gpt-4o-mini` / `llama3` 会被「未知模型」`process.exit(1)` 挡死）
+- **入口只解析一次**（`src/cli/index.ts`）：`fix` / `commit` / `review` 先 `resolveVerbRuntime()` 再向下传 `runtime`（`loadConfig` 有副作用，一个命令读两次＝提示打两遍）；`review` 改为**先解析端点、再判 Key**（此前一上来就 `getApiKey()`，`defaultProvider=ollama` 的用户「端点配对了也轮不到验证」）；三动词补透传全局 `--provider`（此前它们压根不看它）
+- **成本回执区分端点**（`src/cli/usage-line.ts` + `src/i18n/{zh,en}.ts`）：非官方端点追加「（自定义端点：金额按 DeepSeek 公开价估算，非账单）」——否则 K15 修好的「诚实成本」在自定义端点下立刻退回假话
+- **文案纠偏**：网络不可达的「下一步」不再写死「确认代理可达 api.deepseek.com」（会把自定义端点用户引到错误地址），改为「你配置的端点（默认 api.deepseek.com）」
+- **护栏**（`tests/cli/verbs-guard.test.ts` 护栏四）：三个动词源码里不许再出现 `new DeepSeekClient`；入口必须恰好三次 `resolveVerbRuntime` 且把 `runtime` 传下去；四动词 `recordVerb` 一个都不许少（同轮改入口时 `recordVerb('review')` 曾被误删且**没有任何测试会红**，已补回）。否定式护栏均配反向样本自证有牙
+- **回归**：`npm run verify` 全绿 **159 文件 / 2344 用例**（基线 2310，+34）；`LUMEN_LOCALE=en` 换环境复跑全绿，并自证注入真被读到（`--help` 第 3 行随 locale 切英文）；真端到端（假 Key + `baseUrl=127.0.0.1:9` + 隔离 `HOME`）`review` 输出 `fetch failed`、无 `401` / `request_id`，失败归因显示「你配置的端点」
+
 ### Fixed — K15：成本熔断判据失效（🔴 纪律级，2026-10-31 修复）
 
 > 事故形态：**闸门安静地失效，不报错**。手工测试脚本以「跑前余额 − 跑后余额」当花费判据，而 `balance` 接口只有 2 位小数、结算还有延迟 → 场景刚跑完时差额恒为 `¥0`，于是「单场景超 ¥1 立刻停」在真正超支时**一次都没响**（实测 `--only=7` 真花 ≈¥2.11，脚本打印「差 0」）。

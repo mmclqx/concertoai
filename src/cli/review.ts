@@ -42,7 +42,7 @@ import path from 'node:path';
 
 import { SubagentSpawner } from '../agent/spawner';
 import { fmt, resolveLocale, setLocale, t } from '../i18n';
-import { DeepSeekClient, type ModelClient } from '../model/client';
+import type { ModelClient } from '../model/client';
 import { readUsageTotals } from '../model/usage-tally';
 import { SnapshotManager } from '../orchestrator/transaction';
 import {
@@ -62,8 +62,8 @@ import {
 } from '../reviewer';
 import type { ApprovalRequest } from '../tools/registry';
 import { runCheck } from './check';
-import { resolveModel } from './common';
 import { promptLine } from './prompt';
+import { resolveVerbClient, type VerbRuntimeInfo } from './provider-runtime';
 import { formatUsageLine } from './usage-line';
 
 // ── 常量 ──────────────────────────────────────────────────────
@@ -161,8 +161,17 @@ export interface ReviewCommandOptions {
   runGit?: GitNameLister;
   /** 测试注入：审查引擎（缺省按 apiKey 构造 `ReviewerEngine`）。 */
   engine?: ReviewEngineLike;
-  /** 测试注入：模型客户端（缺省按 apiKey 构造）。 */
+  /** 测试注入：模型客户端（缺省按 apiKey / provider 运行时构造）。 */
   client?: ModelClient;
+  /**
+   * 入口注入的 provider 运行时（K14：CLI 入口解析一次后传下来）。
+   *
+   * 传了它，`config.providers.deepseek.baseUrl` / `defaultProvider` 才生效；
+   * 不传且没有 `apiKey` 时按「没有可用端点」处理（不读盘，见 `resolveVerbClient`）。
+   */
+  runtime?: VerbRuntimeInfo;
+  /** 测试注入：fetch（断言请求真的打到 baseUrl，不联网）。 */
+  fetchImpl?: typeof fetch;
   /** 测试注入：`--fix` 的批量审批（缺省弹 y/N；非 TTY 一律拒绝）。 */
   requestApproval?: (request: ApprovalRequest) => Promise<boolean> | boolean;
   /** 测试注入：修复后的增量体检（缺省复用 T15 的 `runCheck`）。 */
@@ -505,10 +514,22 @@ export async function runReviewCommand(options: ReviewCommandOptions = {}): Prom
     }
   }
 
-  // ── ③ 引擎（缺 Key 又要现场造引擎 → 如实说清，不静默假审查）──
-  const client =
-    options.client ??
-    (options.apiKey !== undefined ? new DeepSeekClient({ apiKey: options.apiKey }) : undefined);
+  // ── ③ 引擎（缺 Key／端点不可用 → 如实说清，不静默假审查）──
+  /**
+   * 客户端与模型：**走 provider 运行时（K14）**，不再 `new DeepSeekClient({ apiKey })`。
+   *
+   * 原先那种写法丢掉 `config.providers.deepseek.baseUrl`：配了企业代理 / 自建中转 /
+   * Ollama 网关的用户，`chat` 走自定义端点而 `review` 静默打官方端点（要么 401，
+   * 要么按官方价真花钱），并且 K15 的成本回执会据此按 DeepSeek 价报钱 —— 回执变假话。
+   */
+  const resolved = await resolveVerbClient({
+    ...(options.client !== undefined ? { client: options.client } : {}),
+    ...(options.runtime !== undefined ? { runtime: options.runtime } : {}),
+    ...(options.fetchImpl !== undefined ? { fetchImpl: options.fetchImpl } : {}),
+    ...(options.model !== undefined ? { model: options.model } : {}),
+    ...(options.apiKey !== undefined ? { apiKey: options.apiKey } : {}),
+  });
+  const client = resolved.client;
   /**
    * 生效模型：**整个命令只解析这一处**，审查与 `--fix` 共用同一个值。
    *
@@ -518,7 +539,7 @@ export async function runReviewCommand(options: ReviewCommandOptions = {}): Prom
    * **有可修点也 100% 修不动，且原因说反**（同一进程刚刚用模型审完 9 个维度）。
    * 「同一个事实在两个地方各解析一次」是这类『说法与事实不符』的温床，故收敛成一个变量。
    */
-  const model = options.model ?? resolveModel(undefined);
+  const model = resolved.model;
   let engine = options.engine;
   if (engine === undefined) {
     if (client === undefined) {
@@ -583,7 +604,11 @@ export async function runReviewCommand(options: ReviewCommandOptions = {}): Prom
   // 只有现场造了 client 才打：注入引擎的测试 / 外部引擎没有计量能力，
   // 强行打「未统计」会给所有调用方多一行噪音。
   if (client !== undefined) {
-    log(formatUsageLine(readUsageTotals(client), t().usage));
+    log(
+      formatUsageLine(readUsageTotals(client), t().usage, {
+        customEndpoint: !resolved.officialEndpoint,
+      }),
+    );
   }
 
   return reviewExitCode(report);

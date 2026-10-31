@@ -34,12 +34,14 @@ import {
   MAX_FILES_SHOWN,
   runCommitCommand,
 } from '../../src/cli/commit';
+import type { VerbRuntimeInfo } from '../../src/cli/provider-runtime';
 import { MAX_DIFF_CHARS } from '../../src/core/commit-message';
 import { DICTS, fmt, setLocale } from '../../src/i18n';
 import { zh } from '../../src/i18n/zh';
 import type { VerifyStage } from '../../src/loop/self-heal';
 import type { ModelClient } from '../../src/model/client';
 import { emptyUsageTotals, type UsageTotals } from '../../src/model/usage-tally';
+import { sseChatFetch, unauthorizedFetch } from '../fixtures/provider-endpoint';
 
 // ── 假 git（记录每一次调用）──────────────────────────────────
 
@@ -242,6 +244,10 @@ function harness(
     ask?: AskFn;
     yes?: boolean;
     client?: ModelClient;
+    /** K14：入口解析好的 provider 运行时（带自定义端点时用）。 */
+    runtime?: VerbRuntimeInfo;
+    /** K14：假 fetch（断言请求打到哪个 URL，不联网）。 */
+    fetchImpl?: typeof fetch;
     lang?: string;
   } = {},
 ) {
@@ -266,6 +272,8 @@ function harness(
         return options.check ?? checkResult(true);
       },
       ...(options.client !== undefined ? { client: options.client } : {}),
+      ...(options.runtime !== undefined ? { runtime: options.runtime } : {}),
+      ...(options.fetchImpl !== undefined ? { fetchImpl: options.fetchImpl } : {}),
       ...(options.client !== undefined ? { model: 'deepseek-v4-flash' } : {}),
       ...(options.lang !== undefined ? { lang: options.lang } : {}),
       log: (line) => lines.push(line),
@@ -766,5 +774,58 @@ describe('成本回执（K15）', () => {
     await ctx.run();
     expect(ctx.text()).not.toContain('本次消耗');
     expect(ctx.text()).not.toContain('未能统计');
+  });
+});
+
+// ── K14 端到端：配置了自定义端点 → 请求必须打到它 ─────────────
+
+/**
+ * 这一组是 K14 的**回归牙**（`commit` 分支）。
+ *
+ * 病根与 `review` 完全相同：原先 `new DeepSeekClient({ apiKey })` 不传 `baseUrl`，
+ * 配了企业代理 / 自建中转 / Ollama 网关的用户，`commit` 会静默打官方端点
+ * （401 或按官方价真花钱），而 K15 的成本回执会据此报出「不是这笔账」的金额。
+ */
+describe('K14：commit 必须使用配置里的自定义端点', () => {
+  const CUSTOM_BASE = 'http://127.0.0.1:9/v1';
+
+  function customRuntime(): VerbRuntimeInfo {
+    return {
+      provider: 'deepseek',
+      model: 'deepseek-v4-flash',
+      baseUrl: CUSTOM_BASE,
+      apiKey: 'sk-probe',
+      officialEndpoint: false,
+    };
+  }
+
+  it('★ 请求打到配置的 baseUrl，绝不碰官方域名（且成本行标注非账单）', async () => {
+    const fake = sseChatFetch({ content: 'feat(cli): 自定义端点下的提交信息' });
+    const ctx = harness({ runtime: customRuntime(), fetchImpl: fake.fetchImpl });
+    const code = await ctx.run();
+    expect(code).toBe(0);
+    // 探针通电：假 fetch 真的被调用过
+    expect(fake.requests.length).toBeGreaterThan(0);
+    for (const request of fake.requests) {
+      expect(request.url.startsWith(`${CUSTOM_BASE}/chat/completions`)).toBe(true);
+      expect(request.url).not.toContain('api.deepseek.com');
+    }
+    const text = ctx.text();
+    expect(text).toContain('本次消耗');
+    expect(text).toContain('非账单');
+  });
+
+  it('自定义端点但模型不可用（401）→ 降级本地 message，且从不说「模型写的」', async () => {
+    const fake = unauthorizedFetch();
+    const ctx = harness({ runtime: customRuntime(), fetchImpl: fake.fetchImpl });
+    await ctx.run();
+    // 打到了自定义端点（不是官方）——这才是本用例要的硬事实
+    expect(fake.requests.length).toBeGreaterThan(0);
+    for (const request of fake.requests) {
+      expect(request.url.startsWith(CUSTOM_BASE)).toBe(true);
+    }
+    // 失败要如实说「没调成模型」，不能冒充模型写的 message
+    // （用真实文案的固定前缀断言，文案改了这里会跟着红，不会静默失配）
+    expect(ctx.all()).toContain(zh.commit.localNotice.split('{')[0] ?? '未调用模型');
   });
 });

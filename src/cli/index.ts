@@ -12,6 +12,9 @@ import { parseMaxTurnsOption, resolveApiKeyWithConfigFallback } from './common';
 import { installCrashHandlers } from './crash-handler';
 import { checkNodeVersion, isNodeWarnSuppressed } from './node-version';
 import { makePermissionConfirm as makeCliPermissionConfirm } from './plugin';
+// v5.0 K14：`fix` 动词按运行时判断是否需要 Key（`needsVerbApiKey` 是纯函数，
+// 与 `resolveVerbRuntime` 同模块；静态导入不引入副作用，动态导入留给重依赖）。
+import { needsVerbApiKey } from './provider-runtime';
 
 // ═══ 最早阶段：安装全局崩溃处理器（v3.1 M3 诊断） ═══
 // 必须在任何异步操作前安装，确保 uncaughtException / unhandledRejection
@@ -602,10 +605,37 @@ program
         lang?: string;
       }) => {
         const { runFixCommand } = await import('./fix');
+        const { resolveVerbRuntime } = await import('./provider-runtime');
+        // v4.0 M3 T3.1 全局 `--provider`（本次进程生效，不写盘）
+        const provider = program.opts().provider as string | undefined;
+        /**
+         * K14：**端点/模型在入口只解析一次**，往下传 `runtime`。
+         *
+         * 为什么不是在动词里自己读配置：`loadConfig` 有副作用（装载计价节假日表 +
+         * 打印非法配置提示），一个命令里读两次就等于提示打两遍；而且「同一事实两处
+         * 各解析一次」正是 K10/K14 这类「说法与事实不符」的共同病根。
+         */
+        const runtime = await resolveVerbRuntime({
+          // 全局 `--provider` 与 chat/run/plan 同口径：本次进程临时切换
+          // （三个动词此前压根不看它 —— 「用户配了却被静默忽略」正是 K14 的病）
+          ...(provider !== undefined ? { provider } : {}),
+          ...(options.model !== undefined ? { model: options.model } : {}),
+        });
+        /**
+         * `--dry-run` 只诊断不调模型 → 不要 Key；其余情况**按运行时判断**是否需要 Key
+         * （`defaultProvider=ollama` 的用户没有 DeepSeek Key，先要 Key 会把人挡在门外）。
+         * 缺 Key 时走既有中文引导（`getApiKey()` 打印三种配置方式后 exit 1）。
+         */
+        const needKey = options.dryRun !== true && needsVerbApiKey(runtime);
+        const apiKey = needKey
+          ? await getApiKey()
+          : runtime.apiKey !== ''
+            ? runtime.apiKey
+            : undefined;
         const code = await runFixCommand({
           cwd: process.cwd(),
-          // --dry-run 只诊断、不调模型 → 不解析 Key（第一次进项目、还没配 Key 也能先看清问题）
-          ...(options.dryRun === true ? {} : { apiKey: await getApiKey() }),
+          ...(apiKey !== undefined ? { apiKey } : {}),
+          runtime,
           model: options.model,
           dryRun: options.dryRun === true,
           autoApprove: options.autoApprove === true,
@@ -631,13 +661,23 @@ program
   .action(
     safeAction(async (options: { yes?: boolean; model?: string; lang?: string }) => {
       const { runCommitCommand } = await import('./commit');
+      const { resolveVerbRuntime } = await import('./provider-runtime');
+      const provider = program.opts().provider as string | undefined;
       // 没有 Key 也能提交：message 走本地兜底（如实告知未调模型），不因缺 Key 卡死。
       // 走与 chat/run 同一条解析链（CLI > env > account > config.json），不另读环境变量。
       const key = await tryGetApiKey();
+      // K14：`config.providers.deepseek.baseUrl` / `defaultProvider` 只在入口解析一次
+      const runtime = await resolveVerbRuntime({
+        // 全局 `--provider` 与 chat/run/plan 同口径（此前三个动词不看它）
+        ...(provider !== undefined ? { provider } : {}),
+        ...(key !== undefined ? { apiKey: key } : {}),
+        ...(options.model !== undefined ? { model: options.model } : {}),
+      });
       const code = await runCommitCommand({
         cwd: process.cwd(),
         yes: options.yes === true,
         ...(key !== undefined ? { apiKey: key } : {}),
+        runtime,
         model: options.model,
         lang: options.lang,
       });
@@ -667,6 +707,8 @@ program
         const { formatInvalidSeverity, parseReviewSeverity, runReviewCommand } = await import(
           './review'
         );
+        const { needsVerbApiKey, resolveVerbRuntime } = await import('./provider-runtime');
+        const provider = program.opts().provider as string | undefined;
         // 参数错误先报（别让「缺 Key」把「severity 写错」掩盖掉）；校验规则只此一处
         const severity = parseReviewSeverity(options.severity);
         if (!severity.ok) {
@@ -674,15 +716,32 @@ program
           process.exitCode = 1;
           return;
         }
+        /**
+         * K14：**先解析端点/模型，再判 Key**（顺序不能反）。
+         *
+         * 此前这里一上来就 `await getApiKey()`——缺 Key 直接打印引导并 `exit 1`，
+         * 于是 `defaultProvider=ollama`（本地模型、不需要 Key）的用户连「端点配对了」
+         * 都轮不到验证：键一被判缺失就出局，等于 K14 只修了一半。
+         * 现在按运行时判断（`needsVerbApiKey` 只对 deepseek 成立），与 `fix` 同口径。
+         */
+        const runtime = await resolveVerbRuntime({
+          ...(provider !== undefined ? { provider } : {}),
+          ...(options.model !== undefined ? { model: options.model } : {}),
+        });
+        const apiKey = needsVerbApiKey(runtime) ? await getApiKey() : runtime.apiKey;
         const code = await runReviewCommand({
           cwd: process.cwd(),
           ...(p !== undefined ? { path: p } : {}),
           fix: options.fix === true,
           ...(severity.severity !== undefined ? { severity: severity.severity } : {}),
-          apiKey: await getApiKey(),
+          ...(apiKey !== '' ? { apiKey } : {}),
+          // K14：端点/模型只在入口解析一次（此前 review 自己 `new DeepSeekClient({ apiKey })`，
+          // 配了 baseUrl 的用户会被静默改打官方端点，成本回执也据此报错价）
+          runtime,
           model: options.model,
           lang: options.lang,
         });
+        // v5.0 T21 动词使用指标（本来就在这，K14 改入口时被误删，补回并加固）
         recordVerb('review');
         if (code !== 0) {
           process.exitCode = code;

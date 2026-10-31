@@ -758,8 +758,10 @@ export const en = {
     actionUnauthorized:
       'check the key: concertoai doctor; or log in again: concertoai login <name> --key sk-...',
     actionQuota: 'top up and retry: concertoai balance shows the current balance',
+    // K14: the endpoint is configurable now, so do not name a single host —
+    // pointing a custom-endpoint user at api.deepseek.com sends them to the wrong place.
     actionNetwork:
-      'retry once the network is back; with a proxy, make sure api.deepseek.com is reachable',
+      'retry once the network is back; with a proxy, make sure your configured endpoint is reachable (default api.deepseek.com)',
     actionTimeout: 'narrow the scope (review a single file) or retry later',
     actionParseFailed: 'run once more; if it keeps happening, please report it',
     actionTurnLimit: 'narrow the scope (review a single file) and retry',
@@ -1015,6 +1017,9 @@ export const en = {
     unpriced:
       '💰 This run: {calls} call(s) | input {input} / output {output} tokens ≈ ¥{cost} ({models} has no price entry; that part is uncounted)',
     unmeasured: 'ℹ️  Token usage was not reported by the current client — cost unknown.',
+    // K14: a custom endpoint (proxy / self-hosted gateway / Ollama) has its own
+    // billing we cannot know — the amount is a list-price estimate, not a bill.
+    endpointNote: ' (custom endpoint: amount estimated with DeepSeek list prices, not a bill)',
   },
   help: {
     // v5.0 T14: slim first screen — Quick start → Common → Interactive → Advanced.

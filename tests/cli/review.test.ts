@@ -25,9 +25,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { afterAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { SubagentSpawner } from '../../src/agent/spawner';
 import type { SubagentResult, SubagentTask } from '../../src/agent/types';
+import type { VerbRuntimeInfo } from '../../src/cli/provider-runtime';
 import {
   countGrades,
   formatDimensionOverview,
@@ -56,6 +57,7 @@ import {
   type ReviewReport,
 } from '../../src/reviewer';
 import type { ApprovalRequest } from '../../src/tools/registry';
+import { sseChatFetch } from '../fixtures/provider-endpoint';
 
 // ── 假 git / 假引擎 ───────────────────────────────────────────
 
@@ -736,11 +738,140 @@ describe('K10：--fix 的模型解析（不传 -m 也要能修）', () => {
   it('源码护栏：`model` 只在命令入口解析一次，`--fix` 用的是解析结果', async () => {
     const here = path.dirname(fileURLToPath(import.meta.url));
     const source = await readFile(path.join(here, '../../src/cli/review.ts'), 'utf8');
-    // 只解析一次（`options.model ?? resolveModel(...)` 全文件出现 1 次）
-    expect(source.match(/options\.model \?\? resolveModel/g) ?? []).toHaveLength(1);
-    // `--fix` 阶段不许再拿原始 options.model
-    expect(source).not.toMatch(/model: options\.model/);
+    /**
+     * K14 起「解析一次」的落点从本文件搬到了 `provider-runtime.ts`
+     * （`resolveVerbClient` 是唯一入口：模型、端点、Key 一起解析，三动词共用）。
+     * 护栏因此同步搬家 —— 断言的**性质**不变，仍然是「这一件事只解析一处」：
+     * ① review.ts 自己**不再**解析模型默认值（0 次）；
+     * ② 解析结果必须来自 `resolveVerbClient`；
+     * ③ `--fix` 用的是解析后的 `model`，不是原始 `options.model`。
+     *
+     * 第 ③ 条按「**修复阶段函数体内**不许出现 `options`」来判：原始 `options.model`
+     * 只在入口喂给解析器（那是正确用法，不是缺陷），而 `runFixPhase` 拿到的是
+     * `FixPhaseParams`——它压根没有 `options` 这个作用域，因此这条断言有牙且不误报。
+     */
+    expect(source.match(/options\.model \?\? resolveModel/g) ?? []).toHaveLength(0);
+    expect(source).toMatch(/resolveVerbClient\(/);
+    const fixPhaseAt = source.indexOf('async function runFixPhase');
+    expect(fixPhaseAt).toBeGreaterThan(-1);
+    const fixPhaseBody = source.slice(fixPhaseAt);
+    expect(fixPhaseBody).not.toMatch(/options\.model/);
+    expect(fixPhaseBody).toMatch(/model: params\.model/);
     expect(source).toMatch(/model,\n\s+engine: activeEngine/);
+  });
+});
+
+// ── K14 端到端：配置了自定义端点 → 请求必须打到它 ────────────
+
+/**
+ * 这一组是 K14 的**回归牙**。
+ *
+ * 病根：`review` 原先 `new DeepSeekClient({ apiKey })`，不传 `baseUrl` ——
+ * 配了企业代理 / 自建中转 / Ollama 网关的用户，`chat` 走自定义端点、
+ * `review` 静默打 `api.deepseek.com`（401 或按官方价真花钱）。
+ *
+ * 手工跑一次只能证明「今天这台机器上是这样」，进 `npm test` 才能防回归。
+ * 断言只认硬事实：**假 fetch 收到的 URL 前缀**（不靠日志措辞）。
+ */
+describe('K14：自定义端点必须真的被使用（不是打印出来好看）', () => {
+  const CUSTOM_BASE = 'http://127.0.0.1:9/v1';
+  let dir: string;
+
+  /**
+   * 临时项目 + **没有 `verify` 脚本** 的 package.json。
+   *
+   * 这不是装饰：`ReviewerEngine.review` 会 `execSync('npm run verify')` 跑「自动测试」段
+   * （`hasVerifyScript` 为真时）。若这里用 `process.cwd()`（本仓库），测试就会在
+   * vitest 里再跑一遍完整 verify —— 慢、脆，而且属于「测试里起真实构建」的坏味道。
+   */
+  beforeEach(async () => {
+    setLocale('zh');
+    dir = await mkdtemp(path.join(os.tmpdir(), 'concertoai-review-k14-'));
+    await mkdir(path.join(dir, 'src'), { recursive: true });
+    await writeFile(path.join(dir, 'src/a.ts'), 'export const a = 1;\n', 'utf8');
+    await writeFile(
+      path.join(dir, 'package.json'),
+      JSON.stringify({ name: 'demo', scripts: { test: 'echo ok' } }),
+      'utf8',
+    );
+  });
+
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
+  });
+
+  /** 造一个「配置里写了自定义端点」的运行时（入口解析的结果）。 */
+  function customRuntime(): VerbRuntimeInfo {
+    return {
+      provider: 'deepseek',
+      model: 'deepseek-v4-flash',
+      baseUrl: CUSTOM_BASE,
+      apiKey: 'sk-probe',
+      officialEndpoint: false,
+    };
+  }
+
+  it('★ 真引擎 + 自定义端点：请求打到配置的 baseUrl，绝不碰官方域名', async () => {
+    const fake = sseChatFetch({ content: '（假审查输出）' });
+    const lines: string[] = [];
+    const code = await runReviewCommand({
+      cwd: dir,
+      path: 'src/a.ts',
+      isTTY: false,
+      apiKey: 'sk-probe',
+      runtime: customRuntime(),
+      fetchImpl: fake.fetchImpl,
+      runVerify: async () => ({ passed: true }),
+      log: (line) => lines.push(line),
+      logErr: () => {},
+    });
+    // 探针通电：假 fetch 真的被调用过（否则下面的「URL 正确」是空转断言）
+    expect(fake.requests.length).toBeGreaterThan(0);
+    for (const request of fake.requests) {
+      expect(request.url.startsWith(`${CUSTOM_BASE}/chat/completions`)).toBe(true);
+      expect(request.url).not.toContain('api.deepseek.com');
+    }
+    // 假模型不会产出合法审查结果 → 报告如实说「没审完」，绝不冒充通过
+    expect(code).toBe(1);
+    expect(lines.join('\n')).toContain('未完成');
+  });
+
+  it('★ 自定义端点 + 量到 usage：成本行标注「非账单」（K14 与 K15 的接缝）', async () => {
+    const fake = sseChatFetch({ content: '（假审查输出）' });
+    const lines: string[] = [];
+    await runReviewCommand({
+      cwd: dir,
+      path: 'src/a.ts',
+      isTTY: false,
+      apiKey: 'sk-probe',
+      runtime: customRuntime(),
+      fetchImpl: fake.fetchImpl,
+      runVerify: async () => ({ passed: true }),
+      log: (line) => lines.push(line),
+      logErr: () => {},
+    });
+    const text = lines.join('\n');
+    expect(text).toContain('本次消耗');
+    expect(text).toContain('非账单');
+  });
+
+  it('官方端点（不传 runtime 的效果等价）→ 成本行不出现「非账单」', async () => {
+    const fake = sseChatFetch({ content: '（假审查输出）' });
+    const lines: string[] = [];
+    await runReviewCommand({
+      cwd: dir,
+      path: 'src/a.ts',
+      isTTY: false,
+      apiKey: 'sk-probe',
+      // 只给 apiKey（无 runtime）：按官方端点处理，与 K14 之前的行为一致
+      fetchImpl: fake.fetchImpl,
+      runVerify: async () => ({ passed: true }),
+      log: (line) => lines.push(line),
+      logErr: () => {},
+    });
+    const text = lines.join('\n');
+    expect(text).toContain('本次消耗');
+    expect(text).not.toContain('非账单');
   });
 });
 
