@@ -138,6 +138,13 @@ export {
   estimateTokens,
   isTokenEstimate,
 } from './model/tokenizer';
+export type { UsageMetered, UsageSample, UsageTotals } from './model/usage-tally';
+export {
+  emptyUsageTotals,
+  isUsageMetered,
+  readUsageTotals,
+  UsageTally,
+} from './model/usage-tally';
 export type { ProjectRules } from './store/project-rules';
 export { loadProjectRules, MAX_RULES_CHARS, RULE_FILENAMES } from './store/project-rules';
 export type { SessionSummary } from './store/session';

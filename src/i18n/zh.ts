@@ -939,6 +939,18 @@ export const zh = {
     line2: '  常用：/plan 先生成计划再执行 · /review 代码审查 · /workflow 运行工作流',
     line3: '  环境检查：concertoai doctor · 退出：Ctrl+C（会话已保存）',
   },
+  /**
+   * 成本回执（K15）：三个花钱动词（`review` / `commit` / `fix`）结束时各打一行。
+   *
+   * 数字来自响应 `usage` 的**本地累加**（`model/usage-tally.ts`），不是调用前估算；
+   * 拿不到 usage 时必须说「未统计」——绝不用 ¥0 冒充「这次没花钱」。
+   */
+  usage: {
+    line: '💰 本次消耗：{calls} 次调用 ｜ 输入 {input} / 输出 {output} tokens（缓存命中 {cacheHit}）≈ ¥{cost}',
+    unpriced:
+      '💰 本次消耗：{calls} 次调用 ｜ 输入 {input} / 输出 {output} tokens ≈ ¥{cost}（{models} 不在价格表里，这部分未计价）',
+    unmeasured: 'ℹ️  本次未能统计消耗（当前客户端不上报 usage），费用未知。',
+  },
   help: {
     // v5.0 T14：首屏精简——分层只留「快速开始 → 常用 → 交互 → 高级折叠」，
     // 不再平铺命令清单（21 条平铺实测 46 行，新手直接被淹没）。

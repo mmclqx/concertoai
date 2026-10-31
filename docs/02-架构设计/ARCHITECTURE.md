@@ -87,6 +87,7 @@ ConcertoAI 是一款**中文优先**的终端编码助手 CLI（DeepSeek 驱动�
 │  models.ts  模型表  │          │  read.ts   3 个只读工具       │
 │  auto.ts    auto 预设│          │                              │
 │  tokenizer.ts 估算 │          │  edit.ts   SEARCH/REPLACE     │
+│  usage-tally 记账  │          │                              │
 └─────────┬──────────┘          │  shell.ts  白名单+审批+超时   │
           │                     │  knowledge.ts knowledge_* 5 工具│
           │                     │  spawn.ts  spawn_subagent     │
@@ -435,6 +436,7 @@ MCP 服务故障
 | D83 | **功能冻结：冻结的是「功能增量」，不是 bug 修复/文档/测试；三层清单 + 机械判定**（v5.0 T20 / ADR-048 / 决策 D5-B）：`docs/FEATURE_FREEZE.md` 写死三层——**冻结（停扩）** = 插件市场（`src/plugin/`、`src/market/`）+ Agent 市场（`src/agents/`）+ `team --parallel`；**只修不扩** = LSP（`src/lsp/`，不加新协议方法）；**活跃** = M2 审批 / M3 提示 / M4 动词 / M5 度量。**判据必须可机械执行**（命令数 / `src/` 新增一级功能目录 / 冻结层文件数），否则冻结只是口号；冻结层命令在 `--help` 标注「维护模式」；**测试策略：既有用例全保留，只允许删「冻结功能的深层边界用例」，边缘路径一个不动**（v4.1.1 两次事故都出在边缘路径） | 版本收敛必须有可判定边界：只写「不做什么」而没有判定方法，下个版本一定会长回来；「砍测试换速度」是负收益（用例是资产，跑一遍几十秒）；冻结层标注进 `--help` 让用户与贡献者在**入口处**就看到状态，而不是去翻文档 | `docs/FEATURE_FREEZE.md`（新增）+ `src/i18n/{zh,en}.ts`（`--help` 维护模式标注）+ `docs/02-架构设计/ARCHITECTURE.md`（全景图 + 目录树 + 冻结说明） |
 | D84 | **本地体验指标：默认关、零上传、不记内容；开关在解析层统一判定**（v5.0 T21 / ADR-049 / 决策 D4-B）：`core/metrics-store.ts`（JSONL + `O_APPEND` 单次追加 + 轮转 + 读取端宽容跳过损坏行）与 `core/reflection-store.ts` 同范式；事件只有 `approval` / `suggestion` / `check` / `verb` 四类**结构化数字**（耗时、决策、计数、动词名），**不含路径 / 代码片段 / 提示词**；`config.metrics` 缺省 `off`（不开连文件都不创建），双轨开关 `config set metrics on\|off` + `CONCERTOAI_METRICS`（非法值 fail-closed）；`appendMetric` 全 `try/catch` 永不抛错，调用方 fire-and-forget | 没有指标，「体验变好」既无法证明也无法复盘；但指标一旦默认开会变成隐私风险与信任负担——所以 opt-in + 只存数字 + 可清空；开关必须在 `resolveConfig` 一处合并，否则环境变量与配置两套优先级（T11 教训），写盘失败绝不能拖累 `check` / 审批主流程 | `src/core/metrics-store.ts` + `src/cli/metrics.ts` + `src/cli/doctor.ts`（`--metrics`）+ `src/cli/slash/metrics.ts` + `src/store/config.ts` + `tests/core/metrics-store.test.ts` |
 | D85 | **对外定位重写：把安全约束翻译成产品价值；`--help` 必须跟随 locale**（v5.0 T22 / ADR-050 / 决策 D6-5.0.0）：对外统一为「**ConcertoAI —— 敢让你用来改生产代码的个人超级 CLI**」，首屏 = 一句话定位 + 3 个真实场景（`init` 双文件 / 高风险审批 / `check`+`commit`）+ 30 秒上手，替掉功能清单长表与平台叙事；`package.json` description 与 `--help` 首段（zh/en）同句；**顺带修存量缺陷**——`--help` 原先完全不跟随 locale（`setLocale` 只在各命令 action 内调用，而 help 由 commander 在解析阶段打印退出），入口在 `new Command()` 前按 `LUMEN_LOCALE > LANG` 定一次语言 | 用户最在意的不是「有审批机制」，而是「敢不敢拿它改生产代码」——把 L3 约束转译成 L7 价值，比罗列能力名更能降低心理门槛；「文案改了但英文用户看不到」属可达性缺陷（`en.ts` 的 `cli.description` 没有任何路径能渲染），修它顺带补上 3 条 locale 护栏 | `README.md` + `package.json`（description）+ `src/i18n/{zh,en}.ts`（`cli.description`）+ `src/cli/index.ts`（locale 定一次）+ `tests/cli/help.test.ts`（3 条 locale 护栏） |
+| D86 | **成本计量单点化：`usage` 在 `DeepSeekClient` 捕获并就地计价，熔断判据由「余额差」改为「本地累加成本」，且不可度量即 fail-closed**（v5.0 K15）：`model/usage-tally.ts` 的 `UsageTally` 是**唯一**累加器（`DeepSeekClient` 持有，覆盖 loop / reviewer autofix / core commit-message / loop self-heal 四条花钱链路——它们共用同一 client 实例，单点捕获就不需要每条链各自透传）；`add(sample, modelId, at)` 用**本次请求的模型与时刻**计价（复用 T7 `costFor`，不新增价格表，跨高峰/空闲档不串价）；`UsageTotals.measured` 把「花了 0」与「量不到」分开（量不到时三个动词说「未统计」，**绝不打印假 ¥0**），未知模型 `priced:false` 只当下限；`cli/usage-line.ts` 是三个花钱动词唯一的回执渲染入口；`scripts/lib/cost-gate.mjs` 把闸门抽成纯函数，判据 = CLI 自报的「本次消耗」行，**读不到 → stop**（不可度量不许继续花钱） | 旧口径「跑前余额 − 跑后余额」被自身击穿：余额只有 2 位小数 + 结算延迟，实测花 **¥0.1183** 时即时差只有 **¥0.02**（10 分钟后才追到 ¥0.09），早前 `--only=7` 真花 ¥2.11 更是打印「差 0」——「单场景超 ¥1 立刻停」在真正超支时**一次都没响**（纪律级失效，且不报错）。换成响应 `usage` × 单价后，读数不依赖结算窗口、精度到 6 位小数；闸门纯函数化让「闸门有没有牙」变成 `npm test` 每次都能复现的断言（含注入阈值正反自证），不花一分钱 | `src/model/usage-tally.ts`（新增）+ `src/model/client.ts` + `src/cli/usage-line.ts`（新增）+ `src/cli/{review,commit,fix}.ts` + `src/i18n/{zh,en}.ts` + `src/index.ts` + `scripts/lib/cost-gate.mjs`（新增）+ `scripts/{real-key-t233,t233-scenarios-67}.mjs` + `tests/model/{usage-tally,client}.test.ts` + `tests/cli/{usage-line,review,commit,fix}.test.ts` + `tests/scripts/cost-gate.test.ts` |
 
 ---
 
@@ -452,6 +454,7 @@ concertoai/
 │   ├── gen-third-party-notices.mjs  THIRD_PARTY_NOTICES 脚本化生成（v5.0 T4）
 │   ├── bench-approval.mjs           T8 发布门：analyzeDiff / 单规则 ReDoS / analyzeImpact 六项性能预算
 │   ├── verify-false-positive.mjs    T8 发布门：26 条人工标注 diff 的误报率/召回率
+│   ├── lib/cost-gate.mjs            K15 成本闸门纯函数（parseCostLine / gateDecision / totalGateDecision）：判据 = CLI 自报「本次消耗」行，**读不到就停**（fail-closed）+ cost-gate.d.mts 类型声明供 tests/scripts/ 直测
 │   └── bench-approval-ui.mjs        T9 发布门：分析 / 文案 / Ink 首帧三段分别计时（端到端 P95 预算 150ms）
 ├── docs/
 │   ├── 01-产品定位与范围.md
@@ -503,6 +506,7 @@ concertoai/
 │   │   ├── plugin.ts     concertoai plugin install/search/list/remove/browse/recommend/popular（v4.0 M4：注册表匹配→下载/builtin 直装→sha256→权限清单确认→落盘；browse 分类含下载量+评分；recommend 项目特征启发式；popular Top 10；makePermissionConfirm TTY 交互 + --yes 自动通过，非 TTY 拒绝 fail-closed）
 │   │   ├── crash-handler.ts 进程级崩溃日志（uncaughtException/unhandledRejection → ~/.concertoai/crash.log，v3.1 M3；v4.0.1 AbortError（用户 Ctrl+C）不写 crash.log、退出码 130 兜底）
 │   │   ├── prompt.ts    共享行输入（v4.0.1 + v4.1 T1.2）：promptLine 捕获 AbortError → undefined（Ctrl+C 视为正常取消），非 TTY → undefined，其他错误原样上抛；可选 timeoutMs（AbortController 竞速，缺省不超时）供 F 等待态 60s 超时；workflow/plugin/provider 三处统一
+│   │   ├── usage-line.ts 成本回执行（v5.0 K15）：`formatUsageLine` 是 review / commit / fix 三个花钱动词**唯一**的渲染入口——「量到了给金额（6 位小数）/ 量不到说未统计」，绝不用 ¥0 冒充「没花钱」
 │   │   ├── common.ts     CLI 共享：白名单 / 注册表构建 / OS 提示 / resolveProjectForCwd / mergeAllowlist / resolveApiKey / maskApiKey（轻量加载）；resolveApiKeyCached / loadProjectRegistryCached 启动期缓存（v3.2 M4）
 │   │   └── slash/        斜杠命令处理器
 │   │       ├── agent.ts  /agent list / install / remove / promote / update（v3.0 M4 + v3.1 M5）
@@ -551,7 +555,8 @@ concertoai/
 │   │   ├── local-memory.ts  本地记忆检索与注入（v1.1）
 │   │   └── memory-injector.ts MCP memory 检索与注入（v1.1）
 │   ├── model/
-│   │   ├── client.ts     DeepSeekClient（implements ModelClient）+ readSseEvents + ApiError/TimeoutError + Usage
+│   │   ├── client.ts     DeepSeekClient（implements ModelClient）+ readSseEvents + ApiError/TimeoutError + Usage；`recordUsage` 在 yield 前捕获 usage（v5.0 K15 记账单点）+ `now` 注入决定计价档位
+│   │   ├── usage-tally.ts usage 累加 + 就地计价（v5.0 K15）：`UsageTally` 覆盖 loop / autofix / commit-message / self-heal 四条花钱链路（共用同一 client 实例）；`measured` 区分「花了 0」与「量不到」，未知模型 `priced:false` 不冒充全款
 │   │   ├── models.ts     MODEL_PROFILES（flash 默认/pro，官方定价 2026-08 核实）+ costFor
 │   │   ├── tokenizer.ts  estimateTokens（CJK 加权）/ estimateMessageListTokens
 │   │   ├── provider.ts   Provider 接口四能力（chat/tokenize/cost/healthCheck）+ costFromProfile（v4.0 M3，详见 §4 D54）

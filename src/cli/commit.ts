@@ -43,10 +43,12 @@ import {
 } from '../core/commit-message';
 import { fmt, resolveLocale, setLocale, t } from '../i18n';
 import { DeepSeekClient, type ModelClient } from '../model/client';
+import { readUsageTotals } from '../model/usage-tally';
 // G6 薄包装：体检完全复用 T15（禁止在本文件里跑 verify / 解析 verify 输出）
 import { type CheckResult, formatCheckReport, runCheck } from './check';
 import { resolveModel } from './common';
 import { promptLine } from './prompt';
+import { formatUsageLine } from './usage-line';
 
 // ── 常量 ──────────────────────────────────────────────────────
 
@@ -305,6 +307,11 @@ export async function runCommitCommand(options: CommitCommandOptions = {}): Prom
     log(fmt(dict.costNotice, { tokens: estimateCommitTokens(staged) }));
   }
   const message: CommitMessage = await generateCommitMessage({ diff: staged, client, model });
+  // 成本回执（K15）：message 生成之后立即打，用户审批前就知道这次花了多少。
+  // 走降级（`source: 'local'`）时同样要打：要么「未统计」，要么如实给出失败前已消耗的 token。
+  if (client !== undefined) {
+    log(formatUsageLine(readUsageTotals(client), t().usage));
+  }
   if (message.source === 'local') {
     // 如实说明「这次没调模型」——不能让用户以为 message 是模型写的
     log(

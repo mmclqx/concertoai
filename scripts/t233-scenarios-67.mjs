@@ -7,10 +7,23 @@
  * | 6 | `concertoai check`（只读体检）→ `concertoai commit`（体检→生成 message→审批→本地提交） | 体检真跑、message 真生成、**审批默认 N**、**只本地不 push**、提交后工作区干净 |
  * | 7 | `concertoai review --fix --severity lenient <单文件>` | 9 维分级真产出、退出码语义、`--fix` 只修建议级、**每次写盘都审批** |
  *
- * ## 花费纪律（用户裁决 2026-10-29）
+ * ## 花费纪律（用户裁决 2026-10-29；口径于 2026-10-31 按 K15 修正）
  * - **单文件、小 diff、`--severity lenient`**；跑前已写 token 估算（见 execution-log-20261029-210500.md §五）；
- * - 跑前跑后各查一次 `concertoai balance`，**按差额记账**；
- * - **单场景超 ¥1 立刻停**（脚本内置 `MAX_COST_PER_SCENARIO = 1`：跑完一个场景就结算，超了后面场景不再跑）。
+ * - **闸门判据 = CLI 自己报的「本次消耗」行**（来自响应 `usage` 的本地累加，见 `src/model/usage-tally.ts`），
+ *   **不是**跑前/跑后余额差；
+ * - **单场景超 ¥1 立刻停**（`MAX_COST_PER_SCENARIO`，可用 `T233_COST_LIMIT` 注入更小值做自证）。
+ *
+ * ### K15：为什么不再用「余额差」当闸门（2026-10-31 实测证据）
+ *
+ * 旧口径下 `--only=7` 真花 **≈¥2.11**（¥7.64 → ¥5.53），脚本却打印「差 0」，
+ * 熔断**没有触发**。原因有两条，且都不可修复：
+ * 1. `balance` 接口只给 2 位小数，小额花费**物理不可见**；
+ * 2. 结算有延迟，刚跑完的数字还没扣。
+ *
+ * 于是「估算—熔断—记账」三项共用同一个延迟读数 = 纸面纪律。
+ * 现在：**成本行是权威**，余额读数**保留但只用于事后对账**（证明「量级对得上」，
+ * 不再参与停手判定）。**读不到成本行 → fail-closed 直接停**（`scripts/lib/cost-gate.mjs`），
+ * 因为「量不到」和「没花钱」是两件事——旧口径正是把前者当成后者。
  *
  * ## 真 Key 的取得与「不泄漏」纪律
  * 本脚本是**唯一允许用真 Key 的 T23.3 脚本**，所以与另两个脚本的口径相反：
@@ -33,6 +46,8 @@ import path from 'node:path';
 
 import pty from 'node-pty';
 
+import { gateDecision, parseCostLine, totalGateDecision } from './lib/cost-gate.mjs';
+
 const REPO = process.cwd();
 const CLI = path.join(REPO, 'dist', 'cli', 'index.js');
 const NODE = process.execPath;
@@ -40,8 +55,15 @@ const DUMP_ONLY = process.argv.includes('--dump');
 const onlyArg = process.argv.find((a) => a.startsWith('--only='));
 const ONLY = onlyArg?.slice('--only='.length);
 
-/** 单场景费用熔断阈值（用户裁决：超 ¥1 立刻停）。 */
-const MAX_COST_PER_SCENARIO = 1;
+/**
+ * 单场景费用熔断阈值（用户裁决：超 ¥1 立刻停）。
+ *
+ * 可用 `T233_COST_LIMIT` 注入更小的值做**闸门自证**（例如 `0.0001`）：
+ * 同一场景的读数在默认阈值下应继续、在注入值下必须停手——这条自证不花一分钱，
+ * 因为它判的是**读数与阈值**，不是「真超支」。纯函数版本的用例见
+ * `tests/scripts/cost-gate.test.ts`（`npm test` 每次都会重跑）。
+ */
+const MAX_COST_PER_SCENARIO = Number(process.env.T233_COST_LIMIT ?? 1);
 
 const ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'ccai-t233-67-'));
 const LIVE_TERMS = new Set();
@@ -175,12 +197,32 @@ function runCli(args, dir, home, extraEnv = {}) {
   return { status: r.status, out: redact(`${r.stdout ?? ''}${r.stderr ?? ''}`) };
 }
 
-/** 读余额（单位元）。查询本身不消耗 token。 */
+/** 读余额（单位元）。查询本身不消耗 token。**只用于事后对账，不参与停手判定**。 */
 function balance(dir, home) {
   const r = runCli(['balance'], dir, home);
   const m = r.out.match(/¥\s*([\d.]+)/);
   return m === null ? undefined : Number(m[1]);
 }
+
+/**
+ * 从一次 CLI 运行输出里读出「这次花了多少」（K15 修法 ③：唯一权威口径）。
+ *
+ * 判据 = CLI 自己打的「本次消耗」行（响应 `usage` 的**本地累加**，见
+ * `src/model/usage-tally.ts`），不是跑前/跑后余额差。读不到就返回
+ * `{ measured: false }` 交给闸门 fail-closed —— **绝不补成 0**。
+ *
+ * 注意：锚点是中文「本次消耗」四个字（`childEnv` 里已钉死 `LUMEN_LOCALE=zh`）。
+ * 若输出是英文，锚点不存在 → 同样按「读不到」处理（方向安全：宁可停手）。
+ */
+function readingOfRun(raw, label) {
+  const parsed = parseCostLine(raw);
+  if (!parsed.ok) return { measured: false, label, reason: parsed.reason };
+  return { measured: true, label, cost: parsed.cost, raw: parsed.raw };
+}
+
+/** 钱数显示（6 位小数：与 CLI 成本行同档，小额也看得见）。 */
+const money = (value) =>
+  typeof value === 'number' && Number.isFinite(value) ? `¥${value.toFixed(6)}` : '未知（未度量）';
 
 const strip = (s) => redact(s.replace(/\u001b\[[0-9;?]*[A-Za-z]/g, ''));
 const GATE_GRACE_MS = 30000;
@@ -391,12 +433,30 @@ const run = async () => {
     check(6, '提交后工作区干净（没有漏文件）', git(dir, ['status', '--porcelain']).out === '', git(dir, ['status', '--porcelain']).out.slice(0, 80));
     check(6, '没有产生任何远程交互（无 remote 配置）', git(dir, ['remote', '-v']).out === '');
 
+    /**
+     * 费用判定（K15 修法 ③）：**只认 CLI 打出的「本次消耗」行**，不再用余额差。
+     *
+     * `refuse` 与 `approve` 两次运行**各调了一次模型**（message 一生成就花钱，
+     * 用户答 n 不退钱），所以两次读数都要累加；`empty`（暂存区空）在调模型前
+     * 就停手了，本来就没有读数，也不该因此判定「量不到」。
+     */
     const after = balance(dir, home);
-    costs.push({ scenario: 6, before, after });
+    const readings6 = [readingOfRun(refuse.raw, '6-拒绝提交'), readingOfRun(approve.raw, '6-批准提交')];
+    const gate6 = totalGateDecision(readings6, MAX_COST_PER_SCENARIO);
+    costs.push({ scenario: 6, localCost: gate6.total, readings: readings6, balance: { before, after } });
+    check(
+      6,
+      '成本可度量：两次运行都打出「本次消耗」行（K15 修法生效）',
+      readings6.every((r) => r.measured),
+      readings6.map((r) => `${r.label}=${r.measured ? money(r.cost) : `读不到（${r.reason}）`}`).join('；'),
+    );
     const delta6 = before !== undefined && after !== undefined ? Number((before - after).toFixed(4)) : undefined;
-    note(`场景 6 费用：¥${before} → ¥${after}（差 ${delta6 ?? 'n/a'}，估算 ≈¥0.001，阈值 ¥${MAX_COST_PER_SCENARIO}）`);
-    if (delta6 !== undefined && delta6 > MAX_COST_PER_SCENARIO) {
-      say(`🛑 场景 6 超出 ¥${MAX_COST_PER_SCENARIO} 熔断阈值 —— 停止后续场景（用户裁决）。`);
+    note(
+      `场景 6 费用：本地累加 ${money(gate6.total)}（余额 ¥${before} → ¥${after}，差 ${delta6 ?? 'n/a'}；` +
+        `余额只有 2 位小数 + 结算延迟，**只作量级对账**，不参与停手判定；估算 ≈¥0.001，阈值 ¥${MAX_COST_PER_SCENARIO}）`,
+    );
+    if (gate6.stop) {
+      say(`🛑 ${gate6.reason} —— 停止后续场景（用户裁决）。`);
       finish();
       return;
     }
@@ -493,12 +553,29 @@ const run = async () => {
     );
     note(`修复后文件内容：${JSON.stringify(fs.readFileSync(target, 'utf8').trim())}`);
 
+    /**
+     * 费用判定（K15 修法 ③）：本次会话是**一次运行两笔账**（`review` 审查 5 个子代理
+     * + `--fix` 逐条生成补丁），但 `review --fix` 只打**一行总账**（同一 client 实例累加），
+     * 所以这里读一行就够 —— 前提是那一行必须真的出现。
+     */
     const after = balance(dir, home);
-    costs.push({ scenario: 7, before, after });
+    const reading7 = readingOfRun(rev.raw, '7-review-fix');
+    const gate7 = gateDecision(reading7, MAX_COST_PER_SCENARIO, '场景 7');
+    costs.push({ scenario: 7, localCost: gate7.cost, readings: [reading7], balance: { before, after } });
+    check(
+      7,
+      '成本可度量：`review --fix` 打出「本次消耗」行（K15 修法生效）',
+      reading7.measured,
+      reading7.measured ? money(reading7.cost) : `读不到（${reading7.reason}）`,
+    );
     const delta7 = before !== undefined && after !== undefined ? Number((before - after).toFixed(4)) : undefined;
-    note(`场景 7 费用：¥${before} → ¥${after}（差 ${delta7 ?? 'n/a'}，估算 ≈¥0.015，阈值 ¥${MAX_COST_PER_SCENARIO}）`);
-    if (delta7 !== undefined && delta7 > MAX_COST_PER_SCENARIO) {
-      say(`🛑 场景 7 超出 ¥${MAX_COST_PER_SCENARIO} 熔断阈值 —— 停止（用户裁决）。`);
+    note(
+      `场景 7 费用：本地累加 ${money(gate7.cost)}（余额 ¥${before} → ¥${after}，差 ${delta7 ?? 'n/a'}；` +
+        `余额只作量级对账；估算 ≈¥0.015，阈值 ¥${MAX_COST_PER_SCENARIO}）`,
+    );
+    if (gate7.stop) {
+      say(`🛑 ${gate7.reason}`);
+      check(7, '预算闸门生效（读数超阈值 → 停手）', true, gate7.reason);
     }
   }
 
@@ -511,7 +588,16 @@ function finish() {
   say(`\n合计 ${results.length} 条断言；PASS ${results.length - failed.length}；FAIL ${failed.length}`);
   say(`清理自证：PTY 残留 ${LIVE_TERMS.size} / 临时目录存在 ${fs.existsSync(ROOT)} / 清理失败 ${leftovers.length}`);
   if (leftovers.length) say(`残留：${leftovers.join(', ')}`);
-  say(`费用记账：${costs.map((c) => `场景${c.scenario} ¥${c.before}→¥${c.after}`).join(' · ') || '（未跑真 Key 场景）'}`);
+  say(
+    `费用记账（K15：**本地累加为准**，余额差只作量级对账）：${
+      costs
+        .map(
+          (c) =>
+            `场景${c.scenario} ${money(c.localCost)}（余额 ¥${c.balance.before}→¥${c.balance.after}）`,
+        )
+        .join(' · ') || '（未跑真 Key 场景）'
+    }`,
+  );
 
   fs.writeFileSync(
     path.join(REPO, '.git', 't233-67-transcript.json'),

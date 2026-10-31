@@ -43,6 +43,7 @@ import path from 'node:path';
 import { SubagentSpawner } from '../agent/spawner';
 import { fmt, resolveLocale, setLocale, t } from '../i18n';
 import { DeepSeekClient, type ModelClient } from '../model/client';
+import { readUsageTotals } from '../model/usage-tally';
 import { SnapshotManager } from '../orchestrator/transaction';
 import {
   ALL_DIMENSIONS,
@@ -63,6 +64,7 @@ import type { ApprovalRequest } from '../tools/registry';
 import { runCheck } from './check';
 import { resolveModel } from './common';
 import { promptLine } from './prompt';
+import { formatUsageLine } from './usage-line';
 
 // ── 常量 ──────────────────────────────────────────────────────
 
@@ -573,6 +575,15 @@ export async function runReviewCommand(options: ReviewCommandOptions = {}): Prom
   log('');
   for (const line of formatReviewVerdict(report)) {
     log(line);
+  }
+
+  // ── ⑦ 成本回执（K15）：审查 + `--fix` 两段合起来算一次总账 ──
+  // 同一 client 实例内的 usage 是累加的（`model/usage-tally.ts` 单点记账），
+  // 因此这里打的是**本次命令真实消耗**，不是调用前估算。
+  // 只有现场造了 client 才打：注入引擎的测试 / 外部引擎没有计量能力，
+  // 强行打「未统计」会给所有调用方多一行噪音。
+  if (client !== undefined) {
+    log(formatUsageLine(readUsageTotals(client), t().usage));
   }
 
   return reviewExitCode(report);

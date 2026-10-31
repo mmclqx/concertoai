@@ -35,6 +35,7 @@ import { fmt } from '../../src/i18n';
 import { zh } from '../../src/i18n/zh';
 import { MAX_SELF_HEAL_ATTEMPTS, parseVerifyReport } from '../../src/loop/self-heal';
 import type { ModelClient } from '../../src/model/client';
+import { emptyUsageTotals } from '../../src/model/usage-tally';
 import { SNAPSHOT_ROOT } from '../../src/orchestrator/transaction';
 
 // ── 样本 ──────────────────────────────────────────────────────
@@ -565,6 +566,94 @@ describe('runFixCommand 真修（每次写盘审批 + fail-closed）', () => {
     expect(out.text).toContain('concertoai snapshot list');
     expect(out.text).toContain('concertoai snapshot clean');
     expect(out.text).not.toContain('snapshot restore');
+  });
+
+  // ── 成本回执（K15）────────────────────────────────────────
+  //
+  // `fix` 是「每错每轮一次模型调用」的花钱大户，却从来不报花费；
+  // 复验时只能靠余额差猜，而余额 2 位小数 + 结算延迟 = 恒差 0（K15）。
+  // 这里钉住：有 client 就打真数，量不到就说量不到，没 client 就一行都不打。
+
+  it('★ 有 client → 结束时报本次消耗（真数，不是估算）', async () => {
+    await withWorkspace('export const a = bar;\n', async ({ cwd }) => {
+      const out = collector();
+      const metered = {
+        ...(fakeClient(
+          JSON.stringify({
+            file: 'src/foo.ts',
+            search: 'export const a = bar;',
+            replace: 'export const a = foo;',
+          }),
+        ) as object),
+        usageTotals: () => ({
+          ...emptyUsageTotals(),
+          calls: 2,
+          input: 5000,
+          output: 300,
+          cacheHit: 1000,
+          cost: 0.0091,
+          measured: true,
+        }),
+      } as never;
+      let fixed = false;
+      const code = await runFixCommand({
+        cwd,
+        isTTY: true,
+        ask: async () => 'y',
+        client: metered,
+        model: 'deepseek-v4-flash',
+        requestApproval: () => {
+          fixed = true;
+          return true;
+        },
+        runVerify: async () =>
+          fixed ? { ok: true, ...VERIFY_PASS } : { ok: false, ...TYPE_MISSING_IMPORT },
+        runLintFix: async () => ({ ok: true }),
+        log: out.log,
+        logErr: (line) => out.errors.push(line),
+      });
+      expect(code).toBe(0);
+      expect(out.text).toContain('本次消耗');
+      expect(out.text).toContain('2 次调用');
+      expect(out.text).toContain('¥0.0091');
+    });
+  });
+
+  it('★ client 不上报 usage → 明说「未能统计」，不伪造 ¥0', async () => {
+    await withWorkspace('export const a = bar;\n', async ({ cwd }) => {
+      const out = collector();
+      const code = await runFixCommand({
+        cwd,
+        isTTY: true,
+        autoApprove: true,
+        client: fakeClient('{}'),
+        model: 'deepseek-v4-flash',
+        requestApproval: () => false,
+        runVerify: async () => ({ ok: false, ...TYPE_MISSING_IMPORT }),
+        runLintFix: async () => ({ ok: true }),
+        log: out.log,
+        logErr: (line) => out.errors.push(line),
+      });
+      expect(code).toBe(1);
+      expect(out.text).toContain('未能统计');
+      expect(out.text).not.toContain('¥0');
+    });
+  });
+
+  it('没有 client（纯 lint:fix 路径）→ 不打成本行（本来没花钱）', async () => {
+    const out = collector();
+    const code = await runFixCommand({
+      cwd: process.cwd(),
+      isTTY: true,
+      ask: async () => 'y',
+      runVerify: async () => ({ ok: true, ...VERIFY_PASS }),
+      runLintFix: async () => ({ ok: true }),
+      log: out.log,
+      logErr: (line) => out.errors.push(line),
+    });
+    expect(code).toBe(0);
+    expect(out.text).not.toContain('本次消耗');
+    expect(out.text).not.toContain('未能统计');
   });
 });
 

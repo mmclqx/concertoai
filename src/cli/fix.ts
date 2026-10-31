@@ -45,11 +45,13 @@ import {
   type VerifyStage,
 } from '../loop/self-heal';
 import { DeepSeekClient, type ModelClient } from '../model/client';
+import { readUsageTotals } from '../model/usage-tally';
 import { SNAPSHOT_ROOT } from '../orchestrator/transaction';
 import type { ApprovalRequest } from '../tools/registry';
 import { resolveModel } from './common';
 import { promptLine } from './prompt';
 import { formatSelfHealReport } from './slash/self-heal';
+import { formatUsageLine } from './usage-line';
 
 // ── 常量 ──────────────────────────────────────────────────────
 
@@ -363,6 +365,11 @@ export async function runFixCommand(options: FixCommandOptions): Promise<number>
 
   for (const line of formatSelfHealReport(result).split('\n')) {
     log(line);
+  }
+  // ── 成本回执（K15）：self-heal 每轮每错都可能调一次模型，这里打一次总账 ──
+  // 没有 client（纯 lint:fix 路径）时一个 token 都没花，不打这行。
+  if (client !== undefined) {
+    log(formatUsageLine(readUsageTotals(client), t().usage));
   }
   if (result.passed) {
     return 0;

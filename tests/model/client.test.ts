@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { ChatCompletionChunk } from '../../src/model/client';
 import { DeepSeekClient, readSseEvents, TimeoutError } from '../../src/model/client';
+import { costFor } from '../../src/model/models';
 
 /** 构造一个 SSE 事件行（单条 data，以空行收尾）。 */
 function chunkEvent(delta: Record<string, unknown>, finishReason: string | null = null): string {
@@ -11,6 +12,23 @@ function chunkEvent(delta: Record<string, unknown>, finishReason: string | null 
     created: 0,
     model: 'deepseek-v4-flash',
     choices: [{ index: 0, delta, finish_reason: finishReason, logprobs: null }],
+  };
+  return `data: ${JSON.stringify(payload)}\n\n`;
+}
+
+/**
+ * 构造一个**带 usage** 的 SSE 事件行（DeepSeek 把 usage 挂在最后一个 chunk 上）。
+ *
+ * K15 的记账点就在这个字段上，所以它必须能被夹具独立控制 —— 用 `chunkEvent` 拼不出来。
+ */
+function usageEvent(usage: Record<string, number>, finishReason: string | null = 'stop'): string {
+  const payload = {
+    id: 'chatcmpl-1',
+    object: 'chat.completion.chunk',
+    created: 0,
+    model: 'deepseek-v4-flash',
+    choices: [{ index: 0, delta: {}, finish_reason: finishReason, logprobs: null }],
+    usage,
   };
   return `data: ${JSON.stringify(payload)}\n\n`;
 }
@@ -356,5 +374,131 @@ describe('DeepSeekClient.streamChat', () => {
       name: 'ApiError',
       status: 401,
     });
+  });
+});
+
+/**
+ * usage 记账（K15）：`DeepSeekClient` 是**唯一**捕获 usage 的地方。
+ *
+ * ## 为什么这些断言值钱
+ *
+ * 修 K15 之前，产品层从来没有把「这次花了多少」交出来，脚本只能拿余额差去猜，
+ * 而余额只有 2 位小数 + 结算延迟 → 实测花 ¥2.11 仍打印「差 0」，熔断闸门全程静默。
+ * 所以这里不仅要断言「记到了数」，还要断言**「记不到时敢说记不到」**：
+ * `measured: false` 才是让调用方闭嘴说「未统计」的那根开关。
+ */
+describe('DeepSeekClient usage 记账（K15）', () => {
+  const AT = new Date('2026-10-31T10:00:00+08:00');
+
+  it('探针通电：带 usage 的流真的被记下来（未记账则后续断言全是空转）', async () => {
+    const fetchImpl = vi.fn(
+      fakeFetch(async () =>
+        sseResponse([
+          chunkEvent({ content: '好' }),
+          usageEvent({ prompt_tokens: 1200, completion_tokens: 300, prompt_cache_hit_tokens: 200 }),
+          'data: [DONE]\n\n',
+        ]),
+      ),
+    );
+    const client = new DeepSeekClient({ apiKey: 'k', fetchImpl, now: () => AT });
+    // 记账前：没量过（不是「花了 0 元」）
+    expect(client.usageTotals().measured).toBe(false);
+    await collect(client.streamChat({ model: 'deepseek-v4-flash', messages: baseMessages }));
+    const totals = client.usageTotals();
+    expect(totals.measured).toBe(true);
+    expect(totals.calls).toBe(1);
+    expect(totals.input).toBe(1200);
+    expect(totals.output).toBe(300);
+    expect(totals.cacheHit).toBe(200);
+    expect(totals.cost).toBeCloseTo(costFor('deepseek-v4-flash', 1200, 300, 200, AT), 12);
+  });
+
+  it('无 usage 的流（mock / 老服务端）→ measured=false，绝不伪造 ¥0', async () => {
+    const fetchImpl = vi.fn(
+      fakeFetch(async () =>
+        sseResponse([chunkEvent({ content: 'x' }, 'stop'), 'data: [DONE]\n\n']),
+      ),
+    );
+    const client = new DeepSeekClient({ apiKey: 'k', fetchImpl, now: () => AT });
+    await collect(client.streamChat({ model: 'deepseek-v4-flash', messages: baseMessages }));
+    const totals = client.usageTotals();
+    expect(totals.measured).toBe(false);
+    expect(totals.calls).toBe(0);
+  });
+
+  it('计价用**本次请求的模型**，不是默认模型（串价会让复核口径失真）', async () => {
+    const fetchImpl = vi.fn(
+      fakeFetch(async () =>
+        sseResponse([
+          usageEvent({ prompt_tokens: 1_000_000, completion_tokens: 0 }),
+          'data: [DONE]\n\n',
+        ]),
+      ),
+    );
+    const client = new DeepSeekClient({ apiKey: 'k', fetchImpl, now: () => AT });
+    await collect(client.streamChat({ model: 'deepseek-v4-pro', messages: baseMessages }));
+    expect(client.usageTotals().cost).toBeCloseTo(
+      costFor('deepseek-v4-pro', 1_000_000, 0, 0, AT),
+      12,
+    );
+  });
+
+  it('未定价模型：token 记下、金额标为未计价（不许把 0 当全款）', async () => {
+    const fetchImpl = vi.fn(
+      fakeFetch(async () =>
+        sseResponse([usageEvent({ prompt_tokens: 10, completion_tokens: 5 }), 'data: [DONE]\n\n']),
+      ),
+    );
+    const client = new DeepSeekClient({ apiKey: 'k', fetchImpl, now: () => AT });
+    await collect(client.streamChat({ model: 'custom-endpoint-model', messages: baseMessages }));
+    const totals = client.usageTotals();
+    expect(totals.input).toBe(10);
+    expect(totals.priced).toBe(false);
+    expect(totals.unknownModels).toEqual(['custom-endpoint-model']);
+  });
+
+  it('多次调用累加（审查的 5 个子代理共用同一 client）', async () => {
+    const fetchImpl = vi.fn(
+      fakeFetch(async () =>
+        sseResponse([
+          usageEvent({ prompt_tokens: 100, completion_tokens: 10 }),
+          'data: [DONE]\n\n',
+        ]),
+      ),
+    );
+    const client = new DeepSeekClient({ apiKey: 'k', fetchImpl, now: () => AT });
+    for (let i = 0; i < 3; i += 1) {
+      await collect(client.streamChat({ model: 'deepseek-v4-flash', messages: baseMessages }));
+    }
+    const totals = client.usageTotals();
+    expect(totals.calls).toBe(3);
+    expect(totals.input).toBe(300);
+    expect(totals.output).toBe(30);
+  });
+
+  it('请求失败（401）不产生账单，也不会把 total 变成 NaN', async () => {
+    const fetchImpl = vi.fn(
+      fakeFetch(async () => new Response('{"error":{"message":"bad key"}}', { status: 401 })),
+    );
+    const client = new DeepSeekClient({ apiKey: 'bad', maxRetries: 0, fetchImpl, now: () => AT });
+    await expect(
+      collect(client.streamChat({ model: 'deepseek-v4-flash', messages: baseMessages })),
+    ).rejects.toMatchObject({ name: 'ApiError' });
+    const totals = client.usageTotals();
+    expect(totals.measured).toBe(false);
+    expect(Number.isFinite(totals.cost)).toBe(true);
+  });
+
+  it('resetUsageTotals 清零（「分两段统计」的出口，回到未量过）', async () => {
+    const fetchImpl = vi.fn(
+      fakeFetch(async () =>
+        sseResponse([usageEvent({ prompt_tokens: 10, completion_tokens: 1 }), 'data: [DONE]\n\n']),
+      ),
+    );
+    const client = new DeepSeekClient({ apiKey: 'k', fetchImpl, now: () => AT });
+    await collect(client.streamChat({ model: 'deepseek-v4-flash', messages: baseMessages }));
+    expect(client.usageTotals().measured).toBe(true);
+    client.resetUsageTotals();
+    expect(client.usageTotals().measured).toBe(false);
   });
 });

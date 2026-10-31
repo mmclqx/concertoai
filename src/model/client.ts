@@ -9,6 +9,8 @@
  * - abort：外部 AbortSignal 可随时中断，中断原因原样上抛且不重试。
  */
 
+import { type UsageMetered, UsageTally, type UsageTotals } from './usage-tally';
+
 export const DEEPSEEK_BASE_URL = 'https://api.deepseek.com';
 
 /** 发送给 API 的最小消息形态（T7 的 loop/types 会做统一映射）。 */
@@ -101,6 +103,13 @@ export interface DeepSeekClientOptions {
   retryDelayMs?: number;
   /** 测试注入点。默认 globalThis.fetch。 */
   fetchImpl?: typeof fetch;
+  /**
+   * 时钟（K15）：usage 就地计价时按「本次请求发生时刻」取价格档位。
+   *
+   * 默认 `() => new Date()`；测试注入固定时刻，避免「白天高峰价 / 夜间空闲价」
+   * 的时间依赖型 flaky（与 `providers/deepseek.ts` 的 `now` 同口径）。
+   */
+  now?: () => Date;
 }
 
 export class ApiError extends Error {
@@ -223,13 +232,21 @@ function isRetryable(error: unknown, signal?: AbortSignal): boolean {
   return false;
 }
 
-export class DeepSeekClient implements ModelClient {
+export class DeepSeekClient implements ModelClient, UsageMetered {
   private readonly apiKey: string;
   private readonly baseUrl: string;
   private readonly timeoutMs: number;
   private readonly maxRetries: number;
   private readonly retryDelayMs: number;
   private readonly fetchImpl: typeof fetch;
+  private readonly now: () => Date;
+  /**
+   * 成本计量累加器（K15）：**唯一**捕获 usage 的点。
+   *
+   * 为什么在 client：4 条花钱链路（loop / autofix / commit-message / self-heal）
+   * 拿到的都是同一个 client 实例，单点累加就能覆盖全部，不需要各自透传。
+   */
+  private readonly tally = new UsageTally();
 
   constructor(options: DeepSeekClientOptions) {
     this.apiKey = options.apiKey;
@@ -238,6 +255,22 @@ export class DeepSeekClient implements ModelClient {
     this.maxRetries = options.maxRetries ?? 2;
     this.retryDelayMs = options.retryDelayMs ?? 500;
     this.fetchImpl = options.fetchImpl ?? globalThis.fetch;
+    this.now = options.now ?? (() => new Date());
+  }
+
+  /**
+   * 本次 client 生命周期内的累计用量与成本（纯数据快照）。
+   *
+   * 拿不到 usage 时 `measured === false`：调用方必须说「未统计」，
+   * 不能把 0 当成「免费」报给用户。
+   */
+  usageTotals(): UsageTotals {
+    return this.tally.snapshot();
+  }
+
+  /** 清零累计（产品侧暂不使用；保留给「分两段统计」的场景）。 */
+  resetUsageTotals(): void {
+    this.tally.reset();
   }
 
   /**
@@ -289,7 +322,10 @@ export class DeepSeekClient implements ModelClient {
           if (data === '[DONE]') {
             return;
           }
-          yield JSON.parse(data) as ChatCompletionChunk;
+          const chunk = JSON.parse(data) as ChatCompletionChunk;
+          // K15：usage 就地记账（在 yield 之前记，用户中断也已产生的 token 不会漏账）
+          this.recordUsage(chunk, params.model);
+          yield chunk;
         }
       } catch (error) {
         // 流中中断统一为 AbortError，便于上层区分「用户中断」与「网络错误」；非中断错误原样上抛。
@@ -300,6 +336,14 @@ export class DeepSeekClient implements ModelClient {
       }
       return;
     }
+  }
+
+  /** 记录单个 chunk 携带的 usage（绝大多数 chunk 没有，只管记录不改变流）。 */
+  private recordUsage(chunk: ChatCompletionChunk, model: string): void {
+    if (chunk.usage === undefined || chunk.usage === null) {
+      return;
+    }
+    this.tally.add(chunk.usage, model, this.now());
   }
 
   private async fetchWithTimeout(

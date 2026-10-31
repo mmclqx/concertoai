@@ -44,6 +44,8 @@ import {
 } from '../../src/cli/review';
 import { setLocale } from '../../src/i18n';
 import { zh } from '../../src/i18n/zh';
+import type { ModelClient } from '../../src/model/client';
+import { emptyUsageTotals, type UsageTotals } from '../../src/model/usage-tally';
 import {
   ALL_DIMENSIONS,
   type AutoFixOptions,
@@ -191,6 +193,8 @@ function harness(params: {
     requestApproval?: (request: ApprovalRequest) => Promise<boolean> | boolean;
     runVerify?: () => Promise<{ passed: boolean }>;
     ask?: (question: string) => Promise<string | undefined>;
+    /** 注入模型客户端（只有「成本回执」用例需要：其余用例一律零模型调用）。 */
+    client?: ModelClient;
   };
 }): RunContext {
   const lines: string[] = [];
@@ -213,6 +217,7 @@ function harness(params: {
       ...(args.requestApproval !== undefined ? { requestApproval: args.requestApproval } : {}),
       ...(args.runVerify !== undefined ? { runVerify: args.runVerify } : {}),
       ...(args.ask !== undefined ? { ask: args.ask } : {}),
+      ...(args.client !== undefined ? { client: args.client } : {}),
       runGit: git.list,
       engine,
       log: (line) => lines.push(line),
@@ -923,5 +928,80 @@ describe('薄包装护栏（G6：无第二套审查解析）', () => {
     // 也不许自己起子进程跑 verify / lint（体检只有一处来源：check.ts）
     expect(source).not.toContain('execSync');
     expect(source).not.toContain('npm run verify');
+  });
+});
+
+// ── 成本回执（K15）：审查花了多少，报告末尾要说清楚 ────────────
+
+/**
+ * `review` 是**单次最贵**的动词（5 个审查子代理并行 + 可选 `--fix` 逐条调模型），
+ * 却原来一个 token 数都不报。复验时脚本只能靠余额差猜，而余额只有 2 位小数 +
+ * 结算延迟 → 实测花 ¥2.11 仍打印「差 0」，超 ¥1 熔断闸门从未响过（K15）。
+ *
+ * 这组用例钉住三条：
+ * 1. 有计量能力的 client → 打真数（调用次数 / token / 金额），并出现在结论之后；
+ * 2. 量不到 → 说「未能统计」，**不出现 ¥0**（假 0 会让闸门和用户同时误判「没花钱」）；
+ * 3. 没有 client（引擎全部注入）→ 一行都不打，不给所有调用方添噪音。
+ */
+describe('成本回执（K15）', () => {
+  /** 造一个「会上报 usage」的假 client（真调用一律不会发生）。 */
+  function meteredClient(totals: UsageTotals): ModelClient {
+    return {
+      // 本组用例不真跑模型：流一出即结束（调用方也不会消费它）
+      // biome-ignore lint/correctness/useYield: 假实现，故意不产出
+      async *streamChat() {
+        return;
+      },
+      usageTotals: () => totals,
+    } as ModelClient;
+  }
+
+  const TOTALS: UsageTotals = {
+    ...emptyUsageTotals(),
+    calls: 6,
+    input: 9123,
+    output: 812,
+    cacheHit: 2048,
+    cost: 0.0135,
+    measured: true,
+  };
+
+  it('★ 有 client → 报告末尾打真数（调用次数 / token / 金额）', async () => {
+    const ctx = harness({
+      engine: fakeEngine(makeReport()).engine,
+      args: { client: meteredClient(TOTALS) },
+    });
+    const code = await ctx.run();
+    expect(code).toBe(0);
+    const text = ctx.text();
+    expect(text).toContain('本次消耗');
+    expect(text).toContain('6 次调用');
+    expect(text).toContain('输入 9123');
+    expect(text).toContain('¥0.0135');
+    // 位置：必须在本命令自己的结论之后（用户先看结论，再看花费）
+    const verdictAt = ctx.lines.findIndex((line) => line.includes('结论：'));
+    const costAt = ctx.lines.findIndex((line) => line.includes('本次消耗'));
+    expect(verdictAt).toBeGreaterThan(-1);
+    expect(costAt).toBeGreaterThan(verdictAt);
+  });
+
+  it('★ 量不到（client 不上报 usage）→ 说「未能统计」，不出现 ¥0', async () => {
+    const plain: ModelClient = {
+      // biome-ignore lint/correctness/useYield: 假实现，故意不产出
+      async *streamChat() {
+        return;
+      },
+    };
+    const ctx = harness({ engine: fakeEngine(makeReport()).engine, args: { client: plain } });
+    await ctx.run();
+    expect(ctx.text()).toContain('未能统计');
+    expect(ctx.text()).not.toContain('¥0');
+  });
+
+  it('没有 client（引擎注入）→ 不打成本行（不制造无意义噪音）', async () => {
+    const ctx = harness({ engine: fakeEngine(makeReport()).engine });
+    await ctx.run();
+    expect(ctx.text()).not.toContain('本次消耗');
+    expect(ctx.text()).not.toContain('未能统计');
   });
 });

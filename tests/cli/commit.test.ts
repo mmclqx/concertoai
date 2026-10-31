@@ -39,6 +39,7 @@ import { DICTS, fmt, setLocale } from '../../src/i18n';
 import { zh } from '../../src/i18n/zh';
 import type { VerifyStage } from '../../src/loop/self-heal';
 import type { ModelClient } from '../../src/model/client';
+import { emptyUsageTotals, type UsageTotals } from '../../src/model/usage-tally';
 
 // ── 假 git（记录每一次调用）──────────────────────────────────
 
@@ -702,5 +703,68 @@ describe('薄包装护栏（G6）', () => {
     await fail.run();
     expect(pass.text()).not.toContain('Unexpected any');
     expect(fail.text()).toContain('Unexpected any');
+  });
+});
+
+// ── 成本回执（K15）：这次花了多少，在审批之前就说清楚 ──────────
+
+/**
+ * 带计量能力的 fake 客户端（`ModelClient & UsageMetered`）。
+ *
+ * 原来 `commit` 只报「将要花多少」（`estimateCommitTokens` 估算），
+ * 事后花了多少没人知道 —— 于是脚本只能靠余额差猜，而余额只有 2 位小数（K15）。
+ * 这组用例钉住两件事：**真花了就打真数**、**量不到就说量不到**。
+ */
+function fakeMeteredClient(texts: readonly string[], totals: UsageTotals): ModelClient {
+  const base = fakeClient(texts);
+  return {
+    ...base,
+    usageTotals: () => totals,
+  } as ModelClient;
+}
+
+describe('成本回执（K15）', () => {
+  it('模型调用后打真数（含调用次数 / token / 金额），且在审批提示之前', async () => {
+    const ctx = harness({
+      client: fakeMeteredClient(['feat(cli): x'], {
+        ...emptyUsageTotals(),
+        calls: 1,
+        input: 3210,
+        output: 120,
+        cacheHit: 1000,
+        cost: 0.0037,
+        measured: true,
+      }),
+    });
+    const code = await ctx.run();
+    expect(code).toBe(0);
+    const text = ctx.text();
+    expect(text).toContain('本次消耗');
+    expect(text).toContain('输入 3210');
+    expect(text).toContain('¥0.0037');
+    // 位置：成本行必须出现在 message 展示与审批提问之前
+    // （用户先知道这次花了多少，再决定要不要这条提交）
+    const costAt = ctx.lines.findIndex((line) => line.includes('本次消耗'));
+    const messageAt = ctx.lines.indexOf(zh.commit.messageTitle);
+    expect(costAt).toBeGreaterThan(-1);
+    expect(messageAt).toBeGreaterThan(-1);
+    expect(costAt).toBeLessThan(messageAt);
+    // 审批提问确实问过（走 ask，不经过 log）
+    expect(ctx.askCalls).toContain(zh.commit.confirmPrompt);
+  });
+
+  it('★ 量不到（客户端不上报 usage）→ 明说「未能统计」，不伪造 ¥0', async () => {
+    const ctx = harness({ client: fakeClient(['feat(cli): x']) });
+    await ctx.run();
+    const text = ctx.text();
+    expect(text).toContain('未能统计');
+    expect(text).not.toContain('¥0');
+  });
+
+  it('没配 Key（无 client）→ 一行成本回执都不打（本来就没花钱）', async () => {
+    const ctx = harness({});
+    await ctx.run();
+    expect(ctx.text()).not.toContain('本次消耗');
+    expect(ctx.text()).not.toContain('未能统计');
   });
 });

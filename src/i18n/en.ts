@@ -1004,6 +1004,18 @@ export const en = {
     line2: '  Common: /plan plan-first · /review code review · /workflow run workflows',
     line3: '  Health check: concertoai doctor · Quit: Ctrl+C (session saved)',
   },
+  /**
+   * Cost receipt (K15): printed once by each spending verb (review / commit / fix).
+   * Numbers come from locally accumulated response usage (model/usage-tally.ts),
+   * not from a pre-call estimate. When usage is unavailable we say "unknown" —
+   * never a fake ¥0 that reads as "this run was free".
+   */
+  usage: {
+    line: '💰 This run: {calls} call(s) | input {input} / output {output} tokens (cache hit {cacheHit}) ≈ ¥{cost}',
+    unpriced:
+      '💰 This run: {calls} call(s) | input {input} / output {output} tokens ≈ ¥{cost} ({models} has no price entry; that part is uncounted)',
+    unmeasured: 'ℹ️  Token usage was not reported by the current client — cost unknown.',
+  },
   help: {
     // v5.0 T14: slim first screen — Quick start → Common → Interactive → Advanced.
     // No more flat list of all commands (21 lines = 46 total, beginners drowned).
