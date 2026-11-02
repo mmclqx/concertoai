@@ -8,6 +8,18 @@
 
 ## [Unreleased]
 
+### Fixed — K17：端点点不通时被渲染成「程序崩溃 + 堆栈」（🟡，2026-11-02 修复）
+
+> 事故形态：**把「你的配置/网络问题」呈现成「程序崩了」**。配了自定义端点（企业代理 / 自建网关 / Ollama）而端点连不上时，`concertoai run` 的用户看到的是 `[ConcertoAI] 未处理的 Promise 拒绝，详情见 ~/.concertoai/crash.log` + `TypeError: fetch failed` 的 undici 堆栈，**stdout 一个字都没有**，也没有一句说明「连不上哪个端点」——用户会去查软件 bug，而真实原因是自己配的 `baseUrl` / 网络 / 代理。
+
+- **网络层错误归一**（`src/model/client.ts` 新增 `EndpointUnreachableError` + `normalizeFetchError()` / `isNetworkFailure()`）：`fetch` 的失败原因藏在 `cause` 链里（`ECONNREFUSED` / `ENOTFOUND` / `bad port`），现在统一归一成带事实字段（`url` / `baseUrl` / `detail`）的单一类型，`streamChat` 两处（首字节前失败、流中中断）都是这个唯一归一点；判据三层（`cause` 链错误码 / **整条 `cause` 链 message 特征串** / 已是归一类型），**刻意不收裸 `TypeError`**——程序 bug 不该被说成「你端点配错了」
+- **重试语义不变**：`isRetryable` 改认归一类型（网络失败仍 `maxRetries = 2` → 共 3 次请求）；归一后还以 `TypeError` 出现的只剩程序 bug，不再对 bug 重试（旧逻辑「见 TypeError 就重试」= 把失败拖慢 3 倍）
+- **措辞单点化**（`src/cli/fatal-report.ts` 新增 `describeFatalError()`）：可归因的外部失败（端点不可达 / 连接超时）→「连不上哪个端点 + 底层原因 + 下一步」、**不打堆栈也不提 crash.log**；其余（含 `ApiError`、未知异常）→ 消息 + 堆栈 + crash.log（行为与旧版一致）。模型层只带事实、人话在 CLI 层按 locale 渲染
+- **入口一律兜底**（`src/cli/index.ts`）：`run` / `plan` 补包 `safeAction`（此前 7 个打模型的入口只包了 5 个，这两个的异常会以 `unhandledRejection` 落到 crash-handler）；兜底前缀 `errors.commandFailed` 入字典（此前硬编码中文，`LUMEN_LOCALE=en` 用户拿到「命令执行失败: Cannot reach…」中英混排）
+- **测试**：`tests/model/client-network-error.test.ts`（12，含 **bad port 形态** 与「程序 bug 的 TypeError 不重试」）、`tests/cli/fatal-report.test.ts`（7）、`tests/e2e/endpoint-unreachable.test.ts`（4，真进程 spawn + 隔离 `HOME`）
+- **回归**：`npm run verify` 全绿 **162 文件 / 2367 用例**（基线 2344，+23）；`LUMEN_LOCALE=en` 换环境复跑全绿。真端到端（假 Key + `127.0.0.1:59999` 死端口 + 隔离 `HOME`）`run` / `plan` 退出码 1、stderr 含完整 URL、无 `TypeError` / `at async` / `crash.log` / 「软件缺陷」，`crash.log` 未被创建；en 环境整段无 CJK（并反向自证 zh 下有中文）
+- **踩坑**：`docs/09-踩坑记录/2026-11-02-端点不可达被渲染成程序崩溃.md`（归一只认 `cause.code` 漏掉 `bad port`；e2e 的 `shell: true` 重新分词让用例变成测参数解析）；决策 D88
+
 ### Fixed — K14：三个花钱动词静默换端点（🟡，2026-10-31 修复）
 
 > 事故形态：**配置被静默忽略，钱花在别处**。用户在 `config.providers.deepseek.baseUrl` 里配了企业代理 / 自建中转 / Ollama 网关后，`chat` / `run` / `plan` 走配置的端点，而 `review` / `commit` / `fix` 仍打 `api.deepseek.com` —— 要么 401，要么按官方价**真花钱**，且 K15 新加的成本回执会据此报出「不是这笔账」的金额（本地 Ollama 真实成本 0，回执写「≈¥0.06」）。

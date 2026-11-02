@@ -131,6 +131,160 @@ export class TimeoutError extends Error {
   }
 }
 
+/**
+ * 端点不可达（K17）：网络层失败（连接被拒 / DNS 失败 / 连接被重置 / 连接中断）的**唯一**归一类型。
+ *
+ * ## 为什么必须归一（不许把 `TypeError: fetch failed` 原样抛给用户）
+ *
+ * K17 实测：`config.providers.deepseek.baseUrl = http://127.0.0.1:9/v1` 时，`concertoai run`
+ * 的用户看到的是 `[ConcertoAI] 未处理的 Promise 拒绝` + `undici` 内部帧堆栈，**没有一句中文
+ * 说明「连不上你配的端点」**——把「你的配置/网络问题」呈现成「程序崩了」。根因就是 `fetch`
+ * 在 Node 里对所有网络层失败统一抛 `TypeError('fetch failed')`（真实原因藏在 `cause` 链里），
+ * 客户端原样上抛，上层拿不到任何可归因的结构化信息。
+ *
+ * ## 刻意保留结构化字段，文案在 CLI 层渲染
+ *
+ * `url` / `detail` 是**事实**（打到哪个 URL、底层错误码是什么），`message` 只是技术兜底串
+ * （日志与 TUI 用）；面向用户的措辞由 `src/cli/fatal-report.ts` 走 i18n 渲染——模型层
+ * 不 import i18n（保持 `src/model` 无 i18n 依赖的分层）。
+ */
+export class EndpointUnreachableError extends Error {
+  /** 本次请求的完整 URL（含 `/chat/completions`）：用户据此判断是哪个端点。 */
+  readonly url: string;
+  /** 端点根地址（= 生效的 `baseUrl`）：提示用户去改哪一项配置。 */
+  readonly baseUrl: string;
+  /** 底层原因（`ECONNREFUSED` / `ENOTFOUND` / 原始 message 兜底）。 */
+  readonly detail: string;
+
+  constructor(url: string, baseUrl: string, detail: string, cause?: unknown) {
+    super(`无法连接 ${url}（${detail}）`, cause !== undefined ? { cause } : undefined);
+    this.name = 'EndpointUnreachableError';
+    this.url = url;
+    this.baseUrl = baseUrl;
+    this.detail = detail;
+  }
+}
+
+/**
+ * 系统 / undici 的网络层错误码集合（用于把 `cause` 链里的原因认出来）。
+ *
+ * 只收「连不上端点」这一类：DNS 解析失败、连接被拒、连接被重置、不可达、连接超时。
+ * **不收** `ERR_INVALID_URL` 这类「配置写错但不是网络」的码——那属于另一类问题，
+ * 混进来会让用户按网络去排查一个拼错的 URL。
+ */
+const NETWORK_ERROR_CODES = new Set([
+  'ECONNREFUSED',
+  'ECONNRESET',
+  'ENOTFOUND',
+  'EAI_AGAIN',
+  'ETIMEDOUT',
+  'EHOSTUNREACH',
+  'ENETUNREACH',
+  'EPIPE',
+  'UND_ERR_CONNECT_TIMEOUT',
+  'UND_ERR_SOCKET',
+  'UND_ERR_CLOSED',
+]);
+
+/**
+ * `fetch` 网络层失败的 message 特征（没有 `code` 时的兜底判据：Node 的 undici 报
+ * `fetch failed`，流被切断时报 `terminated`，代理场景可能报 `socket hang up`）。
+ *
+ * 刻意**不收**裸 `TypeError`：程序 bug 也是 `TypeError`，把它归成「你端点配错了」
+ * 就是「把软件缺陷的失败说成用户的错」（AGENTS 第 33 条的反面）。
+ */
+const NETWORK_MESSAGE_PATTERN =
+  /fetch failed|terminated|socket hang up|other side closed|ECONNREFUSED|ECONNRESET|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|getaddrinfo/i;
+
+/** 沿 `cause` 链找第一个错误码（深度上限 4，防自引用）。 */
+function findNetworkCode(error: unknown, depth = 0): string | undefined {
+  if (depth > 4 || error === null || typeof error !== 'object') {
+    return undefined;
+  }
+  const code = (error as { code?: unknown }).code;
+  if (typeof code === 'string' && NETWORK_ERROR_CODES.has(code)) {
+    return code;
+  }
+  return findNetworkCode((error as { cause?: unknown }).cause, depth + 1);
+}
+
+/** 沿 `cause` 链拼出可读原因：优先错误码，取不到就用最内层 message，再兜底外层 message。 */
+function describeCause(error: unknown, depth = 0): string {
+  if (depth > 4 || error === null || typeof error !== 'object') {
+    return '未知原因';
+  }
+  const code = (error as { code?: unknown }).code;
+  if (typeof code === 'string' && code !== '') {
+    return code;
+  }
+  const cause = (error as { cause?: unknown }).cause;
+  if (cause !== undefined) {
+    return describeCause(cause, depth + 1);
+  }
+  const message = (error as { message?: unknown }).message;
+  return typeof message === 'string' && message !== '' ? message : '未知原因';
+}
+
+/**
+ * 把整条 `cause` 链上的 message 拼成一段文本（判据用）。
+ *
+ * 为什么必须看**整条链**而不只看最内层：Node 的 undici 对不同失败给的层级不同——
+ * 连接被拒时 `TypeError('fetch failed')` → `cause.code = 'ECONNREFUSED'`；
+ * 而「端口被 fetch 规范列为禁用端口」时是 `TypeError('fetch failed')` → `cause = Error('bad port')`
+ * （**没有 code**）。只认最内层 message 会把后者漏成「未知异常」（K17 实测踩到：
+ * 探针用 `127.0.0.1:9` 正好撞上 bad port 分支，第一版归一没命中）。
+ */
+function collectCauseText(error: unknown, depth = 0): string {
+  if (depth > 4 || error === null || typeof error !== 'object') {
+    return '';
+  }
+  const message = (error as { message?: unknown }).message;
+  const own = typeof message === 'string' ? message : '';
+  const inner = collectCauseText((error as { cause?: unknown }).cause, depth + 1);
+  return inner === '' ? own : `${own} ${inner}`;
+}
+
+/**
+ * 判断一个异常是否属于「网络层连不上端点」。
+ *
+ * 判据三层，任一命中即算（**不靠类型猜**）：
+ * ① `cause` 链里出现已知网络错误码；② `cause` 链（含外层）的 message 命中网络特征串；
+ * ③ 已经是归一后的类型。
+ *
+ * 明确排除：`ApiError`（服务端有回应，属另一类）、`TimeoutError`（有自己的语义与文案）、
+ * `AbortError`（用户主动中断，不是缺陷也不是配置问题）。
+ */
+export function isNetworkFailure(error: unknown): boolean {
+  if (error instanceof EndpointUnreachableError) {
+    return true;
+  }
+  if (error instanceof ApiError || error instanceof TimeoutError) {
+    return false;
+  }
+  if (!(error instanceof Error) || error.name === 'AbortError') {
+    return false;
+  }
+  if (findNetworkCode(error) !== undefined) {
+    return true;
+  }
+  return NETWORK_MESSAGE_PATTERN.test(collectCauseText(error));
+}
+
+/**
+ * 把网络层异常归一成 `EndpointUnreachableError`（非网络异常原样返回）。
+ *
+ * 调用点只有两处（都在 `streamChat`）：① 响应头返回前的 fetch 失败（重试判据之前归一，
+ * 保证 `isRetryable` 看到的是归一后的类型）；② 响应体流读取失败（流中断时不重试，直接归一上抛）。
+ * 这样「归一」只写一遍，四个花钱链路（loop / autofix / commit-message / self-heal）与
+ * 三动词（review / commit / fix）拿到的都是同一个可归因类型。
+ */
+export function normalizeFetchError(error: unknown, url: string, baseUrl: string): unknown {
+  if (!isNetworkFailure(error) || error instanceof EndpointUnreachableError) {
+    return error;
+  }
+  return new EndpointUnreachableError(url, baseUrl, describeCause(error), error);
+}
+
 interface SseState {
   /** 当前事件累积的 data 行（多行以 \n 拼接）。 */
   pendingData: string;
@@ -219,6 +373,13 @@ function isRetryableStatus(status: number): boolean {
   return status === 429 || status >= 500;
 }
 
+/**
+ * 失败是否可重试。
+ *
+ * K17：网络层失败归一成 `EndpointUnreachableError` 之后仍**必须可重试**（语义与原
+ * `TypeError` 等价，重试次数一次没变）；同时刻意不再「见 `TypeError` 就重试」——
+ * 归一后还能以 `TypeError` 出现的只剩**程序 bug**，对 bug 重试只是把失败拖慢 3 倍。
+ */
 function isRetryable(error: unknown, signal?: AbortSignal): boolean {
   if (signal?.aborted) {
     return false;
@@ -226,7 +387,7 @@ function isRetryable(error: unknown, signal?: AbortSignal): boolean {
   if (error instanceof ApiError) {
     return isRetryableStatus(error.status);
   }
-  if (error instanceof TimeoutError || error instanceof TypeError) {
+  if (error instanceof TimeoutError || error instanceof EndpointUnreachableError) {
     return true;
   }
   return false;
@@ -296,8 +457,11 @@ export class DeepSeekClient implements ModelClient, UsageMetered {
       try {
         response = await this.fetchWithTimeout(url, body, params.signal);
       } catch (error) {
-        if (attempt >= this.maxRetries || !isRetryable(error, params.signal)) {
-          throw error;
+        // K17：先归一（`TypeError: fetch failed` → `EndpointUnreachableError`），再判重试——
+        // 这样「重试耗尽后抛给用户的那个错误」与「可重试判据看到的错误」是同一个类型。
+        const normalized = normalizeFetchError(error, url, this.baseUrl);
+        if (attempt >= this.maxRetries || !isRetryable(normalized, params.signal)) {
+          throw normalized;
         }
         attempt += 1;
         await sleep(this.retryDelayMs * 2 ** (attempt - 1));
@@ -328,11 +492,12 @@ export class DeepSeekClient implements ModelClient, UsageMetered {
           yield chunk;
         }
       } catch (error) {
-        // 流中中断统一为 AbortError，便于上层区分「用户中断」与「网络错误」；非中断错误原样上抛。
+        // 流中中断统一为 AbortError，便于上层区分「用户中断」与「网络错误」；
+        // 非中断错误先做网络层归一（K17：断流也是「连不上端点」的一种，原文案无从归因）。
         if (params.signal?.aborted) {
           throw new DOMException('The operation was aborted.', 'AbortError');
         }
-        throw error;
+        throw normalizeFetchError(error, url, this.baseUrl);
       }
       return;
     }

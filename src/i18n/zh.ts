@@ -189,6 +189,21 @@ export const zh = {
     // v4.1 T2.1：未知异常「下一步」指引（safeAction 兜底）
     fatalNextStep:
       '💡 下一步：运行 `concertoai doctor` 检查环境；若为软件缺陷请附带上方错误报告反馈。',
+    /**
+     * 顶层兜底出口的前缀（`safeAction`）：`[ConcertoAI] 命令执行失败: <消息>`。
+     *
+     * K17 收尾时发现它一直硬编码中文——于是 `LUMEN_LOCALE=en` 的用户拿到的是
+     * 「命令执行失败: Cannot reach the model endpoint…」这种中英混排。前缀与消息分开，
+     * 才能保证「同一句话与用户选的语言一致」。
+     */
+    commandFailed: '命令执行失败',
+    // ═══ v5.0 K17：端点点不通 → 说清「哪个端点 + 怎么办」，而不是堆栈砸屏 ═══
+    // 由 `src/cli/fatal-report.ts` 渲染（唯一出口）：message 是「事实」（打到哪、底层原因），
+    // hint 是「下一步」。两者都由这里出，别再在命令里各写一份。
+    endpointUnreachable: '连不上模型端点：{url}（{detail}）',
+    endpointTimeout: '连接模型端点超时：{message}',
+    endpointUnreachableHint:
+      '💡 下一步：核对配置文件里的 providers.<provider>.baseUrl 是否写对，并确认网络 / 代理能到达该端点；本地模型（ollama / 自建网关）请确认服务已启动。',
   },
   // v5.0 T1：缺 API Key 中文引导（命令片段见 src/cli/api-key-guide.ts，跨语言一致故不入字典）
   missingApiKey: {

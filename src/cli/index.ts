@@ -10,6 +10,7 @@ import { VERSION } from '../version';
 import { buildMissingApiKeyGuide } from './api-key-guide';
 import { parseMaxTurnsOption, resolveApiKeyWithConfigFallback } from './common';
 import { installCrashHandlers } from './crash-handler';
+import { describeFatalError } from './fatal-report';
 import { checkNodeVersion, isNodeWarnSuppressed } from './node-version';
 import { makePermissionConfirm as makeCliPermissionConfirm } from './plugin';
 // v5.0 K14：`fix` 动词按运行时判断是否需要 Key（`needsVerbApiKey` 是纯函数，
@@ -252,18 +253,36 @@ program.hook('preAction', async () => {
 // v4.1 P0-1：支持带参 action（workflow <action> [param]）——commander 会把
 // action 参数（含 options）依次传入；泛型保留回调参数类型（TS strict 下
 // unknown[] 与具体参数类型不兼容）。
+//
+// ═══ v5.0 K17：这里从「一律打堆栈」改成「先分类再决定打什么」 ═══
+//
+// 旧行为的问题（K17 实测）：`concertoai run` 端点点不通时，用户看到
+// `未处理的 Promise 拒绝 + TypeError: fetch failed + undici 堆栈`——把「端点/网络配错」
+// 呈现成「程序崩了」，且没有一句中文说明连不上哪个端点。分类与措辞在
+// `./fatal-report`（唯一渲染点），本函数只负责「写 stderr + 退出码」。
+//
+// 三条不变量：
+// ① 可归因的外部失败（端点不可达 / 连接超时）→ 一句人话 + 下一步，**不打堆栈**，
+//    也**不提 crash.log**（这类错误不写崩溃日志，提了就是假线索）；
+// ② 未知异常（疑似缺陷）→ 消息 + 堆栈 + crash.log 路径 + 通用下一步，行为与旧版一致；
+// ③ 退出码恒为 1（fail-closed），不因错误类型而变。
 function safeAction<A extends unknown[]>(fn: (...args: A) => Promise<void>): (...args: A) => void {
   return (...args: A) => {
     fn(...args).catch((err: unknown) => {
-      const msg = err instanceof Error ? err.message : String(err);
-      const stack = err instanceof Error ? err.stack : undefined;
-      process.stderr.write(`\n[ConcertoAI] 命令执行失败: ${msg}\n`);
-      if (stack !== undefined) {
-        process.stderr.write(`${stack}\n`);
+      const report = describeFatalError(err);
+      // 前缀也走 i18n：此前硬编码中文，`LUMEN_LOCALE=en` 的用户会看到
+      // 「命令执行失败: Cannot reach the model endpoint…」这种中英混排（K17 收尾实测）。
+      process.stderr.write(`\n[ConcertoAI] ${t().errors.commandFailed}: ${report.message}\n`);
+      if (report.showStack) {
+        const stack = err instanceof Error ? err.stack : undefined;
+        if (stack !== undefined) {
+          process.stderr.write(`${stack}\n`);
+        }
+        process.stderr.write(`详情见 ${crashLogPath()}\n`);
+        process.stderr.write(`${t().errors.fatalNextStep}\n`);
+      } else if (report.hint !== undefined && report.hint !== '') {
+        process.stderr.write(`${report.hint}\n`);
       }
-      process.stderr.write(`详情见 ${crashLogPath()}\n`);
-      // v4.1 T2.1：未知异常「下一步」指引（用户反馈 1：出错不知道怎么办）
-      process.stderr.write(`${t().errors.fatalNextStep}\n`);
       process.exit(1);
     });
   };
@@ -362,25 +381,30 @@ program
   .option('--lang <zh|en>', t().cli.lang.description)
   .option('-t, --max-turns <n>', t().cli.maxTurns.description)
   .action(
-    async (
-      task: string,
-      options: { model?: string; autoApprove?: boolean; lang?: string; maxTurns?: string },
-    ) => {
-      const { runTask } = await import('./run');
-      // 先解析 -t：写错时立刻提示（不等 Key 解析完才让用户知道）
-      const maxTurns = readMaxTurnsOption(options.maxTurns);
-      await runTask({
-        cwd: process.cwd(),
-        apiKey: await getApiKey(),
-        task,
-        model: options.model,
-        autoApprove: options.autoApprove ?? false,
-        lang: options.lang,
-        provider: program.opts().provider,
-        // v5.0 架构修正：-t/--max-turns（CLI > config.maxTurns > 默认 50）
-        maxTurns,
-      });
-    },
+    // v5.0 K17：`run` 此前**没有**包 safeAction —— 模型调用失败（端点不可达等）会以
+    // unhandledRejection 落到 crash-handler，用户看到的是 `TypeError: fetch failed` 堆栈。
+    // 包上以后走统一的 fatal-report 渲染（说清连不上哪个端点 + 下一步）。
+    safeAction(
+      async (
+        task: string,
+        options: { model?: string; autoApprove?: boolean; lang?: string; maxTurns?: string },
+      ) => {
+        const { runTask } = await import('./run');
+        // 先解析 -t：写错时立刻提示（不等 Key 解析完才让用户知道）
+        const maxTurns = readMaxTurnsOption(options.maxTurns);
+        await runTask({
+          cwd: process.cwd(),
+          apiKey: await getApiKey(),
+          task,
+          model: options.model,
+          autoApprove: options.autoApprove ?? false,
+          lang: options.lang,
+          provider: program.opts().provider,
+          // v5.0 架构修正：-t/--max-turns（CLI > config.maxTurns > 默认 50）
+          maxTurns,
+        });
+      },
+    ),
   );
 
 program
@@ -391,25 +415,28 @@ program
   .option('--lang <zh|en>', t().cli.lang.description)
   .option('-t, --max-turns <n>', t().cli.maxTurns.description)
   .action(
-    async (
-      task: string,
-      options: { model?: string; autoApprove?: boolean; lang?: string; maxTurns?: string },
-    ) => {
-      const { runPlan } = await import('./plan');
-      // 先解析 -t：写错时立刻提示（不等 Key 解析完才让用户知道）
-      const maxTurns = readMaxTurnsOption(options.maxTurns);
-      await runPlan({
-        cwd: process.cwd(),
-        apiKey: await getApiKey(),
-        task,
-        model: options.model,
-        autoApprove: options.autoApprove ?? false,
-        lang: options.lang,
-        provider: program.opts().provider,
-        // v5.0 架构修正：-t/--max-turns（CLI > config.maxTurns > 默认 50）
-        maxTurns,
-      });
-    },
+    // v5.0 K17：与 `run` 同因——`plan` 也没包 safeAction（计划阶段的模型调用失败会直接砸堆栈）。
+    safeAction(
+      async (
+        task: string,
+        options: { model?: string; autoApprove?: boolean; lang?: string; maxTurns?: string },
+      ) => {
+        const { runPlan } = await import('./plan');
+        // 先解析 -t：写错时立刻提示（不等 Key 解析完才让用户知道）
+        const maxTurns = readMaxTurnsOption(options.maxTurns);
+        await runPlan({
+          cwd: process.cwd(),
+          apiKey: await getApiKey(),
+          task,
+          model: options.model,
+          autoApprove: options.autoApprove ?? false,
+          lang: options.lang,
+          provider: program.opts().provider,
+          // v5.0 架构修正：-t/--max-turns（CLI > config.maxTurns > 默认 50）
+          maxTurns,
+        });
+      },
+    ),
   );
 
 program

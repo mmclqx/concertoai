@@ -205,6 +205,15 @@ export const en = {
     // v4.1 T2.1: next-step guidance for unknown exceptions (safeAction fallback)
     fatalNextStep:
       '💡 Next: run `concertoai doctor` to check the environment; if it is a software defect, report the error above.',
+    /** SafeAction prefix: `[ConcertoAI] Command failed: <message>` (K17: was hardcoded Chinese). */
+    commandFailed: 'Command failed',
+    // ═══ v5.0 K17: endpoint unreachable → say "which endpoint + what to do" instead of a stack trace ═══
+    // Rendered only by `src/cli/fatal-report.ts`: message = fact (where we sent the request, why it
+    // failed), hint = next step. Both live here so commands never write their own copy.
+    endpointUnreachable: 'Cannot reach the model endpoint: {url} ({detail})',
+    endpointTimeout: 'Timed out connecting to the model endpoint: {message}',
+    endpointUnreachableHint:
+      '💡 Next: check providers.<provider>.baseUrl in the config file, and make sure your network / proxy can reach that endpoint; for local models (ollama / self-hosted gateways) confirm the service is running.',
   },
   // v5.0 T1: missing API key guide (command snippets live in src/cli/api-key-guide.ts)
   missingApiKey: {
