@@ -8,6 +8,8 @@ import { fmt, resolveLocale, setLocale, t } from '../i18n';
 import { configPath, crashLogPath, migrateLegacyHome } from '../store/paths';
 import { VERSION } from '../version';
 import { buildMissingApiKeyGuide } from './api-key-guide';
+// v5.0 C1：commander 参数解析错误的本地化渲染（唯一出口，见该模块头注释）
+import { isCommanderErrorShape, renderCliError } from './cli-errors';
 import { parseMaxTurnsOption, resolveApiKeyWithConfigFallback } from './common';
 import { installCrashHandlers } from './crash-handler';
 import { describeFatalError } from './fatal-report';
@@ -98,6 +100,30 @@ setLocale(resolveLocale(process.env.LUMEN_LOCALE || process.env.LANG));
 const program = new Command();
 
 program.name('concertoai').description(t().cli.description).version(VERSION);
+
+// ═══ v5.0 C1：commander 的参数解析错误改由我们按 locale 渲染 ═══
+//
+// ## 为什么必须写在「注册任何子命令之前」
+//
+// 这是实测踩到的第一个坑（初版写在文件末尾）：commander 的 `copyInheritedSettings()`
+// 在 **`.command()` 创建子命令的那一刻**把父命令的 `_outputConfiguration` / `_exitCallback`
+// **复制一份**给子命令。写在末尾 → 子命令拿到的是默认设置 → `concertoai run`（缺参）
+// 仍打印英文并直接 `process.exit(1)`，只有根级选项（`-p`）才走我们的渲染。
+// 症状极有迷惑性：**一半中文一半英文**，看起来像"某些 code 没映射"。
+//
+// ## 两步各自管什么（少一步就漏一半）
+//
+// 1. `configureOutput({ outputError })` 抑制 commander 的**报错文案**
+//    （`error: unknown option …` 走的就是这条通道）。帮助正文走 `outputHelp` → `writeErr`，
+//    **不受影响** —— 子命令 `help({ error: true })` 的帮助照旧打印。
+// 2. `exitOverride()` 把 `process.exit` 换成抛 `CommanderError`，让文件末尾的 catch 拿到
+//    `code` / `message` / `exitCode` 三个事实 —— 否则 commander 直接干掉进程，我们没机会说话。
+//
+// 最终打印由 `renderCliError()`（`src/cli/cli-errors.ts`）单点负责，**不要**在这里拼文案。
+program.configureOutput({
+  outputError: () => {},
+});
+program.exitOverride();
 
 // ═══ v5.0 T14：--help 首屏精简（分层，不再平铺 21 条命令） ═══
 
@@ -1062,4 +1088,38 @@ program
     process.exitCode = 1;
   });
 
-program.parse();
+// ═══ v5.0 C1：commander 错误的唯一 catch 点（配置本身在文件上部，见那里的说明） ═══
+
+/**
+ * commander 错误出口（C1 的唯一 catch 点）。
+ *
+ * 三条硬纪律：
+ * - **只吞 commander 的错**：非 commander 形态原样上抛（程序 bug 不许伪装成「你参数写错了」）；
+ * - **退出码原样透传**：`--version` / `--help` 仍是 0，各类报错仍是 1（`exitOverride` 后最容易坏的就是这个）；
+ * - **`text` 为空就不打印**：help / version 已由 commander 自己输出，补一句就是噪音。
+ */
+function reportCommanderError(error: unknown): void {
+  if (!isCommanderErrorShape(error)) {
+    throw error;
+  }
+  const rendered = renderCliError(error, {
+    commandNames: program.commands.flatMap((command) =>
+      [command.name(), command.alias()].filter((name): name is string => typeof name === 'string'),
+    ),
+    // 只取顶层长选项：子命令选项不在此列（给不出可信候选时宁可说「查看用法」，
+    // 也不能建议一个当前命令不接受的选项），理由见 cli-errors.ts 模块头注释。
+    optionFlags: program.options
+      .map((option) => option.long)
+      .filter((flag): flag is string => typeof flag === 'string'),
+  });
+  if (rendered.text !== '') {
+    process.stderr.write(`${rendered.text}\n`);
+  }
+  process.exitCode = rendered.exitCode;
+}
+
+try {
+  program.parse();
+} catch (error) {
+  reportCommanderError(error);
+}

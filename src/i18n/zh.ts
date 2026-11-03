@@ -197,6 +197,25 @@ export const zh = {
      * 才能保证「同一句话与用户选的语言一致」。
      */
     commandFailed: '命令执行失败',
+    // ═══ v5.0 C1：commander 参数解析错误的本地化文案 ═══
+    // 渲染点是 `src/cli/cli-errors.ts`（唯一出口）：它把 commander 的英文 message
+    // 解析成**事实**（哪个 flag / 缺什么 / 期望几个），再从这里取措辞。
+    // 因此这里的模板只负责「怎么说」，不许写死任何具体 flag 名（那会变成第二份事实源）。
+    cliArgs: {
+      unknownCommand: '没有这个命令：{name}',
+      unknownOption: '没有这个选项：{flag}',
+      tooManyArguments: '{command} 只接受 {expected} 个参数，收到 {received} 个：{details}',
+      missingArgument: '缺少必需参数：{name}',
+      optionMissingValue: '选项 {flag} 缺少参数值',
+      missingRequiredOption: '缺少必需选项：{flag}',
+      conflictingOption: '选项冲突：{flag} 不能与 {other} 同时使用',
+      invalidArgument: '参数不合法：{message}',
+      didYouMean: '你是不是想输入 {candidates}？',
+      seeAllCommands: '查看全部命令：concertoai --help --all',
+      seeHelp: '查看用法：concertoai --help',
+      /** commander 换了措辞 / 未知 code 的回落模板：**保住原始事实**，不许空白。 */
+      unknown: '参数解析失败：{message}',
+    },
     // ═══ v5.0 K17：端点点不通 → 说清「哪个端点 + 怎么办」，而不是堆栈砸屏 ═══
     // 由 `src/cli/fatal-report.ts` 渲染（唯一出口）：message 是「事实」（打到哪、底层原因），
     // hint 是「下一步」。两者都由这里出，别再在命令里各写一份。

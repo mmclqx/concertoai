@@ -207,6 +207,25 @@ export const en = {
       '💡 Next: run `concertoai doctor` to check the environment; if it is a software defect, report the error above.',
     /** SafeAction prefix: `[ConcertoAI] Command failed: <message>` (K17: was hardcoded Chinese). */
     commandFailed: 'Command failed',
+    // ═══ v5.0 C1: localization for commander argument-parse errors ═══
+    // Rendered only by `src/cli/cli-errors.ts`: it parses commander's English message into
+    // **facts** (which flag, what is missing, expected vs received) and takes the wording here.
+    // So these templates only phrase things — never bake a concrete flag name into them.
+    cliArgs: {
+      unknownCommand: 'No such command: {name}',
+      unknownOption: 'No such option: {flag}',
+      tooManyArguments: '{command} takes {expected} argument(s) but got {received}: {details}',
+      missingArgument: 'Missing required argument: {name}',
+      optionMissingValue: 'Option {flag} is missing its value',
+      missingRequiredOption: 'Missing required option: {flag}',
+      conflictingOption: 'Conflicting options: {flag} cannot be used with {other}',
+      invalidArgument: 'Invalid argument: {message}',
+      didYouMean: 'Did you mean {candidates}?',
+      seeAllCommands: 'See all commands: concertoai --help --all',
+      seeHelp: 'See usage: concertoai --help',
+      /** Fallback when commander changes its wording / code is unknown: keep the raw facts. */
+      unknown: 'Failed to parse arguments: {message}',
+    },
     // ═══ v5.0 K17: endpoint unreachable → say "which endpoint + what to do" instead of a stack trace ═══
     // Rendered only by `src/cli/fatal-report.ts`: message = fact (where we sent the request, why it
     // failed), hint = next step. Both live here so commands never write their own copy.
