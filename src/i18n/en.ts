@@ -515,6 +515,17 @@ export const en = {
     real: 'actual',
     cacheHit: 'Cache hit',
   },
+  /**
+   * Price-tier labels (v5.0 K18 / D89).
+   *
+   * Previously a hardcoded Chinese ternary in `model/models.ts` `tierLabel()`, so en users
+   * saw "📊 Current DeepSeek V4 Flash 空闲价: …" — an all-English sentence with one Chinese
+   * label in the middle. Wording follows the tier-as-time-window reading (peak hours).
+   */
+  tierLabel: {
+    peak: 'peak hours',
+    offpeak: 'off-peak hours',
+  },
   session: {
     resumed: 'Resumed session {id} ({count} messages)',
     newSession: 'New session',

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { priceTierSummary, printBalance, runBalanceCommand } from '../../src/cli/balance';
 import { configureHolidayCalendar, resetHolidayCalendar } from '../../src/core/holidays';
+import { setLocale } from '../../src/i18n';
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -128,6 +129,26 @@ describe('priceTierSummary（v5.0 T7：当前时段真实单价）', () => {
     const line = priceTierSummary(PEAK_AT);
     expect(line).not.toContain('未配置法定节假日表');
     expect(line).toContain('空闲价');
+  });
+});
+
+// ── v5.0 K18：档位标注跟随 locale（本文件只钉「balance 这条链路」，
+//    双语矩阵与源码护栏在 tests/i18n/tier-label.test.ts）──
+describe('priceTierSummary 跟随 locale（v5.0 K18）', () => {
+  const OFFPEAK_AT = new Date(2026, 9, 28, 20, 0, 0); // 周三 20:00 → 空闲
+
+  afterEach(() => {
+    setLocale('zh'); // AGENTS：切过 en 必须复位，否则污染同进程其它用例
+  });
+
+  it('en 下整行零 CJK 且档位写 off-peak hours（同用例先自证 zh 下确有中文）', () => {
+    setLocale('zh');
+    expect(priceTierSummary(OFFPEAK_AT)).toMatch(/[\u4e00-\u9fff]/); // 探针通电
+
+    setLocale('en');
+    const line = priceTierSummary(OFFPEAK_AT);
+    expect(line).toContain('off-peak hours');
+    expect(line).not.toMatch(/[\u4e00-\u9fff]/);
   });
 });
 

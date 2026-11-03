@@ -8,6 +8,17 @@
 
 ## [Unreleased]
 
+### Fixed — K18：`en` 下价格档位标签仍是中文（🟢，2026-11-03 修复）
+
+> 事故形态：**模板全英文，唯独中间夹一个中文词**。`LUMEN_LOCALE=en` 时 `concertoai balance` 打出 `📊 Current DeepSeek V4 Flash 空闲价: input ¥1/M · cache hit ¥0.02/M · output ¥4.5/M` —— 一眼看去像「漏译一处」，实为**文案住在价格层**：`tierLabel()` 是 `src/model/models.ts` 里写死的中文三元表达式，被 5 个渲染点共用，而它与 locale 毫无关系。
+
+- **单一来源迁移**（D89）：`tierLabel()` 从 `src/model/models.ts` 迁到 `src/i18n/index.ts`，zh/en 词典各新增一段 `tierLabel: { peak, offpeak }`（zh `高峰价` / `空闲价`；en `peak hours` / `off-peak hours`）。`models.ts` 保持**零 i18n 依赖**——它只谈「价格与档位的事实」，不谈「怎么说」；`i18n` 侧用 `import type { PriceTier }` 单向类型引用（编译期擦除），不产生运行时环
+- **一处实现、四处受益**：`balance` / `/model` 状态 / `auto` 预设引导 / TUI 状态条统一从 i18n 取档位词，随 locale 一致切换（不新增第二份文案）
+- **顺带修**：zh 模板 `📊 当前{model} {tier}` 补空格 → `📊 当前 DeepSeek V4 Flash 空闲价`（en 侧本来就有空格，只有中文侧粘在一起）
+- **测试**：新增 `tests/i18n/tier-label.test.ts`（12 条）——zh/en 双语矩阵、en 整行**零 CJK**（**同一用例内先自证 zh 侧确有 CJK**，否则「空字符串」也满足无 CJK）、切 locale 立即生效（不缓存旧值）、`/model` 与 auto 引导同步跟随、源码护栏三条（`models.ts` 不得再出现 `高峰价/空闲价`、不得 `import '../i18n'`、四个调用点不得再从 `model/models` 取 `tierLabel`）+ **三条反向样本**自证护栏有牙；`tests/cli/balance.test.ts` 增 en 用例；**存量 zh 断言一条未改**（`setLocale` 在 `afterEach` 复位，AGENTS 全局状态隔离）
+- **回归**：`npm run verify` 全绿 **163 文件 / 2379 用例**（基线 2367，+12）；`LUMEN_LOCALE=en` 换环境复跑同数全绿
+- **未纳入（逐条挂账）**：`/model` 整段中文、`src/model/auto.ts` 整段中文、`StatusBar` 拼接串里的 `约` / 全角括号 / `元` —— 本轮只让**档位词**跟随 locale；一次改两个范围会让 verify 红了分不清是谁的锅
+
 ### Fixed — K17：端点点不通时被渲染成「程序崩溃 + 堆栈」（🟡，2026-11-02 修复）
 
 > 事故形态：**把「你的配置/网络问题」呈现成「程序崩了」**。配了自定义端点（企业代理 / 自建网关 / Ollama）而端点连不上时，`concertoai run` 的用户看到的是 `[ConcertoAI] 未处理的 Promise 拒绝，详情见 ~/.concertoai/crash.log` + `TypeError: fetch failed` 的 undici 堆栈，**stdout 一个字都没有**，也没有一句说明「连不上哪个端点」——用户会去查软件 bug，而真实原因是自己配的 `baseUrl` / 网络 / 代理。

@@ -9,8 +9,8 @@
 import type { DeepSeekBalance } from '../balance';
 import { fetchBalance } from '../balance';
 import { holidayCalendarStatus } from '../core/holidays';
-import { fmt, t } from '../i18n';
-import { getDefaultModel, priceFor, priceTierFor, tierLabel } from '../model/models';
+import { fmt, t, tierLabel } from '../i18n';
+import { getDefaultModel, priceFor, priceTierFor } from '../model/models';
 
 /** balance 命令选项。 */
 export interface BalanceCommandOptions {

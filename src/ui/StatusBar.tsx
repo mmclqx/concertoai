@@ -1,8 +1,7 @@
 import { Box, Text } from 'ink';
 
-import { t } from '../i18n';
+import { t, tierLabel } from '../i18n';
 import type { PriceTier } from '../model/models';
-import { tierLabel } from '../model/models';
 
 export interface StatusBarProps {
   model: string;

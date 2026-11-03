@@ -13,6 +13,7 @@
  * - 只对 deepseek 生效：本地/其他 Provider 的模型不在价格表内，切换无意义 → 明确拒绝并说明。
  */
 
+import { tierLabel } from '../../i18n';
 import type { ChatMessage } from '../../loop/types';
 import {
   AUTO_MODEL,
@@ -24,7 +25,7 @@ import {
   resolveAutoStartModel,
   switchDirection,
 } from '../../model/auto';
-import { getModel, listModels, priceFor, priceTierFor, tierLabel } from '../../model/models';
+import { getModel, listModels, priceFor, priceTierFor } from '../../model/models';
 
 /** 解析后的 /model 命令。 */
 export type SlashModelCommand =

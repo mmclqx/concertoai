@@ -78,6 +78,8 @@ export {
   RISK_LEVEL_WEIGHT,
   RISK_RULES,
 } from './core/risk-rules';
+// v5.0 K18 / D89：档位标注迁入 i18n（跟随 locale），公共 API 位置与签名保持不变
+export { tierLabel } from './i18n';
 export type { ZhDict } from './i18n/zh';
 export { fmt, zh } from './i18n/zh';
 export type { LoopEvent, LoopOptions, RunLoopResult } from './loop/loop';
@@ -129,7 +131,6 @@ export {
   MODEL_PROFILES,
   priceFor,
   priceTierFor,
-  tierLabel,
 } from './model/models';
 export {
   countMessageListTokens,

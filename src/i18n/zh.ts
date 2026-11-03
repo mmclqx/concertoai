@@ -483,6 +483,17 @@ export const zh = {
     real: '真实',
     cacheHit: '缓存命中',
   },
+  /**
+   * 价格档位标注（v5.0 K18 / D89）。
+   *
+   * 此前是 `model/models.ts` 里 `tierLabel()` 写死的中文三元表达式，于是 `en` 用户
+   * 看到的是「📊 Current DeepSeek V4 Flash 空闲价: …」——模板已切英文、只有档位词
+   * 不跟随 locale。文案归字典后，档位词与整行同语言。
+   */
+  tierLabel: {
+    peak: '高峰价',
+    offpeak: '空闲价',
+  },
   session: {
     resumed: '已恢复会话 {id}（{count} 条消息）',
     newSession: '新会话',
@@ -595,8 +606,9 @@ export const zh = {
     empty: '无余额信息',
     line: '💰 余额：{symbol}{total}',
     // v5.0 T7：当前时段真实单价（高峰/空闲标注）
+    // v5.0 K18：补「当前」与模型名之间的空格（原先「当前DeepSeek V4 Flash」，en 侧有空格）
     priceTier:
-      '📊 当前{model} {tier}：输入 ¥{input}/百万 · 缓存命中 ¥{cacheHit}/百万 · 输出 ¥{output}/百万',
+      '📊 当前 {model} {tier}：输入 ¥{input}/百万 · 缓存命中 ¥{cacheHit}/百万 · 输出 ¥{output}/百万',
     // v5.0 T7 修订：未配置节假日表时的如实提示（不静默算错）
     holidayNotConfigured:
       'ℹ️ 未配置法定节假日表（config.pricingHolidays）：节假日与调休日仍按「周一~周五 9-12 / 14-18」判断，可能显示错误档位。',

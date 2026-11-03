@@ -17,10 +17,11 @@
  * 所有函数纯函数、时间注入（`at`），可单测。
  */
 
+import { tierLabel } from '../i18n';
 import type { SessionTokenAssumption } from './cost';
 import { DEFAULT_SESSION_TOKENS } from './cost';
 import type { ModelProfile, PriceTier } from './models';
-import { costFor, getDefaultModel, getModel, listModels, priceTierFor, tierLabel } from './models';
+import { costFor, getDefaultModel, getModel, listModels, priceTierFor } from './models';
 
 /** config / CLI 中表示「自动预设」的保留值。 */
 export const AUTO_MODEL = 'auto';

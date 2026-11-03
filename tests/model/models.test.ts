@@ -10,7 +10,6 @@ import {
   listModels,
   priceFor,
   priceTierFor,
-  tierLabel,
 } from '../../src/model/models';
 
 // ── 固定时刻夹具（时间注入，绝不依赖真实当前时间；AGENTS R5）──
@@ -113,10 +112,8 @@ describe('priceTierFor：计价档位（纯函数 + 时间注入）', () => {
     expect(priceTierFor(new Date(2026, 9, 30, 10, 0, 0))).toBe('peak'); // 2026-10-30 周五
   });
 
-  it('tierLabel 双语标注', () => {
-    expect(tierLabel('peak')).toBe('高峰价');
-    expect(tierLabel('offpeak')).toBe('空闲价');
-  });
+  // 注：`tierLabel` 的断言已迁到 tests/i18n/tier-label.test.ts（v5.0 K18：
+  // 档位标注是用户可见文案，随 locale 变化，实现已从 model 层搬到 i18n 层）。
 
   // ── v5.0 T7 修订：计价档位必须排除法定节假日（用户核对官方规则后追加）──
   it('法定节假日（周三）→ 空闲档，成本与空闲价一致且低于同日高峰价', () => {

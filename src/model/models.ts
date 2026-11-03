@@ -108,10 +108,9 @@ export function priceFor(modelId: string, tier: PriceTier): PriceSet {
   return tier === 'peak' ? model.peak : model.offPeak;
 }
 
-/** 档位 → 中文标注（状态条 / balance 展示用）。 */
-export function tierLabel(tier: PriceTier): string {
-  return tier === 'peak' ? '高峰价' : '空闲价';
-}
+// 说明（v5.0 K18 / D89）：档位标注 `tierLabel()` 已迁到 `src/i18n/index.ts`——
+// 它输出的是**用户可见文案**，必须跟随 locale。本文件因此保持零 i18n 依赖，
+// 只负责「价格与档位的事实」，不负责「怎么说」。
 
 /**
  * 计算一次请求的成本（元）。

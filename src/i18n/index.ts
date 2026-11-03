@@ -6,6 +6,9 @@
  * - 用法：`import { fmt, t } from '../i18n'`，文案用 `t().errors.noApiKey`。
  */
 
+// 仅类型导入（编译期擦除）：让 tierLabel 的签名沿用价格层自己的类型，
+// 同时**不引入运行时环**（models.ts 不反向 import i18n，见 D89）。
+import type { PriceTier } from '../model/models';
 import { en } from './en';
 import type { ZhDict } from './zh';
 import { fmt, zh } from './zh';
@@ -42,4 +45,15 @@ export function setLocale(locale: Locale): void {
 /** 获取当前语言的文案字典。 */
 export function t(): Dict {
   return DICTS[currentLocale];
+}
+
+/**
+ * 价格档位 → 当前语言的标注（状态条 / balance / `/model` / auto 引导共用）。
+ *
+ * v5.0 K18 / D89：原先实现在 `model/models.ts`（写死「高峰价 / 空闲价」），
+ * 于是 `en` 用户的模板已切英文、唯独档位词仍是中文。文案是**呈现层事实**，
+ * 归 i18n 单一来源；价格层（models.ts）保持零 i18n 依赖。
+ */
+export function tierLabel(tier: PriceTier): string {
+  return tier === 'peak' ? t().tierLabel.peak : t().tierLabel.offpeak;
 }
