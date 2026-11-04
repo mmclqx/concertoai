@@ -167,6 +167,10 @@ export const zh = {
       project: '按已注册项目启动（等价 cd 到项目目录）',
       provider: '临时切换 Provider（本次进程生效；不写 config）',
     },
+    // v5.0 C2：`-V` / `-h` 是 commander 自动注册的**默认选项**，说明文字默认英文。
+    // 显式传文案后 `--help` 的选项表才不会有「两行英文夹在一堆中文里」。
+    versionOption: '输出版本号',
+    helpOption: '显示帮助',
   },
   errors: {
     noApiKey: '未找到 DEEPSEEK_API_KEY 环境变量，请先设置后再启动。',

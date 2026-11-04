@@ -182,6 +182,9 @@ export const en = {
       project: 'Start against a registered project (same as cd into its directory)',
       provider: 'Temporarily switch provider (this process only; config is not written)',
     },
+    /** v5.0 C2: `-V` / `-h` are commander's auto-registered default options (English by default). */
+    versionOption: 'output the version number',
+    helpOption: 'display help for command',
   },
   errors: {
     noApiKey: 'DEEPSEEK_API_KEY not found. Set it first, then start again.',

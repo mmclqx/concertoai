@@ -99,7 +99,16 @@ setLocale(resolveLocale(process.env.LUMEN_LOCALE || process.env.LANG));
 
 const program = new Command();
 
-program.name('concertoai').description(t().cli.description).version(VERSION);
+// v5.0 C2：`-V` / `-h` 两条**默认选项说明**由 commander 内置英文改为走字典。
+// 注意顺序：`helpOption()` 也必须**在注册子命令之前**调用 —— commander 的
+// `copyInheritedSettings()` 在 `.command()` 时把 `_helpOption` 一并复制给子命令
+// （与 C1 的 configureOutput / exitOverride 同一个时机坑，症状同样是「一半一半」：
+// 根级 `--help` 已中文、`concertoai plugin --help` 仍英文）。
+program
+  .name('concertoai')
+  .description(t().cli.description)
+  .version(VERSION, '-V, --version', t().cli.versionOption)
+  .helpOption('-h, --help', t().cli.helpOption);
 
 // ═══ v5.0 C1：commander 的参数解析错误改由我们按 locale 渲染 ═══
 //

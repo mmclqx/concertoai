@@ -346,6 +346,49 @@ describe('--help 跟随 locale（v5.0 T22 修复的存量缺陷：help 曾无视
   }, 300_000);
 });
 
+describe('默认选项说明跟随 locale（v5.0 C2：-V / -h 曾是 commander 内置英文）', () => {
+  let home: string;
+
+  beforeAll(() => {
+    home = mkdtempSync(path.join(os.tmpdir(), 'concertoai-help-options-'));
+  }, 300_000);
+
+  afterAll(() => {
+    rmSync(home, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+  });
+
+  it('zh 下 -V / -h 的说明来自字典，且不残留 commander 内置英文', () => {
+    const screen = flatten(runCliHelp(['--help'], home, 'zh'));
+    expect(screen).toContain(zh.cli.versionOption);
+    expect(screen).toContain(zh.cli.helpOption);
+    // 否定断言必须有正例兜底：这两串在 en 下**确实会出现**（见本 describe 第三条），
+    // 否则「zh 不含英文」可能只是因为这两串根本不存在于任何输出里（探针空转）。
+    expect(screen).not.toContain('output the version number');
+    expect(screen).not.toContain('display help for command');
+  }, 300_000);
+
+  it('子命令 --help 的 -h 说明也是中文（helpOption 必须写在注册子命令之前）', () => {
+    // 挡的真实退化：把 `.helpOption()` 挪到文件末尾 → 子命令在 `.command()` 那一刻
+    // 复制的是**默认设置**，于是根级已中文、`concertoai plugin --help` 仍是英文。
+    // 症状与 C1 的 configureOutput / exitOverride 是同一个时机坑，只是换了个表现面
+    // ——只断言根级 `--help` 的用例**抓不到**这个退化，必须真跑一条子命令。
+    const screen = flatten(runCliHelp(['plugin', '--help'], home, 'zh'));
+    expect(screen).toContain(zh.cli.helpOption);
+    expect(screen).not.toContain('display help for command');
+  }, 300_000);
+
+  it('en 下这两行保持 commander 生态的英文原文（正例：证明上面「zh 不含英文」没空转）', () => {
+    const screen = flatten(runCliHelp(['--help'], home, 'en'));
+    expect(screen).toContain(en.cli.versionOption);
+    expect(screen).toContain(en.cli.helpOption);
+    // en 侧刻意**不翻译**（`-V` / `-h` 的说明在英文语境里本就是这套措辞），
+    // 字面量钉死可以挡住「有人顺手把 en 也改成中文」或「改成别的英文说法」。
+    expect(screen).toContain('output the version number');
+    expect(screen).toContain('display help for command');
+    expect(screen).not.toContain(zh.cli.versionOption);
+  }, 300_000);
+});
+
 describe('对外定位一致性（v5.0 T22 定位重写）', () => {
   const readme = readFileSync(path.join(process.cwd(), 'README.md'), 'utf8');
   const cliSource = readFileSync(path.join(process.cwd(), 'src', 'cli', 'index.ts'), 'utf8');
