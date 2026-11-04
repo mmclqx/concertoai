@@ -114,6 +114,56 @@ describe('suggestSimilar（自己算，阈值经实测校准）', () => {
       expect(CTX.commandNames).toContain(candidate);
     }
   });
+
+  /**
+   * ## 否定面：乱敲的词不得匹配任何真实命令/选项
+   *
+   * 这条是 `editDistance` 漏 `+1` 事故（距离恒 0 ⇒ 相似度恒 1）的回归护栏。
+   * 事故当时的测试**有正例**（`docter → doctor`），却照样全绿——因为距离恒 0 的实现
+   * 对**任何**词都返回最近的候选，正例因此必然通过。教训：只有正例的测试，
+   * 与该 bug 面前没有测试等价。所以这里断言的是「**不**该出现的东西」。
+   *
+   * 案发形态（真进程实测）：`bogus-xyz` 被建议成 `balance`，`--bogus-opt` 一次给三个候选。
+   */
+  it('乱敲词在「命令+选项」全集里零候选（配变异探针验证有牙）', () => {
+    // 正例自证（探针通电）：同一次调用里先证明相似度**真的算过**，
+    // 否则「零候选」可能只是因为候选池根本没进来。
+    expect(suggestSimilar('docter', CTX.commandNames)).toEqual(['doctor']);
+
+    const pool = [...CTX.commandNames, ...CTX.optionFlags];
+    const garbage = [
+      'bogus-xyz',
+      'qqqqqq',
+      'zzzz',
+      'asdfgh',
+      'xyzzy',
+      '12345',
+      '--bogus-opt',
+      'wibble-wobble',
+      'chatzzzz',
+    ];
+    for (const word of garbage) {
+      expect(suggestSimilar(word, pool), `乱敲词「${word}」不得得到任何建议`).toEqual([]);
+      // 三个池子都要为空：只看全集会掩盖「命令池干净、选项池乱给」的半坏形态
+      expect(suggestSimilar(word, CTX.commandNames)).toEqual([]);
+      expect(suggestSimilar(word, CTX.optionFlags)).toEqual([]);
+    }
+  });
+
+  /**
+   * ## 反向自证：距离真的随编辑次数增长（不是恒 0）
+   *
+   * 上一条只钉「乱敲词 → 空」，理论上可被「一律返回空」的废实现假绿。
+   * 这里自证阶梯：同一候选 `chat`，距离 0/1 命中、距离 ≥3 落空——
+   * 三档同时成立，「恒 0」和「恒空」两种废实现都过不去。
+   */
+  it('同一候选上的相似阶梯：距离 0/1 命中、≥3 落空', () => {
+    expect(suggestSimilar('chat', ['chat'])).toEqual(['chat']); // 距离 0
+    expect(suggestSimilar('chats', ['chat'])).toEqual(['chat']); // 距离 1（插入）
+    expect(suggestSimilar('chatz', ['chat'])).toEqual(['chat']); // 距离 1（替换）
+    expect(suggestSimilar('chet', ['chat'])).toEqual(['chat']); // 距离 1（删除）
+    expect(suggestSimilar('czzz', ['chat'])).toEqual([]); // 距离 ≥3 ⇒ 落空
+  });
 });
 
 describe('renderCliError：各 code → 本地化文案（zh）', () => {
