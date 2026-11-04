@@ -8,6 +8,31 @@
 
 ## [Unreleased]
 
+### Fixed — C1：未知命令/未知选项走 commander 英文报错，且把「命令名不存在」说成「参数太多」（🟡，2026-11-04 修复）
+
+> 事故形态：**新用户最高频的失败路径，是全产品唯一没被 i18n 覆盖的一面，而且归因反了**。同一条命令的 `--help` 是中文，撞错时却全英文——用户会先怀疑「是不是我不懂这个工具」，而不是「命令名敲错了」。
+
+- **现象**（真进程，zh 默认环境）：`concertoai bogus-xyz` → `error: too many arguments. Expected 0 arguments but got 1: bogus-xyz.`；`concertoai --bogus-opt` → `error: unknown option '--bogus-opt'`。三条问题：① 全英文（违背「中文优先」定位）；② **说反了原因**（根命令有默认 action，命令名写错会落进 root 实参，commander 只能报「参数太多」，用户会以为自己少敲了语法）；③ 无下一步（不提示 `--help`、不列可用命令、无「你是不是想输入 x」）
+- **事实与措辞分离**（`src/cli/cli-errors.ts` 新增，与 K17 的 `fatal-report.ts` 同构）：`CommanderError.message` 是**事实来源**，只解析不改写；`renderCliError()` 是唯一渲染出口，`configureOutput` / `exitOverride` 只在 `src/cli/index.ts` 挂一次
+- **八类 code 逐一映射**（`unknownCommand` / `unknownOption` / `excessArguments` / `missingArgument` / `optionMissingArgument` / `missingMandatoryOptionValue` / `conflictingOption` / `invalidArgument`），`help` / `version` 视为成功路径只透传退出码（`--version` 仍 0、`help({error:true})` 仍 1）
+- **归类修正**：**顶层**多余参数按「未知命令」渲染（`退出：没有这个命令：bogus-xyz` + 建议），**子命令**多余参数仍说清期望/实收（`run` 真的参数给多了）——同一个 `excessArguments` code 两种事实分开说
+- **建议自己算**（`suggestSimilar()`，Damerau–Levenshtein，不复用 commander 内部实现）：阈值经**真机校准**为「距离 ≤2 且相似度 >0.5」。初版照抄 commander 的 ≤3 时，`bogus-xyz` 被建议成 `balance`、`--bogus-opt` 一次给三个候选——**乱猜比不猜更坏**；收紧后 `docter → doctor` / `chek → check` / `--providr → --provider` 仍命中，而乱敲词老实说「查看用法」
+- **不吞事实**：未知 code 或 commander 改了措辞 → 回落原文，**宁可英文，不许空白**；候选**只取顶层选项**——`CommanderError` 不携带「哪个命令报的错」这个事实，给子命令乱建议选项是误导
+- **挂载时机坑（实测踩到）**：`configureOutput` / `exitOverride` 必须写在**注册任何子命令之前**——commander 在 `.command()` 时复制父设置快照，写在文件末尾会变成「根级中文、子命令英文」的一半一半（很像「某些 code 没映射」，实则是时机）
+- **测试**：`tests/cli/cli-errors.test.ts`（22，纯函数矩阵：形态判断 / flags 收敛 / 建议算法**否定面 + 相似阶梯** / 八类 code 的 zh 文案 / 未知 code 回落 / 退出码透传 / en 零 CJK 且**同用例先自证 zh 有 CJK**）+ `tests/cli/commander-errors.test.ts`（12，真进程 tsx + 隔离 `HOME` + 显式 `LUMEN_LOCALE`：七种错误形态 zh 中文、en 零 CJK、退出码恒 1；`--version` / `--help` / 子命令 help 仍 0）
+- **回归**：`npm run verify` 全绿 **165 文件 / 2416 用例**；`LUMEN_LOCALE=en` 换环境复跑同数全绿
+- **决策**：D90（CLI 参数错误也是「给用户看的文案」）；踩坑：`docs/09-踩坑记录/2026-11-04-编辑距离漏加一导致建议乱猜.md`
+
+### Fixed — C2：`-V, --version` / `-h, --help` 两行说明混英文（🟡，2026-11-05 修复）
+
+> 事故形态：**中文模板中间夹两句英文**。主 help 与**所有子命令** help 的末尾都是 `-V, --version  output the version number` / `-h, --help  display help for command` —— commander 默认串，不影响可用，但破坏「全中文」一致性，且是用户第一次接触工具时看到的东西。
+
+- **修法**：`.version(VERSION, '-V, --version', t().cli.versionOption)` + `.helpOption('-h, --help', t().cli.helpOption)`；zh/en 词典各 +2 键（zh `输出版本号` / `显示帮助`；en 保留 commander 生态措辞 `output the version number` / `display help for command`）
+- **必须在注册子命令之前**：`.version()` / `.helpOption()` 走的是与 C1 同一个 `copyInheritedSettings` 时机，挪到文件末尾 ⇒ 子命令仍是英文。护栏用 **`plugin --help`**（子命令级）断言中文，专门挡这种「主 help 改好了、子命令没跟上」的退化
+- **测试**：`tests/cli/help.test.ts` +3（zh 两行来自字典且不残留英文；子命令 help 也中文；en 下保留英文原文——作 zh 否定断言的正例自证，否则「字典没生效、模板兜底」两种状态分不清）
+- **实测**（真进程，`LUMEN_LOCALE` 显式钉死）：zh `-V, --version  输出版本号` / `-h, --help  显示帮助`（`plugin --help` 同）；en 保留原文；两语言 `--version` 均 exit 0
+- **回归**：`npm run verify` **165 文件 / 2416 用例**全绿；`LUMEN_LOCALE=en npm run verify` 同数全绿
+
 ### Fixed — K18：`en` 下价格档位标签仍是中文（🟢，2026-11-03 修复）
 
 > 事故形态：**模板全英文，唯独中间夹一个中文词**。`LUMEN_LOCALE=en` 时 `concertoai balance` 打出 `📊 Current DeepSeek V4 Flash 空闲价: input ¥1/M · cache hit ¥0.02/M · output ¥4.5/M` —— 一眼看去像「漏译一处」，实为**文案住在价格层**：`tierLabel()` 是 `src/model/models.ts` 里写死的中文三元表达式，被 5 个渲染点共用，而它与 locale 毫无关系。

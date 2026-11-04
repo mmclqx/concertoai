@@ -444,6 +444,8 @@ MCP 服务故障
 
 | D89 | **用户可见文案一律归 i18n 单一来源：价格层只谈「事实」，不谈「怎么说」**（v5.0 K18）：`tierLabel(tier)` 的**唯一实现**在 `i18n/index.ts`（读 `t().tierLabel.{peak,offpeak}`），`model/models.ts` 保持**零 i18n 依赖**（仅 `i18n` 侧 `import type { PriceTier }` 单向类型引用，编译期擦除、无运行时环）；4 个渲染点（`balance` / `/model` 状态 / `auto` 引导 / `StatusBar`）统一从 i18n 取，不写第二份 | 同病：**文案住在非呈现层**，于是「模板已切语言、唯独那个词不切」——不报错、单测还可能全绿（旧用例断言的正是那句写死的中文）。判据一句话：这个字符串是**给用户看的**还是**层内事实**？前者必须进字典，且断言要**双向**（zh 侧有 CJK + en 侧零 CJK，同用例内先自证 zh 侧真输出中文，否则空字符串也满足「无 CJK」） | `src/i18n/index.ts` + `src/i18n/{zh,en}.ts`（新增 `tierLabel` 段）+ `src/model/models.ts`（删实现）+ `src/cli/balance.ts` / `src/cli/slash/model.ts` / `src/model/auto.ts` / `src/ui/StatusBar.tsx`（改 import）+ `tests/i18n/tier-label.test.ts` |
 
+| D90 | **CLI 参数解析错误也是「给用户看的文案」：commander 的英文原文一律不直接落地，归因与措辞收在 `cli-errors.ts` 单点；识别不了的 code 就回落原文（不吞事实）；`-V/-h` 说明随 locale**（v5.0 C1 + C2）：`src/cli/cli-errors.ts` 的 `renderCliError()` 是**唯一**渲染出口，`configureOutput` / `exitOverride` 只在 `src/cli/index.ts` 挂一次；判定顺序 = 先按 `err.code` 分类（未知命令 / 未知选项 / 参数过多 / 缺参数 / 选项冲突…），分类不了就原样透出 commander 的 message；`suggestSimilar()` **自己算** Damerau 距离（不复用 commander 内部实现），阈值「距离 ≤2 且相似度 >0.5」经真机校准（乱猜比不猜更坏）；`-V/-h` 两行说明入字典 `t().cli.{versionOption,helpOption}`，且 `.version()` / `.helpOption()` **必须在注册子命令之前**调用（`copyInheritedSettings` 只在建子命令时拷贝一次，挪到末尾子命令就不跟随；护栏用例断言 `plugin --help` 也是中文） | 同病根：**「工具默认文案」被当成了公共文案**——commander 的 `error: too many arguments. Expected 0 arguments but got 1: bogus-xyz.` 既不是中文，还把「命令名不存在」说成「参数太多」（归因反了），而这是新用户最高频的失败路径；同类病在 help 里表现为「模板中文、两个选项说明夹英文」。判据一句话：**这句话会出现在用户屏幕上吗？**答是就必须过字典（D89 同源）。附带一条测试纪律：**只有正例的测试对「距离恒 0」毫无牙**——`docter → doctor` 在漏 `+1` 的实现下照样通过，因此必须有**否定面**用例（乱敲词不得匹配任何真实命令）+ 变异探针自证（去掉 `+1` 必红） | `src/cli/cli-errors.ts`（新增）+ `src/cli/index.ts` + `src/i18n/{zh,en}.ts` + `tests/cli/cli-errors.test.ts` + `tests/cli/commander-errors.test.ts`（新增）+ `tests/cli/help.test.ts` |
+
 > **D88 注（v5.0 K18 用户裁决）**：`src/model/auto.ts` 是 model 层**唯一的呈现型模块例外**——它本来就在给用户拼中文句子（`buildAutoPolicyGuide` / `buildUpgradeHint`），所以允许它 `import '../i18n'`（档位词随 locale），其**整段中文入字典另挂账**（`TASKS.md`）。即 D88 的「模型层只带事实、人话在 CLI 层按 locale 渲染」对它是**待收敛目标**，不是已达成状态。
 
 ---
@@ -516,6 +518,7 @@ concertoai/
 │   │   ├── prompt.ts    共享行输入（v4.0.1 + v4.1 T1.2）：promptLine 捕获 AbortError → undefined（Ctrl+C 视为正常取消），非 TTY → undefined，其他错误原样上抛；可选 timeoutMs（AbortController 竞速，缺省不超时）供 F 等待态 60s 超时；workflow/plugin/provider 三处统一
 │   │   ├── usage-line.ts 成本回执行（v5.0 K15）：`formatUsageLine` 是 review / commit / fix 三个花钱动词**唯一**的渲染入口——「量到了给金额（6 位小数）/ 量不到说未统计」，绝不用 ¥0 冒充「没花钱」
 │   │   ├── fatal-report.ts 顶层致命错误渲染（v5.0 K17）：`describeFatalError()` 把异常分成「可归因的外部失败（端点不可达 / 连接超时）→ 一句话 + 下一步、不打堆栈」与「未知异常 → 消息 + 堆栈 + crash.log 路径」两类，是 `safeAction` 唯一的措辞来源（前缀 `errors.commandFailed` 也走 i18n）
+│   │   ├── cli-errors.ts commander 参数解析错误的本地化渲染（v5.0 C1/C2）：`renderCliError()` 是唯一出口（先按 `err.code` 分类，认不出就回落原文），`suggestSimilar()` 自己算 Damerau 距离（阈值「≤2 且相似度 >0.5」经真机校准，乱猜比不猜更坏）；`-V/-h` 说明入字典 `cli.{versionOption,helpOption}`，故 `.version()` / `.helpOption()` 必须在注册子命令之前调用
 │   │   ├── common.ts     CLI 共享：白名单 / 注册表构建 / OS 提示 / resolveProjectForCwd / mergeAllowlist / resolveApiKey / maskApiKey（轻量加载）；resolveApiKeyCached / loadProjectRegistryCached 启动期缓存（v3.2 M4）
 │   │   └── slash/        斜杠命令处理器
 │   │       ├── agent.ts  /agent list / install / remove / promote / update（v3.0 M4 + v3.1 M5）
