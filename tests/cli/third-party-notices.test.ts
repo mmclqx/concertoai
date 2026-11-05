@@ -11,7 +11,7 @@
  * - package.json files 包含声明文件（随包发布）。
  */
 
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
@@ -25,6 +25,20 @@ const DIRECT_DEPS = ['chalk', 'cli-highlight', 'commander', 'ink', 'react', 'tik
 
 function readNotices(): string {
   return readFileSync(NOTICES, 'utf8');
+}
+
+/** 递归收集 dist 下的 .js 产物（构建产物不参与类型检查，只读文本）。 */
+function collectJs(dir: string): string[] {
+  const found: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      found.push(...collectJs(full));
+    } else if (entry.name.endsWith('.js')) {
+      found.push(full);
+    }
+  }
+  return found;
 }
 
 describe('THIRD_PARTY_NOTICES（v5.0 T4）', () => {
@@ -98,5 +112,34 @@ describe('THIRD_PARTY_NOTICES（v5.0 T4）', () => {
   it('声明文件由脚本生成（含自动生成标注）', () => {
     expect(readNotices()).toContain('gen-third-party-notices.mjs');
     expect(readNotices()).toContain('自动生成');
+  });
+
+  it('声明不再声称「依赖会被打包进产物」，与 dist 实测一致（C6，2026-11-05）', () => {
+    const text = readNotices();
+
+    // 否定面：旧版两句假话必须消失（它们曾让「漏洞随包到达用户」这个错误结论看起来很合理）
+    expect(text).not.toContain('会被打包进产物');
+    expect(text).not.toContain('运行时依赖会被打包进');
+
+    // 正例：新声明明确写了「不打包」
+    expect(text).toContain('不打包任何第三方依赖');
+
+    // 真机校验 dist（`npm run verify` 先 build，故正常链路下 dist 一定在；
+    // 单独 `npm test` 且从未 build 时跳过这一段，上面的文案断言仍在守）
+    const distDir = path.join(ROOT, 'dist');
+    if (!existsSync(distDir)) {
+      return;
+    }
+    const js = collectJs(distDir).map((f) => readFileSync(f, 'utf8'));
+    const all = js.join('\n');
+
+    // 探针通电：先证明「搜索是有效的」——cli-highlight 的外链必须找得到，
+    // 否则下面的 0 命中只说明我把 token 拼错了（AGENTS「检索类必须先自证探针」）
+    expect(all, '探针失效：dist 里连 cli-highlight 的外链都搜不到').toContain(
+      'import("cli-highlight")',
+    );
+    // 目标：highlight.js 没有被打进产物（否则「不打包」这句话又是假的）
+    expect(all).not.toMatch(/\bhljs\b/);
+    expect(all).not.toContain('registerLanguage');
   });
 });
