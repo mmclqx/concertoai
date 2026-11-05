@@ -4,9 +4,12 @@
 
 export type { AutoFixItem, AutoFixOptions, AutoFixResult, FixCategory, FixStatus } from './autofix';
 export { categorizeIssue, parseReviewFixOutput, runAutoFix } from './autofix';
+export type { FailureClassification, JsonErrorSummary } from './dimensions';
 export {
+  CONDENSE_LIMIT,
   classifySubagentFailure,
   createReviewAgents,
+  extractJsonErrorSummary,
   parseReviewOutput,
   tryParseReviewOutput,
 } from './dimensions';

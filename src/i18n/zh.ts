@@ -749,6 +749,9 @@ export const zh = {
     incompleteItem: '- {dimensions}：{reason}（{detail}）→ {action}',
     incompleteNoIssues:
       '⚠️ 本次没有发现任何问题，但**审查未完成**（见上）——不能当作「代码没问题」。',
+    // v5.0 C4：0 问题时不再留「只有表头」的空表（读起来像渲染坏了）
+    summaryEmpty: '✅ 9 个维度均无问题（无需汇总表）。',
+    summaryEmptyIncomplete: '⚠️ 没有可汇总的问题，但审查未完成（见上）——不代表 9 维都干净。',
     reasonUnauthorized: '认证失败（API Key 无效或已过期）',
     reasonQuota: '账户余额不足 / 配额用尽',
     reasonNetwork: '网络不可达（断网 / DNS / 代理不通）',

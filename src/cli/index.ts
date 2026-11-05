@@ -769,7 +769,7 @@ program
         const { formatInvalidSeverity, parseReviewSeverity, runReviewCommand } = await import(
           './review'
         );
-        const { needsVerbApiKey, resolveVerbRuntime } = await import('./provider-runtime');
+        const { resolveVerbRuntime } = await import('./provider-runtime');
         const provider = program.opts().provider as string | undefined;
         // 参数错误先报（别让「缺 Key」把「severity 写错」掩盖掉）；校验规则只此一处
         const severity = parseReviewSeverity(options.severity);
@@ -790,13 +790,20 @@ program
           ...(provider !== undefined ? { provider } : {}),
           ...(options.model !== undefined ? { model: options.model } : {}),
         });
-        const apiKey = needsVerbApiKey(runtime) ? await getApiKey() : runtime.apiKey;
+        /**
+         * C3（v5.0 自审发现）：这里**刻意不判 Key**。
+         *
+         * 原先 `needsVerbApiKey(runtime) ? await getApiKey() : …`：缺 Key 时 `getApiKey()`
+         * 打完整引导并 `exit 1`，于是「空目录里跑 review」的第一反馈是「没配 Key」，
+         * 而真相是「这目录不是 git 仓库 / 没有可审的改动」——用户会先去配 Key，
+         * 配完回来才发现还是审不了。**顺序判定收敛到 `runReviewCommand` 内一处**
+         * （范围 → Key），入口只负责把运行时递下去。
+         */
         const code = await runReviewCommand({
           cwd: process.cwd(),
           ...(p !== undefined ? { path: p } : {}),
           fix: options.fix === true,
           ...(severity.severity !== undefined ? { severity: severity.severity } : {}),
-          ...(apiKey !== '' ? { apiKey } : {}),
           // K14：端点/模型只在入口解析一次（此前 review 自己 `new DeepSeekClient({ apiKey })`，
           // 配了 baseUrl 的用户会被静默改打官方端点，成本回执也据此报错价）
           runtime,

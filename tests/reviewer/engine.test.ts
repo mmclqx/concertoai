@@ -12,12 +12,15 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { executeReviewCommand, parseReviewCommand } from '../../src/cli/slash/review';
 import { setLocale } from '../../src/i18n';
+import { zh } from '../../src/i18n/zh';
 import {
   AGENT_DIMENSIONS,
   ALL_DIMENSIONS,
+  CONDENSE_LIMIT,
   classifySubagentFailure,
   createReviewAgents,
   determineReviewAction,
+  extractJsonErrorSummary,
   formatTestStatus,
   hasVerifyScript,
   incompleteCount,
@@ -121,6 +124,111 @@ describe('ReviewerEngine.formatReport', () => {
     expect(text).toContain('📊 汇总');
     expect(text).toContain('types');
     expect(text).toContain('1'); // critical count
+  });
+
+  /**
+   * C4（v5.0 自审发现）：0 问题时「📊 汇总」只剩两行表头，读起来像渲染坏了。
+   *
+   * 这里的断言分**三种态**，少一种就等于没测：
+   * ① 有问题 → 照常出表（不许因为改了 0 问题分支把正常渲染改坏）；
+   * ② 0 问题且审完 → 说「9 维均无问题」，且**不出现表头**；
+   * ③ 0 问题但没审完 → 说「审查未完成」，且**绝不**说「9 维均无问题」
+   *    （否则就是把 K16 修好的「没看 ≠ 干净」又改回假绿）。
+   */
+  it('C4 ②：0 问题且审完 → 不出空表头，明说「9 维均无问题」', () => {
+    const text = ReviewerEngine.formatReport(makeReport([]));
+    expect(text).toContain('📊 汇总');
+    expect(text).toContain(zh.reviewer.summaryEmpty);
+    // 空表头是这条修复的靶子：`| 维度 | 🔴 | 🟡 | 🟢 |` 不许再单独出现
+    expect(text).not.toContain('| 维度 | 🔴 | 🟡 | 🟢 |');
+    expect(text).not.toContain(zh.reviewer.summaryEmptyIncomplete);
+  });
+
+  it('C4 ③：0 问题但审查未完成 → 不许说「9 维均无问题」（把「没看」说成「干净」）', () => {
+    const report: ReviewReport = {
+      ...makeReport([]),
+      incomplete: [
+        { group: 'security', dimensions: ['security'], reason: 'unauthorized', detail: '401' },
+      ],
+    };
+    const text = ReviewerEngine.formatReport(report);
+    expect(text).toContain(zh.reviewer.summaryEmptyIncomplete);
+    expect(text).not.toContain(zh.reviewer.summaryEmpty);
+    expect(text).not.toContain('| 维度 | 🔴 | 🟡 | 🟢 |');
+  });
+
+  it('C4 ①：有问题时汇总表照旧（修 0 问题分支不许动正常渲染）', () => {
+    const text = ReviewerEngine.formatReport(
+      makeReport([makeIssue('types', 'critical', 'src/x.ts', '类型问题')]),
+    );
+    expect(text).toContain('| 维度 | 🔴 | 🟡 | 🟢 |');
+    expect(text).not.toContain(zh.reviewer.summaryEmpty);
+  });
+});
+
+/**
+ * C5（v5.0 自审发现）：未完成行的 detail 内嵌整段响应体 JSON，
+ * 形如 `认证失败（…）（DeepSeek API 请求失败（HTTP 401）: {"error":{"message":"…"}}）`。
+ *
+ * 这一组用例的核心判据是「**提炼失败必须回落原文**」——所以每条正向用例都配一条
+ * 否定面（不可解析 / 没有 message / 形状不认识 → 必须 `undefined`，由调用方回落），
+ * 否则一个「恒返回原文」的废实现也能让正向断言全绿（等于没测）。
+ */
+describe('C5：响应体 JSON 压成一句话（extractJsonErrorSummary）', () => {
+  /** 真实形态（DeepSeek 401）：message 有诊断价值，type/param/code 是噪音。 */
+  const REAL_401 =
+    'DeepSeek API 请求失败（HTTP 401）: {"error":{"message":"Authentication Fails, Your api key is invalid","type":"authentication_error","param":null,"code":"invalid_request_error"},"request_id":"req-abc123"}';
+
+  it('正例：取 error.message，并保留唯一有排查价值的短字段 request_id', () => {
+    const got = extractJsonErrorSummary(REAL_401);
+    expect(got).toBeDefined();
+    expect(got?.summary).toContain('Authentication Fails');
+    expect(got?.summary).toContain('req-abc123');
+    // raw 必须是被替换掉的那段 JSON 原文（调用方用它做整段替换）
+    expect(got?.raw.startsWith('{')).toBe(true);
+    expect(got?.raw.endsWith('}')).toBe(true);
+    expect(got?.raw).toContain('authentication_error');
+  });
+
+  it('正例：顶层 message（没有 error 包裹）也认', () => {
+    expect(extractJsonErrorSummary('{"message":"model not found"}')?.summary).toBe(
+      'model not found',
+    );
+  });
+
+  it('否定面：非 JSON 文本 / 伪 JSON / 无 message / 数组 / 空 message → 一律 undefined（回落原文）', () => {
+    const negatives = [
+      'fetch failed', // 纯文字网络错误
+      'HTTP 401: Authentication Fails', // 半结构化文本
+      '{"error":', // 截断的伪 JSON（JSON.parse 必炸）
+      '{"foo":1,"bar":2}', // 是 JSON 但没有 message
+      '[{"message":"x"}]', // 数组不是错误体
+      '{"error":{"message":"   "}}', // message 全是空白
+      '{"error":{"message":123}}', // message 不是字符串
+    ];
+    for (const text of negatives) {
+      expect(extractJsonErrorSummary(text), `不该从「${text}」里提炼出东西`).toBeUndefined();
+    }
+  });
+
+  it('有牙：detail 从「整段 JSON」变成一句话，且仍有 160 字预算兜底', () => {
+    const { detail, reason } = classifySubagentFailure(REAL_401);
+    expect(reason).toBe('unauthorized');
+    // ① 结构噪音必须消失（这条是 C5 的靶子：`"type":"authentication_error"` 等）
+    expect(detail).not.toContain('authentication_error');
+    expect(detail).not.toContain('"param"');
+    // ② 原因与排查线索必须留下（压缩不等于丢弃）
+    expect(detail).toContain('Authentication Fails');
+    expect(detail).toContain('req-abc123');
+    // ③ 明显更短：原文 200+ 字，压完应该在 100 字内（这条挡「把 JSON 原样截断」的假修复）
+    expect(detail.length).toBeLessThan(100);
+    expect(detail.length).toBeLessThanOrEqual(CONDENSE_LIMIT + 1);
+  });
+
+  it('不可解析的输入仍按 160 字截断（否定面：新逻辑不许把老兜底弄丢）', () => {
+    const { detail } = classifySubagentFailure(`HTTP 401 ${'x'.repeat(400)}`);
+    expect(detail.length).toBeLessThanOrEqual(CONDENSE_LIMIT + 1);
+    expect(detail.endsWith('…')).toBe(true);
   });
 });
 

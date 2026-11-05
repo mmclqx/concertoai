@@ -205,10 +205,99 @@ export interface FailureClassification {
   detail: string;
 }
 
-/** 从错误文本里提炼「一句话原因」：优先保留 HTTP 状态码与中文说明，去掉堆栈与超长 JSON。 */
+/** `condense` 的字符预算（含 `…`）：一行之内能读完，又不至于把原因截没。 */
+export const CONDENSE_LIMIT = 160;
+
+/** 提炼结果（`undefined` = 这一段不是可用的 JSON 错误体，调用方回落原文）。 */
+export interface JsonErrorSummary {
+  /** 一眼能读的原因（`error.message` 或 `message`），可带 `request_id`。 */
+  summary: string;
+  /** 被替换掉的 JSON 原文（调用方据此做「整段替换」，而不是字符串删除）。 */
+  raw: string;
+}
+
+/**
+ * 从一段文本里认出**模型 API 的错误响应体**，提炼成一句话（C5）。
+ *
+ * ## 为什么值得单独一个纯函数
+ *
+ * C5 的原始症状（v5.0 自审 C5）：报告里每一行「未完成」长这样——
+ * `认证失败（API Key 无效或已过期）（DeepSeek API 请求失败（HTTP 401）: {"error":{"message":"…"},"type":"…","param":null,"code":"invalid_request_error"}）`
+ * 括号套三层、原始 JSON 整段塞给用户，截到 160 字仍读不完。信息量是够的
+ * （含 `request_id` 便于排查），但**可读性很差**，而这一行恰恰是用户最需要读懂的
+ * 那一行（它决定「下一步去查 Key 还是查网络」）。
+ *
+ * 所以：能解析出 `error.message` 就只留它（外加 `request_id` 这个唯一有排查价值的短字段），
+ * 解析不出来就**原样返回 undefined** —— 绝不返回空串：
+ * 「提炼失败」必须能被调用方识别出来并回落到原文，否则一次解析失败会把原因整段吞掉
+ * （那比 JSON 长十倍更糟：用户彻底不知道发生了什么）。
+ *
+ * 判据只认「JSON 对象 + message 是字符串」，不猜别的形状（`{"error":"plain string"}`、
+ * 数组、单个字符串都不算）——猜错就会把真实错误说成别的东西。
+ */
+export function extractJsonErrorSummary(text: string): JsonErrorSummary | undefined {
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  if (start < 0 || end <= start) {
+    return undefined;
+  }
+  // 数组载荷（`[{"message":"x"}]`）不是 API 错误体：本函数**只认对象**。
+  // 不加这条的话，`[` 之后的第一个 `{` 会被当成"错误体开头"解析成功，
+  // 于是「不认识的结构」也能提炼出东西来（实测踩到，见 C5 否定面用例）。
+  // 返回 undefined = 回落原文，信息不丢。
+  const arrayStart = text.indexOf('[');
+  if (arrayStart >= 0 && arrayStart < start) {
+    return undefined;
+  }
+  const raw = text.slice(start, end + 1);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return undefined;
+  }
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return undefined;
+  }
+  const obj = parsed as Record<string, unknown>;
+  const errorField = obj.error;
+  let message: string | undefined;
+  if (typeof errorField === 'string') {
+    message = errorField;
+  } else if (errorField !== null && typeof errorField === 'object') {
+    const inner = (errorField as Record<string, unknown>).message;
+    if (typeof inner === 'string') {
+      message = inner;
+    }
+  }
+  if (message === undefined && typeof obj.message === 'string') {
+    message = obj.message;
+  }
+  if (message === undefined || message.trim() === '') {
+    return undefined;
+  }
+  const requestId = typeof obj.request_id === 'string' ? obj.request_id : undefined;
+  const summary =
+    requestId !== undefined && requestId !== ''
+      ? `${message.trim()}（request_id: ${requestId}）`
+      : message.trim();
+  return { summary, raw };
+}
+
+/**
+ * 从错误文本里提炼「一句话原因」：优先保留 HTTP 状态码与中文说明，
+ * **把内嵌的响应体 JSON 压成一句**（C5），最后按 `CONDENSE_LIMIT` 截断。
+ *
+ * 顺序有讲究：先压 JSON 再截断。反过来的话，160 字预算会先被 JSON 里的
+ * `"type"/"param"/"code"` 这些对用户毫无价值的字段吃光，真正的原因反而被切掉。
+ */
 function condense(text: string): string {
   const oneLine = text.replace(/\s+/g, ' ').trim();
-  return oneLine.length > 160 ? `${oneLine.slice(0, 160)}…` : oneLine;
+  const extracted = extractJsonErrorSummary(oneLine);
+  const replaced =
+    extracted === undefined ? oneLine : oneLine.replace(extracted.raw, extracted.summary);
+  const collapsed = replaced.replace(/\s+/g, ' ').trim();
+  return collapsed.length > CONDENSE_LIMIT ? `${collapsed.slice(0, CONDENSE_LIMIT)}…` : collapsed;
 }
 
 /**

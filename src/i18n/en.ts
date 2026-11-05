@@ -790,6 +790,10 @@ export const en = {
     incompleteItem: '- {dimensions}: {reason} ({detail}) → {action}',
     incompleteNoIssues:
       '⚠️ No issues were found, but the **review is incomplete** (see above) — do not treat this as "code is fine".',
+    // v5.0 C4: no empty "header-only" summary table when there are zero issues
+    summaryEmpty: '✅ All 9 dimensions are clean (no summary table needed).',
+    summaryEmptyIncomplete:
+      '⚠️ Nothing to summarise, but the review is incomplete (see above) — that does not mean all 9 dimensions are clean.',
     reasonUnauthorized: 'authentication failed (API key invalid or expired)',
     reasonQuota: 'insufficient balance / quota exhausted',
     reasonNetwork: 'network unreachable (offline / DNS / proxy)',

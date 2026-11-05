@@ -297,12 +297,26 @@ export class ReviewerEngine {
     }
 
     lines.push('', '### 📊 汇总', '');
-    lines.push('| 维度 | 🔴 | 🟡 | 🟢 |');
-    lines.push('|------|----|----|-----|');
-    for (const dim of ALL_DIMENSIONS) {
-      const dc = report.summary[dim];
-      if (dc.critical + dc.medium + dc.suggestion > 0) {
-        lines.push(`| ${dim} | ${dc.critical} | ${dc.medium} | ${dc.suggestion} |`);
+    /**
+     * C4（v5.0 自审发现）：只列「有问题的维度」时，0 问题就只剩两行表头，
+     * 读起来像渲染坏了——用户分不清「没问题是好事」还是「报表没生成出来」。
+     *
+     * 三种态必须分开说（与 K16 的「没审到 ≠ 没问题」同一条纪律）：
+     * - 有问题 → 照常出表；
+     * - 0 问题且**审完了** → 明说「9 维均无问题」，不给空表；
+     * - 0 问题但**没审完** → 明说「没有可汇总的问题，但审查未完成」，
+     *   绝不能在这里冒出「9 维都干净」这种把「没看」说成「干净」的话。
+     */
+    if (report.issues.length === 0) {
+      lines.push(missing > 0 ? dict.summaryEmptyIncomplete : dict.summaryEmpty);
+    } else {
+      lines.push('| 维度 | 🔴 | 🟡 | 🟢 |');
+      lines.push('|------|----|----|-----|');
+      for (const dim of ALL_DIMENSIONS) {
+        const dc = report.summary[dim];
+        if (dc.critical + dc.medium + dc.suggestion > 0) {
+          lines.push(`| ${dim} | ${dc.critical} | ${dc.medium} | ${dc.suggestion} |`);
+        }
       }
     }
 

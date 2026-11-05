@@ -60,7 +60,10 @@ import {
   type ReviewSeverity,
   type Severity,
 } from '../reviewer';
+import { configPath } from '../store/paths';
 import type { ApprovalRequest } from '../tools/registry';
+// v5.0 C3：缺 Key 时仍给完整三种配置方式（与 chat / run 同一份标杆文案，不另写一套）
+import { buildMissingApiKeyGuide } from './api-key-guide';
 import { runCheck } from './check';
 import { promptLine } from './prompt';
 import { resolveVerbClient, type VerbRuntimeInfo } from './provider-runtime';
@@ -543,8 +546,27 @@ export async function runReviewCommand(options: ReviewCommandOptions = {}): Prom
   let engine = options.engine;
   if (engine === undefined) {
     if (client === undefined) {
+      /**
+       * C3（v5.0 自审发现）：这段**必须排在审查范围判定之后**。
+       *
+       * 原先「要不要 Key」由 CLI 入口在调本函数**之前**判（`getApiKey()` 缺 Key 直接
+       * 打印引导并 `exit 1`），于是空目录里跑 `concertoai review`，用户第一眼看到的是
+       * 「未检测到 DeepSeek API Key」，而当时真正的处境是「这个目录不是 git 仓库、
+       * 没有可审查的改动」——先去配 Key，配完回来还是审不了，白折腾一轮。
+       *
+       * 现在顺序收敛到本函数内（范围 → Key），入口不再抢先判 Key：能一眼说清的
+       * 「没东西可审」先说，真正需要 Key 时才提 Key。两条都不冒充通过（都 exit 1）。
+       */
       log(dict.needsApiKey);
       log(dict.needsApiKeyHint);
+      // 缺 Key 的三种配置方式仍要**完整**给出（v5.0 T1 的标杆文案）：只给 deepseek 打，
+      // 因为这段引导里的 `DEEPSEEK_API_KEY` / `provider auth deepseek` 对 openai /
+      // 自建网关用户是错的指向（K14 同一条纪律：别把「我们默认的」当成「你配的」）。
+      if (resolved.provider === 'deepseek') {
+        for (const line of buildMissingApiKeyGuide({ configPath: configPath() })) {
+          logErr(line);
+        }
+      }
       return 1;
     }
     engine = new ReviewerEngine(new SubagentSpawner(client, { cwd }, model), cwd);

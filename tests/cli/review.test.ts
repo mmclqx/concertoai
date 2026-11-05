@@ -573,6 +573,87 @@ describe('边缘路径（G5 四覆盖）', () => {
     expect(lines.join('\n')).toContain('DEEPSEEK_API_KEY');
   });
 
+  /**
+   * C3（v5.0 自审发现）：空目录跑 `review`，第一反馈曾是「未检测到 API Key」。
+   *
+   * 症状与危害：用户看到的不是「这里不是 git 仓库 / 没有可审查的改动」，而是把
+   * 「没用」和「没配」两个问题混成一句——他会先去配 Key，配完回来发现还是审不了。
+   *
+   * 这几条用例一起构成一组**顺序断言**（缺一条就等于没测）：
+   * ① 没东西可审时**先**说清楚，且不出现「需要 Key」；
+   * ② 「没有改动」同型处理；
+   * ③ 正例对照：真有东西可审时才提 Key，且完整引导（三种配置方式）仍给到
+   *    ——否则「上面两条没出现」可能只是因为引导整段丢了（探针空转）；
+   * ④ 源码护栏：顺序判定只许留在 `runReviewCommand` 一处。
+   */
+  it('C3 ①：非 git 仓库 + 缺 Key → 先说「不是仓库」，不提 Key', async () => {
+    const lines: string[] = [];
+    const errs: string[] = [];
+    const code = await runReviewCommand({
+      cwd: process.cwd(),
+      runGit: fakeGit({ ok: false, stderr: 'fatal: not a git repository' }).list,
+      log: (line) => lines.push(line),
+      logErr: (line) => errs.push(line),
+    });
+    expect(code).toBe(1); // 依然不冒充通过
+    expect(lines.join('\n')).toContain(zh.review.notRepo);
+    expect(lines.join('\n')).not.toContain(zh.review.needsApiKey);
+    // 连 stderr 的完整 Key 引导也不许抢先出现（否则用户还是先看到「去配 Key」）
+    expect(errs.join('\n')).not.toContain('DEEPSEEK_API_KEY');
+  });
+
+  it('C3 ②：没有改动 + 缺 Key → 先说「没得审」，不提 Key', async () => {
+    const lines: string[] = [];
+    const errs: string[] = [];
+    const code = await runReviewCommand({
+      cwd: process.cwd(),
+      runGit: fakeGit().list, // 干净的仓库
+      log: (line) => lines.push(line),
+      logErr: (line) => errs.push(line),
+    });
+    expect(code).toBe(0); // 「没得审」不是失败（与既有口径一致）
+    expect(lines.join('\n')).toContain(zh.review.noChanges);
+    expect(lines.join('\n')).not.toContain(zh.review.needsApiKey);
+    expect(errs.join('\n')).not.toContain('DEEPSEEK_API_KEY');
+  });
+
+  it('C3 ③ 正例对照：真有东西可审 + 缺 Key → 提 Key，且完整引导仍在', async () => {
+    // 没有这一条，上面两条的 `not.toContain` 可能是「引导整段丢了」造成的假绿
+    const lines: string[] = [];
+    const errs: string[] = [];
+    const code = await runReviewCommand({
+      cwd: process.cwd(),
+      runGit: fakeGit({ unstaged: ['src/cli/review.ts'] }).list,
+      log: (line) => lines.push(line),
+      logErr: (line) => errs.push(line),
+    });
+    expect(code).toBe(1);
+    expect(lines.join('\n')).toContain(zh.review.needsApiKey);
+    // 完整三种配置方式（v5.0 T1 的标杆文案）在缺 Key 时仍要打出来
+    const errText = errs.join('\n');
+    expect(errText).toContain(zh.missingApiKey.title);
+    expect(errText).toContain('DEEPSEEK_API_KEY');
+    expect(errText).toContain('concertoai login');
+  });
+
+  it('C3 ④ 源码护栏：入口不抢先判 Key（顺序判定只许在 runReviewCommand 一处）', async () => {
+    const source = await readFile(path.join(process.cwd(), 'src', 'cli', 'index.ts'), 'utf8');
+    /** 取某个命令的注册块（从 `.command('x` 到下一个 `.command(` 之前）。 */
+    const blockOf = (name: string): string => {
+      const start = source.indexOf(`.command('${name}`);
+      expect(start, `index.ts 里找不到 ${name} 命令注册块`).toBeGreaterThan(-1);
+      const next = source.indexOf('.command(', start + 1);
+      return source.slice(start, next < 0 ? source.length : next);
+    };
+    /** 去掉注释后再判：注释里解释「以前这里调 getApiKey」是应当留的说明，不是代码。 */
+    const stripComments = (block: string): string =>
+      block.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+    // 靶子：review 块的**代码**里不许再出现 getApiKey（它会在范围判定之前 exit 1）
+    expect(stripComments(blockOf('review [path]'))).not.toContain('getApiKey');
+    // 正例对照：fix 块的代码里**必须**还有 getApiKey —— 证明上面那条不是空转
+    expect(stripComments(blockOf('fix'))).toContain('getApiKey');
+  });
+
   it('④ 证据超长：每维只展示前 3 条（输出不淹没终端）', () => {
     const issues = Array.from({ length: 9 }, (_, i) =>
       issue('critical', {
