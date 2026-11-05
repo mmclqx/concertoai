@@ -8,6 +8,41 @@
 
 ## [Unreleased]
 
+### Fixed — C3：空目录跑 `review` 第一反馈是「未检测到 API Key」，而不是「这里没东西可审」（🟢，2026-11-05 修复）
+
+> 事故形态：**把「没用」和「没配」两个问题混成一句**，且混反了顺序。用户在空目录 / 非 git 目录里敲 `review`，第一眼看到的是三种配置 Key 的长引导；配完 Key 回来一跑，才发现真正的问题是「这个目录不是 git 仓库，没有可审查的改动」。白折腾一轮，且引导本身没错——错的是**说的时机**。
+
+- **根因是顺序，不是文案**：`review` 入口有一句 `needsVerbApiKey(runtime) ? await getApiKey() : runtime.apiKey`，而 `getApiKey()` 在缺 Key 时**打印完整引导并 `process.exit(1)`**——它在「审查范围」判定之前就把进程结束了，于是 `runReviewCommand` 里那套「不是 git 仓库 / 没有改动」的分支**永远轮不到执行**
+- **修法：判定顺序收敛到命令内一处**（范围 → Key），入口只负责把运行时递下去。`src/cli/index.ts` 的 review 块不再判 Key（源码护栏：该块代码里出现 `getApiKey` 即红，同时用 `fix` 块作正例对照证明护栏没空转）
+- **缺 Key 时仍给完整引导**：`runReviewCommand` 在「真东西可审 + 缺 Key」时打印 `needsApiKey` + `buildMissingApiKeyGuide`（v5.0 T1 三种配置方式），且**只对 `deepseek` 打**——那段引导里的 `DEEPSEEK_API_KEY` / `provider auth deepseek` 对 openai / 自建网关用户是错误指向（K14 同一条纪律）
+- **真进程实测（隔离 `HOME` + 显式 `LUMEN_LOCALE=zh`）**：① 空目录 `review` → `❌ 当前目录不是 git 仓库…` + `💡 请显式指定要审查的路径`、exit 1、**stderr 零 Key 引导**；② `review src/cli/review.ts`（有范围、无 Key）→ 范围行 + `❌ 审查需要 API Key…` + stderr 完整三种配置方式、exit 1（不假审查）
+- **测试**：`tests/cli/review.test.ts` +4（① 非仓库不 Key、② 无改动不 Key、③ **正例对照**：有东西可审时 Key 提示与完整引导仍在——否则前两条的「不出现」可能只是引导整段丢了、④ 源码护栏）；**`tests/e2e/missing-key.test.ts` +2**（★ 真进程 + 换 cwd 到非 git 空目录：stdout 是「不是 git 仓库」、stderr 零 Key 引导；★ 正例对照：给显式范围后 Key 提示与完整引导照常出现）
+- **变异自证**：把缺 Key 判定插回范围判定之前（复刻旧入口顺序）⇒ `review.test.ts` ①②③ **3 红 / 48 绿**，`missing-key.test.ts` **2 红 / 2 绿**、源码护栏 ④ 仍绿（说明变异打在目标分支上、不是把整块打烂）；复原（sha256 `8f95317f…` 逐字节核对）⇒ 51 + 4 全绿
+- **回归**：`npm run verify` 全绿 **165 文件 / 2430 用例**；`LUMEN_LOCALE=en` 换环境复跑同数全绿
+- **本轮复核中抓到的两处自我问题（已修）**：① 并行体留的变异探针脚本 `.tmp-mutate-c345.mjs off` 会用**旧备份**覆盖当前文件（恢复后 sha 从 `516da078` 变成 `293f8e5b`，丢掉中间改动）——恢复基准必须是「变异前那一刻的哈希副本」，不能是更早的备份；② 新 e2e 第一版漏给 tsx 传脚本路径（`tsx <脚本> [参数]`），于是 tsx 把 `review` 当脚本 → `ERR_MODULE_NOT_FOUND` + exit 1，而 `expect(code).toBe(1)` **照样通过**——弱断言在进程没跑起来时会假绿，真正抓出它的是下一条「stdout 必须含『不是 git 仓库』」
+- **决策**：D91
+
+### Fixed — C4：0 问题时审查报告「📊 汇总」只剩两行表头（🟢，2026-11-05 修复）
+
+> 事故形态：**看起来像渲染坏了**。`ReviewerEngine.formatReport` 的汇总表只列「有问题的维度」，于是最理想的结果（9 维全干净）恰好输出成两行表头，用户分不清「没问题是好事」还是「报表没生成出来」。
+
+- **三种态必须分开说**（与 K16「没审到 ≠ 没问题」同一条纪律）：① 有问题 → 照常出表；② 0 问题且**审完了** → `✅ 9 个维度均无问题（无需汇总表）`，不出表头；③ 0 问题但**没审完** → `⚠️ 没有可汇总的问题，但审查未完成（见上）——不代表 9 维都干净`
+- **为什么第 3 态不能省**：只写「9 维均无问题」会把 K16 修好的「没看 ≠ 干净」重新改回假绿；第 3 态就是这条修复的反向护栏
+- **测试**：`tests/reviewer/engine.test.ts` +3（三态各一条，其中 ① 是「改 0 问题分支不许动正常渲染」的正例兜底）
+- **变异自证（本轮亲手复核）**：把 0 问题分支关掉（`=== 0` → `< 0`）⇒ **3 红 / 45 绿**——除新增的 ②③ 两条外，**连既有的「空报告 → 显示无问题」也红了**（这条既有用例断言的正是「0 问题时的渲染」，说明它不是旁观者，而是真的守着这个行为）；复原（sha256 `516da078…` 逐字节核对）⇒ 48 绿
+  > 并行体原稿此处写的是「②③ 2 红、① 仍绿」，与实测差一条。**这类数字必须自己跑一遍再落笔**——「别人跑过」不是证据链的一环。
+- **决策**：D91
+
+### Fixed — C5：未完成行的 detail 内嵌整段响应体 JSON，截到 160 字仍读不完（🟢，2026-11-05 修复）
+
+> 事故形态：**用户最需要读懂的那一行，恰好最难读**。审查未完成时每行长这样——`认证失败（API Key 无效或已过期）（DeepSeek API 请求失败（HTTP 401）: {"error":{"message":"…","type":"authentication_error","param":null,"code":"invalid_request_error"},"request_id":"…"}）`：括号套三层，而这一行正是决定「下一步查 Key 还是查网络」的依据。
+
+- **修法**：`src/reviewer/dimensions.ts` 新增纯函数 `extractJsonErrorSummary()` —— 认出「JSON 对象 + `message` 是字符串」的错误响应体，只留 `error.message`（或顶层 `message`）+ 唯一有排查价值的短字段 `request_id`；`condense()` 改为**先压 JSON 再按 `CONDENSE_LIMIT`(160) 截断**（顺序不能反：先截断的话预算会被 `type`/`param`/`code` 这些噪音吃光，真正原因反而被切掉）
+- **提炼失败一律回落原文**（返回 `undefined`，绝不返回空串）：不认识的形状（数组 / 无 `message` / `message` 非字符串 / 空白 / 截断伪 JSON）宁可给长原文，也不能把原因整段吞掉——「解析失败」比「JSON 长十倍」更糟
+- **测试**：`tests/reviewer/engine.test.ts` +6（正例两条：`error.message` + `request_id`、顶层 `message`；**否定面七条**：纯文字 / 半结构化 / 截断伪 JSON / 无 message / 数组 / 空白 message / 数字 message → 一律 `undefined`；「有牙」一条：结构噪音消失 + 原因与 `request_id` 留下 + 长度 <100 字；兜底一条：不可解析输入仍按 160 字截断）
+- **变异自证**：把 `condense` 里的 `extractJsonErrorSummary(oneLine)` 换回 `undefined`（= 旧行为）⇒「有牙」那条 **1 红**；复原（sha256 `9af5c675…`）⇒ 48 绿
+- **决策**：D91
+
 ### Fixed — C1：未知命令/未知选项走 commander 英文报错，且把「命令名不存在」说成「参数太多」（🟡，2026-11-04 修复）
 
 > 事故形态：**新用户最高频的失败路径，是全产品唯一没被 i18n 覆盖的一面，而且归因反了**。同一条命令的 `--help` 是中文，撞错时却全英文——用户会先怀疑「是不是我不懂这个工具」，而不是「命令名敲错了」。
