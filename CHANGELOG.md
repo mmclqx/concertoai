@@ -8,6 +8,21 @@
 
 ## [Unreleased]
 
+### Security — C6：依赖审计由 6 条漏洞归零（`zod` 升级 + 三条传递依赖 `overrides` 锁定 + 版本底线护栏），并纠正「依赖会被打进 dist」这一假陈述（2026-11-05）
+
+> 事故形态有两层：① **运行时直接依赖带 high 漏洞**（`zod 4.4.3`，GHSA-mrhx-c7xc-m3w5，验证超大受限集合时内存耗尽）；② 更麻烦的是**文档在替我们撒谎**——README 与 `THIRD_PARTY_NOTICES` 都写着「tsup 把运行时依赖打包进 `dist/`」，据此推出「漏洞会随包到达用户」。实测这条推断的**前提是假的**：产物里是 `import { z } from "zod"`（external），运行时从用户自己的 `node_modules` 解析。**同一件事，两个相反结论，取决于哪句是真的**——所以本轮先用探针把它测出来，再改文档。
+
+- **升级（直接依赖）**：`zod` `^4.4.3` → **`^4.6.7`**（实装 4.6.7）、`vitest` `^4.1.10` → **`^4.1.12`**（实装 4.1.12）
+- **锁定（传递依赖）**：只升 vitest 修不掉剩余 3 条 high —— `vite 8.2.1`（`>=8.2.0 <=8.2.3` 受影响）由 vitest 的 `^6||^7||^8` 范围解析而来，不会自动踩到修复版。改用 `package.json` 的 `overrides`：`vite ^8.2.4` / `nanoid ^3.3.18` / `source-map-js ^1.2.2` ⇒ 实装 `vite 8.3.6` / `nanoid 3.3.20` / `source-map-js 1.2.2`
+- **结果**：`npm audit` **found 0 vulnerabilities**（原 4 high + 2 moderate）
+- **`npm install` 的两处坑（都是 npm 自身 bug，不是我们的配置错）**：① `npm audit fix` 直接 `Cannot read properties of null (reading 'edgesOut')`；② 显式 `npm install vitest@^4.1.12` 撞同一个 `edgesOut` 崩溃，加 `--legacy-peer-deps` 后成功。**这条路必须写进文档**，否则下一个人会以为是 lockfile 坏了
+- **新增护栏 `tests/cli/dependency-audit.test.ts`（6 条）**：把「已知漏洞的最低已修复版本」钉在仓库里（zod 4.6.6 / vitest 4.1.12 / vite 8.2.4 / nanoid 3.3.18 / source-map-js 1.2.2），**声明 / override / 实装三处都查**——`npm audit` 只反映当下 advisories 快照，拦不住有人把 `zod` 写回 `^4.4.3`
+- **阶梯自证 + 变异探针（这条用例自己也要被验证）**：`compareVersion('4.4.3','4.6.6') < 0`（否定面）+ `('4.6.6','4.6.6') === 0` + `('4.6.7','4.6.6') > 0` + 位权样本 `^4.10.0 > 4.6.6`（字符串比较会判反）；解析失败**抛错不静默**（`workspace:*` / `latest`）。变异（逐位比较 → 恒 `return 0`）⇒ **1 红 / 5 绿**，而**不是**「底线断言也红」——`>= 0` 在恒 0 下照样成立，所以真正有牙的只有阶梯那一组。这个「1 而非 2」的实测差异已写进用例注释，防止后人误以为有 6 条守着而删掉阶梯
+- **文档纠正（两处假陈述）**：`scripts/gen-third-party-notices.mjs` 的说明段 + 生成的 `THIRD_PARTY_NOTICES.md` 改成「`dependencies` 保持 external，只有表内传递依赖被打进 `dist/`」；README 状态行改为「`npm audit` 0 漏洞（2026-11-05 实测）+ 复核请自行运行 `npm audit`」，并补上「产物为 external import」这一实测事实
+- **探针通电（防「全绿但没测」）**：临时把 `node_modules/zod` 改名 → `dist/cli/index.js --version` 直接 `ERR_MODULE_NOT_FOUND: Cannot find package 'zod' imported from dist/chunk-*.js`，改回即恢复 `5.0.0`。**没有这一探针，「external」只是我从 import 语句推测出来的**——而本轮结论正建立在它上面
+- **回归**：`npm run verify` **166 文件 / 2437 用例**全绿（基线 165 / 2430，+1 文件 +7 用例：`dependency-audit` 6 + `third-party-notices` 1）；`LUMEN_LOCALE=en` 换环境复跑同数全绿
+- **决策**：D92
+
 ### Fixed — C3：空目录跑 `review` 第一反馈是「未检测到 API Key」，而不是「这里没东西可审」（🟢，2026-11-05 修复）
 
 > 事故形态：**把「没用」和「没配」两个问题混成一句**，且混反了顺序。用户在空目录 / 非 git 目录里敲 `review`，第一眼看到的是三种配置 Key 的长引导；配完 Key 回来一跑，才发现真正的问题是「这个目录不是 git 仓库，没有可审查的改动」。白折腾一轮，且引导本身没错——错的是**说的时机**。
