@@ -1,6 +1,6 @@
 # ConcertoAI 开发任务看板
 
-> 最后更新：2026-10-29
+> 最后更新：2026-11-07（新增「冻结护栏测试（T20 遗留）实施计划」，见 v5.0 段末）
 > 当前里程碑：**🟡 v5.0 开发中（M1 7/7 ✅ + M2 4/4 ✅ + M3 3/3 ✅ + M4 5/5 ✅ + M5 3/3 ✅，2026-10-29）**（v5.0: M1 **7/7** ✅ · M2 **4/4** ✅ · M3 **3/3** ✅ · M4 **5/5** ✅ · M5 **3/3** ✅ · 下一步 **T23 收尾（回归 / 文档 / 手工测试 / 自审+发布）** · 155 文件 / 2209 用例全绿）
 > 基于：[v5.0 开发计划](./v5.0-dev-plan.md) · [v5.0 开发任务](./v5.0-dev-tasks.md) · 历史：[v4.2 开发任务（已并入 v5.0 M1）](./v4.2-dev-tasks.md) · [v4.1 开发任务](./v4.1-dev-tasks.md) · [v4.0 开发任务](./v4.0-dev-tasks.md)
 
@@ -102,7 +102,7 @@
 | **`v3.2.0` 远端 tag 与本地指向不同提交——需单独确认哪个是对的再处理** | ⬜ **待办**（2026-10-30 用户裁决：**不现在修**，`--force` 改历史 / 删本地 tag 均有风险；`v5.0.0` 已推成功，不影响当前发布） | **触发场景**：`git push --tags` exit 1，落盘读到 `! [rejected] v3.2.0 -> v3.2.0 (already exists)`。**实证（已用探针取证，勿凭印象）**：两个都是**轻量 tag**，指向**不同提交**——本地 `v3.2.0` → `9921a77`（2026-08-11 20:03 `fix(self-heal,team,qa): 修复手工测试发现的 3 个问题`）；远端 `v3.2.0` → `4739c82`（2026-08-11 18:11 `chore(release): 3.2.0`）。祖先关系：`4739c82` **是** `9921a77` 的祖先（远端提交更早），两提交**都在** `origin/main` 历史内；本地另有 `351a069 chore(release): v3.2.0 发布收尾（T6.4 完成 + T6.5 报告同步）`。**倾向**：按「发布 tag 应指向发布提交」的惯例，远端（`chore(release): 3.2.0`）更像正确目标，本地 tag 疑似在发布后被移动过；**但尚无决定性证据**（不排除当时有意把 tag 打到修复后），故**按要求只记录，不动手**。**处置候选**（届时需人工确认语义）：① 认定远端正确 → `git tag -f v3.2.0 4739c82` 使本地对齐（**本地操作，不碰远端**，推荐）；② 认定本地正确 → `git push --force origin v3.2.0`（改写远端引用）；③ 认定历史无价值 → 双向删除。**取证命令备忘**：`git rev-list -n 1 v3.2.0` / `git ls-remote --tags origin v3.2.0`（**注意 Windows cmd 下 `rev-parse v3.2.0^0` 的 `^` 会被转义吃掉变成 `v3.2.00`，必须改用 `rev-list -n 1`**） |
 | **v5.0.0 发布状态口径（README 状态行 / CHANGELOG 落版 / C6 暴露面）** | 🟡 **部分闭环**（2026-10-30 用户裁决） | ① **README 状态行已改为恒真表述**（「版本：v5.0.0 + verify 结果」，全文已无「已发布/待发布」字样——先按裁决改「待发布」消除假陈述，发布后再按新规范去掉状态语义，机制上杜绝「包内快照落后」，见上一行）；② **CHANGELOG `## [5.0.0] — 2026-10-30` 已落版**（`## [Unreleased]` 清空 + 补 K16/K7 修复条目 + 无破坏性变更声明 + 发布门实测 + 依赖审计口径），与 `npm publish` 同一次提交（`ac41ada`）；③ **C6 维持「已记录待升级」直接发**，README 写明「不声称 0 漏洞」+ 实测 4 high/2 moderate + `zod` 需 ≥4.6.6、`vitest` 需 >4.1.10 + **依赖不打进 tarball、用户安装解析到已修复版本、受影响的是本仓库 node_modules/lockfile**；④ 2FA 阻塞已解除（用户换 token），publish 于 2026-10-30 02:00 成功 |
 | **T23 收尾剩余遗留总表（2026-10-29 用户裁决：全部记看板、不擅自动）** | ⬜ **待办**（逐条见本表对应行） | 用户明确「其余遗留都记 TASKS，不擅自动」，四条：① `tests/cli/freeze.test.ts` 未建立（见本表下一行，属代码改动需授权）② `CHANGELOG` 的 v4.1.1 热修条目未归档（见本表对应行）③ `user-guide.md` 2 个重复 H3「### 对话内命令」（见本表对应行，存量）④ **T23.3（手工测试报告 07.5/07.11）/ T23.4（自审 + 发布）未做**——T23.3 本轮启动（8 场景），T23.4 待 T23.3 闭环后开工。**此行的作用是：不留「只在对话里说过」的遗留**，任何一项动手前先在这里改成 ✅ 或写明授权来源。 | 
-| **`tests/cli/freeze.test.ts` 未建立（T20 遗留）** | ⬜ **待办**（属代码改动，需单独授权） | T20 验收项之一「测试断言：冻结清单中的目录存在且未新增模块（防悄悄扩写）」**至今未落地**。现状：冻结只能靠 `docs/FEATURE_FREEZE.md` §五「机械判定三条」**人工核对**（命令数 / `src/` 新一级目录 / 冻结层文件数），没有任何代码兜底——冻结层被悄悄加文件不会有任何报警。补齐时断言：① `src/market/` `src/plugin/` `src/agents/` `src/lsp/` 的文件数与台账一致；② `concertoai --help --all` 命令数不超过 v5.0 冻结时快照；③ 反向自证（故意加一个文件必须红）。属代码改动，本轮 T23.2 只落文档不动测试。 |
+| **`tests/cli/freeze.test.ts` 未建立（T20 遗留）** | 🟡 **计划已落盘·待用户验收**（2026-11-07；代码**仍未动**，验收后才授权开工） | T20 验收项之一「测试断言：冻结清单中的目录存在且未新增模块（防悄悄扩写）」**至今未落地**。现状：冻结只能靠 `docs/FEATURE_FREEZE.md` §五「机械判定三条」**人工核对**（命令数 / `src/` 新一级目录 / 冻结层文件数），没有任何代码兜底——冻结层被悄悄加文件不会有任何报警。补齐时断言：① `src/market/` `src/plugin/` `src/agents/` `src/lsp/` 的文件数与台账一致；② `concertoai --help --all` 命令数不超过 v5.0 冻结时快照；③ 反向自证（故意加一个文件必须红）。属代码改动，本轮 T23.2 只落文档不动测试。**2026-11-07 补：实施计划已落盘**（本文件「### 冻结护栏测试（T20 遗留）实施计划」，含实测基线 `market` 6 / `plugin` 7 / `agents` 8 / `lsp` 5、`src/` 一级目录 23、注册命令 26，以及 7 条反向自证 + 4 个变异探针方案）。**代码仍未动**，等用户验收计划后再授权开工。 |
 | **CHANGELOG 的 v4.1.1 热修条目未归档** | ⬜ **待办**（`CHANGELOG.md` L341 自注「待 T23.2 文档收尾统一处理」，但本轮按 C1 只补 5.0.0 范围，未动） | 现状：`## [Unreleased]` 之后是 `## [4.1.0] — 2026-08-15`，而 L343-358 那批「v4.1 热修」条目**实际已随 v4.1.1 发布**，却没有 `## [4.1.1]` 小节承载，仍挂在 4.1.0 下。需要：新建 `## [4.1.1]` 小节把这批条目移过去，并核对版本号/日期。属纯文档整理（低风险但会改动历史小节），建议单开或 T23.4 前处理。 |
 | **`user-guide.md` 有 2 个重复 H3「### 对话内命令」** | ⬜ **待办**（存量问题，非本轮引入） | 改前即存在（分别在「跨会话记忆」与另一节的子结构下）。C1 裁决「只补缺的、有的不动」，故本轮未动。需判断：是两组不同上下文各自的「对话内命令」（合理），还是复制粘贴重复（应改名区分）。 |
 | **手册 `init` / `update` / `ccai` / `PROJECT_GUIDE` 缺独立章节** | ⬜ **待办**（**单开任务补**，2026-10-29 用户裁决：**不并入 T23.3**） | 现状（T23.2 实测计数）：`concertoai init` 仅 2 处顺带提及（场景提示的命令行 + 提示表）、`concertoai update` **0 处**、`ccai` 短命令 **0 处**、`PROJECT_GUIDE.md`（init 双输出的第二份文件）**0 处**——四者都没有像 `check` / `commit` / `fix` / `review` 那样的独立章节。**裁决理由（用户原话）**：C1 的范围是 `commit` + 场景提示，这些不在；T23.3 是手工测试报告，塞「补手册」会膨胀范围。**不擅自动**：单开任务补，补时按 C1 口径先核对再补缺，不重写已有节。 | 
@@ -126,6 +126,149 @@
 | **K15 后续①：价格表一手核价（🟡，2026-10-31 复验时发现）** | ✅ **已修复**（2026-11-05：程序化抓取官方定价页复核，flash 输出价 **4.5/9 → 4/8**，见 `docs/execution-log-20261107-0020.md` + `DECISIONS.md` ADR-038「一手核价订正」） | K15 真 Key 复验里，**本地累加 ¥0.118300 vs 结算后余额差 ¥0.09**（约 1.3 倍，2026-10-31 15:0x，¥0.94 → ¥0.85）。差 1.3 倍属「同量级」可接受，但**「≈¥」的可信度取决于 `MODEL_PROFILES` 单价是否与官方一致**，而该表是 **2026-08 的静态快照**（当天是周六 = 空闲档：输入 ¥1/M、输出 ¥4.5/M、缓存 ¥0.02/M）。需：取官方定价页一手核对 flash/pro 双档，若已变价则同步价格表 + 测试夹具；核不到就保持现状并在文档写明「金额是相对量级，非对账级」。**注意**：这条只影响「≈¥ 有多准」，不影响 K15 的结论（旧口径是「差 0 / 差一分」，连量级都不对）。**闭环（2026-11-05，一手核价）**：程序化抓取官方定价页实测，flash 输出价官方 **4 / 8**（空闲/高峰），代码原值 **4.5 / 9 偏高 12.5%**（成本被高估），已订正；pro 三项与 flash 缓存命中/输入价均一致。交叉校验：官方脚注「空闲档是高峰档一半」在 `4/8` 与 `13.5/27` 两组**同时**成立。连带重算：示例用量成本 `0.00948 → 0.00888`、flash→pro 倍率 `3.67 → 3.92`（显示 3.9 倍）、doctor 月成本 `5.69 → 5.33`；`models`/`auto`/`providers`/`slash-model`/`balance` 5 个测试文件按新价重算断言（`tier-label.test.ts` **刻意未动**：它的护栏断言「models.ts 不含高峰价/空闲价字面量」，改法是调整 `models.ts` 注释措辞而非放宽护栏——**护栏不动、被测对象让路**），`user-guide.md` 的 `/model` 示例块由真实处理器**实跑抓取**后替换（顺带修掉三处同时过期：价格 1.5/4.5/0.05、上下文 128,000、倍率 3.0）。回归：`npm run verify` **166 文件 / 2437 用例**全绿（zh + en）。**根因**：ADR-038 那次订正只核了「缓存命中」与「输入」两行，输出价按任务书原值保留，文档写的是「用户未提出订正」——「未提出」被当成了「核对过」。**范围说明**：本条只解决「单价是否准」；「余额结算延迟导致即时差偏小」属 DeepSeek 结算机制，已由 K15 的本地计价绕开（那个修复不改）。 |
 | **`en` 词典存量漏译：`balance` 的价格档标签仍是中文（🟢，2026-10-31 换环境复跑时发现）** | ✅ **已修复**（2026-11-03，K18 闭环，见 `docs/execution-log-20261102-232000.md` §七）：`tierLabel()` 从 `src/model/models.ts` **迁到 `src/i18n/index.ts`**（D89，价格层零 i18n 依赖），zh/en 词典各新增 `tierLabel: { peak, offpeak }`；4 个调用点统一改从 i18n 取；顺带补 zh 模板「当前」与模型名之间的空格 | 实测（`k18-probe-after.log`）：`setLocale('en')` 下 `priceTierSummary` 整行 **零 CJK**（`📊 Current DeepSeek V4 Flash off-peak hours: input ¥1/M …`），zh 侧仍是「高峰价 / 空闲价」（存量断言一条未改）。回归：`npm run verify` **163 文件 / 2379 用例**（基线 2367，+12）；`LUMEN_LOCALE=en npm run verify` 同数全绿。新增用例：`tests/i18n/tier-label.test.ts`（12 条，含源码护栏 + 反向样本）；范围外仍挂账：`/model` 整段中文、`auto.ts` 整段中文、StatusBar 剩余字面量 | `LUMEN_LOCALE=en node dist/cli/index.js balance` 实测输出 `💰 Balance: ¥0.85` + `📊 Current DeepSeek V4 Flash **空闲价**: input ¥1/M …` —— 同一行中英混排。属既有 `en.ts` 漏译（本次 K15 只新增 `usage` 段，已确认 zh/en 同构）。修法：把 `tierLabel` 的返回值改为走 i18n（**修前**是 `models.ts` 里写死的中文常量，K18 已迁至 `src/i18n/index.ts`），并补 `en` 断言「无 CJK 字符」。 |
 | **K17 `run` 端点点不通时抛未处理 Promise 拒绝、堆栈直接砸屏（🟡，2026-10-31 K14 取证时撞见）** | ✅ **已修复**（2026-11-02） | **现象**（可复现，0 花费）：隔离 `HOME` 写 `config.providers.deepseek.baseUrl = http://127.0.0.1:9/v1` 后跑 `concertoai run 'say hi'`，用户看到的是 `[ConcertoAI] 未处理的 Promise 拒绝，详情见 ~/.concertoai/crash.log` + `TypeError: fetch failed` 完整堆栈（`dist/chunk-*.js` 内部帧），退出码 1；**没有任何一句中文说明**「连不上你配置的端点 127.0.0.1:9」。对照：同一环境的 `review` 走 API 错误路径，给出的是完整中文归因（HTTP 401 + 恢复建议）。**根因候选**：`runTask` 链路未把 `fetch failed` 归一化为 `ApiError`/可读错误（`DeepSeekClient.fetchWithTimeout` 只区分超时与重试，网络层异常原样上抛），而 `cli/run.ts` 的 `safeAction` 未覆盖 → 落到 `crash-handler`。**修法**：`fetch failed`（含 `ECONNREFUSED` / DNS 失败）归一成「端点不可达：<baseUrl>，检查 config.providers.\<p\>.baseUrl 或网络」+ 可操作下一步，与 `review/commit` 的错误措辞同源；补一条单测断言「不可达时不出现堆栈、必出现 baseUrl」。**注意**：K14 修完后 baseUrl 会真正生效，**这条更容易被用户撞到**，建议与 K14 同批或紧随其后。**实际落点（2026-11-02）**：① `deepseek` 客户端新增 `EndpointUnreachableError`（事实字段 `url` / `baseUrl` / `detail`）+ `normalizeFetchError()`，是网络层异常的**唯一**归一点（`streamChat` 首字节前失败 + 流中中断两处）；`isNetworkFailure()` 三层判据（`cause` 链错误码 / **整条链 message 特征串** / 已是归一类型），**刻意不收裸 `TypeError`**（程序 bug 不可说成用户配错）——判据第一版只认 `cause.code`，而 `127.0.0.1:9` 走 fetch 规范的 `bad port` 分支（无 code）导致归一空转，靠**重跑探针逐字读回日志**才发现；② 新增 `src/cli/fatal-report.ts`（`describeFatalError`）作**唯一措辞点**：端点不可达 / 超时 → 一句话 + 下一步、**不打堆栈也不提 crash.log**，其余（含 `ApiError`）→ 消息 + 堆栈 + crash.log；③ `run` / `plan` 补包 `safeAction`（此前 7 个入口只包了 5 个），前缀 `errors.commandFailed` 也入字典（en 用户此前拿到「命令执行失败: Cannot reach…」中英混排）；④ `isRetryable` 改认归一类型，**重试次数不变**（仍 2 次 → 共 3 次请求）。**回归**：`npm run verify` 全绿 **162 文件 / 2367 用例**（基线 2344，+23：`client-network-error` 12 + `fatal-report` 7 + e2e 4）；`LUMEN_LOCALE=en` 换环境复跑全绿；真进程 e2e（假 Key + 死端口 + 隔离 `HOME`）`run` / `plan` 均退出码 1、含完整 URL、无 `TypeError` / `at async` / `crash.log` / 「软件缺陷」，且 en 整段无 CJK。踩坑：`docs/09-踩坑记录/2026-11-02-端点不可达被渲染成程序崩溃.md`；决策 D88。 |
+
+---
+
+### 冻结护栏测试（T20 遗留）实施计划 —— `tests/cli/freeze.test.ts`
+
+> **状态：计划已落盘，代码未动（2026-11-07）**
+> 用户指令口径：「今晚不改任何代码，保持工作区绝对干净……明天我验收计划后再授权你动手写代码。」
+> 上游依据：`docs/FEATURE_FREEZE.md` §三 / §五 · ADR-048 / D83 · 本文件「`tests/cli/freeze.test.ts` 未建立（T20 遗留）」行
+> 基线取证时间：**2026-11-07 00:44**（本机实测，复验命令见 §7）
+
+#### 0. 前提纠正：被测文件不存在，没有「输出」可依据
+
+指令要求「针对 `tests/cli/freeze.test.ts` 的**输出**」写计划。取证结论如下（四条互相独立）：
+
+| 取证动作 | 结果 |
+|---|---|
+| `list_directory tests/cli`（46 个文件逐个看） | **无 `freeze.test.ts`** |
+| `git ls-files` + `findstr /i freeze` | 只命中 `docs/FEATURE_FREEZE.md` **1 个**（该检索对 `freeze` 有命中 ⇒ 链路通电，不是「搜不到就宣布干净」的空转） |
+| `docs/FEATURE_FREEZE.md` §五 原文 | 「T20 原计划用 `tests/cli/freeze.test.ts` 代码断言上述第 3 条……**该测试至今未建立**」 |
+| 本文件待办行 | 「`tests/cli/freeze.test.ts` 未建立（T20 遗留）⬜ **待办**（属代码改动，需单独授权）」 |
+
+⇒ **没有任何测试输出可供「针对」**。本计划因此改为针对**设计意图**落地：把 `FEATURE_FREEZE.md` §五「机械判定三条」与本文件待办行写明的三条断言，从**人工核对**升级为**代码断言**——目标不是「补一个文件」，而是「冻结层被悄悄扩写时，`npm run verify` 自己会红」。
+
+#### 1. 目标（一句话）
+
+冻结层新增 / 改名 / 消失一个文件，或新冒出一级模块目录、新冒出一条命令时，`verify` **必须红**，并且指名道姓说是哪个路径、哪条命令。
+
+#### 2. 测试要覆盖的具体目录（实测基线，2026-11-07 00:44）
+
+| 目录 | 等级（FEATURE_FREEZE §三） | 实测文件数 | 基线文件清单（排序后写死） |
+|---|---|---|---|
+| `src/market/` | 冻结（停扩） | **6** | `download.ts` `index.ts` `installer.ts` `promote.ts` `registry.ts` `types.ts` |
+| `src/plugin/` | 冻结（停扩） | **7** | `builtin.ts` `installer.ts` `loader.ts` `manager.ts` `permissions.ts` `runtime.ts` `types.ts` |
+| `src/agents/` | 冻结（Agent 市场） | **8** | `architect.ts` `coder.ts` `index.ts` `orchestrator.ts` `protocol.ts` `qa.ts` `registry.ts` `reviewer.ts` |
+| `src/lsp/` | 只修不扩 | **5** | `diagnostics.ts` `framing.ts` `index.ts` `protocol.ts` `server.ts` |
+| **合计** | — | **26** | 与 `FEATURE_FREEZE.md` §三 台账 6/7/8/5 **逐个吻合** |
+
+另覆盖两类「面」（缺了它们，冻结层只被守住一半）：
+
+- **`src/` 一级子目录集合 = 23 个**：`agent` `agents` `balance` `cli` `core` `i18n` `knowledge` `loop` `lsp` `market` `mcp` `model` `observable` `orchestrator` `planner` `plugin` `reviewer` `skill` `store` `tools` `ui` `utils` `workflow`（一级文件 2 个：`index.ts` `version.ts`）
+  ⚠️ `agent`（单数·子代理）与 `agents`（复数·团队/市场）**并存**，故必须**精确集合相等**，禁止 `startsWith('agent')` 一类前缀匹配（那样删掉 `agents/` 也照样绿）。
+- **注册命令面 = 26 条**（真跑 `--help --all` 的 `Commands:` 段）：`chat` `run` `plan` `snapshot` `project` `team` `lsp` `self-heal` `audit` `reflect` `balance` `init` `check` `fix` `commit` `review` `update` `doctor` `login` `logout` `whoami` `account` `workflow` `plugin` `provider` `config`
+  （已实测两路互证：`--help --all` 输出 64 行、`Commands:` 段 26 条；`src/cli/index.ts` 内 `.command(` 亦 26 处，`src/core/suggestion.ts` 另有 2 处是 **JSDoc 注释**，不算注册——解析前必须先去注释。）
+
+#### 3. 断言规则（每条都能判真假）
+
+| 编号 | 规则 | 判据 |
+|---|---|---|
+| **R1** | 冻结层文件清单**双向精确相等** | `toEqual`（禁用 `arrayContaining` / 只比 `length`）；失败信息分两栏：`新增（冻结违规）` / `消失（可能误删）` |
+| **R2** | `src/` 一级子目录集合精确相等 | 新增一级目录 ⇒ 红（FEATURE_FREEZE §五 判据 2） |
+| **R3** | 命令名集合精确相等（26） | 从**真实进程** `--help --all` 解析，不读源码字面量（对照 T14「顺序表不是文案表」：源码改了没注册也能被抓住） |
+| **R4** | **正例探针**（防假绿） | 比较前先断言：基线总数 26 > 0、每个目录 `actual.length > 0`、命令集合 `size === 26`。否则「解析返回空 + 基线为空」会静默全等 |
+| **R5** | 基线**写死**，禁止运行时现算 | 从仓库现算再比对 = 同义反复 = 恒绿（AGENTS「度量类必须有否定面」） |
+| **R6** | 只读，不留垃圾 | 不写仓库任何路径；fixture 一律 `mkdtempSync(os.tmpdir())` + `try/finally`，并断言清理后目录已不存在 |
+| **R7** | 环境钉死 | 真跑 CLI：`LUMEN_LOCALE=zh` + `HOME`/`USERPROFILE` → 临时目录 + `NO_COLOR=1` + `CONCERTOAI_HINTS=off`（AGENTS 进程级全局状态隔离；照抄 `tests/cli/help.test.ts` 的 `runCliHelp`，超时 180s 同值） |
+| **R8** | 路径归一 | 基线一律 `path.posix` 相对路径（Windows 反斜杠不得进基线），并留 1 条用例守它 |
+
+#### 4. 反向自证（核心：证明「护栏有牙」）
+
+做法：断言逻辑抽成**可注入 root 的纯函数** `scanFreezeLayout(root)` + `diffLayout(actual, baseline)` ⇒ 合成 fixture 里「故意塞假文件」**不必污染真实 `src/`**（也避免「为了自证把仓库搞脏」这种事故）。
+
+| 编号 | 反向场景（怎么造） | 期望 |
+|---|---|---|
+| **N1** | tmp fixture 的 `src/market/` 塞入 `extra.ts` | 红，且信息含 `src/market/extra.ts` + 「冻结违规」 |
+| **N2** | 把 `src/plugin/types.ts` 改名 `types-renamed.ts` | 红（**数量没变**也要红，证明不是只数个数） |
+| **N3** | 删掉 `src/lsp/server.ts` | 红（防「只查增不查减」） |
+| **N4** | 新建一级目录 `src/foo/` | 红 |
+| **N5** | 命令集合多一条 `deploy` / 少一条 `check` | 各红 |
+| **N6** | 基线里故意写错一个文件名（模拟基线过期） | 红（证明基线真被比较，不是装饰） |
+| **N7** | **正例**：真实仓库 vs 基线 | **绿且 0 差异**（护栏一上来就红 = 没护栏） |
+
+**变异探针（实测后把结果表贴进执行日志，不许只写「已验证」）**：
+
+| 探针 | 把实现改坏成 | 必须变红的用例 |
+|---|---|---|
+| **M1** | R1 退化为「只比数量」`actual.length === baseline.length` | **N2**（改名） |
+| **M2** | R1 退化为「只查缺失」`baseline.every(x => actual.includes(x))` | **N1**（塞假文件） |
+| **M3** | R3 的解析恒返回 `[]`（解析空转） | **R4 正例探针 / R3** |
+| **M4** | 把 `root` 指向不存在路径 | 必须红（而不是「0 文件 ⇒ 相等」） |
+
+每条反向用例的注释都要写明「**配变异探针 Mx 验证有牙**」；探针必须「改坏 → 指定用例红 → 改回 → 绿」三态齐全。
+
+#### 5. 用例清单（预估 14 条）
+
+1–4. 四层文件清单与基线精确一致（各自带正例探针 `length > 0`）· 5. 四层合计 26 与 §三 台账 6/7/8/5 交叉校验 · 6. `src/` 一级目录集合一致（含「`agent` 与 `agents` 并存」显式断言）· 7. `--help --all` 命令集合 26 条（真进程）· 8–13. N1–N6 反向自证 · 14. R6 临时目录清理 + R8 posix 路径归一。
+
+#### 6. 预期影响范围
+
+**（a）代码与产物**
+
+- 新增**唯一**文件：`tests/cli/freeze.test.ts`。`src/` **零改动**——断言逻辑留在测试内，不新增运行时模块（否则「护栏」自己变成需要被守的东西，得不偿失；放进 `src/core/` 虽属活跃层、技术上不违冻结，但无必要）。
+- `package.json` 零改动（不新增 npm script，`verify` 已含 `npm test`）⇒ **版本联动 6 处一处都不用碰**。
+- 包体积零变化：`files` 白名单实为 `["dist","LICENSES","THIRD_PARTY_NOTICES.md"]`，`tests/` 不进包；仍按 AGENTS 发布门跑一次 `npm pack --dry-run` 复核（**不靠推断**，`files` 管不住 README/LICENSE/package.json 的教训在本次不适用，但要看到清单）。
+- 运行时行为零变化（无 src / i18n / dist 语义改动，用户侧无感）。
+
+**（b）verify 与计数**
+
+- 文件数 155 → **156**，用例数 **+14**（最终数字以开工当日 `npm run verify` 实测刷新为准；看板上的 2209 是 2026-10-29 口径，此后 K16 / C1–C6 / K15 等任务已增用例，**禁止直接抄**）。
+- 时长：新增 1 次 tsx 冷启动（`--help --all`，与 `help.test.ts` 同类调用，超时上限沿用 180s）；具体耗时开工时实测记录。
+
+**（c）维护义务（主要成本，属设计内）**
+
+- 冻结层**合法**变更（解冻 / 加文件 / 加命令）会让 verify 必红 ⇒ 必须**同一提交**内更新基线，提交信息写明理由；解冻还须按 FEATURE_FREEZE §七 新建 ADR。牙就在这里，代价是「正常重构也会被拦一次」。
+- 缓解：失败信息写成可操作的人话——① 差异（新增/消失各列全）② 为什么这算冻结违规（附 `FEATURE_FREEZE.md` §三 位置）③ 三条处置路径：改基线（合法）/ 回退（不合法）/ 走解冻 ADR。
+
+**（d）明确不做（划界）**
+
+- 不新增 `src/` 模块、不加 npm script、不写 `scripts/` 门禁脚本。
+- **不**解析 `FEATURE_FREEZE.md` 表格做「文档 ↔ 基线」自动校验（markdown 表格解析脆弱、属过度设计）；改为文档里写明「改基线须同步 §三 台账」。
+- 不做 markdown lint（独立待办，须单独评估 `biome.json` 回归面）。
+
+#### 7. 复验命令（任何一条都能当场推翻本计划的数字）
+
+```
+dir /b src\market src\plugin src\agents src\lsp
+node -e "console.log(require('fs').readdirSync('src',{withFileTypes:true}).filter(e=>e.isDirectory()).map(e=>e.name).join(' '))"
+npx tsx src/cli/index.ts --help --all     :: 64 行，Commands: 段 26 条
+npx tsx src/cli/index.ts --help           :: 36 行，无命令平铺
+findstr /n ".command(" src\cli\index.ts   :: 26 处（core\suggestion.ts 的 2 处是 JSDoc）
+```
+
+#### 8. 开工顺序与验收标准（授权后执行，预估 **2–3h**）
+
+| 步骤 | 内容 | 验收 |
+|---|---|---|
+| **F1** | 写死基线常量（4 目录清单 + 23 一级目录 + 26 命令名），**先写 N7 正例** | 真实仓库跑出 0 差异 |
+| **F2** | `scanFreezeLayout(root)` + `diffLayout()` 纯函数（root 可注入） | 可对 tmp fixture 独立驱动 |
+| **F3** | 反向自证 N1–N6 + R4 正例探针 + R6/R8 | 6 条反向全红、正例全绿 |
+| **F4** | 变异探针 M1–M4 实测 | 三态齐全（改坏红 / 指定用例红 / 改回绿），结果表进执行日志 |
+| **F5** | `npm run verify` 全绿 + **换环境复跑**（`LUMEN_LOCALE=en`）+ `git status` 干净 | 两条命令 exit 0，工作区无残留 |
+| **F6** | 三处同步：`FEATURE_FREEZE.md` §五（把「该测试至今未建立」改为「已由代码守护」）/ 本文件待办行改 ✅ / `CHANGELOG.md` | 裸子串重搜「未建立」零命中（不用正则转义） |
+
+**发布门（本任务专属）**：① verify 全绿；② 4 个变异探针实测记录在案；③ `npm pack --dry-run` 清单里**无** `tests/`；④ 工作区归零。
+
+#### 9. 风险速查
+
+| 风险 | 会怎么发生 | 缓解 |
+|---|---|---|
+| 基线硬编码与合理重构冲突 | 冻结层正常加文件，verify 红，人直接改基线了事 | 失败信息指路 + 「改基线须同提交写明理由」写进 F6 |
+| **假护栏（恒绿）** | 只比数量 / 只查缺失 / 解析空转 / root 指错 | M1–M4 变异探针 + R4 正例探针（AGENTS「度量类必须有否定面」硬要求） |
+| 平台差异 | Windows 反斜杠进基线；macOS 大小写不敏感 | R8 posix 归一 + 存**精确文件名**（换大小写也能抓） |
+| 新克隆跑不通 | 未 `npm ci` 时 tsx 不存在 | verify 前置就是 build/lint/typecheck，缺依赖会先红，不额外兜底 |
+| 冻结层被合法解冻 | 走 ADR 后忘了改基线 | 基线更新与 ADR **同提交**，写进 §七 维护约定 |
 
 ---
 
