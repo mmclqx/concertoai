@@ -43,9 +43,9 @@ describe('createDeepSeekProvider（T3.3）', () => {
     expect(provider.defaultModel).toBe('deepseek-v4-flash');
     // tokenize：已知文本 → 正数
     expect(provider.tokenize('hello')).toBeGreaterThan(0);
-    // cost：按定价表计算（flash 空闲价：输入 1 元/M，输出 4.5 元/M）
+    // cost：按定价表计算（flash 空闲价：输入 1 元/M，输出 4 元/M）
     const cost = provider.cost(1_000_000, 500_000);
-    expect(cost).toBeCloseTo(1 + 2.25, 5); // 1M 输入 * 1 + 0.5M 输出 * 4.5
+    expect(cost).toBeCloseTo(1 + 2, 5); // 1M 输入 * 1 + 0.5M 输出 * 4（2026-11-05 输出价 4.5→4）
     // healthCheck：mock fetch 返回余额 → ok
     const withFetch = createDeepSeekProvider({
       apiKey: 'sk-test',

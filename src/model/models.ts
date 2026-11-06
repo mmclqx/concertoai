@@ -1,11 +1,14 @@
 /**
  * 模型表与成本计算。
  *
- * **价格数据来源（v5.0 T7，已由用户核对官方定价页）**：
+ * **价格数据来源（v5.0 T7 + 2026-11-05 一手复核）**：
  * - 来源：DeepSeek 官方定价页 <https://api-docs.deepseek.com/zh-cn/quick_start/pricing>
- *   （用户 2026-10-27 核对后给出订正值，见 ADR-038）；
- * - flash 原任务书数字有误（缓存命中 0.05/0.10、输入 1.5/3.0），**已按官方订正**为 0.02/0.04、1/2；
- * - pro 数字经核对无误；flash 输出价（4.5/9.0）用户未提出订正，保持原值。
+ * - 2026-10-27（ADR-038）：用户手工核对后订正 flash 缓存命中（0.05/0.10 → **0.02/0.04**）
+ *   与输入（1.5/3.0 → **1/2**）；**flash 输出价当时按任务书原值 4.5/9.0 保留，未逐项核**。
+ * - 2026-11-05（K15 后续①，`docs/execution-log-20261105-2222.md`）：程序化抓取同一官方页复核，
+ *   发现 flash 输出价官方为 **4 / 8**（空闲/高峰），原值 4.5/9.0 **偏高 12.5%**，已订正。
+ *   交叉校验：官方脚注「空闲档价格是高峰档的一半」在 4/8 与 13.5/27 两组上都成立。
+ * - 教训：**「未提出订正」≠「核对过」**——那张表有三行，只核前两行时第三行会带着任务书原值一路下来。
  *
  * 双档计价：DeepSeek 按高峰 / 空闲两档计费，`priceTierFor(at)` 决定当前档位
  * （计价时段已排除中国法定节假日，见 `core/holidays.ts`），
@@ -57,8 +60,8 @@ export const MODEL_PROFILES: readonly ModelProfile[] = [
     label: 'DeepSeek V4 Flash',
     description: '默认模型：快速、便宜，适合日常对话与简单任务',
     contextWindow: 1_000_000,
-    offPeak: { input: 1, output: 4.5, cacheHit: 0.02 },
-    peak: { input: 2, output: 9, cacheHit: 0.04 },
+    offPeak: { input: 1, output: 4, cacheHit: 0.02 },
+    peak: { input: 2, output: 8, cacheHit: 0.04 },
     rateLimit: 2500,
     default: true,
   },

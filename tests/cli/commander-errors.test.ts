@@ -24,10 +24,30 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 /** tsx 入口（与 `npm run dev` 等价，不依赖 dist 构建产物）。 */
 const TSX_CLI = path.join(process.cwd(), 'node_modules', 'tsx', 'dist', 'cli.mjs');
+
+/**
+ * spawn 类用例的显式超时（2026-11-05 实测追加）。
+ *
+ * 为什么必须显式写：vitest 默认 `testTimeout` 是 **5000ms**，而这里每条用例要
+ * **起真实 Node + tsx 进程**（`runBoth` 还要起两次：zh 和 en）。单跑约 1s，但在
+ * `npm run verify` 的 166 文件并发满载下会超过 5s → 报 `Test timed out in 5000ms`。
+ *
+ * 这类超时**不是 flaky 的免责理由**：它是「红灯不可信」——每次全量都随机红 2~4 条，
+ * 真回归会被淹没在噪声里（狼来了）。实测三次全量的失败子集各不相同
+ * （`commander-errors` / `lsp/diagnostics` / `spinner` / `audit` 轮着来），
+ * 全部单跑通过 ⇒ 是资源竞争，不是被测行为错。
+ *
+ * 取 30000ms：单条最慢实测约 12.9s（`bogus-xyz` 那条要跑 6 种形态），留一倍余量。
+ * **超时放宽不影响断言强度**——断言仍然只看 stdout/stderr/退出码。
+ */
+const SPAWN_TIMEOUT_MS = 30_000;
+
+// 本文件每条用例都 spawn 真实进程 ⇒ 整体抬高本文件的 testTimeout（只影响本文件）。
+vi.setConfig({ testTimeout: SPAWN_TIMEOUT_MS });
 
 /** CJK 统一汉字区。 */
 const CJK = /[\u4e00-\u9fff]/;

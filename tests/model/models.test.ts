@@ -72,10 +72,10 @@ describe('模型表', () => {
     expect(flash.contextWindow).toBe(1_000_000);
     expect(pro.contextWindow).toBe(1_000_000);
 
-    // flash：缓存命中 0.02/0.04 · 未命中 1/2 · 输出 4.5/9.0（空闲/高峰），并发 2500
-    // （v5.0 T7 修订：用户核对官方定价页后订正缓存命中与输入价，原任务书数字有误）
-    expect(flash.offPeak).toEqual({ input: 1, output: 4.5, cacheHit: 0.02 });
-    expect(flash.peak).toEqual({ input: 2, output: 9, cacheHit: 0.04 });
+    // flash：缓存命中 0.02/0.04 · 未命中 1/2 · 输出 4/8（空闲/高峰），并发 2500
+    // （2026-10-27 ADR-038 订正缓存命中与输入；2026-11-05 K15 后续① 一手复核订正输出 4.5/9→4/8）
+    expect(flash.offPeak).toEqual({ input: 1, output: 4, cacheHit: 0.02 });
+    expect(flash.peak).toEqual({ input: 2, output: 8, cacheHit: 0.04 });
     expect(flash.rateLimit).toBe(2500);
 
     // pro：缓存命中 0.15/0.30 · 未命中 4.5/9.0 · 输出 13.5/27.0（空闲/高峰），并发 500

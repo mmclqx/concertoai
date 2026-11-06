@@ -96,7 +96,7 @@ describe('priceTierSummary（v5.0 T7：当前时段真实单价）', () => {
     const line = priceTierSummary(PEAK_AT);
     expect(line).toContain('高峰价');
     expect(line).toContain('¥2/百万'); // flash 高峰输入价
-    expect(line).toContain('¥9/百万'); // flash 高峰输出价
+    expect(line).toContain('¥8/百万'); // flash 高峰输出价（2026-11-05 一手复核 9→8）
     expect(line).toContain('缓存命中');
   });
 
@@ -104,7 +104,7 @@ describe('priceTierSummary（v5.0 T7：当前时段真实单价）', () => {
     const line = priceTierSummary(OFFPEAK_AT);
     expect(line).toContain('空闲价');
     expect(line).toContain('¥1/百万');
-    expect(line).toContain('¥4.5/百万');
+    expect(line).toContain('¥4/百万'); // flash 空闲输出价（2026-11-05 一手复核 4.5→4）
   });
 
   it('周末按空闲价展示（不误导用户以为涨价）', () => {

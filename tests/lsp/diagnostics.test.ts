@@ -13,7 +13,7 @@
 
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 import {
   applyTextEdits,
   biomeFixEdits,
@@ -278,6 +278,18 @@ describe('selfHealCodeActions', () => {
 describe('biomeFixEdits（集成，真实 biome 子进程）', () => {
   // 临时副本目录（主仓库 src/ 下：npx 向上找到主仓库 biome + includes 覆盖 src/**）
   const tmpBases: string[] = [];
+
+  /**
+   * 本组用例要**真起 biome 子进程**（`npx biome`，冷启动 + 扫描约 2~5s），
+   * vitest 默认 `testTimeout` 5000ms 在 `npm run verify` 的 166 文件并发满载下不够
+   * （2026-11-05 实测：三次全量里该组每次都随机红，报 `Test timed out in 5000ms`，
+   *  单跑 2447ms 全过 ⇒ 资源竞争，不是被测行为错）。
+   *
+   * 显式 30s 只放宽**等待时间**，断言强度不变：仍然要看回真实的整文件替换 edit。
+   * 顺带说明为什么不用 `retry`：重试会把「偶尔真的坏」也刷成绿，这里要的是
+   * 「等它跑完」，不是「多试几次直到好看」。
+   */
+  vi.setConfig({ testTimeout: 30_000 });
 
   afterAll(() => {
     for (const dir of tmpBases) {
