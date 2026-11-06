@@ -387,14 +387,16 @@ chat 内 `/workflow run <name>` 同样可用。语法参考见 [workflow-syntax.
 ```
 $ /model
 🤖 当前模型：DeepSeek V4 Flash（deepseek-v4-flash）
-   当前时段：空闲价（输入 ¥1.5/百万 · 输出 ¥4.5/百万 · 缓存命中 ¥0.05/百万）
-   上下文窗口：128,000 tokens · 并发限制：2500
-   💡 任务较复杂？可手动升级到 DeepSeek V4 Pro：/model deepseek-v4-pro（同一示例用量约 3.0 倍成本，需确认）
+   当前时段：空闲价（输入 ¥1/百万 · 输出 ¥4/百万 · 缓存命中 ¥0.02/百万）
+   上下文窗口：1,000,000 tokens · 并发限制：2500
+   💡 任务较复杂？可手动升级到 DeepSeek V4 Pro：/model deepseek-v4-pro（同一示例用量约 3.9 倍成本，需确认后生效）
 用法：/model auto（自动预设）· /model list（模型列表）· /model <id>（手动切换）
 
 $ /model deepseek-v4-pro
 # → 弹出审批框「切换模型（成本将上升）」+ 成本对比；y 批准 / n、Esc 拒绝（拒绝即保持原模型）
 ```
+
+> 上面这段输出是 `executeModelCommand({ type: 'status' })` 在「空闲档」**实跑抓下来的**，不是手抄模板。2026-11-05 K15 复核时发现旧块**三处同时过期**：价格还写在 2026-10-27 订正前的 1.5/4.5/0.05、上下文写着 128,000（实际 1M）、倍率写着 3.0（实际 3.9）。单价随官方定价页变动，**以 `concertoai balance` 显示的当前时段单价为准**（本节末尾也有官方链接）。
 
 其他细节：
 
