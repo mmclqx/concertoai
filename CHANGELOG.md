@@ -24,6 +24,16 @@
 - **回归**：`npm run verify` **167 文件 / 2463 用例**全绿；`LUMEN_LOCALE=en` 换环境复跑同数全绿；`npm pack --dry-run` 确认 `tests/` 不进包（177 文件 / 1.0 MB）
 - **文档同步**：`FEATURE_FREEZE.md` §五 从「该测试至今未建立」改为「已由代码守护」+ 新增 §九 代码守护台账；`TASKS.md` 待办行改 ✅
 
+### Fixed — CHANGELOG 的 v4.1.1 条目归档：条目散落在 `[5.0.0]` 小节内被误读成 v5.0 内容，同时校正用例数 1402 → **1404**（2026-11-07）
+
+> 事故形态：**归类错误不报错**。v4.1.0 发布后的热修（循环依赖环崩溃 / Windows stdout 合并 / biome 摘要 / preflight 停止 / preflight P0）与对应测试小节，**缺少 `## [4.1.1]` 标题**，整块落在 `## [5.0.0]` 小节内部——任何读 CHANGELOG 的人都会以为这些 workflow 修复属于 v5.0.0，据此判断升级影响面就会误判。原本的「待 T23.2 处理」自注是**注释，不会失败**，于是一直挂着。
+
+- **新建 `## [4.1.1] — 2026-08-17` 小节**，把 5 条 `Fixed` + `### 测试` 小节归位（正文**一行未改**，只补标题与摘要行）；删掉两条「待归档」自注
+- **日期取证**：tag `v4.1.1` → `345b032`（2026-08-17 02:34）；发布 bump `a4dae3d` 02:32；热修代码 `aabde3a` 2026-08-16 00:11 ⇒ 取**发布日 2026-08-17**
+- **用例数校正 1402 → 1404**（两条独立路径同值）：① `### 测试` 自己写着「P0 追加 2 用例」，1402 + 2 = 1404；② tag 提交标题即「verify **1404**」，且与 `[5.0.0]` 发布门描述「v4.1.1 为 117 文件 / 1404 用例」一致。原 1402 是热修阶段中间值（相对 4.1.0 的 1390 是 +12，最终是 +14）
+- **校验脚本三态自证（临时脚本，跑完即删）**：顺序（`4.1.1` 在 `5.0.0` 与 `4.1.0` 之间）/ 残留（「待归档」等 3 个串清零）/ 归类（`pty-drive-p0` 等 3 个特征串已移出 `5.0.0`）全 PASS；数字断言配**反向自证**（内存中改回 1402 ⇒ 断言必须翻红，实测翻红）——过程中两次假红/空转都被这条探针抓住：① 粗粒度断言（同时含「1402」与「基线校准」）把正确内容判红；② 改坏逻辑本身没匹配到 Markdown 粗体 `**1404**`，导致探针空转、正向 PASS 却毫无证明力
+- **顺带发现工具事故（已落踩坑记录）**：`search_content` 的 `path` 传**单个文件**时静默返回 0 命中（`path='CHANGELOG.md'` 搜 `4.1.1` → 0，`path='.'` → 12 处；第二个独立样本 `docs/FEATURE_FREEZE.md` 搜「冻结」同样 0）。差点据此断言「CHANGELOG 里没有 v4.1.1、看板描述过期」
+
 ### Fixed — K15 后续①：flash 输出价一手核价订正（4.5/9 → **4/8**），并修掉三处「不会失败的测试」使它不再掩盖真回归（2026-11-05）
 
 > 两层问题：① **价格表第三行从来没被核过**——2026-10-27 那次订正只核了 flash 的「缓存命中」与「输入」两行，输出价按任务书原值 4.5/9 保留下来了（ADR-038 原文写的是「用户未提出订正」，「未提出」被当成了「核对过」）；② 顺手做全量验证时发现 `verify` 在这台机器上**每次随机红 2~4 条**，且**每次红的不是同一批** —— 这意味着「全绿」已经失去意义，真回归会被噪声淹没。
@@ -541,9 +551,11 @@
 - **计价高峰排除中国法定节假日 + 纳入调休上班日**（`src/core/holidays.ts` 新增）：`计价工作日 = (周一~周五 且 非法定节假日) 或 调休上班日`；节假日优先于调休（同日两者都有 → 按节假日算，fail-safe 向便宜）；**切换口径 `isPeakTime` 保持不变**（v2.2 语义，避免静默改变用户已配置的 ollama 切换行为）。节假日数据**不内置推测值**（国务院逐年发布，猜错一天 = 算错钱），支持 `config.pricingHolidays: { holidays, makeupWorkdays }` 运行时装载；非法日期提示后忽略；**未配置时 `concertoai balance` 显式提示「可能显示错误档位」**，不静默犯错
 - **【存量缺陷】v3 配置迁移后 `legacy` 里的字段全部失效**（v4.0 起潜伏）：`migrateV3ToV4` 把 `allowlist` / `peakTimeStrategy` / `mcpServers` / `sessionDir` / `locale` 等收进 `legacy` 子对象，但全仓**零处读取** `legacy`（消费方都读顶层）→ 迁移「成功」但这些配置全失效（白名单要重批、MCP 不启动、高峰策略回落 ask）。本轮因新增 `pricingHolidays` 走同一路径而暴露，`loadConfig` 读取层新增 `flattenLegacy`（**顶层优先**，legacy 只补缺失键，不改写磁盘）+ 2 条回归用例。详见 `docs/09-踩坑记录/2026-10-27-配置迁移legacy字段无人消费.md`
 
-> 历史遗留（待 T23.2 文档收尾统一处理）：下方 v4.1.0 热修条目实际已随 v4.1.1 发布，尚未移动到 `[4.1.1]` 小节。
+## [4.1.1] — 2026-08-17
 
-> v4.1.0 发布后热修（v4.1.1 已发布，条目待归档）。117 文件 / 1402 用例全绿（+12）。
+> v4.1.0 发布后热修（热修代码 2026-08-16，发布动作 2026-08-17）+ 专家手工测试 mt43 暴露的 preflight P0。117 文件 / **1404** 用例全绿（+14）。
+>
+> **归档说明（2026-11-07）**：本小节此前**缺标题**，条目散落在 `[5.0.0]` 小节内——读 CHANGELOG 的人会以为这些 workflow 修复属于 v5.0.0（实质性归类错误，不只是格式问题）。同批校正用例数：原写 1402 是热修阶段中间值，按发布门一手证据（tag `v4.1.1` → `a4dae3d` bump → `345b032` 标题「verify 1404」）校正为 **1404**，与 `[5.0.0]` 发布门描述里的「v4.1.1 为 117 文件 / 1404 用例」一致（两条独立路径同值）。
 
 ### Fixed
 
@@ -553,12 +565,12 @@
 - **preflight 用户拒绝（n）/非 TTY 静默退出**：`preflightAndInit` 拒绝继续时无任何输出直接返回 → 补「已停止执行，请先配置缺失项后重试」（i18n `preflightStopped` zh/en）。2 回归测试
 - **preflight 自动初始化「装好了但跑不通」——biome 2.x 不兼容 + tsc 无 tsconfig 打印 help**（专家手工测试 mt43 暴露，证据 `docs/11-手工测试结果/v4.1.1-test-result.md`）：① `defaultBiomeJson()` 模板写死 1.9.4 schema + deprecated `recommended: true`，而 preflight 安装 `@biomejs/biome` 无版本上限 → npm 装到 2.5.8 → lint 报 `schema version does not match（Expected 2.5.8 / Found 1.9.4）` 必败 → 模板升 2.x（`$schema` 2.5.8 + `linter.rules.preset: 'recommended'`）；② typecheck 自动初始化只装 typescript + 注入 `tsc --noEmit`，裸项目无 tsconfig.json → tsc 不检查文件而是打印 help（exit 1）→ 新增 `defaultTsconfigJson()`（esnext/nodenext/strict/noEmit/skipLibCheck/verbatimModuleSyntax）+ autoInit 写文件 + checkPrerequisites 缺失检测（可自动修复）；③ error-summary 识别 tsc help 特征 → 摘要给出「缺少 tsconfig.json，npx tsc --init」可操作提示；biome 摘要由整行 ━ 标题改为「文件名 + 需要格式化/存在 lint 问题 + biome check --write .」。回归 3 用例 + `scripts/pty-drive-p0.mjs` 端到端 TTY 驱动（裸项目 → 自动初始化 → lint+typecheck 全过）
 
-### 测试（v4.1 热修）
+### 测试（v4.1.1）
 
 - 新增 10 用例：`tests/workflow/executor.test.ts`（循环依赖友好失败改断言）、`tests/workflow/parser.test.ts`（直接/间接环跳过 2）、`tests/utils/error-summary.test.ts`（format/lint 文件标题 2）、`tests/cli/workflow.test.ts`（stdout 合并 4 + preflight 停止 2）
 - **v4.1.1 P0 追加 2 用例**：`tests/utils/error-summary.test.ts`（tsc help 特征 → 「缺少 tsconfig.json」提示 + biome 摘要去 ━ 断言 2）、`tests/workflow/preflight.test.ts`（tsconfig.json 缺失检测 + 默认 biome.json 2.x schema/preset + typecheck autoInit 写 tsconfig）
 - **端到端验证**：`scripts/pty-drive-p0.mjs`（node-pty 真实 TTY：裸项目 → preflight 自动初始化 y→y → 断言「✅ 工作流 precommit 执行成功」+ failIf biome schema 报错 / tsc help）；`scripts/_ts7-check.mjs`（TS7 无 tsconfig help 行为实证）
-- **基线校准**：117 文件 / 1402 用例全绿（`npm run verify`）
+- **基线校准**：117 文件 / **1404** 用例全绿（`npm run verify`）——热修阶段为 1402，P0 追加 2 后为 1404（原行写 1402 是中间值，2026-11-07 归档时按 tag 提交一手证据校正）
 
 ## [4.1.0] — 2026-08-15
 
