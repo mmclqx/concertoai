@@ -1,0 +1,10 @@
+docs(log): 冻结护栏轮补提交与推送结账（8.0）
+
+- 提交 1e9bda3（8 files / +970）：三条判据代码化 + N1-N6/N8 反向自证 + N7 正例 + M1-M7 变异探针 + 换环境假红修复
+- 身份 trailer 探针：首次 commit 未声明 CONCERTOAI_AGENT，prepare-commit-msg 落成 Agent: unmarked 并当场告警；
+  amend 后为 Agent: concertoai-loop。记下来是因为该 hook 会改写提交信息，不读 git log -1 --format=%B 核不出来
+- 推送前 FF 自证 git merge-base --is-ancestor origin/main HEAD -> exit 0；push ccc7129..1e9bda3；
+  推后 HEAD 与 origin/main 同为 1e9bda3，双向 log 差集均空
+- 提交前双环境复验：22:42 默认 / 22:43 LUMEN_LOCALE=en，均 167 文件 / 2463 用例全绿
+
+Agent: concertoai-loop
