@@ -14,3 +14,6 @@ Thumbs.db
 .lumen/
 .concertoai/
 docs/起名建议/
+# LSP 修复副本临时目录（`src/lsp/diagnostics.ts` 的 biome includes 要求，落在项目 src/ 下）
+src/.concertoai-lsp-fix-*/
+src/.lsp-fix-itest-*/
