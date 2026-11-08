@@ -71,6 +71,22 @@ const MAX_BUFFER = 10 * 1024 * 1024;
 const INSTRUCTION_STATUSES = ['in_progress', 'done', 'blocked', 'abandoned'];
 const STEP_STATUSES = ['pending', 'in_progress', 'done', 'skipped', 'superseded'];
 
+/**
+ * 「完成」的三档口径（2026-11-08 用户裁决，见 `docs/12` §一）。
+ *
+ * 事故的形状是**两头都歪**：我把「未提交」说成「已完成」（偏乐观）；用户读到
+ * 一堆英文告警，以为是「写入失败」（偏悲观）。两者同一个真空——**没有档位**。
+ *
+ *   ① 已写入（磁盘上有）     ← `check` 命令本身在测这个
+ *   ② 已提交（进版本库）     ← 只有判据声明了 `mustBeTracked` 才算测过
+ *   ③ 已推送（远端有）       ← **本命令不判**：本地 `origin/main` 可能过时，
+ *                              拿它当证据就是「安静地给出有利结论」
+ *
+ * 所以每次 `check` / `--set-status done` 都**固定打印**这行，逼读的人知道边界在哪。
+ */
+const TIER_LINE =
+  'instruction-state: 档位 —— ①已写入 + ②已提交（判据声明 mustBeTracked 时才算）已判；③已推送 **未判**（本地 origin/main 可能过时，要自己跑 git log origin/main..HEAD 复核）';
+
 // ── 时间与路径 ────────────────────────────────────────────────
 
 const pad = (n, w = 2) => String(Math.abs(n)).padStart(w, '0');
@@ -606,6 +622,7 @@ function cmdCheck(opts) {
   }
   // 固定尾行：防止把「判据全绿」误读成「已查重」（查重 dedup 尚未实现，docs/12 §5）
   console.log('instruction-state: 本命令只判定判据，不等于查重（未实现 dedup）');
+  console.log(TIER_LINE);
   process.exit(runs.every((r) => r.pass) ? EXIT.OK : EXIT.CRITERIA_FAIL);
 }
 
@@ -837,13 +854,22 @@ function cmdUpdateSetStatus(opts) {
     fail(`有 ${failed.length} 条判据未通过，拒绝标记 done（证据已落盘）`, EXIT.THRESHOLD);
   }
   data.status = 'done';
+  // 档位留痕：事后翻 doneProof 就能看出这次 done 到底覆盖到哪一档（不用猜、不用重读判据）
+  const committedIds = (data.doneCriteria ?? []).filter((c) => (c.mustBeTracked ?? []).length > 0).map((c) => c.id);
   data.doneProof = {
     at: nowIso(),
     head: currentHead(),
+    tiers: {
+      written: 'covered',
+      committed: committedIds.length > 0 ? `covered-by:${committedIds.join(',')}` : 'not-covered',
+      pushed: 'unjudged',
+    },
     criteria: runs.map((r) => ({ checkId: r.checkId, exitCode: r.exitCode, digest: digestOf(r) })),
   };
   writeState(data, loaded);
   console.log(`instruction-state: 整条指令 → done（${runs.length} 条判据全部 exit 0，head=${data.doneProof.head ?? '(未知)'}）`);
+  // 终态更要防误读：done 只覆盖到 ①②，**不等于已推送**
+  console.log(TIER_LINE);
   process.exit(EXIT.OK);
 }
 

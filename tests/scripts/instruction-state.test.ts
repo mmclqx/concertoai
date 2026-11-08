@@ -301,6 +301,10 @@ describe('check：判据执行（只认 exitCode === 0 + expectContains 命中�
     expect(r.code).toBe(0);
     expect(r.out).toContain('PASS C1');
     expect(r.out).toContain('不等于查重');
+    // 「check 全绿」同样必须带档位说明（与终态同一口径，防止只在收尾时提醒）
+    expect(r.out).toContain('①已写入');
+    expect(r.out).toContain('③已推送');
+    expect(r.out).toContain('未判');
   });
 
   it('判据 exit 1 ⇒ exit 20（恒绿废实现会红在这条）', () => {
@@ -622,6 +626,44 @@ describe('update --set-status：终态门槛', () => {
     expect(state.doneProof.head).toBeTruthy();
     const lastEvidence = state.evidence.at(-1);
     expect(lastEvidence.reused).toBe(false);
+  });
+
+  it('**档位说明必须打印**（护栏的护栏）：done 只覆盖 ①②，③已推送 明说「未判」', () => {
+    /**
+     * 这行是防止「判据全绿 = 已推送」误读的唯一机制（2026-11-08 用户裁决的三档口径）。
+     * 没有它，看的人只会看到一堆 PASS，然后以为远端也有了。
+     * 本地 `origin/main` 是缓存引用，可能过时——所以本机制**刻意不判** ③，只明示边界。
+     */
+    expect(writeBase().code).toBe(0);
+    const r = runCli(['update', '--set-status', 'done']);
+    expect(r.code).toBe(0);
+    expect(r.out).toContain('①已写入');
+    expect(r.out).toContain('③已推送');
+    expect(r.out).toContain('未判');
+    expect(r.out).toContain('git log origin/main..HEAD'); // 要判就自己跑的那条命令
+  });
+
+  it('doneProof.tiers 留痕：committed 由 mustBeTracked 决定，pushed 恒为 unjudged', () => {
+    const withTrack = { ...countingCriterion('C1'), mustBeTracked: ['package.json'] };
+    const payload = {
+      instruction: '测试：tiers 留痕',
+      doneCriteria: [withTrack],
+      steps: [{ id: 1, goal: 'g', targets: [], criteria: ['C1'] }],
+    };
+    expect(runCli(['write', '--file', writePayload(payload), '--skip-baseline']).code).toBe(0);
+    expect(runCli(['update', '--set-status', 'done']).code).toBe(0);
+    const tiers = readState().doneProof.tiers;
+    expect(tiers.written).toBe('covered');
+    expect(tiers.committed).toBe('covered-by:C1');
+    expect(tiers.pushed).toBe('unjudged'); // 刻意不判，不是「已推送」
+  });
+
+  it('没有 mustBeTracked 的判据 ⇒ committed 记 not-covered（不许默认当已提交）', () => {
+    expect(writeBase().code).toBe(0);
+    expect(runCli(['update', '--set-status', 'done']).code).toBe(0);
+    const tiers = readState().doneProof.tiers;
+    expect(tiers.committed).toBe('not-covered');
+    expect(tiers.pushed).toBe('unjudged');
   });
 
   it('blocked 缺 --reason ⇒ exit 2（否则下次「继续」只能猜）；给了 reason ⇒ 记 blockedReason', () => {
