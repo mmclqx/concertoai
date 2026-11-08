@@ -467,6 +467,8 @@ concertoai/
 │   ├── bench-approval.mjs           T8 发布门：analyzeDiff / 单规则 ReDoS / analyzeImpact 六项性能预算
 │   ├── verify-false-positive.mjs    T8 发布门：26 条人工标注 diff 的误报率/召回率
 │   ├── lib/cost-gate.mjs            K15 成本闸门纯函数（parseCostLine / gateDecision / totalGateDecision）：判据 = CLI 自报「本次消耗」行，**读不到就停**（fail-closed）+ cost-gate.d.mts 类型声明供 tests/scripts/ 直测
+│   ├── agent-lock.mjs               会话写作锁（`.git/concertoai-agent.lock` + 心跳）：管「谁在写」
+│   ├── instruction-state.mjs        ADR-051 指令进度记录（`write` / `update` / `check`）：管「做到哪 + 到底做完没有」。**只认子进程 `exitCode === 0` + `expectContains` 逐条命中**；判据全文落 `.git/concertoai-instruction-evidence/`，JSON 只存 ≤300 字符摘要 + 路径；状态文件不得被 git 跟踪（`git ls-files --error-unmatch` 命中即拒写）；写操作原子 rename + `lastUpdated` 比对防覆盖别人的进度
 │   └── bench-approval-ui.mjs        T9 发布门：分析 / 文案 / Ink 首帧三段分别计时（端到端 P95 预算 150ms）
 ├── docs/
 │   ├── 01-产品定位与范围.md
