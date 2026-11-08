@@ -211,6 +211,87 @@ describe('write：写入新指令', () => {
   });
 });
 
+// ── write：判据须覆盖「已入库」（2026-11-08 事故对策） ─────────
+
+describe('write：未入库的 target 必须有 mustBeTracked 覆盖（否则拒绝写入）', () => {
+  /**
+   * 这组用例只做一件事：把「判据说 done、产物没入库」这条坑**堵在写入入口**。
+   * 事故原文：`status=done` + `C1/C2/C3 全绿`，而 `scripts/` `tests/` 一直是 `??`。
+   *
+   * 配变异探针验证有牙：把 `findUntrackedTargetsWithoutGuard` 改成 `return []`
+   * ⇒ 「必须拒绝」两条红；把 `looksLikeFile` 改成 `return false`（过滤放宽到失明）
+   * ⇒ 「违规仍必须红」那条红（正例 fixture 绿不能证明它有牙）。
+   */
+  const UNTRACKED = 'scripts/.never-committed-probe.mjs';
+  const TRACKED = 'package.json';
+
+  function payloadWithTarget(target: string, criterionOverrides: Record<string, unknown> = {}) {
+    return {
+      instruction: '测试：判据是否覆盖已入库',
+      doneCriteria: [{ ...countingCriterion('C1'), ...criterionOverrides }],
+      steps: [{ id: 1, goal: '改一个还没入库的文件', targets: [target], criteria: ['C1'] }],
+    };
+  }
+
+  it('target 未入库且判据没声明 mustBeTracked ⇒ **拒绝写入 exit 2**，并给出改法', () => {
+    const r = runCli(['write', '--file', writePayload(payloadWithTarget(UNTRACKED))]);
+    expect(r.code).toBe(2);
+    expect(r.out).toContain('判据漏了「已入库」这一步');
+    expect(r.out).toContain('mustBeTracked');
+    expect(r.out).toContain(UNTRACKED);
+    // 拒绝时必须一点都没写
+    expect(fs.existsSync(statePath())).toBe(false);
+  });
+
+  it('判据声明 mustBeTracked 覆盖该 target ⇒ 放行（正例：护栏没有把合法载荷也拦下）', () => {
+    const payload = payloadWithTarget(UNTRACKED, { mustBeTracked: [UNTRACKED] });
+    const r = runCli(['write', '--file', writePayload(payload), '--skip-baseline']);
+    expect(r.code).toBe(0);
+    expect(readState().doneCriteria[0].mustBeTracked).toEqual([UNTRACKED]);
+  });
+
+  it('target **已入库**（无需 mustBeTracked）⇒ 放行（不该红必不红）', () => {
+    const r = runCli([
+      'write',
+      '--file',
+      writePayload(payloadWithTarget(TRACKED)),
+      '--skip-baseline',
+    ]);
+    expect(r.code).toBe(0);
+  });
+
+  it('目录类 target（`docs/`）不触发该检查（边界写清：目录是否入库由其中文件决定）', () => {
+    const r = runCli([
+      'write',
+      '--file',
+      writePayload(payloadWithTarget('docs/')),
+      '--skip-baseline',
+    ]);
+    expect(r.code).toBe(0);
+  });
+
+  it('确不需要入库时显式放行 ⇒ exit 0 且**留痕**（放行本身也要能事后查出来）', () => {
+    const file = writePayload(payloadWithTarget(UNTRACKED));
+    const r = runCli(['write', '--file', file, '--skip-baseline', '--allow-untracked-targets']);
+    expect(r.code).toBe(0);
+    expect(readState().untrackedTargetsAck).toBe(true);
+  });
+
+  it('载荷里写 allowUntrackedTargets:true 与命令行等价（两条入口都留痕）', () => {
+    const payload = { ...payloadWithTarget(UNTRACKED), allowUntrackedTargets: true };
+    const r = runCli(['write', '--file', writePayload(payload), '--skip-baseline']);
+    expect(r.code).toBe(0);
+    expect(readState().untrackedTargetsAck).toBe(true);
+  });
+
+  it('mustBeTracked 类型非法（不是字符串数组）⇒ exit 2', () => {
+    const payload = payloadWithTarget(UNTRACKED, { mustBeTracked: 'scripts/x.mjs' });
+    const r = runCli(['write', '--file', writePayload(payload)]);
+    expect(r.code).toBe(2);
+    expect(r.out).toContain('mustBeTracked 必须是非空字符串数组');
+  });
+});
+
 // ── check ─────────────────────────────────────────────────────
 
 describe('check：判据执行（只认 exitCode === 0 + expectContains 命中）', () => {
@@ -333,6 +414,36 @@ describe('check：判据执行（只认 exitCode === 0 + expectContains 命中�
       : path.join(REPO_ROOT, evidence.logPath);
     expect(fs.existsSync(logAbs)).toBe(true);
     expect(fs.readFileSync(logAbs, 'utf8').length).toBeGreaterThan(5000);
+  });
+
+  it('mustBeTracked 未入库 ⇒ 即使 check 命令 exit 0 也判 **FAIL（exit 20）**，digest 明说「未入库」', () => {
+    const criterion = {
+      ...countingCriterion('C1'), // exit 0
+      mustBeTracked: ['scripts/.never-committed-probe.mjs'],
+    };
+    const payload = {
+      instruction: '测试：已入库断言',
+      doneCriteria: [criterion],
+      steps: [{ id: 1, goal: 'g', targets: [], criteria: ['C1'] }],
+    };
+    expect(runCli(['write', '--file', writePayload(payload), '--skip-baseline']).code).toBe(0);
+    const r = runCli(['check']);
+    expect(r.code).toBe(20);
+    expect(r.out).toContain('FAIL C1');
+    const evidence = readState().evidence.at(-1);
+    expect(evidence.exitCode).toBe(0); // 命令本身是 0 —— 失败只能来自入库断言
+    expect(evidence.digest).toContain('未入库');
+  });
+
+  it('mustBeTracked 已入库 ⇒ PASS（正例：证明上一条的 FAIL 只因为「未入库」）', () => {
+    const criterion = { ...countingCriterion('C1'), mustBeTracked: ['package.json'] };
+    const payload = {
+      instruction: '测试：已入库断言正例',
+      doneCriteria: [criterion],
+      steps: [{ id: 1, goal: 'g', targets: [], criteria: ['C1'] }],
+    };
+    expect(runCli(['write', '--file', writePayload(payload), '--skip-baseline']).code).toBe(0);
+    expect(runCli(['check']).code).toBe(0);
   });
 
   it('digest 去掉 ANSI 颜色码（真机上 C3 的摘要曾是一条 `\u001b[36m RUN`，人读不了）', () => {
@@ -518,6 +629,28 @@ describe('update --set-status：终态门槛', () => {
     expect(runCli(['update', '--set-status', 'blocked']).code).toBe(2);
     expect(runCli(['update', '--set-status', 'blocked', '--reason', '等你裁决口径']).code).toBe(0);
     expect(readState().blockedReason).toBe('等你裁决口径');
+  });
+
+  it('**终态也因此堵死「done 但没入库」**：mustBeTracked 未入库 ⇒ 拒绝 done（exit 21）', () => {
+    /**
+     * 这条是 2026-11-08 事故的正面收口：当时 `--set-status done` 只重跑 `check` 命令，
+     * 而判据没断言入库，于是 done 与 `??` 同时成立。现在终态会连 mustBeTracked 一起重跑。
+     */
+    const criterion = {
+      ...countingCriterion('C1'),
+      mustBeTracked: ['scripts/.never-committed-probe.mjs'],
+    };
+    const payload = {
+      instruction: '测试：终态也要求已入库',
+      doneCriteria: [criterion],
+      steps: [{ id: 1, goal: 'g', targets: [], criteria: ['C1'] }],
+    };
+    expect(runCli(['write', '--file', writePayload(payload), '--skip-baseline']).code).toBe(0);
+    const r = runCli(['update', '--set-status', 'done']);
+    expect(r.code).toBe(21);
+    const state = readState();
+    expect(state.status).toBe('in_progress');
+    expect(state.doneProof).toBeNull();
   });
 
   it('--set-status in_progress ⇒ exit 2（推进由 --step 隐含，不提供两个入口）', () => {

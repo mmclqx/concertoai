@@ -14,7 +14,7 @@
 //   仍然靠自律：另一个会话可以完全不读不写这个文件（ADR-051「已知局限 ①」）。
 //
 // 【用法】
-//   node scripts/instruction-state.mjs write --file <payload.json> [--on-conflict abandon|keep] [--skip-baseline]
+//   node scripts/instruction-state.mjs write --file <payload.json> [--on-conflict abandon|keep] [--skip-baseline] [--allow-untracked-targets]
 //   node scripts/instruction-state.mjs check [--step <id>]
 //   node scripts/instruction-state.mjs update --step <id> --status <pending|in_progress|done|skipped|superseded> [--reuse-evidence]
 //   node scripts/instruction-state.mjs update --followup "<原话>" --kind criteria --check "<命令>" [--id C9] [--step <id>]
@@ -34,6 +34,15 @@
 //   3. `instruction` **只允许 `write` 写入**，其它子命令/形态改它一律拒绝。
 //   4. `steps` 重排/删除必须 `--approved-by user`（写 `self` 一律 exit 22）。
 //   5. 状态文件**不得**被 git 跟踪：命中 `git ls-files --error-unmatch` 就拒绝写入（exit 2）。
+//
+// 【判据怎么表达「已入库」（2026-11-08 事故的直接对策）】
+//   判据可声明 `mustBeTracked: ["scripts/x.mjs"]`；执行器除了跑 `check`，还会对每个路径
+//   跑 `git ls-files --error-unmatch`，任一未命中即该判据 fail（digest 明说「未入库」）。
+//   另：`write` 时若某 step 的 target 还不在版本库里、而该步判据没有任何一条声明
+//   mustBeTracked 覆盖它 ⇒ **拒绝写入**（提示怎么改）。真不需要入库的，显式
+//   `--allow-untracked-targets` 或在载荷里写 `allowUntrackedTargets: true`，并留痕。
+//   为什么：判据只看工作区时，`status=done` 而文件是 `??` —— 换台机器 clone 下来
+//   「完成」就蒸发了（`docs/09-踩坑记录/2026-11-08-done不等于入库判据漏了缴库这一步.md`）。
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -152,6 +161,19 @@ function isGitTracked(absPath) {
   return git(['ls-files', '--error-unmatch', '--', posix], { cwd: root }).ok;
 }
 
+/**
+ * 按**仓库相对路径**判定「是否已进版本库」。
+ *
+ * 为什么需要这一条：`2026-11-08` 的事故里，判据只断言了「文件存在 + 测试绿」，
+ * 于是 `status=done` 而 `scripts/` `tests/` 一直 `??` 未跟踪——**换台机器 clone 下来
+ * 「完成」就蒸发了**。工作区绿 ≠ 交付可用，判据必须自己覆盖这一步。
+ */
+function isTrackedRel(relPath) {
+  const root = repoRoot();
+  const posix = String(relPath).split(path.sep).join('/');
+  return git(['ls-files', '--error-unmatch', '--', posix], { cwd: root }).ok;
+}
+
 function fail(message, code = EXIT.USAGE) {
   console.error(`instruction-state: ${message}`);
   process.exit(code);
@@ -216,8 +238,13 @@ function runCriterion(criterion, opts = {}) {
   const exitCode = timedOut ? TIMEOUT_EXIT_CODE : r.status;
   const expect = Array.isArray(criterion.expectContains) ? criterion.expectContains : [];
   const missing = expect.filter((s) => typeof s === 'string' && s.length > 0 && !output.includes(s));
-  const pass = !timedOut && exitCode === 0 && missing.length === 0;
-  return { checkId: criterion.id, cmd: criterion.check, exitCode, pass, missing, timedOut, output };
+  // 「已入库」断言：判据自己声明 mustBeTracked，执行器逐个跑 `git ls-files --error-unmatch`。
+  // 执行器仍然只做一件事（起子进程、看退出码），**要不要入库由判据自己声明**——
+  // 把口径硬编码进执行器，不同判据的不同要求（有的要入库、有的只要本地产物）就表达不出来了。
+  const tracked = Array.isArray(criterion.mustBeTracked) ? criterion.mustBeTracked : [];
+  const untracked = tracked.filter((p) => typeof p === 'string' && p.length > 0 && !isTrackedRel(p));
+  const pass = !timedOut && exitCode === 0 && missing.length === 0 && untracked.length === 0;
+  return { checkId: criterion.id, cmd: criterion.check, exitCode, pass, missing, untracked, timedOut, output };
 }
 
 /** 去掉 ANSI 颜色转义：摘要给人读，`\u001b[36m` 这类字节只会让日志变成乱码。 */
@@ -229,6 +256,9 @@ function digestOf(run) {
     .map((l) => l.trim())
     .find((l) => l.length > 0);
   let digest = firstLine ?? '(无输出)';
+  if (run.untracked.length > 0) {
+    digest = `未入库：${run.untracked.join(', ')}（工作区有，但 git 里没有 ⇒ 换台机器就没了） ｜ ${digest}`;
+  }
   if (run.missing.length > 0) {
     digest = `expectContains 缺 ${run.missing.map((s) => JSON.stringify(s)).join(', ')} ｜ ${digest}`;
   }
@@ -364,6 +394,11 @@ function validateCriteria(criteria) {
       fail(`判据 ${c.id} 的 expectContains 必须是字符串数组（desc 里的自然语言不算判据）`);
     }
     if (c.desc !== undefined && typeof c.desc !== 'string') fail(`判据 ${c.id} 的 desc 必须是字符串`);
+    if (c.mustBeTracked !== undefined) {
+      if (!Array.isArray(c.mustBeTracked) || c.mustBeTracked.some((p) => typeof p !== 'string' || !p.trim())) {
+        fail(`判据 ${c.id} 的 mustBeTracked 必须是非空字符串数组（仓库相对路径）`);
+      }
+    }
   }
   return criteria;
 }
@@ -385,6 +420,43 @@ function validateSteps(steps, criteria) {
     }
   }
   return steps;
+}
+
+const normRel = (p) => String(p).trim().split(path.sep).join('/').replace(/^\.\//, '');
+
+/**
+ * 只判「看起来是文件」的 target（有扩展名、不以 `/` 结尾）。
+ * 目录类 target（`docs/`、`src/`）不在本检查范围：目录是否入库由其中文件决定，
+ * 对目录做 `git ls-files --error-unmatch` 只会得到无意义的否定。这条边界要写清，
+ * 否则「过滤掉一切」的实现也能让护栏看起来全绿。
+ */
+function looksLikeFile(relPath) {
+  const p = normRel(relPath);
+  if (!p || p.endsWith('/')) return false;
+  return /\.[A-Za-z0-9]+$/.test(path.posix.basename(p));
+}
+
+/**
+ * 找出「target 还没入库、而该步判据没有任何一条声明 mustBeTracked 覆盖它」的组合。
+ *
+ * 这是把 `2026-11-08` 那条踩坑（判据说 done、产物没入库）从文档条款变成**可执行断言**：
+ * 光写「凡新增文件类判据必须断言已入库」只是纪律，纪律靠自觉；这条让它**写不出来**。
+ */
+function findUntrackedTargetsWithoutGuard(steps, criteria) {
+  const map = new Map(criteria.map((c) => [c.id, c]));
+  const out = [];
+  for (const step of steps) {
+    const guarded = new Set(
+      (step.criteria ?? []).flatMap((cid) => map.get(cid)?.mustBeTracked ?? []).map((p) => normRel(p)),
+    );
+    for (const target of step.targets ?? []) {
+      if (!looksLikeFile(target)) continue;
+      if (guarded.has(normRel(target))) continue;
+      if (isTrackedRel(target)) continue;
+      out.push({ stepId: step.id, target, criteria: step.criteria ?? [] });
+    }
+  }
+  return out;
 }
 
 // ── write ─────────────────────────────────────────────────────
@@ -425,6 +497,23 @@ function cmdWrite(opts) {
   const criteria = validateCriteria(payload.doneCriteria);
   const criteriaMap = criteriaById({ doneCriteria: criteria });
   const steps = validateSteps(payload.steps, criteriaMap);
+  const untrackedAck = Boolean(opts['allow-untracked-targets']) || payload.allowUntrackedTargets === true;
+  const uncovered = findUntrackedTargetsWithoutGuard(steps, criteria);
+  if (uncovered.length > 0 && !untrackedAck) {
+    const detail = uncovered.map((u) => `  步骤 ${u.stepId} 的 target「${u.target}」尚未入库，而该步判据（${u.criteria.join(', ') || '无'}）没有声明 mustBeTracked 覆盖它`).join('\n');
+    fail(
+      [
+        '判据漏了「已入库」这一步（2026-11-08 事故的直接对策）：',
+        detail,
+        '',
+        '二选一：',
+        '  ① 在相关判据里加 mustBeTracked（推荐）：{"id":"C2","check":"...","mustBeTracked":["scripts/x.mjs"]}',
+        '  ② 确认这些文件本来就不该入库，显式声明：加 --allow-untracked-targets 或在载荷里写 allowUntrackedTargets:true',
+        '',
+        '为什么不能默认放行：判据只看工作区时，status=done 而文件是 ?? 未跟踪 —— 换台机器 clone 下来「完成」就蒸发了。',
+      ].join('\n'),
+    );
+  }
 
   const loaded = readState();
   if (loaded.kind === 'corrupt') {
@@ -458,6 +547,7 @@ function cmdWrite(opts) {
       desc: c.desc ?? '',
       check: c.check,
       expectContains: c.expectContains ?? [],
+      mustBeTracked: c.mustBeTracked ?? [],
       ...(c.timeoutMs ? { timeoutMs: c.timeoutMs } : {}),
       covers: c.covers ?? [],
     })),
@@ -476,6 +566,8 @@ function cmdWrite(opts) {
     revisions: [],
     doneProof: null,
     blockedReason: null,
+    // 留痕：本轮是否显式放行了「未入库 target」（放行也必须能事后查出来）
+    untrackedTargetsAck: untrackedAck,
     baselineCriteriaState: opts['skip-baseline']
       ? { skipped: true, reason: '--skip-baseline：本轮未实测基线（仅限脚本自举/测试用）' }
       : measureBaseline(criteria),
@@ -766,7 +858,7 @@ function main() {
       [
         '用法: node scripts/instruction-state.mjs <write|check|update> [...]',
         '',
-        '  write  --file <payload.json> [--on-conflict abandon|keep] [--skip-baseline] [--by <id>]',
+        '  write  --file <payload.json> [--on-conflict abandon|keep] [--skip-baseline] [--by <id>] [--allow-untracked-targets]',
         '  check  [--step <id>]',
         '  update --step <id> --status <status> [--reuse-evidence]',
         '  update --followup "<原话>" --kind criteria --check "<命令>" [--id C9] [--step <id>]',
