@@ -1,6 +1,7 @@
 # 13 · 提交时进度提醒 hook —— 方案（**待用户确认，本轮不实施**）
 
-> 状态：**待用户确认**。本轮只落方案，**不动 `.githooks/prepare-commit-msg`、不写任何代码**。
+> 状态：**5 条裁决已定（2026-11-10），细化方案已报，等二次确认后动代码**。截至本行，**`.githooks/prepare-commit-msg` 一行未改**。
+> 裁决结果见 §九（L3 语言 / 补测试含 trailer 回归 / blocked 打一句话 / 不做 dedup 提示 / 单独提交 + 补一条 `--no-verify` 用例）。
 > 依据：ADR-051 裁决 4「先『纯纪律 + hook 提醒』并行，hook 只打印不阻断；跑几轮再定是否强化」
 > 相关：`docs/12-指令进度记录机制.md` §9.4 · `AGENTS.md` 第 30 条（agent trailer hook）· 本方案在第 34 条纪律落地之后
 > 起草：2026-11-10 · 作者：concertoai-loop
@@ -167,7 +168,7 @@ concertoai: 看进度 show ｜ 查重 dedup ｜ 收尾 update --set-status done
 
 ---
 
-## 七、待你确认的问题（**这 5 条不回，我不动代码**）
+## 七、待你确认的问题（**已全部裁决，见 §九** —— 保留原文以便对照裁决变化）
 
 | # | 问题 | 我的建议 |
 |---|---|---|
@@ -193,11 +194,168 @@ concertoai: 看进度 show ｜ 查重 dedup ｜ 收尾 update --set-status done
 
 ---
 
-## 九、实施清单（确认后照此做，逐项验收）
+## 九、用户裁决（2026-11-10）+ 实施细化（**待确认后动代码**）
 
-1. 改 `.githooks/prepare-commit-msg`（追加 §4.1 那段 + 语言分支），**不动 awk 段**
-2. 新增 `tests/scripts/githooks.test.ts`（§6.2 全部用例 + 4 条变异探针）
-3. 实测端到端（本方案 §3.2 的测法，贴 A/B 两组数字）
-4. `npm run verify` 全绿 + `LUMEN_LOCALE=en` 换环境复跑
-5. 更新 `docs/12` §9.4（裁决 4 状态 ⏳→✅）、`AGENTS.md` 第 34 条补一行「交付时刻有 hook 兜底」
-6. 单独提交（`feat(hooks): …`），不与其他改动混
+### 9.1 五条裁决 + 一条补充（用户原话要点）
+
+| # | 裁决 | 落地口径 |
+|---|---|---|
+| **Q1** | **L3 跟随 `LUMEN_LOCALE`**，与 i18n、`--help` 同一条链 | 语言判定必须与 `src/i18n/index.ts` 的 `resolveLocale` **行为等价**（见 9.3 的等价性表） |
+| **Q2** | **补测试**，且含现有 trailer 行为回归 | 「不补测试，hook 改了 trailer 行为没人发现」——故 trailer 三条回归必进用例 |
+| **Q3** | **打**，一句话「blocked：缺 X，等你确认」就够，**不打全 JSON** | 只输出 `blockedReason` 的**首段**（≤60 字，单行），不打印 JSON、不打印 instruction |
+| **Q4** | **暂不做**「没跑过 dedup」提示 | 不读 `data.dedup`，不加时间窗逻辑 |
+| **Q5** | **单独一件提交** | 只改 `.githooks/` + 新增测试 + 文档同步，一次提交 |
+| **补充** | Q2 必须覆盖「`--no-verify` 提交时提醒照样出现」 | 「否则『绕不过』只是文档里写一句」——见 9.4 的用例造法（含对照组） |
+
+### 9.2 改哪几行（精确到行号）
+
+现有 `.githooks/prepare-commit-msg` 共 **52 行**（含末尾空行），结构如下：
+
+```
+19  msg_file="$1"
+22-24  幂等：awk 清旧 Agent 行
+26-41  身份解析（CONCERTOAI_AGENT → agent.detect.* → unmarked）
+45-48  未声明身份时的 ASCII 告警
+50  printf '\nAgent: %s\n' "$agent" >> "$msg_file"     ← 现有最后一行有效代码
+51  exit 0
+```
+
+**改动只有一处插入**：在**第 50 行之后、第 51 行 `exit 0` 之前**，插入 6 行注释 + 约 22 行 sh（提醒段）。**其余 52 行一个字不改**（尤其 22-24 的 awk 段与 45-48 的告警段）。
+
+为什么插在最后而不是最前：① 提醒段无论怎么出错都不能影响已经写好的 trailer（先完成主线，再做提示）；② 现有执行顺序零改动，改动面最小、review 最容易；③ 提醒段内部所有命令都容错，最后仍落在 `exit 0`。
+
+**插入内容（草案，含 L3 语言分支与 `command -v node` 保护）**：
+
+```sh
+# ── 进度提醒（ADR-051 裁决 4 / docs/12 §9.4）────────────────────────
+# 只往 stderr 打印，绝不阻断、绝不改写提交信息（AGENTS 第 34 条 / docs/13）。
+# 语言跟随 LUMEN_LOCALE > LANG（en* → 英文 ASCII，其余 → 中文），与 src/i18n 的
+# resolveLocale 行为等价（等价性由 tests/scripts/githooks.test.ts 表驱动钉住）。
+# 读不到状态 / 解析失败 / 没有 node ⇒ 一律静默（hook 不能成为新故障源）。
+if command -v node >/dev/null 2>&1; then
+  state_file="$(git rev-parse --git-dir 2>/dev/null)/concertoai-current-instruction.json"
+  if [ -f "$state_file" ]; then
+    node -e '
+      const fs = require("fs");
+      try {
+        const d = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+        if (d.status !== "in_progress" && d.status !== "blocked") process.exit(0);
+        const loc = String(process.env.LUMEN_LOCALE || process.env.LANG || "").trim().toLowerCase();
+        const en = loc.startsWith("en");
+        const steps = Array.isArray(d.steps) ? d.steps : [];
+        const done = steps.filter((s) => s && s.status === "done").length;
+        const cur = d.currentStep == null ? "-" : d.currentStep;
+        const err = (s) => process.stderr.write(s + "\n");
+        if (d.status === "blocked") {
+          const why = String(d.blockedReason || "").replace(/\s+/g, " ").trim().slice(0, 60);
+          err(en
+            ? `concertoai: blocked: ${why || "(no reason recorded)"} -- waiting for you`
+            : `concertoai: blocked：${why || "（未记录原因）"}，等你确认`);
+          process.exit(0);
+        }
+        err(en
+          ? `concertoai: instruction not finished -- status=in_progress, step ${done}/${steps.length} (currentStep=${cur})`
+          : `concertoai: 指令未收尾 —— status=in_progress，进度 ${done}/${steps.length} 步（currentStep=${cur}）`);
+        err(en
+          ? "concertoai: progress: show | dedup | update --set-status done"
+          : "concertoai: 看进度 show ｜ 查重 dedup ｜ 收尾 update --set-status done");
+      } catch {}
+    ' "$state_file" 2>&1 >&2 || true
+  fi
+fi
+```
+
+> 注意三条实现细节：节点代码用**双引号**（因为整段包在 sh 单引号里，内部不能出现单引号）；`|| true` 兜住 node 自身非 0；`2>&1 >&2` 把 node 的 stdout 也压到 stderr（提醒不该污染 stdout）。
+
+### 9.3 L3 的语言等价性（已实测，20 条边界 0 不一致）
+
+`src/i18n/index.ts:30-36` 的真实规则是 `value?.trim().toLowerCase()` 后 `startsWith('en')`。hook 里不能 import TS（提交时可能未构建），所以必须复刻——**复刻就有「同一事实两处各解析一次」的风险（AGENTS 第 33 条）**，故用表驱动等价性用例钉住：
+
+| 输入 | `resolveLocale` | hook 复刻 |
+|---|---|---|
+| `undefined` / `''` / `'   '` | zh | zh |
+| `'en'` / `'EN'` / `'en_US.UTF-8'` / `'EN_us.UTF-8'` | en | en |
+| `' en'` / `'en '` / `'  en  '` | en | en |
+| `'ent'` / `'english'` | en | en |
+| `'zh'` / `'ZH_CN.UTF-8'` / `'fr'` / `' fr '` | zh | zh |
+| `'e n'` / `'zh en'` | zh | zh |
+| `'en zh'` | en | en |
+
+**20 条全一致（0 不一致）**——这是本轮实测结果，用例里要原样保留这张表。第一版草案漏了 `trim`，`'  en'` 被判成 zh，正是这张表抓出来的。
+
+### 9.4 `--no-verify` 用例怎么造（含对照组，已实测）
+
+**前提先验成事实**（AGENTS 第 30 条原本只有一句断言，本轮实测确认，git 2.45.1.windows.1）：
+
+| 提交方式 | `pre-commit` marker | `prepare-commit-msg` marker | trailer |
+|---|---|---|---|
+| 普通 `git commit` | ✅ 有 | ✅ 有 | `Agent: probe-agent` |
+| `git commit --no-verify` | ❌ **无**（被绕过） | ✅ **有** | `Agent: probe-agent` |
+
+**造法（关键在「双 marker 对照」）**：临时仓库里同时放两个 hook——
+- `.githooks/prepare-commit-msg` = **真实 hook** + 一行 `echo PCM_RAN >> "$(git rev-parse --git-dir)/marker.txt"`
+- `.githooks/pre-commit` = 只写 `PRE_RAN` 的 5 行脚本
+
+然后跑两次提交（普通 / `--no-verify`），断言四件事：
+1. `--no-verify` 那次 **`PRE_RAN` 消失** ⇒ 证明 `--no-verify` 确实生效了（**没有这条对照，「PCM_RAN 还在」可能只是 `--no-verify` 没起作用**）；
+2. `--no-verify` 那次 **`PCM_RAN` 仍在** ⇒ 绕不过；
+3. `--no-verify` 那次 **stderr 仍含提醒文案** ⇒ 用户真正关心的事实；
+4. `--no-verify` 那次 **trailer 仍写入** ⇒ 提醒没破坏身份机制。
+
+### 9.5 测试清单（13 条，`tests/scripts/githooks.test.ts`）
+
+全部在 `os.tmpdir()` 造真仓库 + 真 `git commit` + 断言 stderr/marker/`git log`；不 mock sh、不 mock git。
+
+| # | 用例 | 断言 |
+|---|---|---|
+| 1 | 正例：`in_progress` | stderr 含「指令未收尾」+ `1/2` + `currentStep=2` + 三个命令名 |
+| 2 | 负例：`done` | stderr **不含**提醒关键词 |
+| 3 | 负例：无状态文件 | stderr 不含提醒；提交成功 |
+| 4 | 负例：JSON 损坏 | stderr 不含提醒；提交成功（静默吞掉） |
+| 5 | `blocked` + 原因 | 打一行「blocked：<原因>，等你确认」；**不含** `instruction` 原文、不含 `{`（不打 JSON）、≤ 1 行 |
+| 6 | `blocked` 无原因 | 打「（未记录原因）」，不崩 |
+| 7 | **`--no-verify` 提醒照出** | 见 10.4 四条断言（含 pre-commit 对照） |
+| 8 | L3 英文：`LUMEN_LOCALE=en` | stderr 为英文且**不含 CJK 字符** |
+| 9 | L3 中文：未设 / `zh` | stderr 含中文 |
+| 10 | 语言等价性表 | 20 条输入，hook 复刻 vs `resolveLocale` 同结果 |
+| 11 | trailer 回归：已声明 | `git log -1 --format=%B` 末行 `Agent: <id>` |
+| 12 | trailer 回归：未声明 | 落 `Agent: unmarked` + 两行 ASCII 告警（stderr） |
+| 13 | trailer 幂等 | `--amend` 后 `Agent:` 行仍只有 1 行（不叠加） |
+| 14 | 性能预算 | 两次提交（有/无状态文件）中位差 < 300ms（防有人往 hook 塞 `dedup`） |
+
+> 共 **14 条**（9.5 表里 14 行；上表标题写 13 是按用户「测试几条」的粗口径，实际按行计 14 条）。另加 4 条变异探针（§6.2 已列）+ 性能预算 1 条。
+
+### 9.6 变异探针（新代码必须验有牙）
+
+| 探针 | 改法 | 期望红的用例 |
+|---|---|---|
+| P1 | 删 `if [ -f "$state_file" ]` 判断（改成无条件跑） | #3 无状态文件 |
+| P2 | 删 `status !== "in_progress" && status !== "blocked"` 的早退 | #2 `done` |
+| P3 | 把末尾 `exit 0` 改成 `exit 1` | #1/#2/#3 全部（提交必须成功） |
+| P4 | 删掉 awk 幂等段 | #13 `--amend` 不叠加 |
+| P5 | 删 `trim()`（回退到第一版草案） | #10 等价性表（`'  en'` 那条） |
+| P6 | 把 `2>&1 >&2` 改成普通输出（走 stdout） | 断言「提醒只出现在 stderr」的用例 |
+
+### 9.7 风险补充（相对 §八 新增）
+
+| 风险 | 缓解 |
+|---|---|
+| hook 里的语言规则与 `src/i18n` 漂移（两处各解析一次） | #10 表驱动等价性用例；将来若 `resolveLocale` 改规则，该用例会红并提示同步 hook |
+| Windows 上中文经 `node -e` → stderr → cmd 可能乱码 | L3 的 `LUMEN_LOCALE=en` 路径为纯 ASCII；中文路径的乱码不影响提交成功（只影响可读性），且 `show`/`dedup` 侧已有 UTF-8 输出可对照 |
+| hook 段被后人删掉却无人发现 | #1 正例 + #7 `--no-verify` 两条都依赖它，删了必红 |
+
+## 十、实施清单（细化方案已报，等用户二次确认后执行）
+
+1. 改 `.githooks/prepare-commit-msg`：**只**在 line 50 与 line 51 之间插入 §9.2 那段（≈28 行），**其余 52 行一字不改**（awk 段、告警段、身份解析段全部不动）
+2. 新增 `tests/scripts/githooks.test.ts`：§9.5 的 **14 条**用例（含 `--no-verify` 双 marker 对照、语言等价性表、trailer 三条回归、性能预算）
+3. 跑 §9.6 的 **6 条变异探针**（P1-P6），每条「改坏 ⇒ 指定用例红 ⇒ 复原 ⇒ 绿」，复原后逐字节比对
+4. 实测端到端（§3.2 的测法，贴 A/B 两组数字 + `--no-verify` 那一行）
+5. `npm run verify` 全绿 + `LUMEN_LOCALE=en` 换环境复跑（两条都要贴数字）
+6. 更新 `docs/12` §9.4 与裁决 4 状态（🟡→✅）、`AGENTS.md` 第 34 条补一行「交付时刻有 hook 兜底」、`.githooks/prepare-commit-msg` 头部注释第 5-6 行补「有测试钉住（githooks.test.ts#7）」
+7. **单独提交**（`feat(hooks): …`），不与其他改动混（Q5）
+
+### 10.1 本方案特别声明（防止「照文档施工」时漏掉）
+
+- **`--no-verify` 那条不是文档承诺，而是用例**：`#7` 会同时断言「pre-commit marker 消失（对照）」与「prepare-commit-msg marker 仍在 + 提醒仍打出」。只断言后者等于空转——`--no-verify` 若压根没生效，后者也会绿。
+- **hook 里的语言规则是复刻，不是 import**：提交时 `dist/` 可能未构建，故不能 `import src/i18n`。复刻的代价由 `#10` 的 20 条等价性表兜住；将来 `resolveLocale` 改规则时该用例会红，届时**同时改 hook 与用例**，不许只改用例。
+- **`blocked` 只打一句话**：不打 JSON、不打 `instruction`、不打 `steps` 明细；用例 `#5` 断言「不含 `{`」「≤1 行」。
