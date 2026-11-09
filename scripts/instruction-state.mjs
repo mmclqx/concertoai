@@ -17,6 +17,7 @@
 //   node scripts/instruction-state.mjs write --file <payload.json> [--on-conflict abandon|keep] [--skip-baseline] [--allow-untracked-targets]
 //   node scripts/instruction-state.mjs check [--step <id>]
 //   node scripts/instruction-state.mjs dedup [--step <id>] [--targets a,b] [--baseline <ref>] [--force] [--ttl <分钟>] [--no-save]
+//   node scripts/instruction-state.mjs show [--json] [--full]
 //   node scripts/instruction-state.mjs update --step <id> --status <pending|in_progress|done|skipped|superseded> [--reuse-evidence]
 //   node scripts/instruction-state.mjs update --followup "<原话>" --kind criteria --check "<命令>" [--id C9] [--step <id>]
 //   node scripts/instruction-state.mjs update --followup "<原话>" --kind step [--targets a,b] [--goal "<目标>"]
@@ -633,6 +634,121 @@ function cmdCheck(opts) {
   process.exit(runs.every((r) => r.pass) ? EXIT.OK : EXIT.CRITERIA_FAIL);
 }
 
+// ── show：人读摘要（docs/12 §9.1「有第二个读状态的人时」） ──────
+//
+// 【它是只读的，且必须明说自己不是证据】
+//   `show` 只把 JSON 摆成人能读的样子：命令、步、证据、查重结论、未决事项。
+//   但它**不跑任何判据** —— 所以 `status=done` 在 show 里也只是一个字段，
+//   不是「已完成」的证明（docs/12 §十 局限 3：JSON 的 done 是索引不是证据）。
+//   为了不让读的人误读，摘要末尾固定打印一行 `SHOW_NOT_PROOF`，与 check/dedup
+//   的 `TIER_LINE` 同一个用意：把「这条命令没证明什么」写在脸上。
+//
+//   `--json` 给机器读（第二个会话 / 脚本），`--full` 才展开全部 evidence
+//   （默认只显示每步最近 1 条 + 计数，避免刷屏——AGENTS 边缘路径「输出超长」）。
+
+const SHOW_NOT_PROOF =
+  'instruction-state: show 只回显记录，**没有跑任何判据** —— status/verdict 是索引，不是证据；要判「到底做完没有」请用 dedup（查重）或 check（判据）';
+
+const fmtTime = (iso) => (typeof iso === 'string' && iso.length >= 16 ? iso.slice(0, 16).replace('T', ' ') : '(未知)');
+
+function summarizeEvidence(e) {
+  const flag = e.reused ? ' [复用]' : '';
+  return `${e.checkId} exit=${e.exitCode}${flag} ${fmtTime(e.at)} ｜ ${String(e.digest ?? '').slice(0, 120)}`;
+}
+
+function cmdShow(opts) {
+  const loaded = readState();
+  if (loaded.kind === 'missing') {
+    fail('无记录：还没有指令状态（首次运行属正常）。可从 dedup 起步：node scripts/instruction-state.mjs dedup --targets <路径>', EXIT.NO_RECORD);
+  }
+  if (loaded.kind === 'corrupt') {
+    fail(
+      `记录损坏（${loaded.error}）；已备份到 ${loaded.backup ?? '(备份失败)'}，原文件未改动。不猜、不覆盖 —— 人工处理后再看`,
+      EXIT.NO_RECORD,
+    );
+  }
+  const data = loaded.data;
+
+  // 机器可读出口：原样输出，不做摘要（摘要会丢字段，第二个会话需要完整记录）
+  if (opts.json) {
+    console.log(JSON.stringify(data, null, 2));
+    process.exit(EXIT.OK);
+  }
+
+  const steps = data.steps ?? [];
+  const doneSteps = steps.filter((s) => s.status === 'done');
+  const o = [];
+  o.push(`指令：${String(data.instruction ?? '').slice(0, 200)}${String(data.instruction ?? '').length > 200 ? '…（原文见 --json）' : ''}`);
+  o.push(`状态：${data.status ?? '(未知)'} ｜ 进度：${doneSteps.length}/${steps.length} 步完成 ｜ currentStep=${data.currentStep ?? 'null'}`);
+  o.push(`收到：${fmtTime(data.receivedAt)} ｜ 基线：${data.baselineHead ?? '(未知)'} ｜ 当前 HEAD：${currentHead() ?? '(未知)'}`);
+  if (data.writtenBy) o.push(`写入者：${data.writtenBy}`);
+
+  if (data.blockedReason) o.push(`卡住原因：${data.blockedReason}`);
+
+  if (data.doneProof) {
+    const tiers = data.doneProof.tiers ?? {};
+    o.push(
+      `doneProof：${fmtTime(data.doneProof.at)} head=${data.doneProof.head ?? '?'} ｜ ①${tiers.written ?? '?'} ②${tiers.committed ?? '?'} ③${tiers.pushed ?? '?'}`,
+    );
+  }
+
+  o.push('');
+  o.push('判据：');
+  const stepCriteria = new Set(steps.flatMap((s) => s.criteria ?? []));
+  for (const c of data.doneCriteria ?? []) {
+    const latest = latestEvidence(data, c.id);
+    const idle = stepCriteria.has(c.id) ? '' : '（未挂任何步骤）';
+    o.push(`  ${c.id} ${latest ? (latest.exitCode === 0 ? 'PASS' : `FAIL(exit=${latest.exitCode})`) : '未验证'} ${fmtTime(latest?.at)} ｜ ${String(c.desc ?? '').slice(0, 80)}${idle}`);
+  }
+
+  o.push('');
+  o.push('步骤：');
+  for (const s of steps) {
+    const mark = { done: '✅', in_progress: '🔵', pending: '⬜', skipped: '⏭', superseded: '🔁' }[s.status] ?? '?';
+    const crit = (s.criteria ?? []).join(',') || '无判据';
+    const dedup = s.dedup ? ` 查重=${s.dedup.verdict}@${fmtTime(s.dedup.checkedAt)}` : '';
+    o.push(`  ${mark} #${s.id} ${String(s.goal ?? '').slice(0, 70)}（判据 ${crit}${dedup}）`);
+    // 证据有**两处**：`steps[].evidence`（update --step 追加）与顶层 `data.evidence`
+    // 里带 `stepId` 的记录（check / check --step / 终态追加）。只看前者会漏掉
+    // 「刚跑过 check --step 却显示未验证」——2026-11-10 由用例抓出。
+    // 合并后按 `at` 排序，保证「最近 1 条」真的是最近那条。
+    const ev = [
+      ...(s.evidence ?? []).map((e) => ({ ...e, stepId: e.stepId ?? s.id })),
+      ...(data.evidence ?? []).filter((e) => String(e.stepId) === String(s.id)),
+    ].sort((a, b) => new Date(a.at ?? 0).getTime() - new Date(b.at ?? 0).getTime());
+    const showEv = opts.full ? ev : ev.slice(-1);
+    for (const e of showEv) o.push(`      · ${summarizeEvidence(e)}`);
+    if (!opts.full && ev.length > 1) o.push(`      · …另有 ${ev.length - 1} 条证据（--full 展开）`);
+  }
+
+  const topDedup = data.dedup;
+  if (topDedup) {
+    o.push('');
+    o.push(
+      `最近查重（整条指令）：${topDedup.verdict} @${fmtTime(topDedup.checkedAt)} ｜ 基线=${topDedup.baseline ?? '?'} ｜ 产物变更 ${(topDedup.changedFiles ?? []).length} 个 / 期间提交 ${(topDedup.newCommits ?? []).length} 个${topDedup.verdictSource === 'reused' ? '（结论沿用上次）' : ''}`,
+    );
+  }
+
+  const pending = data.pendingDecisions ?? [];
+  if (pending.length > 0) {
+    o.push('');
+    o.push('未决事项（等用户裁决）：');
+    for (const d of pending) o.push(`  ${d.id} ${String(d.text ?? '').slice(0, 70)}${d.mySuggestion ? ` ｜ 我的建议：${d.mySuggestion}` : ''}`);
+  }
+
+  const followUps = data.followUps ?? [];
+  if (followUps.length > 0) {
+    o.push('');
+    o.push('中途补充（followUps）：');
+    for (const f of followUps) o.push(`  ${f.id} [${f.kind ?? '?'}/${f.status ?? '?'}] ${String(f.text ?? '').slice(0, 70)}`);
+  }
+
+  o.push('');
+  o.push(SHOW_NOT_PROOF);
+  console.log(o.join('\n'));
+  process.exit(EXIT.OK);
+}
+
 // ── dedup：查重（docs/12 §5.1 开工第一道 / §5.2 每步第二道） ────
 //
 // 【为什么它比状态文件硬】
@@ -1105,11 +1221,12 @@ function main() {
   if (!sub || opts.help) {
     console.error(
       [
-        '用法: node scripts/instruction-state.mjs <write|check|dedup|update> [...]',
+        '用法: node scripts/instruction-state.mjs <write|check|dedup|show|update> [...]',
         '',
         '  write  --file <payload.json> [--on-conflict abandon|keep] [--skip-baseline] [--by <id>] [--allow-untracked-targets]',
         '  check  [--step <id>]',
         '  dedup  [--step <id>] [--targets a,b] [--baseline <ref>] [--force] [--ttl <分钟>] [--no-save]   （exit 10=已完成 / 11=记录与实际不符）',
+        '  show   [--json] [--full]   （只读摘要，不跑判据；--json 给机器读）',
         '  update --step <id> --status <status> [--reuse-evidence]',
         '  update --followup "<原话>" --kind criteria --check "<命令>" [--id C9] [--step <id>]',
         '  update --followup "<原话>" --kind step [--targets a,b] [--goal "<目标>"]',
@@ -1124,6 +1241,7 @@ function main() {
   if (sub === 'write') return cmdWrite(opts);
   if (sub === 'check') return cmdCheck(opts);
   if (sub === 'dedup') return cmdDedup(opts);
+  if (sub === 'show') return cmdShow(opts);
   if (sub !== 'update') fail(`未知子命令：${sub}`);
 
   const forms = [
