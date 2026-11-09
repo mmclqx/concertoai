@@ -16,6 +16,9 @@
  * | `--approved-by self` 也认 | 「self 必须 exit 22 且原文件未改」 |
  * | 终态复用历史 evidence | 「`--set-status done` 必须全部 `reused: false`」 |
  * | 覆盖别人的进度 | 「运行中文件被外部改动 ⇒ exit 23」 |
+ * | `dedup` 恒判「已完成」（或恒判「未完成」） | 「空+有红 ⇒ mismatch」「非空+有红 ⇒ not-done」「两格 done」 |
+ * | `dedup` 只看 diff 不看判据 | 「空+有红 ⇒ mismatch」 |
+ * | `dedup` 把「已完成」的退出码写成 0 | 「已完成必须 exit 10（不是 0）」 |
  *
  * 所有用例都用 `CONCERTOAI_INSTRUCTION_DIR` 指向临时目录：**绝不许碰开发者真实的 `.git/` 状态**
  * （与 `tests/setup.ts` 关掉复盘/提示同一个理由）。
@@ -917,5 +920,440 @@ describe('并发与形态校验', () => {
     expect(runCli(['update', '--step', '1', '--status', 'in_progress']).code).toBe(0);
     expect(runCli(['update', '--followup', '顺便 X', '--kind', 'step']).code).toBe(0);
     expect(readState().instruction).toBe(original);
+  });
+});
+
+// ── dedup：查重（docs/12 §5.1 四格矩阵 / §5.2 轻量查重） ────────
+
+describe('dedup：查重（唯一「硬」的防线：产物 + 判据，不依赖状态文件）', () => {
+  /**
+   * 这组用例守的是**本机制的核心断言**：另一个会话可以完全不读不写状态文件
+   * （ADR-051 局限①），所以「这件事到底做完没有」只能靠 git 产物 + 判据脚本。
+   *
+   * 四格矩阵（docs/12 §5.1）每条一格，一格不能少：
+   *   空 + 全绿 ⇒ done(10) ｜ 空 + 有红 ⇒ mismatch(11) ｜ 非空 + 全绿 ⇒ done(10) ｜ 非空 + 有红 ⇒ not-done(0)
+   *
+   * 配变异探针验证有牙：
+   *   · `verdict = allPass ? 'done' : ...` 改成 `verdict = 'done'`（恒「已完成」）
+   *     ⇒ 「有红必须 not-done」「有红必须 mismatch」两条红；
+   *   · 改成 `verdict = 'not-done'`（恒「未完成」）⇒ 「第一格」「非空+全绿」两条红；
+   *   · 把 `changedFiles.length > 0` 从 `not-done`/`mismatch` 的判定里删掉（不再看 diff）
+   *     ⇒ 「空 + 有红 = mismatch」红（因为会被判成 not-done）；
+   *   · 退出码把 10 改回 0 ⇒ 「已完成必须 exit 10」红（这是「已完成被当成待开工」的直接防线）。
+   */
+
+  type GitRepo = { repo: string; run: (args: string[]) => void };
+
+  /** 建一个真 git 仓库：dedup 的判据全是 git 事实，mock 不出来。 */
+  function tempGitRepo(): GitRepo {
+    const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'instruction-dedup-'));
+    const raw = (args: string[]) => spawnSync('git', args, { cwd: repo, encoding: 'utf8' });
+    raw(['init', '-q']);
+    raw(['config', 'user.email', 'test@example.com']);
+    raw(['config', 'user.name', 'instruction-state-test']);
+    raw(['config', 'commit.gpgsign', 'false']);
+    return {
+      repo,
+      run: (args) => {
+        const r = raw(args);
+        if (r.status !== 0) throw new Error(`git ${args.join(' ')} 失败：${r.stderr ?? ''}`);
+      },
+    };
+  }
+
+  function commitFiles(g: GitRepo, files: Record<string, string>, message: string) {
+    for (const [rel, content] of Object.entries(files)) {
+      const abs = path.join(g.repo, rel);
+      fs.mkdirSync(path.dirname(abs), { recursive: true });
+      fs.writeFileSync(abs, content, 'utf8');
+    }
+    g.run(['add', '-A']);
+    g.run(['commit', '-q', '-m', message]);
+  }
+
+  /** 判据：rel 存在 **且已入库**（② 档），用于造「另一会话做完」的场景。 */
+  function artifactCriterion(id: string, rel: string) {
+    const posix = rel.split(path.sep).join('/');
+    return {
+      id,
+      desc: `产物存在且已入库：${rel}`,
+      check: `node -e "process.exit(require('fs').existsSync('${posix}')?0:1)"`,
+      expectContains: [],
+      mustBeTracked: [posix],
+      covers: [posix],
+    };
+  }
+
+  function payloadFor(
+    criteria: Record<string, unknown>[],
+    steps: Record<string, unknown>[],
+  ): Record<string, unknown> {
+    return { instruction: '测试 dedup', doneCriteria: criteria, steps };
+  }
+
+  it('**第一格：产物没变（基线=HEAD）+ 判据全绿 ⇒ verdict=done、exit 10**（不是 0）', () => {
+    const g = tempGitRepo();
+    try {
+      commitFiles(g, { 'out.txt': 'done\n' }, 'base: 产物已在');
+      const file = writePayload(
+        payloadFor(
+          [artifactCriterion('C1', 'out.txt')],
+          [{ id: 1, goal: '写 out.txt', targets: ['out.txt'], criteria: ['C1'] }],
+        ),
+      );
+      expect(runCli(['write', '--file', file, '--skip-baseline'], { cwd: g.repo }).code).toBe(0);
+
+      const r = runCli(['dedup'], { cwd: g.repo });
+      expect(r.code).toBe(10);
+      expect(r.out).toContain('verdict=done');
+      expect(r.out).toContain('不要重做');
+      // 「已完成」不许顺手改 status：判定 done 与「收尾」是两道门（终态要重跑全部判据）
+      expect(readState().status).toBe('in_progress');
+      // 档位说明是「护栏的护栏」：dedup 结论同样只覆盖到 ①②
+      expect(r.out).toContain('③已推送');
+      expect(r.out).toContain('未判');
+    } finally {
+      fs.rmSync(g.repo, { recursive: true, force: true });
+    }
+  });
+
+  it('**第二格：产物没变 + 判据有红 ⇒ verdict=mismatch、exit 11**（记录与实际不符，报用户别动手）', () => {
+    const g = tempGitRepo();
+    try {
+      commitFiles(g, { 'README.md': 'base\n' }, 'base');
+      const file = writePayload(
+        payloadFor(
+          [artifactCriterion('C1', 'never.txt')],
+          [{ id: 1, goal: '写 never.txt', targets: ['never.txt'], criteria: ['C1'] }],
+        ),
+      );
+      expect(runCli(['write', '--file', file, '--skip-baseline'], { cwd: g.repo }).code).toBe(0);
+
+      const r = runCli(['dedup'], { cwd: g.repo });
+      expect(r.code).toBe(11);
+      expect(r.out).toContain('verdict=mismatch');
+      expect(r.out).toContain('报给用户');
+    } finally {
+      fs.rmSync(g.repo, { recursive: true, force: true });
+    }
+  });
+
+  it('**第三格：产物变了 + 判据全绿 ⇒ done、exit 10**（别人用不同实现做完了，不要重做）', () => {
+    const g = tempGitRepo();
+    try {
+      commitFiles(g, { 'README.md': 'base\n' }, 'base');
+      const file = writePayload(
+        payloadFor(
+          [artifactCriterion('C1', 'out.txt')],
+          [{ id: 1, goal: '写 out.txt', targets: ['out.txt'], criteria: ['C1'] }],
+        ),
+      );
+      // 不用 --skip-baseline：写记录时产物还不存在 ⇒ 基线必须实测为 RED
+      //（否则这条用例证明不了「判据转绿」是因为产物真的变了）
+      expect(runCli(['write', '--file', file], { cwd: g.repo }).code).toBe(0);
+      expect(readState().baselineCriteriaState.C1).toBe('RED');
+
+      // 模拟「另一个会话做完并提交」：本实例没动过状态文件，只看到新提交
+      commitFiles(g, { 'out.txt': 'by other session\n' }, 'feat: 别的会话把这件做完了');
+
+      const r = runCli(['dedup'], { cwd: g.repo });
+      expect(r.code).toBe(10);
+      expect(r.out).toContain('verdict=done');
+      expect(r.out).toContain('产物变更：1 个文件');
+      expect(r.out).toContain('期间提交：1 个');
+    } finally {
+      fs.rmSync(g.repo, { recursive: true, force: true });
+    }
+  });
+
+  it('**第四格：产物变了 + 判据有红 ⇒ verdict=not-done、exit 0 并点名缺哪条**（部分完成，别从头再来）', () => {
+    const g = tempGitRepo();
+    try {
+      commitFiles(g, { 'README.md': 'base\n' }, 'base');
+      const file = writePayload(
+        payloadFor(
+          [artifactCriterion('C1', 'src/a.txt'), artifactCriterion('C2', 'src/b.txt')],
+          [
+            {
+              id: 1,
+              goal: '写 a 和 b',
+              targets: ['src/a.txt', 'src/b.txt'],
+              criteria: ['C1', 'C2'],
+            },
+          ],
+        ),
+      );
+      expect(runCli(['write', '--file', file, '--skip-baseline'], { cwd: g.repo }).code).toBe(0);
+
+      // 只做完一半
+      commitFiles(g, { 'src/a.txt': 'a\n' }, 'feat: 只有 a');
+
+      const r = runCli(['dedup'], { cwd: g.repo });
+      expect(r.code).toBe(0);
+      expect(r.out).toContain('verdict=not-done');
+      expect(r.out).toContain('PASS C1');
+      expect(r.out).toContain('FAIL C2');
+      expect(r.out).toContain('从 FAIL 的那条判据接着做');
+    } finally {
+      fs.rmSync(g.repo, { recursive: true, force: true });
+    }
+  });
+
+  it('--step ⇒ 结论写回 steps[<id>].dedup（含 checkedAt / logHead / verdict / targets）', () => {
+    const g = tempGitRepo();
+    try {
+      commitFiles(g, { 'README.md': 'base\n' }, 'base');
+      const file = writePayload(
+        payloadFor(
+          [artifactCriterion('C1', 'out.txt')],
+          [{ id: 1, goal: '写 out.txt', targets: ['out.txt'], criteria: ['C1'] }],
+        ),
+      );
+      expect(runCli(['write', '--file', file, '--skip-baseline'], { cwd: g.repo }).code).toBe(0);
+
+      const r = runCli(['dedup', '--step', '1'], { cwd: g.repo });
+      expect(r.code).toBe(11); // 基线=HEAD、out.txt 不存在 ⇒ 记录与实际不符
+      const dedup = readState().steps[0].dedup;
+      expect(dedup.verdict).toBe('mismatch');
+      expect(dedup.scope).toBe('step:1');
+      expect(dedup.targets).toEqual(['out.txt']);
+      expect(dedup.logHead).toBeTruthy();
+      expect(dedup.checkedAt).toBeTruthy();
+      expect(r.out).toContain('steps[1].dedup');
+    } finally {
+      fs.rmSync(g.repo, { recursive: true, force: true });
+    }
+  });
+
+  it('轻量查重（§5.2）：刚查过 + HEAD 未变 + 无新增提交 ⇒ **不重跑判据**，结论标 reused', () => {
+    const g = tempGitRepo();
+    try {
+      commitFiles(g, { 'README.md': 'base\n' }, 'base');
+      const file = writePayload(
+        payloadFor(
+          [countingCriterion('C1')],
+          [{ id: 1, goal: '计数判据', targets: ['README.md'], criteria: ['C1'] }],
+        ),
+      );
+      expect(runCli(['write', '--file', file, '--skip-baseline'], { cwd: g.repo }).code).toBe(0);
+
+      const first = runCli(['dedup', '--step', '1'], { cwd: g.repo });
+      expect(first.code).toBe(10);
+      expect(first.out).toContain('（measured）');
+      expect(countRuns()).toBe(1);
+
+      const second = runCli(['dedup', '--step', '1'], { cwd: g.repo });
+      expect(second.code).toBe(10);
+      expect(countRuns()).toBe(1); // 没有重跑
+      expect(second.out).toContain('（reused）');
+      expect(second.out).toContain('判据这次没重跑');
+
+      // --force：不信上次结论，强制重跑
+      const forced = runCli(['dedup', '--step', '1', '--force'], { cwd: g.repo });
+      expect(forced.code).toBe(10);
+      expect(countRuns()).toBe(2);
+    } finally {
+      fs.rmSync(g.repo, { recursive: true, force: true });
+    }
+  });
+
+  it('TTL 过期（上次查重是 30 分钟前）⇒ 强制重跑（「两小时前那句 PASS」不算数）', () => {
+    const g = tempGitRepo();
+    try {
+      commitFiles(g, { 'README.md': 'base\n' }, 'base');
+      const file = writePayload(
+        payloadFor(
+          [countingCriterion('C1')],
+          [{ id: 1, goal: '计数判据', targets: ['README.md'], criteria: ['C1'] }],
+        ),
+      );
+      expect(runCli(['write', '--file', file, '--skip-baseline'], { cwd: g.repo }).code).toBe(0);
+      expect(runCli(['dedup', '--step', '1'], { cwd: g.repo }).code).toBe(10);
+      expect(countRuns()).toBe(1);
+
+      // 把上次查重时间改成 30 分钟前（TLT 默认 10 分钟）
+      const state = readState();
+      state.steps[0].dedup.checkedAt = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+      fs.writeFileSync(statePath(), `${JSON.stringify(state, null, 2)}\n`, 'utf8');
+
+      const r = runCli(['dedup', '--step', '1'], { cwd: g.repo });
+      expect(r.code).toBe(10);
+      expect(countRuns()).toBe(2);
+      expect(r.out).toContain('（measured）');
+    } finally {
+      fs.rmSync(g.repo, { recursive: true, force: true });
+    }
+  });
+
+  it('HEAD 变了 ⇒ 不复用（新提交来了就必须重新验，10 分钟只防旧不防「刚改完」）', () => {
+    const g = tempGitRepo();
+    try {
+      commitFiles(g, { 'README.md': 'base\n', 'out.txt': 'x\n' }, 'base');
+      const file = writePayload(
+        payloadFor(
+          [countingCriterion('C1')],
+          [{ id: 1, goal: '计数判据', targets: ['out.txt'], criteria: ['C1'] }],
+        ),
+      );
+      expect(runCli(['write', '--file', file, '--skip-baseline'], { cwd: g.repo }).code).toBe(0);
+      expect(runCli(['dedup', '--step', '1'], { cwd: g.repo }).code).toBe(10);
+      expect(countRuns()).toBe(1);
+
+      commitFiles(g, { 'out.txt': 'y\n' }, 'feat: 改了产物');
+
+      const r = runCli(['dedup', '--step', '1'], { cwd: g.repo });
+      expect(r.code).toBe(10);
+      expect(countRuns()).toBe(2);
+      expect(r.out).toContain('（measured）');
+    } finally {
+      fs.rmSync(g.repo, { recursive: true, force: true });
+    }
+  });
+
+  it('HEAD 变了但**改动不在 targets 内** ⇒ 仍不复用（logHead 一条单独钉死，不许被「无新增提交」掩盖）', () => {
+    /**
+     * 这条用例是为了钉住 `prev.logHead === head` 这个条件本身：
+     * 单看「targets 内有没有新提交」会漏掉「HEAD 换了、但换的是别的文件」——
+     * 判据完全可能依赖 targets 之外的东西（比如全局配置、依赖版本），
+     * 所以宁可多跑一次判据（与 §4.5「head 变了必须重跑」同一口径）。
+     *
+     * 探针实证：把 `prev.logHead === head &&` 删掉 ⇒ 本用例红（而不是红在别的原因上）。
+     */
+    const g = tempGitRepo();
+    try {
+      commitFiles(g, { 'README.md': 'base\n', 'out.txt': 'x\n' }, 'base');
+      const file = writePayload(
+        payloadFor(
+          [countingCriterion('C1')],
+          [{ id: 1, goal: '计数判据', targets: ['out.txt'], criteria: ['C1'] }],
+        ),
+      );
+      expect(runCli(['write', '--file', file, '--skip-baseline'], { cwd: g.repo }).code).toBe(0);
+      expect(runCli(['dedup', '--step', '1'], { cwd: g.repo }).code).toBe(10);
+      expect(countRuns()).toBe(1);
+
+      // 提交一个**不在 targets 内**的文件：targets 内「无新增提交」，但 HEAD 变了
+      commitFiles(g, { 'docs/unrelated.txt': 'noise\n' }, 'docs: 无关改动');
+
+      const r = runCli(['dedup', '--step', '1'], { cwd: g.repo });
+      expect(r.code).toBe(10);
+      expect(countRuns()).toBe(2); // 重跑了
+      expect(r.out).toContain('（measured）');
+    } finally {
+      fs.rmSync(g.repo, { recursive: true, force: true });
+    }
+  });
+
+  it('无记录 + --targets ⇒ verdict=changes-only、exit 0（「没判据」不等于「已完成」，也不等于「未完成」）', () => {
+    const g = tempGitRepo();
+    try {
+      commitFiles(g, { 'README.md': 'base\n' }, 'base');
+      commitFiles(g, { 'README.md': 'changed\n' }, 'docs: 改 README');
+
+      const r = runCli(['dedup', '--targets', 'README.md', '--baseline', 'HEAD~1'], {
+        cwd: g.repo,
+      });
+      expect(r.code).toBe(0);
+      expect(r.out).toContain('verdict=changes-only');
+      expect(r.out).toContain('既不是完成，也不是未完成');
+      expect(r.out).toContain('产物变更：1 个文件');
+      // 没有记录 ⇒ 一定不许凭空建一条
+      expect(fs.existsSync(statePath())).toBe(false);
+    } finally {
+      fs.rmSync(g.repo, { recursive: true, force: true });
+    }
+  });
+
+  it('--baseline 给错 ⇒ exit 2 且**不静默换基线**（换近了 diff 会更空）', () => {
+    const g = tempGitRepo();
+    try {
+      commitFiles(g, { 'README.md': 'base\n' }, 'base');
+      const r = runCli(['dedup', '--targets', 'README.md', '--baseline', 'no-such-ref'], {
+        cwd: g.repo,
+      });
+      expect(r.code).toBe(2);
+      expect(r.out).toContain('不是有效提交');
+      expect(r.out).toContain('安静地给出有利结论');
+    } finally {
+      fs.rmSync(g.repo, { recursive: true, force: true });
+    }
+  });
+
+  it('--step 指向没有判据的步 ⇒ exit 21（无法证明 ≠ 已证明完）', () => {
+    const g = tempGitRepo();
+    try {
+      commitFiles(g, { 'README.md': 'base\n' }, 'base');
+      const file = writePayload(
+        payloadFor(
+          [countingCriterion('C1')],
+          [{ id: 1, goal: '还没定判据', targets: ['README.md'], criteria: [] }],
+        ),
+      );
+      expect(runCli(['write', '--file', file, '--skip-baseline'], { cwd: g.repo }).code).toBe(0);
+      const r = runCli(['dedup', '--step', '1'], { cwd: g.repo });
+      expect(r.code).toBe(21);
+      expect(r.out).toContain('没有关联判据');
+    } finally {
+      fs.rmSync(g.repo, { recursive: true, force: true });
+    }
+  });
+
+  it('--step 指向不存在的步 ⇒ exit 2；无记录时 --step ⇒ exit 3；非 git 目录 ⇒ exit 2', () => {
+    const g = tempGitRepo();
+    const plain = fs.mkdtempSync(path.join(os.tmpdir(), 'instruction-dedup-nogit-'));
+    try {
+      commitFiles(g, { 'README.md': 'base\n' }, 'base');
+      const file = writePayload(
+        payloadFor(
+          [countingCriterion('C1')],
+          [{ id: 1, goal: 'x', targets: ['README.md'], criteria: ['C1'] }],
+        ),
+      );
+      expect(runCli(['write', '--file', file, '--skip-baseline'], { cwd: g.repo }).code).toBe(0);
+      expect(runCli(['dedup', '--step', '99'], { cwd: g.repo }).code).toBe(2);
+
+      const noRecordDir = fs.mkdtempSync(path.join(os.tmpdir(), 'instruction-dedup-empty-'));
+      try {
+        fs.rmSync(stateDir, { recursive: true, force: true });
+        const noRecord = runCli(['dedup', '--step', '1'], { cwd: g.repo });
+        expect(noRecord.code).toBe(3);
+        expect(noRecord.out).toContain('无记录');
+      } finally {
+        fs.rmSync(noRecordDir, { recursive: true, force: true });
+      }
+
+      // 非 git 目录：没有提交就没有查重依据，必须报错而不是「0 变更 = 干净」
+      const plainRet = spawnSync(process.execPath, [SCRIPT, 'dedup', '--targets', 'a.txt'], {
+        encoding: 'utf8',
+        cwd: plain,
+        env: { ...process.env, CONCERTOAI_INSTRUCTION_DIR: plain },
+      });
+      expect(plainRet.status).toBe(2);
+      expect(`${plainRet.stdout ?? ''}${plainRet.stderr ?? ''}`).toContain('需要 git 仓库');
+    } finally {
+      fs.rmSync(g.repo, { recursive: true, force: true });
+      fs.rmSync(plain, { recursive: true, force: true });
+    }
+  });
+
+  it('--no-save ⇒ 只报结论、不写状态（查重本身不该产生副作用）', () => {
+    const g = tempGitRepo();
+    try {
+      commitFiles(g, { 'README.md': 'base\n' }, 'base');
+      const file = writePayload(
+        payloadFor(
+          [artifactCriterion('C1', 'never.txt')],
+          [{ id: 1, goal: 'x', targets: ['never.txt'], criteria: ['C1'] }],
+        ),
+      );
+      expect(runCli(['write', '--file', file, '--skip-baseline'], { cwd: g.repo }).code).toBe(0);
+      const before = readState();
+      const r = runCli(['dedup', '--step', '1', '--no-save'], { cwd: g.repo });
+      expect(r.code).toBe(11);
+      expect(readState().steps[0].dedup).toBeNull();
+      expect(readState().lastUpdated).toBe(before.lastUpdated);
+    } finally {
+      fs.rmSync(g.repo, { recursive: true, force: true });
+    }
   });
 });

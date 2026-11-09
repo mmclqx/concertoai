@@ -16,6 +16,7 @@
 // 【用法】
 //   node scripts/instruction-state.mjs write --file <payload.json> [--on-conflict abandon|keep] [--skip-baseline] [--allow-untracked-targets]
 //   node scripts/instruction-state.mjs check [--step <id>]
+//   node scripts/instruction-state.mjs dedup [--step <id>] [--targets a,b] [--baseline <ref>] [--force] [--ttl <分钟>] [--no-save]
 //   node scripts/instruction-state.mjs update --step <id> --status <pending|in_progress|done|skipped|superseded> [--reuse-evidence]
 //   node scripts/instruction-state.mjs update --followup "<原话>" --kind criteria --check "<命令>" [--id C9] [--step <id>]
 //   node scripts/instruction-state.mjs update --followup "<原话>" --kind step [--targets a,b] [--goal "<目标>"]
@@ -26,6 +27,8 @@
 // 【退出码】
 //   0 成功 / 1 旧 in_progress 冲突未解决 / 2 用法或校验错（含状态文件被 git 跟踪）/ 3 无记录（或记录损坏）
 //   4 写盘失败 / 20 判据有 fail / 21 门槛不满足 / 22 未获用户批准 / 23 并发冲突（lastUpdated 被外部改动）
+//   10 dedup 结论「已完成」（**不要重做**；刻意与 0 分开：0 = 可以接着做）
+//   11 dedup 结论「记录与实际不符」（产物没变但判据不满足 ⇒ 报用户，不擅自做）
 //
 // 【写死在代码里的五条安全约束（docs/12 §9.2）】
 //   1. 终态 `--set-status done` **重跑全部**判据，一律不复用历史 evidence；单步 `--step … --status done`
@@ -59,10 +62,14 @@ const EXIT = Object.freeze({
   THRESHOLD: 21,
   NOT_APPROVED: 22,
   CONCURRENT: 23,
+  // 查重专用：10 = 已完成（不是 0）。同码会让「已完成」被当成「待开工」再干一遍。
+  DEDUP_DONE: 10,
+  DEDUP_MISMATCH: 11,
 });
 
 const SCHEMA_VERSION = 1;
 const REUSE_TTL_MS = 10 * 60 * 1000; // docs/12 §4.5：单步复用的 TTL
+const DEDUP_TTL_MS = 10 * 60 * 1000; // docs/12 §5.2：轻量查重的「多久必须重查」阈值（裁决 5）
 const DIGEST_MAX = 300; // 落 JSON 的摘要上限，全文进 evidence/*.log
 const DEFAULT_TIMEOUT_MS = 300_000;
 const TIMEOUT_EXIT_CODE = 124; // 与 coreutils timeout 同口径：超时不是 0，也不是「没跑」
@@ -620,10 +627,226 @@ function cmdCheck(opts) {
   for (const run of runs) {
     console.log(`${run.pass ? 'PASS' : 'FAIL'} ${run.checkId} ｜ exit=${run.exitCode} ｜ ${digestOf(run)}`);
   }
-  // 固定尾行：防止把「判据全绿」误读成「已查重」（查重 dedup 尚未实现，docs/12 §5）
-  console.log('instruction-state: 本命令只判定判据，不等于查重（未实现 dedup）');
+  // 固定尾行：防止把「判据全绿」误读成「已查重」（查重是 dedup 子命令，它看 git 产物）
+  console.log('instruction-state: 本命令只判定判据，不等于查重（查重请用 dedup 子命令）');
   console.log(TIER_LINE);
   process.exit(runs.every((r) => r.pass) ? EXIT.OK : EXIT.CRITERIA_FAIL);
+}
+
+// ── dedup：查重（docs/12 §5.1 开工第一道 / §5.2 每步第二道） ────
+//
+// 【为什么它比状态文件硬】
+//   另一个会话可以完全不读不写这个 JSON（ADR-051 局限①），但它**没法不留下提交**。
+//   所以「这件事到底有没有被做完」只认产物 + 判据，「产物变没变」只认 git。
+//   JSON 只省掉「我自己」的重复劳动；dedup 才是那道硬防线。
+//
+// 【四格矩阵（docs/12 §5.1）——不只看 diff 空不空，还要逐条跑判据】
+//   | 产物 diff | 判据 | verdict  | 怎么办 |
+//   | 空        | 全绿 | done     | 不要重做（exit 10） |
+//   | 空        | 有红 | mismatch | 记录与实际不符 ⇒ 报用户，别动手（exit 11） |
+//   | 非空      | 全绿 | done     | 别人用别的实现做完了，不要重做（exit 10） |
+//   | 非空      | 有红 | not-done | 部分完成，从红的那条接着做（exit 0） |
+//
+// 【为什么不只看 diff】`git diff` 非空 ≠ 没过关（别人可能用别的实现满足判据）；
+//   `git diff` 空 ≠ 一定过（产物可能被回退）。**只有判据 exit 0 才是证据。**
+
+const DEDUP_VERDICT_NOTE = Object.freeze({
+  done: '已完成 —— 不要重做（矩阵：判据全绿）。收尾仍要走 update --set-status done（终态重跑全部判据，不复用）',
+  'not-done': '未完成 —— 部分产物已在，从 FAIL 的那条判据接着做（不要从头再来）',
+  mismatch: '记录与实际不符 —— 产物自基线以来没变化，判据却不满足；先别动手，把这条报给用户（docs/12 §5.1 第 2 格）',
+  'changes-only': '只报了产物变更 —— 本次没有判据可跑（无记录 / 未指定范围）⇒ **这既不是完成，也不是未完成**',
+});
+
+function refExists(ref) {
+  if (!ref) return false;
+  const r = git(['rev-parse', '--verify', '--quiet', `${ref}^{commit}`]);
+  return r.ok && Boolean(r.out);
+}
+
+/**
+ * 基线：显式 `--baseline` → 记录里的 `baselineHead` → `HEAD~3` → （提交不足时）首个提交。
+ * `--baseline` 给错**不静默换**：悄悄换一个更近的基线，diff 会更空 —— 那正是
+ * 「安静地给出有利结论」的形态（docs/12 §一）。
+ */
+function pickBaseline(explicit, data) {
+  if (typeof explicit === 'string' && explicit.trim()) {
+    const ref = explicit.trim();
+    if (!refExists(ref)) {
+      fail(`--baseline 不是有效提交：${ref}（拒绝静默换基线：换近了 diff 会更空，等于安静地给出有利结论）`);
+    }
+    return { ref, source: '--baseline' };
+  }
+  const candidates = [
+    data?.baselineHead ? { ref: data.baselineHead, source: 'record.baselineHead' } : null,
+    { ref: 'HEAD~3', source: 'HEAD~3（无记录时的默认，docs/12 §5.1）' },
+    { ref: 'HEAD', source: 'HEAD（提交数不足 4）' },
+  ].filter(Boolean);
+  for (const c of candidates) if (refExists(c.ref)) return c;
+  const first = git(['rev-list', '--max-parents=0', 'HEAD']);
+  if (first.ok && first.out) return { ref: first.out.split('\n').pop().trim(), source: '首个提交' };
+  return null;
+}
+
+const dedupPathArgs = (targets) => {
+  const list = (targets ?? []).filter((t) => typeof t === 'string' && t.trim());
+  return list.length > 0 ? ['--', ...list] : [];
+};
+
+const splitLines = (s) =>
+  String(s ?? '')
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+/** 三样都取：提交级 diff（矩阵用）、期间提交（人读）、工作区状态（未提交的产物也是产物）。 */
+function dedupChangeSet(baselineRef, targets) {
+  const range = `${baselineRef}..HEAD`;
+  const args = dedupPathArgs(targets);
+  const diff = git(['diff', '--name-only', range, ...args]);
+  const log = git(['log', '--format=%h|%ad|%s', '--date=iso', range, ...args]);
+  const status = git(['status', '--porcelain', ...args]);
+  return {
+    changedFiles: splitLines(diff.out),
+    commits: splitLines(log.out),
+    worktree: splitLines(status.out),
+  };
+}
+
+function cmdDedup(opts) {
+  if (!git(['rev-parse', '--show-toplevel']).ok) {
+    fail('dedup 需要 git 仓库（查重的唯一依据是提交与 diff，没有 git 就只能靠猜）');
+  }
+  const loaded = readState();
+  if (loaded.kind === 'corrupt') {
+    fail(`记录损坏（${loaded.error}），已备份 ${loaded.backup ?? '(备份失败)'}；不猜、不覆盖`, EXIT.NO_RECORD);
+  }
+  const data = loaded.kind === 'ok' ? loaded.data : null;
+
+  // ── 范围：--step 优先，其次 --targets，最后取整条指令的全部 targets ──
+  let step = null;
+  let targets = [];
+  let criteriaIds = null;
+  if (opts.step !== undefined) {
+    if (!data) fail('无记录：--step 需要状态记录（只查某段路径请用 --targets a,b）', EXIT.NO_RECORD);
+    step = (data.steps ?? []).find((s) => String(s.id) === String(opts.step));
+    if (!step) fail(`没有这个步骤：${opts.step}`);
+    targets = step.targets ?? [];
+    criteriaIds = step.criteria ?? [];
+    if (criteriaIds.length === 0) {
+      fail(
+        `步骤 ${step.id} 没有关联判据 ⇒ dedup 无法判定「是否已被做完」（「没判据」不等于「未完成」，先补判据）`,
+        EXIT.THRESHOLD,
+      );
+    }
+  } else if (typeof opts.targets === 'string') {
+    targets = opts.targets
+      .split(',')
+      .map((t) => t.trim())
+      .filter(Boolean);
+  } else if (data) {
+    targets = [...new Set((data.steps ?? []).flatMap((s) => s.targets ?? []))];
+  }
+
+  const baseline = pickBaseline(typeof opts.baseline === 'string' ? opts.baseline : null, data);
+  if (!baseline) fail('找不到可用基线：这个仓库还没有任何提交', EXIT.USAGE);
+  const { changedFiles, commits, worktree } = dedupChangeSet(baseline.ref, targets);
+  const head = currentHead();
+
+  const map = data ? criteriaById(data) : new Map();
+  const spec =
+    criteriaIds === null
+      ? (data?.doneCriteria ?? [])
+      : criteriaIds.map((cid) => map.get(cid)).filter(Boolean);
+
+  // ── 轻量查重（§5.2）：HEAD 没变 + 无新增提交 + 距上次查重不超阈值 ⇒ 沿用上次结论，不跑判据 ──
+  const prev = step ? (step.dedup ?? null) : (data?.dedup ?? null);
+  const ttlMs = Number(opts.ttl) > 0 ? Number(opts.ttl) * 60_000 : DEDUP_TTL_MS;
+  const canReuse = Boolean(
+    prev?.verdict &&
+      prev.logHead &&
+      prev.logHead === head &&
+      ageMs(prev.checkedAt) <= ttlMs &&
+      commits.length === 0 &&
+      changedFiles.length === 0 &&
+      !opts.force,
+  );
+
+  let verdict;
+  let verdictSource = 'measured';
+  let runs = [];
+  let criteriaRecord = [];
+  if (canReuse) {
+    verdict = prev.verdict;
+    verdictSource = 'reused';
+    criteriaRecord = prev.criteria ?? [];
+  } else if (spec.length === 0) {
+    verdict = 'changes-only';
+    criteriaRecord = [];
+  } else {
+    runs = spec.map((c) => runCriterion(c));
+    const allPass = runs.every((r) => r.pass);
+    // 四格矩阵：diff 空 + 有红 = 记录与实际不符；diff 非空 + 有红 = 部分完成
+    verdict = allPass ? 'done' : changedFiles.length > 0 ? 'not-done' : 'mismatch';
+    criteriaRecord = runs.map((r) => ({
+      id: r.checkId,
+      exitCode: r.exitCode,
+      pass: r.pass,
+      digest: digestOf(r),
+      logPath: writeEvidenceLog(r, step ? step.id : null),
+    }));
+  }
+
+  const record = {
+    checkedAt: nowIso(),
+    logHead: head,
+    baseline: baseline.ref,
+    baselineSource: baseline.source,
+    scope: step ? `step:${step.id}` : targets.length > 0 ? 'targets' : 'repo',
+    targets,
+    changedFiles: changedFiles.slice(0, 50),
+    newCommits: commits.slice(0, 10),
+    worktreeChanges: worktree.slice(0, 10),
+    criteria: criteriaRecord,
+    verdict,
+    verdictSource,
+    ...(canReuse ? { reusedFrom: prev.checkedAt } : {}),
+  };
+
+  if (data && !opts['no-save']) {
+    if (step) step.dedup = record;
+    else data.dedup = record; // 指令级（开工第一道）结论；字段说明见 docs/12 §2.3
+    writeState(data, loaded);
+  }
+
+  // ── 输出：先事实，再结论，最后固定档位行（与 check / 终态同一口径） ──
+  console.log(
+    `instruction-state: dedup 范围=${record.scope} 基线=${baseline.ref}（${baseline.source}）HEAD=${head ?? '(未知)'}`,
+  );
+  console.log(
+    `  产物变更：${changedFiles.length} 个文件${changedFiles.length > 0 ? `（${changedFiles.slice(0, 5).join(', ')}${changedFiles.length > 5 ? ' …' : ''}）` : ''}`,
+  );
+  console.log(
+    `  期间提交：${commits.length} 个${commits.length > 0 ? `（最新 ${commits[0]}）` : ''}`,
+  );
+  console.log(
+    `  工作区未提交：${worktree.length} 项${worktree.length > 0 ? `（${worktree.slice(0, 3).join(' / ')}${worktree.length > 3 ? ' …' : ''}）` : ''}`,
+  );
+  if (canReuse) {
+    console.log(
+      `  判据：沿用 ${prev.checkedAt} 的结论（HEAD 未变 + 无新增提交 + ${Math.round(ttlMs / 60_000)} 分钟内查过；判据这次没重跑）`,
+    );
+  } else {
+    for (const r of runs) {
+      console.log(`  ${r.pass ? 'PASS' : 'FAIL'} ${r.checkId} ｜ exit=${r.exitCode} ｜ ${digestOf(r)}`);
+    }
+    if (spec.length === 0) console.log('  判据：无可执行判据（本次只报变更）');
+  }
+  console.log(`instruction-state: verdict=${verdict}（${verdictSource}）—— ${DEDUP_VERDICT_NOTE[verdict]}`);
+  if (data && !opts['no-save']) {
+    console.log(`  结论已写回 ${step ? `steps[${step.id}].dedup` : 'data.dedup'}（${statePath()}）`);
+  }
+  console.log(TIER_LINE);
+  process.exit(verdict === 'done' ? EXIT.DEDUP_DONE : verdict === 'mismatch' ? EXIT.DEDUP_MISMATCH : EXIT.OK);
 }
 
 // ── update：形态 1（推进步骤） ────────────────────────────────
@@ -882,10 +1105,11 @@ function main() {
   if (!sub || opts.help) {
     console.error(
       [
-        '用法: node scripts/instruction-state.mjs <write|check|update> [...]',
+        '用法: node scripts/instruction-state.mjs <write|check|dedup|update> [...]',
         '',
         '  write  --file <payload.json> [--on-conflict abandon|keep] [--skip-baseline] [--by <id>] [--allow-untracked-targets]',
         '  check  [--step <id>]',
+        '  dedup  [--step <id>] [--targets a,b] [--baseline <ref>] [--force] [--ttl <分钟>] [--no-save]   （exit 10=已完成 / 11=记录与实际不符）',
         '  update --step <id> --status <status> [--reuse-evidence]',
         '  update --followup "<原话>" --kind criteria --check "<命令>" [--id C9] [--step <id>]',
         '  update --followup "<原话>" --kind step [--targets a,b] [--goal "<目标>"]',
@@ -899,6 +1123,7 @@ function main() {
 
   if (sub === 'write') return cmdWrite(opts);
   if (sub === 'check') return cmdCheck(opts);
+  if (sub === 'dedup') return cmdDedup(opts);
   if (sub !== 'update') fail(`未知子命令：${sub}`);
 
   const forms = [
