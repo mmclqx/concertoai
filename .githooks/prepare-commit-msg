@@ -4,6 +4,10 @@
 # 为什么是 prepare-commit-msg 而不是 commit-msg：
 #   实测（Git for Windows 2.45.1）git commit --no-verify 会绕过 pre-commit 与
 #   commit-msg，但【不会】绕过 prepare-commit-msg。要「跑不掉」，只能选它。
+#   这一条是**用例**不是文档承诺：tests/scripts/githooks.test.ts 的「--no-verify 双 marker
+#   对照」先证明 --no-verify 真把 pre-commit 绕过了，再断言本 hook 仍在跑（否则空转）。
+#   本文件整体有 18 条用例钉住（trailer 三条回归 + 提醒段全部行为 + 性能预算），
+#   改这里请先看 tests/scripts/githooks.test.ts 的头部说明。
 #
 # 身份解析顺序：
 #   1) 环境变量 CONCERTOAI_AGENT -- 显式声明，权威
@@ -48,4 +52,47 @@ if [ "$agent" = "unmarked" ]; then
 fi
 
 printf '\nAgent: %s\n' "$agent" >> "$msg_file"
+
+# ── 进度提醒（ADR-051 裁决 4 / docs/12 §9.4 / docs/13）──────────────────
+# 只往 stderr 打印，绝不阻断、绝不改写提交信息（AGENTS 第 34 条）。
+# 语言跟随 LUMEN_LOCALE > LANG（en* → 英文 ASCII，其余 → 中文），与 src/i18n 的
+# resolveLocale 行为等价（等价性由 tests/scripts/githooks.test.ts#10 表驱动钉住）。
+# 读不到状态 / 解析失败 / 没有 node ⇒ 一律静默（hook 不能成为新故障源）。
+# 输出一律走 process.stderr.write，且**不写 "$msg_file"**（提醒绝不能进提交信息）。
+# 实测（2026-11-10，tests/scripts/githooks.test.ts 配套实验）：git 跑 hook 时本就把
+# hook 的 stdout 合并到 stderr，所以 `2>&1 >&2` 这类重定向是冗余的，已删——
+# 真正需要守的是「不许写进 msg_file」，那由"不碰这个文件"和用例共同保证。
+# 为什么放在 trailer 之后：先完成主线，再提示；提醒段任何异常都不能影响已写好的提交信息。
+if command -v node >/dev/null 2>&1; then
+  state_file="$(git rev-parse --git-dir 2>/dev/null)/concertoai-current-instruction.json"
+  if [ -f "$state_file" ]; then
+    node -e '
+      const fs = require("fs");
+      try {
+        const d = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+        if (d.status !== "in_progress" && d.status !== "blocked") process.exit(0);
+        const loc = String(process.env.LUMEN_LOCALE || process.env.LANG || "").trim().toLowerCase();
+        const en = loc.startsWith("en");
+        const steps = Array.isArray(d.steps) ? d.steps : [];
+        const done = steps.filter((s) => s && s.status === "done").length;
+        const cur = d.currentStep == null ? "-" : d.currentStep;
+        const err = (s) => process.stderr.write(s + "\n");
+        if (d.status === "blocked") {
+          const why = String(d.blockedReason || "").replace(/\s+/g, " ").trim().slice(0, 60);
+          err(en
+            ? "concertoai: blocked: " + (why || "(no reason recorded)") + " -- waiting for you"
+            : "concertoai: blocked：" + (why || "（未记录原因）") + "，等你确认");
+          process.exit(0);
+        }
+        err(en
+          ? "concertoai: instruction not finished -- status=in_progress, step " + done + "/" + steps.length + " (currentStep=" + cur + ")"
+          : "concertoai: 指令未收尾 —— status=in_progress，进度 " + done + "/" + steps.length + " 步（currentStep=" + cur + "）");
+        err(en
+          ? "concertoai: progress: show | dedup | update --set-status done"
+          : "concertoai: 看进度 show ｜ 查重 dedup ｜ 收尾 update --set-status done");
+      } catch {}
+    ' "$state_file" || true
+  fi
+fi
+
 exit 0

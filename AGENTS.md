@@ -211,6 +211,7 @@ UI 测试：Ink 组件需用 ink-testing-library 覆盖
     - 其他退出码（2 用法错 / 3 无记录 / 21 该步没有判据）⇒ 先修前提，别硬跑。
     **两条口径**：① **`dedup` 说 done ≠ 收尾完成**——它只回答「要不要重做」，收尾仍必须 `update --set-status done`（重跑全部判据）或 `check`；② **判据里禁止用 `vitest run <文件> -t <过滤词>`**：实测**零匹配时 vitest 退出码是 0**（`Test Files 1 skipped`），拿它当 `doneCriteria` 等于恒绿；判据要落到**文件粒度**（文件不存在时 vitest exit 1，有牙）或用 `expectContains` 断言输出（见 `docs/09-踩坑记录/2026-11-10-vitest过滤词零匹配也返回成功.md`）。
     **⚠️ 与裁决 6 的关系**：ADR-051 裁决 6「暂不把本机制写入 AGENTS 作强制条款」指的是**不强制要求「每条指令都必须写状态 JSON」**（那会变成又一条写了没人执行的纪律，且另一会话根本不读它）；**本条不是那个硬性化**——它只规定「开工先跑一次只读的 `dedup`，按退出码决定动不动手」，成本是几秒钟的 git 查询，不需要任何人事先写 JSON 也能用。
+    **交付时刻有 hook 兜底（2026-11-10 已落地）**：`dedup` 是「开工时我去问」，`.githooks/prepare-commit-msg` 是「提交时它来找我」——`status=in_progress/blocked` 且未收尾时，每次 `git commit` 都会在 stderr 打两行进度提醒（`blocked` 打一行原因），**不阻断、绝不进提交信息**。两条互补，别只留一条。用例在 `tests/scripts/githooks.test.ts`（18 条，含 `--no-verify` 双 marker 对照 + 20 条 locale 等价性表），变异探针 P1–P6 实测记录见 `docs/13-hook提交时进度提醒-方案.md` §9.6。
 
 ## 命名与包
 项目	内容
