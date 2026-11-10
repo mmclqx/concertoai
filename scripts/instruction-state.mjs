@@ -80,6 +80,34 @@ const INSTRUCTION_STATUSES = ['in_progress', 'done', 'blocked', 'abandoned'];
 const STEP_STATUSES = ['pending', 'in_progress', 'done', 'skipped', 'superseded'];
 
 /**
+ * 会话级运行标志的白名单（v5.1 T1.4）。
+ *
+ * ## 为什么这类开关要落在这里，而不是 config
+ *
+ * 用户 2026-11-10 裁决：`--auto-low` **不进 config**，但要记进会话状态记录。
+ * 两条约束合起来只有一个解：
+ *
+ * - 进 config ⇒ 写成永久默认，下次没人记得自己开过（安全开关一旦被默认打开，
+ *   就再也说不清「那次是谁放的」）；
+ * - 只活在进程内存 ⇒ 进程一退就归零，用户下次说「继续」时回答不了「上次到底开没开」。
+ *
+ * 所以落在 `.git/` 下的状态记录：**会话级、不进版本库、不跨机器**（与 ADR-051
+ * 红线① 同口径）。它是「记录」不是「配置」——`show` 会显示，但**没有任何代码
+ * 会因为它的值改变行为**。要改行为只能在命令行上显式传参。
+ *
+ * ## 为什么是白名单，不是自由键值 map
+ *
+ * 一旦能存任意键值，它就变成**第二个 config**，而且是没有版本、没有 schema、
+ * 没有校验的那个——比 config 更糟。新增一项必须改这里 + 补用例。
+ */
+const SESSION_FLAG_KEYS = Object.freeze(['autoLow']);
+
+/** 布尔型标志的取值词表（只认这些，其余报错；不做「非空即真」的猜测）。 */
+const SESSION_FLAG_TRUE = Object.freeze(['on', 'true', '1', 'yes']);
+const SESSION_FLAG_FALSE = Object.freeze(['off', 'false', '0', 'no']);
+
+
+/**
  * 「完成」的三档口径（2026-11-08 用户裁决，见 `docs/12` §一）。
  *
  * 事故的形状是**两头都歪**：我把「未提交」说成「已完成」（偏乐观）；用户读到
@@ -590,6 +618,13 @@ function cmdWrite(opts) {
     revisions: [],
     doneProof: null,
     blockedReason: null,
+    /**
+     * 会话级运行标志（v5.1 T1.4，见 SESSION_FLAG_KEYS 注释）。
+     *
+     * 初始为空对象而不是省略：字段本身要「在脸上」，否则后人读 JSON 时看不出
+     * 这里本来就有个位置可以放会话开关，只好又去加一个 config 项。
+     */
+    sessionFlags: {},
     // 留痕：本轮是否显式放行了「未入库 target」（放行也必须能事后查出来）
     untrackedTargetsAck: untrackedAck,
     baselineCriteriaState: opts['skip-baseline']
@@ -684,6 +719,20 @@ function cmdShow(opts) {
   if (data.writtenBy) o.push(`写入者：${data.writtenBy}`);
 
   if (data.blockedReason) o.push(`卡住原因：${data.blockedReason}`);
+
+  /**
+   * 会话级标志（v5.1 T1.4）：显示在这里的意义是「下次说『继续』时能看见上次开没开」。
+   *
+   * 空对象不打印——状态记录每行都要值得读，一个永远为空的「会话标志：（无）」
+   * 只会让人练成略过这一行的习惯。
+   */
+  const flagEntries = Object.entries(data.sessionFlags ?? {});
+  if (flagEntries.length > 0) {
+    const text = flagEntries
+      .map(([k, v]) => `${k}=${v?.value ? 'on' : 'off'}${v?.at ? `（${fmtTime(v.at)} 设${v?.by ? ` by ${v.by}` : ''}）` : ''}`)
+      .join(' ｜ ');
+    o.push(`会话标志：${text}`);
+  }
 
   if (data.doneProof) {
     const tiers = data.doneProof.tiers ?? {};
@@ -1212,6 +1261,57 @@ function cmdUpdateSetStatus(opts) {
   process.exit(EXIT.OK);
 }
 
+// ── update：形态 5（会话级标志） ──────────────────────────────
+
+/**
+ * 设置一个会话级标志：`update --set-flag autoLow=on`。
+ *
+ * 刻意**只写记录、不读它做决策**：本机制是「进度与意图的记录」，不是配置源。
+ * 若哪天有代码按这里的值改变行为，那就等于把 config 搬进了 `.git/`——
+ * 不可审查、不可共享、换机器就变，比 config 更糟（见 SESSION_FLAG_KEYS 注释）。
+ */
+function cmdUpdateSetFlag(opts) {
+  const loaded = requireRecord();
+  const data = loaded.data;
+  const raw = String(opts['set-flag']);
+  const eq = raw.indexOf('=');
+  if (eq <= 0 || eq === raw.length - 1) {
+    fail(`--set-flag 要写成 <键>=<值>（收到 "${raw}"）`);
+  }
+  const key = raw.slice(0, eq).trim();
+  const valueText = raw.slice(eq + 1).trim();
+
+  if (!SESSION_FLAG_KEYS.includes(key)) {
+    // 否定面必须报得清楚：告诉允许什么，否则下一个人会去加一个「自由键值」的口子
+    fail(`未知的会话标志 "${key}"（只允许 ${SESSION_FLAG_KEYS.join(' / ')}；新增一项要改 SESSION_FLAG_KEYS 并补用例）`);
+  }
+
+  const lower = valueText.toLowerCase();
+  const value = SESSION_FLAG_TRUE.includes(lower)
+    ? true
+    : SESSION_FLAG_FALSE.includes(lower)
+      ? false
+      : null;
+  if (value === null) {
+    fail(
+      `会话标志 "${key}" 的取值无法识别："${valueText}"（布尔标志只认 ${[...SESSION_FLAG_TRUE, ...SESSION_FLAG_FALSE].join(' / ')}；不做「非空即真」的猜测）`,
+    );
+  }
+
+  const prev = data.sessionFlags?.[key] ?? null;
+  data.sessionFlags = data.sessionFlags ?? {};
+  data.sessionFlags[key] = {
+    value,
+    at: nowIso(),
+    by: opts.by ?? process.env.CONCERTOAI_AGENT ?? 'unmarked',
+    ...(prev === null ? {} : { previous: prev.value }),
+  };
+  writeState(data, loaded);
+  const prevText = prev === null ? '' : `（原值 ${prev.value ? 'on' : 'off'}）`;
+  console.log(`instruction-state: 会话标志 ${key} = ${value ? 'on' : 'off'}${prevText} —— 只记录，不改任何行为`);
+  process.exit(EXIT.OK);
+}
+
 // ── 入口 ──────────────────────────────────────────────────────
 
 function main() {
@@ -1233,6 +1333,7 @@ function main() {
         '  update --followup "<原话>" --kind note --why "<为何无需验证>"',
         '  update --adjust-steps <steps.json> --approved-by user',
         '  update --set-status done|blocked|abandoned [--reason "<原因>"]',
+        '  update --set-flag <键>=<on|off> [--by <id>]   （会话级记录，只写不读：不改任何行为、不进 config）',
       ].join('\n'),
     );
     process.exit(EXIT.USAGE);
@@ -1249,6 +1350,7 @@ function main() {
     ['followup', opts.followup !== undefined],
     ['adjust-steps', opts['adjust-steps'] !== undefined],
     ['set-status', opts['set-status'] !== undefined],
+    ['set-flag', opts['set-flag'] !== undefined],
   ].filter(([, on]) => on);
   if (forms.length !== 1) {
     fail(`update 必须且只能用一种形态（收到 ${forms.length} 个：${forms.map(([n]) => n).join(', ') || '无'}）`);
@@ -1257,6 +1359,7 @@ function main() {
   if (which === 'step') return cmdUpdateStep(opts);
   if (which === 'followup') return cmdUpdateFollowup(opts);
   if (which === 'adjust-steps') return cmdUpdateAdjustSteps(opts);
+  if (which === 'set-flag') return cmdUpdateSetFlag(opts);
   return cmdUpdateSetStatus(opts);
 }
 

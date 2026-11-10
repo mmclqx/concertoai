@@ -923,6 +923,138 @@ describe('并发与形态校验', () => {
   });
 });
 
+// ── update --set-flag：会话级标志（v5.1 T1.4） ─────────────────
+
+describe('update --set-flag：会话级标志（只记录，不进 config）', () => {
+  /**
+   * 守的是用户 2026-11-10 的一条裁决：`--auto-low` **不进 config**，但要记进会话状态。
+   *
+   * 这组用例的靶子，是四个很容易悄悄写出来的废实现：
+   *
+   * | 废实现 | 会被哪条抓住 |
+   * |---|---|
+   * | 什么键都收（自由键值 map，等于第二个 config） | 「未知键必须 exit 2 且原文件未改」 |
+   * | 「非空即真」（`autoLow=maybe` 也当 on） | 「无法识别的取值必须 exit 2」 |
+   * | 只写内存/别处、没落盘 | 「写进 sessionFlags 且 show 能看见」 |
+   * | 连带把状态记录写进 config / 用户 home | 「跑完不碰 home 下的 config」 |
+   */
+  const flagOf = (key: string) => readState().sessionFlags?.[key];
+
+  it('首次设置 ⇒ 落进 sessionFlags，值为布尔真，带 at/by', () => {
+    expect(writeBase().code).toBe(0);
+    const r = runCli(['update', '--set-flag', 'autoLow=on', '--by', 'cli-test']);
+    expect(r.code).toBe(0);
+    const flag = flagOf('autoLow');
+    expect(flag.value).toBe(true);
+    expect(flag.by).toBe('cli-test');
+    // 记时间是为了回答「什么时候开的」，缺了它就只剩一个孤立布尔值
+    expect(typeof flag.at).toBe('string');
+    expect(flag.at.length).toBeGreaterThan(0);
+  });
+
+  it('**否定面**：白名单外的键 ⇒ exit 2，且**原文件未改**（防「什么都能存」）', () => {
+    expect(writeBase().code).toBe(0);
+    const before = fs.readFileSync(statePath(), 'utf8');
+    const r = runCli(['update', '--set-flag', 'someFlag=on']);
+    expect(r.code).toBe(2);
+    expect(r.out).toContain('未知的会话标志');
+    // 报错必须说清允许什么，否则下一个人会去加一个自由键值口子
+    expect(r.out).toContain('autoLow');
+    expect(fs.readFileSync(statePath(), 'utf8')).toBe(before);
+  });
+
+  it('**否定面**：取值无法识别（`maybe`）⇒ exit 2，且原文件未改（防「非空即真」）', () => {
+    expect(writeBase().code).toBe(0);
+    const before = fs.readFileSync(statePath(), 'utf8');
+    const r = runCli(['update', '--set-flag', 'autoLow=maybe']);
+    expect(r.code).toBe(2);
+    expect(r.out).toContain('无法识别');
+    expect(fs.readFileSync(statePath(), 'utf8')).toBe(before);
+  });
+
+  it('格式不对（缺等号 / 缺值 / 缺键）⇒ exit 2', () => {
+    expect(writeBase().code).toBe(0);
+    for (const bad of ['autoLow', 'autoLow=', '=on']) {
+      expect(runCli(['update', '--set-flag', bad]).code).toBe(2);
+    }
+  });
+
+  it('on/off 双向 + 阶梯自证：on ⇒ true，off ⇒ false，且留下 previous（不是静默覆盖）', () => {
+    expect(writeBase().code).toBe(0);
+    expect(runCli(['update', '--set-flag', 'autoLow=on']).code).toBe(0);
+    expect(flagOf('autoLow').value).toBe(true);
+    expect(runCli(['update', '--set-flag', 'autoLow=off']).code).toBe(0);
+    const flag = flagOf('autoLow');
+    expect(flag.value).toBe(false);
+    // 覆盖时留住原值：事后要能回答「先开后关」还是「一直关」
+    expect(flag.previous).toBe(true);
+  });
+
+  it('其它 update 形态之后标志**仍在**（防「更新时把不认识的字段冲掉」）', () => {
+    expect(writeBase().code).toBe(0);
+    expect(runCli(['update', '--set-flag', 'autoLow=on']).code).toBe(0);
+    // 三次不同形态的写盘：步骤推进 / followUp / 终态
+    expect(runCli(['update', '--step', '1', '--status', 'in_progress']).code).toBe(0);
+    expect(runCli(['update', '--followup', '补一条', '--kind', 'step']).code).toBe(0);
+    expect(flagOf('autoLow')?.value).toBe(true);
+  });
+
+  it('`show` 的人类可读摘要里能看到（否则「记了但看不见」等于没记）', () => {
+    expect(writeBase().code).toBe(0);
+    expect(runCli(['update', '--set-flag', 'autoLow=on', '--by', 'cli-test']).code).toBe(0);
+    const r = runCli(['show']);
+    expect(r.code).toBe(0);
+    expect(r.out).toContain('会话标志');
+    expect(r.out).toContain('autoLow=on');
+  });
+
+  it('`show` 在从未设置时**不打印**标志行（空行只会让人练成略过它）', () => {
+    expect(writeBase().code).toBe(0);
+    const r = runCli(['show']);
+    expect(r.out).not.toContain('会话标志');
+  });
+
+  it('**不进 config**：跑完在临时 HOME 下不产生 config.json（标志只活在状态记录里）', () => {
+    /**
+     * 用户裁决的另一半是「不进 config」。这里把 HOME / USERPROFILE 指到临时目录，
+     * 跑一次 set-flag，然后断言**没有**写出任何 config 文件。
+     *
+     * 正例自证：确认 HOME 真的被改了（否则「没产生 config」可能只是因为
+     * 这段代码根本没走到用户目录，探针空转）。
+     */
+    const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), 'flag-home-'));
+    try {
+      expect(writeBase().code).toBe(0);
+      const r = runCli(['update', '--set-flag', 'autoLow=on'], {
+        env: { HOME: fakeHome, USERPROFILE: fakeHome },
+      });
+      expect(r.code).toBe(0);
+      // 正例自证：注入的 HOME 确实是那个临时目录（不是空转）
+      const probe = spawnSync(
+        process.execPath,
+        ['-e', 'process.stdout.write(process.env.HOME ?? "")'],
+        {
+          encoding: 'utf8',
+          env: { ...process.env, HOME: fakeHome, USERPROFILE: fakeHome },
+        },
+      );
+      expect(probe.stdout).toBe(fakeHome);
+      // 目标断言：临时 HOME 下没有 .concertoai/config.json（标志没被写成配置）
+      expect(fs.existsSync(path.join(fakeHome, '.concertoai', 'config.json'))).toBe(false);
+      expect(fs.existsSync(path.join(fakeHome, '.concertoai'))).toBe(false);
+    } finally {
+      fs.rmSync(fakeHome, { recursive: true, force: true });
+    }
+  });
+
+  it('与其它形态互斥：`--set-flag` 和 `--set-status` 同时给 ⇒ exit 2', () => {
+    expect(writeBase().code).toBe(0);
+    const r = runCli(['update', '--set-flag', 'autoLow=on', '--set-status', 'done']);
+    expect(r.code).toBe(2);
+    expect(r.out).toContain('只能用一种形态');
+  });
+});
+
 // ── dedup：查重（docs/12 §5.1 四格矩阵 / §5.2 轻量查重） ────────
 
 describe('dedup：查重（唯一「硬」的防线：产物 + 判据，不依赖状态文件）', () => {
