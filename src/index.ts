@@ -25,6 +25,15 @@ export {
   MAX_ANALYZED_DIFF_LINES,
   parseDiff,
 } from './core/approval-insight';
+// v5.1：低风险自动放行判定（纯函数；安全命门见 src/core/auto-approve.ts 文件头）
+export type {
+  AutoLowApprovalKind,
+  AutoLowDecision,
+  AutoLowInput,
+  AutoLowInsightLike,
+  AutoLowReason,
+} from './core/auto-approve';
+export { decideAutoLow } from './core/auto-approve';
 export type { HolidayCalendarInput, HolidayCalendarReport } from './core/holidays';
 export {
   BUILTIN_HOLIDAY_CALENDAR,
