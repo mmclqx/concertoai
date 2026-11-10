@@ -78,8 +78,17 @@ export interface RunLoopResult {
 
 export type LoopEvent =
   | { type: 'chunk'; text: string }
-  | { type: 'tool_call'; toolCall: ToolCall }
-  | { type: 'tool_result'; toolCall: ToolCall; result: ToolResult }
+  /**
+   * 工具调用（v5.1 T2.1 起带 `stepIndex`）。
+   *
+   * `stepIndex` = **本次用户输入内的第几步**（从 1 开始，跨轮累计）。
+   * 为什么不给「轮次」：一个 turn 可能一次发多个工具（见 `groupToolCalls`），
+   * 用户关心的是「现在第几步」，不是「第几轮」。
+   * 为什么不给 `total`：步数由模型临场决定，loop 事先不知道总数——
+   * 硬造一个分母就只能靠猜，用户看到「第 3/10 步」而实际有 7 步时，那个 10 是假话。
+   */
+  | { type: 'tool_call'; toolCall: ToolCall; stepIndex: number }
+  | { type: 'tool_result'; toolCall: ToolCall; result: ToolResult; stepIndex: number }
   | { type: 'usage'; usage: Usage }
   | { type: 'error'; error: Error };
 
@@ -101,6 +110,13 @@ export async function runLoop(
   // 修复管线计数跨轮共享：一次 runLoop 内可修复失败累计（T3.2）
   const repairState: RepairState = { count: 0, failures: [] };
   const maxTurns = options.maxTurns ?? MAX_LOOP_TURNS;
+  /**
+   * 已发出的工具调用数（v5.1 T2.1）：「第几步」的累计基数。
+   *
+   * 放在 `runLoop` 层而不是 `executeGroup` 里：步号必须跨 turn 连续
+   * （第 2 轮的第 1 个工具是「第 N+1 步」），每个 turn 重置就会每次都从 1 开始。
+   */
+  let stepBase = 0;
   for (let turn = 0; turn < maxTurns; turn += 1) {
     const assistant = await streamAssistantReply(options, messages);
     messages.push(assistant);
@@ -120,7 +136,8 @@ export async function runLoop(
       if (options.signal?.aborted) {
         return { messages, interrupted: false };
       }
-      await executeGroup(options, group, messages, repairState, turn, input);
+      await executeGroup(options, group, messages, repairState, turn, input, stepBase);
+      stepBase += group.length;
     }
   }
 
@@ -220,13 +237,17 @@ async function executeGroup(
   repairState: RepairState,
   turn: number,
   userInput: string,
+  /** 本组之前已发出的工具数（v5.1 T2.1：步号跨组、跨轮连续累计） */
+  stepBase: number,
 ): Promise<void> {
   // 中断信号已触发 → 跳过工具执行
   if (options.signal?.aborted) {
     return;
   }
-  for (const call of group) {
-    options.onEvent?.({ type: 'tool_call', toolCall: call });
+  for (const [i, call] of group.entries()) {
+    // 步号 = 基数 + 组内序号（从 1 开始）。并行组内**按数组顺序**编号（不是完成顺序），
+    // 否则同组的几个工具会按谁先跑完拿到不同编号，用户对数会对不上。
+    options.onEvent?.({ type: 'tool_call', toolCall: call, stepIndex: stepBase + i + 1 });
   }
   const results = await Promise.all(group.map((call) => executeToolCall(options, call)));
   for (let i = 0; i < group.length; i += 1) {
@@ -235,7 +256,8 @@ async function executeGroup(
     if (call === undefined || result === undefined) {
       continue;
     }
-    options.onEvent?.({ type: 'tool_result', toolCall: call, result });
+    // tool_result 的 stepIndex 与对应 tool_call **必须相同**（UI 靠它对上号）
+    options.onEvent?.({ type: 'tool_result', toolCall: call, result, stepIndex: stepBase + i + 1 });
     messages.push(toolResultMessage(call.id, formatToolResult(result, call.name)));
     // 修复管线：可修复失败累计超限即终止（审批拒绝/越界等 repairable: false 不计数）
     if (result.ok === false && result.repairable !== false) {
