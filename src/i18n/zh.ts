@@ -22,6 +22,11 @@ export const zh = {
       'ConcertoAI —— 敢让你用来改生产代码的个人超级 CLI（终端 AI 开发助手，自带风险审批与一键治愈）',
     chat: {
       description: '进入交互式对话',
+      // v5.1：低风险自动放行（默认关）
+      // ⚠️ 文案纪律：只说「未命中已知风险规则」，**不许说「安全」**——low 的定义就是零命中，
+      // 说成安全等于给安全错觉（见 src/core/auto-approve.ts 文件头）。
+      autoLow:
+        '自动放行未命中已知风险规则的编辑（默认关；high/medium 与所有命令仍逐个确认；不扫影响面）',
     },
     run: {
       description: '一次性执行任务',
@@ -986,6 +991,12 @@ export const zh = {
   ui: {
     thinking: '思索中',
     toolRunning: '执行工具: {name}',
+    // v5.1 T2.2：步序（**刻意不含总数** —— chat 主循环的步数由模型临场决定，
+    // 事先不知道总数，写成「第 N/M 步」只能靠猜）
+    toolStep: '第 {n} 步 · {text}',
+    // v5.1 T1.2：自动放行留痕（**不静默**：不问就必须让用户看见）。
+    // 带累计次数是因为 notice 是单行槽位，被下一条提示覆盖后用户就没处回看。
+    autoLowNotice: '⚡ 已自动放行 {count} 次（未命中 {rules} 条已知风险规则），最近：{summary}',
     toolDone: '工具完成: {name}',
     quit: '已退出。会话已保存。',
   },

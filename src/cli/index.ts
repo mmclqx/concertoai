@@ -357,8 +357,27 @@ function readMaxTurnsOption(raw: string | undefined): number | undefined {
   return parsed.maxTurns;
 }
 
+// ── v5.1：chat 的低风险自动放行开关（`--auto-low`）────────────────────────
+/**
+ * 往命令上挂 `--auto-low`（**唯一文案来源**）。
+ *
+ * 为什么需要这个帮助函数：本仓 chat 有**两个入口**——
+ *   ① `program.action(...)`（无子命令时默认进 chat，产品定位 `cd 项目 && concertoai`）；
+ *   ② `.command('chat')`（显式子命令）。
+ * 只在②上挂的话，`npm run dev -- --auto-low` 会以 `unknown option` 失败，而这条正是用户日常路径。
+ * 两处各调一次本函数，文案与行为就不会漂移。
+ *
+ * ⚠️ 与既有 `--auto-approve` 的区别（**不要混用**）：
+ *   `--auto-approve`（run/plan/team/self-heal/fix）语义是**全批**（`requestApproval: async () => true`）；
+ *   `--auto-low` 只放行「分析成功且零命中」的**编辑**，shell/high/medium/降级一律仍问。
+ *   名字不同是刻意的：同名不同义会让人以为「和 run 一样全放」。
+ */
+function addAutoLowOption(cmd: Command): Command {
+  return cmd.option('--auto-low', t().cli.chat.autoLow);
+}
+
 // 无子命令时默认进入 chat（产品定位：cd 项目 && concertoai）
-program.action(
+addAutoLowOption(program).action(
   safeAction(async () => {
     // 动态导入（v2.1 性能优化）：启动阶段只加载 commander + i18n，
     // TUI 依赖树（ink/react/ui/mcp/skill）在用户真正进入交互后才加载。
@@ -368,45 +387,50 @@ program.action(
       cwd: process.cwd(),
       apiKey: await getApiKey(),
       model,
+      // v5.1：根命令选项经 program.opts() 取（根 action 的入参是它自己的参数列表，不含选项）
+      autoLow: program.opts().autoLow === true,
     });
   }),
 );
 
-program
-  .command('chat')
-  .description(t().cli.chat.description)
-  .option('-r, --resume [id]', t().cli.resume.argument)
-  .option('-l, --list', t().cli.list.description)
-  .option('-m, --model <id>', t().cli.model.description)
-  .option('-t, --max-turns <n>', t().cli.maxTurns.description)
-  .action(
-    async (options: {
-      resume?: string | true;
-      model?: string;
-      list?: boolean;
-      lang?: string;
-      maxTurns?: string;
-    }) => {
-      const { runChat } = await import('./chat');
-      // 先解析 -t：写错时**立刻**提示，不必等模型/Key 解析完才让用户知道
-      const maxTurns = readMaxTurnsOption(options.maxTurns);
-      // -l 仅列会话：不需要模型，跳过高峰切换（避免 ask 策略阻塞）
-      const model =
-        options.list === true ? options.model : await resolveStartupModel(options.model);
-      await runChat({
-        cwd: process.cwd(),
-        apiKey: await getApiKey(),
-        resume: options.resume,
-        model,
-        listOnly: options.list,
-        lang: options.lang,
-        // v4.0 M3 T3.1：--provider 临时切换（本次进程生效，不写 config）
-        provider: program.opts().provider,
-        // v5.0 架构修正：-t/--max-turns（CLI > config.maxTurns > 默认 50）
-        maxTurns,
-      });
-    },
-  );
+addAutoLowOption(
+  program
+    .command('chat')
+    .description(t().cli.chat.description)
+    .option('-r, --resume [id]', t().cli.resume.argument)
+    .option('-l, --list', t().cli.list.description)
+    .option('-m, --model <id>', t().cli.model.description)
+    .option('-t, --max-turns <n>', t().cli.maxTurns.description),
+).action(
+  async (options: {
+    resume?: string | true;
+    model?: string;
+    list?: boolean;
+    lang?: string;
+    maxTurns?: string;
+    autoLow?: boolean;
+  }) => {
+    const { runChat } = await import('./chat');
+    // 先解析 -t：写错时**立刻**提示，不必等模型/Key 解析完才让用户知道
+    const maxTurns = readMaxTurnsOption(options.maxTurns);
+    // -l 仅列会话：不需要模型，跳过高峰切换（避免 ask 策略阻塞）
+    const model = options.list === true ? options.model : await resolveStartupModel(options.model);
+    await runChat({
+      cwd: process.cwd(),
+      apiKey: await getApiKey(),
+      resume: options.resume,
+      model,
+      listOnly: options.list,
+      lang: options.lang,
+      // v4.0 M3 T3.1：--provider 临时切换（本次进程生效，不写 config）
+      provider: program.opts().provider,
+      // v5.0 架构修正：-t/--max-turns（CLI > config.maxTurns > 默认 50）
+      maxTurns,
+      // v5.1：低风险自动放行（默认关；只放行零命中的编辑，见 src/core/auto-approve.ts）
+      autoLow: options.autoLow === true,
+    });
+  },
+);
 
 program
   .command('run <task>')

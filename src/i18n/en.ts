@@ -24,6 +24,10 @@ export const en = {
       'ConcertoAI — a personal super CLI you dare to point at production code (terminal AI dev assistant with built-in risk approval and one-command healing)',
     chat: {
       description: 'Start an interactive conversation',
+      // v5.1: low-risk auto-approve (off by default)
+      // Wording rule: never say "safe" -- "low" means "no known rule matched", nothing more.
+      autoLow:
+        'Auto-approve edits that match no known risk rule (off by default; high/medium and every command still ask)',
     },
     run: {
       description: 'Run a one-shot task',
@@ -1042,6 +1046,11 @@ export const en = {
   ui: {
     thinking: 'Thinking',
     toolRunning: 'Running tool: {name}',
+    // v5.1 T2.2: step counter (deliberately no total -- the loop cannot know it up front)
+    toolStep: 'Step {n} · {text}',
+    // v5.1 T1.2: auto-approve trail (never silent; count because `notice` is a single slot)
+    autoLowNotice:
+      '⚡ Auto-approved {count} time(s) (no known risk rule matched out of {rules}), latest: {summary}',
     toolDone: 'Tool finished: {name}',
     quit: 'Exited. Session saved.',
   },

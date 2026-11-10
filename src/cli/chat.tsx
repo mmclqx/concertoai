@@ -61,6 +61,13 @@ export interface RunChatOptions {
    * 优先级：本参数 > `config.maxTurns` > `MAX_LOOP_TURNS`（50）——合并逻辑在 `resolveConfig`。
    */
   maxTurns?: number;
+  /**
+   * v5.1：低风险自动放行（`--auto-low`，默认 false）。
+   *
+   * 只放行「风险分析成功且零命中」的**编辑**；shell/high/medium/降级一律仍弹审批框。
+   * 判定集中在 `src/core/auto-approve.ts`（安全命门），本层只负责透传。
+   */
+  autoLow?: boolean;
 }
 
 export async function runChat(options: RunChatOptions): Promise<void> {
@@ -232,6 +239,8 @@ export async function runChat(options: RunChatOptions): Promise<void> {
       sessionId={sessionId}
       initialHistory={history}
       approvalStrategy={resolved.approvalPolicy}
+      // v5.1：低风险自动放行（默认 false ⇒ 与今天完全一致）
+      autoLow={options.autoLow === true}
       // v5.0 T9/T11：审批洞察与复盘配置——**统一从 resolveConfig 的解析结果取**
       // （环境变量与 config 的优先级只在那一处实现，入口层不再自己判断）
       approvalInsightMode={resolved.approvalInsight}

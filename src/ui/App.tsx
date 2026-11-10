@@ -32,6 +32,8 @@ import { parseWorkflowCommand, runWorkflowSlash } from '../cli/slash/workflow';
 import { formatTeamProgress, runTeamCommand } from '../cli/team';
 import type { ApprovalInsight } from '../core/approval-insight';
 import { analyzeApproval } from '../core/approval-insight';
+// v5.1：低风险自动放行判定（安全命门集中在 decideAutoLow，本组件不自己判 level）
+import { decideAutoLow } from '../core/auto-approve';
 import {
   appendMetric,
   buildApprovalMetric,
@@ -123,6 +125,14 @@ export interface AppProps {
   initialHistory?: ChatMessage[];
   /** 审批策略：ask = 弹框逐个审批（默认）；allowlist-only = 只放行白名单，其余一律拒绝（不弹框）。 */
   approvalStrategy?: 'ask' | 'allowlist-only';
+  /**
+   * v5.1：低风险自动放行（`--auto-low`，默认 false）。
+   *
+   * 只在「风险分析成功（degraded === false）且零命中（level === 'low'）」时放行**编辑**；
+   * shell / high / medium / 降级 一律仍弹框。判定本身在 `decideAutoLow`（安全命门集中在那里），
+   * 本组件只负责「取 insight → 问判定 → 放行或弹框」。
+   */
+  autoLow?: boolean;
   /**
    * 审批洞察模式（v5.0 T9；config `approvalInsight`）：
    * `rich`（默认）= 风险教学卡；`plain` = v4.1.1 原貌（只 summary + diff）。
@@ -382,6 +392,7 @@ export function App({
   sessionId,
   initialHistory,
   approvalStrategy = 'ask',
+  autoLow = false,
   memoryInjector,
   memoryStore,
   skillLoader,
@@ -447,6 +458,11 @@ export function App({
    * 为什么不复用 `error`：拒绝操作对用户是正常行为，用红字渲染会让人以为出了问题。
    */
   const [notice, setNotice] = useState<string | null>(null);
+  /**
+   * v5.1：本次任务累计自动放行次数（用 ref 而非 state：判定在异步回调里同步累加，
+   * 用 state 会拿到闭包里的旧值）。用户每次新输入时归零。
+   */
+  const autoLowCountRef = useRef(0);
   const [tokens, setTokens] = useState({ input: 0, output: 0 });
   /** API 返回的真实 usage 累计（usage 事件累加；流式中途仍显示估算值）。 */
   const [realUsage, setRealUsage] = useState({ input: 0, output: 0, cacheHit: 0 });
@@ -824,12 +840,85 @@ export function App({
     [ctx.cwd, insightEnv?.isCI, insightEnv?.isTTY, insightRules, approvalInsightMode],
   );
 
+  /**
+   * v5.1：`--auto-low` 的审批包装（只在开启时挂上）。
+   *
+   * 流程：先把这次审批**单独分析一遍**（`skipImpact: true`，只求 `degraded`/`level`）
+   * → `decideAutoLow` 判定 → 放行则留痕，否则走原来的 `requestApproval`（弹框，卡片逻辑完全不变）。
+   *
+   * ## 为什么判定要自己跑一次 analyzeApproval（而不是复用卡片的异步结果）
+   *
+   * 卡片是「先弹框、后异步补洞察」（G2 铁律：用户不能因为分析慢而按不了 y）。
+   * 但"放不放"必须**在弹框之前**决定，所以这里只能同步等一次分析。
+   * 代价可控：`skipImpact: true` 时是纯正则匹配（实测 100 行 diff P95 0.34ms），
+   * 不做影响面扫描（那才是 300ms 级的那一步）。
+   *
+   * ## fail-closed
+   *
+   * `analyzeApproval` 自身永不抛错（G2），这里的 try/catch 只是防御未来改动：
+   * 出任何异常 ⇒ `insight = null` ⇒ `decideAutoLow` 返回 `ask` ⇒ 照常弹框。
+   * **不许让这个新特性 introduce 一条「按不了 y」的路径。**
+   */
+  const autoLowApprove = useCallback(
+    async (request: ApprovalRequest): Promise<boolean> => {
+      // shell / model 先短路：既不放行，也不做无用分析（decideAutoLow 里同样有这道判断，
+      // 这里是省一次分析，不是替代它）
+      if (request.kind !== 'edit') {
+        return requestApproval(request);
+      }
+      let insight: ApprovalInsight | null = null;
+      try {
+        const hintFile = request.insightHint?.file;
+        insight = await analyzeApproval(analyzableDetail(request.kind, request.detail), {
+          cwd: ctx.cwd,
+          file: hintFile === undefined ? undefined : path.resolve(ctx.cwd, hintFile),
+          rules: insightRules,
+          mode: approvalInsightMode,
+          isTTY: insightEnv?.isTTY,
+          isCI: insightEnv?.isCI,
+          // 只判等级：影响面分析是卡片的活，判定不需要（也不该）等它
+          skipImpact: true,
+        });
+      } catch {
+        insight = null; // 防御：分析炸了就不放行（fail-closed）
+      }
+      const decision = decideAutoLow({ enabled: autoLow, kind: request.kind, insight });
+      if (decision.action === 'allow') {
+        autoLowCountRef.current += 1;
+        // 留痕：不问就必须让用户看见；带累计次数是因为 notice 是单行槽位
+        setNotice(
+          fmt(t().ui.autoLowNotice, {
+            count: String(autoLowCountRef.current),
+            rules: String(insightRules.length),
+            summary: request.summary,
+          }),
+        );
+        return true;
+      }
+      return requestApproval(request);
+    },
+    [
+      approvalInsightMode,
+      autoLow,
+      ctx.cwd,
+      insightEnv?.isCI,
+      insightEnv?.isTTY,
+      insightRules,
+      requestApproval,
+    ],
+  );
+
   const ctxWithApproval = useMemo<ToolContext>(() => {
     if (approvalStrategy === 'allowlist-only') {
+      // 既有语义优先：这个策略是「只放行白名单，其余一律拒绝（不弹框）」，
+      // 与 auto-low 不是一回事，**不许被 auto-low 覆盖**（会变成「拒绝不了也问不了」的中间态）
       return { ...ctx, requestApproval: async () => false };
     }
+    if (autoLow) {
+      return { ...ctx, requestApproval: autoLowApprove };
+    }
     return { ...ctx, requestApproval };
-  }, [ctx, requestApproval, approvalStrategy]);
+  }, [ctx, requestApproval, approvalStrategy, autoLow, autoLowApprove]);
 
   /** 构造统一的事件回调（流式输出/工具状态/usage/错误展示）。 */
   const makeOnEvent = useCallback(
@@ -890,6 +979,8 @@ export function App({
       setInput('');
       setStreamed('');
       setActiveTool(null);
+      // v5.1：/plan 也是新一轮任务 → 自动放行计数归零
+      autoLowCountRef.current = 0;
       setTokens((t) => ({ ...t, input: t.input + estimateTokens(`/plan ${task}`) }));
       const history = messages;
       setMessages([...history, userMessage(`/plan ${task}`)]);
@@ -1693,6 +1784,8 @@ export function App({
       setHint(null);
       setStreamed('');
       setActiveTool(null);
+      // v5.1：新一轮任务 → 自动放行计数归零（留痕文案里的「已自动放行 N 次」是本次任务口径）
+      autoLowCountRef.current = 0;
       setTokens((t) => ({ ...t, input: t.input + estimateTokens(text) }));
       const history = messages;
       setMessages([...history, { role: 'user', content: text }]);
