@@ -95,6 +95,8 @@ import { StatusBar } from './StatusBar';
 import { StreamingView } from './StreamingView';
 import type { ToggleThrottle } from './toggle-throttle';
 import { createToggleThrottle, RENDER_THROTTLE_MS } from './toggle-throttle';
+// v5.1 T2.2：状态行文案的唯一生成处（纯函数，可被变异探针打穿）
+import { toolStepLabel } from './tool-step-label';
 
 type Phase = 'idle' | 'streaming' | 'approval' | 'plan-approval';
 
@@ -450,6 +452,14 @@ export function App({
     setStreamedState(value);
   }, []);
   const [activeTool, setActiveTool] = useState<ToolCall | null>(null);
+  /**
+   * v5.1 T2.2：本次输入内「现在是第几步」（来自 `LoopEvent.stepIndex`）。
+   *
+   * **刻意不含总数**：步数由模型临场决定，loop 事先不知道，写成「第 N/M 步」只能是猜。
+   * `0` = 还没有步号（新一轮输入刚重置 / 由 slash 命令直接触发的工具如 `/review`），
+   * 此时状态行退回旧文案「执行工具: x」，**不显示「第 0 步」**。
+   */
+  const [activeStep, setActiveStep] = useState(0);
   const [pending, setPending] = useState<ApprovalRequest | null>(null);
   const [error, setError] = useState<string | null>(null);
   /**
@@ -935,6 +945,8 @@ export function App({
           }
         } else if (event.type === 'tool_call') {
           setActiveTool(event.toolCall);
+          // v5.1 T2.2：步号由 loop 侧统一编号（跨轮累计、并行组内按数组顺序），UI 只负责显示
+          setActiveStep(event.stepIndex);
         } else if (event.type === 'usage') {
           setRealUsage((u) => ({
             input: u.input + event.usage.prompt_tokens,
@@ -979,8 +991,9 @@ export function App({
       setInput('');
       setStreamed('');
       setActiveTool(null);
-      // v5.1：/plan 也是新一轮任务 → 自动放行计数归零
+      // v5.1：/plan 也是新一轮任务 → 自动放行计数与步号都归零
       autoLowCountRef.current = 0;
+      setActiveStep(0);
       setTokens((t) => ({ ...t, input: t.input + estimateTokens(`/plan ${task}`) }));
       const history = messages;
       setMessages([...history, userMessage(`/plan ${task}`)]);
@@ -1525,6 +1538,8 @@ export function App({
             setStreamed('');
             setPhase('streaming');
             setActiveTool({ id: 'skill', name: result.skillName ?? 'skill', arguments: '{}' });
+            // v5.1 T2.2：技能调用**不在主循环里**，没有步号 → 清零，否则会显示上一轮残留的「第 N 步」
+            setActiveStep(0);
             setTokens((t) => ({ ...t, input: t.input + estimateTokens(text) }));
             setMessages((prev) => [...prev, { role: 'user', content: text }]);
 
@@ -1733,6 +1748,8 @@ export function App({
         setStreamed('');
         setPhase('streaming');
         setActiveTool({ id: 'self-heal', name: 'self-heal', arguments: '{}' });
+        // v5.1 T2.2：self-heal 不走主循环，没有步号（否则显示上一轮残留的「第 N 步」）
+        setActiveStep(0);
         try {
           const result = await executeSelfHealCommand(ctxWithApproval, {
             client,
@@ -1745,6 +1762,8 @@ export function App({
                 name: `self-heal（${selfHealPhaseLabel(phase)}）`,
                 arguments: '{}',
               });
+              // v5.1 T2.2：阶段更新同样不是主循环的步 → 一直保持「无步号」
+              setActiveStep(0);
             },
           });
           const msg: ChatMessage = { role: 'assistant', content: result.message };
@@ -1784,8 +1803,10 @@ export function App({
       setHint(null);
       setStreamed('');
       setActiveTool(null);
-      // v5.1：新一轮任务 → 自动放行计数归零（留痕文案里的「已自动放行 N 次」是本次任务口径）
+      // v5.1：新一轮任务 → 自动放行计数归零（留痕文案里的「已自动放行 N 次」是本次任务口径）；
+      // 步号同样归零：新一轮的第一个工具必须是「第 1 步」（loop 侧也从 1 开始）
       autoLowCountRef.current = 0;
+      setActiveStep(0);
       setTokens((t) => ({ ...t, input: t.input + estimateTokens(text) }));
       const history = messages;
       setMessages([...history, { role: 'user', content: text }]);
@@ -2037,7 +2058,10 @@ export function App({
         <MessageLine key={i} message={m} messages={messages} messageIndex={i} />
       ))}
       {phase === 'streaming' && <StreamingView text={streamed} />}
-      {activeTool !== null && <Spinner text={fmt(t().ui.toolRunning, { name: activeTool.name })} />}
+      {activeTool !== null && (
+        /* 文案生成集中在 toolStepLabel（纯函数，见 src/ui/tool-step-label.ts 文件头） */
+        <Spinner text={toolStepLabel({ step: activeStep, toolName: activeTool.name })} />
+      )}
       {pending !== null && phase === 'approval' && (
         <ApprovalModal
           kind={pending.kind}
