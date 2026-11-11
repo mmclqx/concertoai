@@ -15,7 +15,7 @@
 - **`--auto-low`（默认关，`chat` 与无子命令两条入口都认）**：仅在「分析未降级（`degraded === false`）且风险等级 = `low`」的 **edit** 上不弹审批框，并打一行留痕（含文件名 + 累计次数）。`shell` / `high` / `medium` / 分析降级（非 TTY、CI、`config.approvalInsight=plain`、超大 diff）**一律仍问**。
 - **文案纪律**：帮助与留痕只说「未命中已知风险规则」，**不出现「安全」二字**——零命中是否定证据，不是安全结论（有用例与源码护栏钉住）。
 - **会话级记录**：`--auto-low` 的开关状态记进 `.git/` 下的 instruction-state（`update --set-flag autoLow=on|off`，白名单 + **只写不读** + 不进 config），下次说「继续」时 `instruction-state show` 能看到上次开没开。
-- **「第 N 步」**：chat 内每次工具调用显示步序（跨轮累计、并行组按数组顺序编号、**不显示总数**）；`/skill`、`/self-heal` 等 slash 入口重置步号，避免「第 3 步 · 执行工具: self-heal」这类假步号。
+- **「第 N 步」**：chat 内每次工具调用显示步序（**同一条输入内**跨模型往返累计、并行组按数组顺序编号、**不显示总数**；换一条输入即从第 1 步重新开始）；`/skill`、`/self-heal` 等 slash 入口重置步号，避免「第 3 步 · 执行工具: self-heal」这类假步号。
 - **测试**：判定层 25 + 集成 10 + 双入口参数 6 + 步序契约 7 + 步序 UI 16 + 会话标志 10；全量 **176 文件 / 2641 用例**。骨架护栏：`scripts/check-auto-low-guard.mjs`（degraded 判断必须存在且在放行之前）。
 
 ### Fixed — v5.1 T3.2：`chat --auto-low` 的开关被父命令吃掉，界面正常但**功能静默不生效**（2026-11-11）
