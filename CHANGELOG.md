@@ -18,6 +18,19 @@
 - **「第 N 步」**：chat 内每次工具调用显示步序（跨轮累计、并行组按数组顺序编号、**不显示总数**）；`/skill`、`/self-heal` 等 slash 入口重置步号，避免「第 3 步 · 执行工具: self-heal」这类假步号。
 - **测试**：判定层 25 + 集成 10 + 双入口参数 6 + 步序契约 7 + 步序 UI 16 + 会话标志 10；全量 **176 文件 / 2641 用例**。骨架护栏：`scripts/check-auto-low-guard.mjs`（degraded 判断必须存在且在放行之前）。
 
+### Fixed — v5.1 T3.2：`chat --auto-low` 的开关被父命令吃掉，界面正常但**功能静默不生效**（2026-11-11）
+
+> 事故形态：**不报错、安静地给出「功能没生效」**。用户敲了 `--auto-low`，界面一切正常、审批框照旧弹（等于白敲），而当时 `tests/cli/auto-low-option.test.ts` 只断言「不报 unknown option」——参数被接受与值被传下去是两件事。
+
+- **根因（真机 PTY 抓到的原始形态）**：父命令与子命令注册了同名 flag 时，commander 会把 `chat --auto-low` 里的那个**解析到根命令**，子命令的 `options` 是空对象 ⇒ `chat-action options={} rootOpts={"autoLow":true}`，于是 `runChat autoLow=false`。
+- **修法**：新增纯函数 `src/cli/auto-low-flag.ts#resolveAutoLowFlag`，**合并两级取值**（`subcommand === true || root === true`，判据必须是 `=== true`：`'false'` 这类字符串一律落回 `false`，fail-closed）；`src/cli/index.ts` 里两个入口**只经 `autoLowFrom` 一处**取值。
+- **测试（三层，全部有牙）**：
+  1. 纯函数 5 条（子命令 true / **只有根命令 true（真机形态）** / 两级都没有 / 非布尔真值 / 两级 false）；
+  2. **源码护栏 3 条**（正例自证「文件读到、`autoLowFrom` 定义在」+ 两处调用点必须都在 + `not.toContain` 旧写法两种回归）——补的正是「纯函数算得对但没人调用，单测照样全绿」这个缺口；
+  3. **PTY 端到端**（`scripts/pty-drive-v51.mjs` S1）：真 TTY 跑 `chat --auto-low` ⇒ 弹框**没出现** + 留痕出现 + 磁盘真的改了，本地 mock SSE 零真钱（探针 `mock 命中次数 > 0` 自证 `baseUrl` 生效）。
+- **变异探针**：`autoLowFrom(options)` → `options.autoLow === true` ⇒ 源码护栏 ②③ 红；`autoLowFrom({})` → `program.opts().autoLow === true` ⇒ 同样红；复原后 sha256 逐字节一致。
+- **回归**：`npm run verify` **176 文件 / 2649 用例**全绿；`LUMEN_LOCALE=en` 换环境复跑同数全绿；`npm pack --dry-run` 177 文件、无 `tests/`、无 `.tmp-*`。
+
 ### Added — 冻结护栏测试落地：`tests/cli/freeze.test.ts`（T20 遗留，26 用例），把「有没有人悄悄加功能」从人工核对变成 `verify` 会红（2026-11-07）
 
 > 事故形态：**判定动作本身不会失败**。`docs/FEATURE_FREEZE.md` §五 写了「机械判定三条」（命令数 / `src/` 一级目录 / 冻结层文件数），但三条都靠**人去看**——没人核对的那天，冻结层多出 5 个文件也不会有任何报警。护栏的价值不在「写下来」，在「有人想扩写时它自己会叫」。

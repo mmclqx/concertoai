@@ -8,6 +8,8 @@ import { fmt, resolveLocale, setLocale, t } from '../i18n';
 import { configPath, crashLogPath, migrateLegacyHome } from '../store/paths';
 import { VERSION } from '../version';
 import { buildMissingApiKeyGuide } from './api-key-guide';
+// v5.1 T3.2：`--auto-low` 的两级取值合并（父命令会吃掉子命令的同名 flag，见该模块头注释）
+import { resolveAutoLowFlag } from './auto-low-flag';
 // v5.0 C1：commander 参数解析错误的本地化渲染（唯一出口，见该模块头注释）
 import { isCommanderErrorShape, renderCliError } from './cli-errors';
 import { parseMaxTurnsOption, resolveApiKeyWithConfigFallback } from './common';
@@ -376,6 +378,18 @@ function addAutoLowOption(cmd: Command): Command {
   return cmd.option('--auto-low', t().cli.chat.autoLow);
 }
 
+/**
+ * 把 `--auto-low` 的取值落到 `runChat` 入参（**两个入口共用，只有这一处**）。
+ *
+ * ⚠️ 不能只读 `options.autoLow`（v5.1 T3.2 真机抓到的静默失效）：父命令与子命令注册了同名
+ * flag 时，commander 会把 `chat --auto-low` 里的那个**解析到根命令**，子命令的 options 是空对象。
+ * 实测 `chat-action options={} rootOpts={"autoLow":true}` ⇒ 只读子命令就等于把用户敲的开关丢掉。
+ * 合并逻辑与取证写在 `src/cli/auto-low-flag.ts` 文件头。
+ */
+function autoLowFrom(options: { autoLow?: boolean }): boolean {
+  return resolveAutoLowFlag({ subcommand: options.autoLow, root: program.opts().autoLow });
+}
+
 // 无子命令时默认进入 chat（产品定位：cd 项目 && concertoai）
 addAutoLowOption(program).action(
   safeAction(async () => {
@@ -388,7 +402,7 @@ addAutoLowOption(program).action(
       apiKey: await getApiKey(),
       model,
       // v5.1：根命令选项经 program.opts() 取（根 action 的入参是它自己的参数列表，不含选项）
-      autoLow: program.opts().autoLow === true,
+      autoLow: autoLowFrom({}),
     });
   }),
 );
@@ -427,7 +441,8 @@ addAutoLowOption(
       // v5.0 架构修正：-t/--max-turns（CLI > config.maxTurns > 默认 50）
       maxTurns,
       // v5.1：低风险自动放行（默认关；只放行零命中的编辑，见 src/core/auto-approve.ts）
-      autoLow: options.autoLow === true,
+      // ⚠️ 必须走 autoLowFrom 合并两级：`chat --auto-low` 的 flag 会被根命令吃掉（见该函数注释）
+      autoLow: autoLowFrom(options),
     });
   },
 );
