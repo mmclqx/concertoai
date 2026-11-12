@@ -57,10 +57,11 @@
 | **N1** | **P2 文案错** | ⬜ v5.2 | `doctor` 在「根本没有配置文件」时打印「配置仍为 v3 格式（schema v1），启动时将自动迁移」，紧接着又打印「config 一开始就是 v4 格式」——**同屏自我打脸**，且第一句是事实错误 | `checkMigrationIntegrity`（`src/store/migration.ts`）的 `migrated` 只表示「**现在**是不是 v4 形状」；文件不存在时 `readFile` 抛错 → `catch` 置 `migrated=false` → `doctor.ts:369` 走 else 分支，把 `migrationNotMigrated` 当成「不是 v4」的通用说法；随后 `migrationBackupNotNeeded`（本为「迁过但没备份」写的）被误用。**与 2026-11-11 那条踩坑同源**：都把「不是 v4」直接等同于「是 v3」 | `migrated: boolean` 拆三态（`v4` / `v3待迁移` / `不存在`），文案对应「配置不存在，将使用默认 v4 配置」；`backupNotNeeded` 只用于「v4 且从未迁过」。**否定面用例：无 config 时输出不得包含「v3」** |
 | **N3** | **P3 文案** | ⬜ v5.2 | `--help` 里有维护者术语「不扫影响面」（对应实现 `skipImpact: true`），普通用户读不懂 | `src/cli/index.ts` 的 `addAutoLowOption` 文案 | 改成「判定很快、不额外扫描影响范围」，或直接删掉该短语 |
 | **N4** | **P3 文案** | ⬜ v5.2 | `--auto-low` 刻意不持久化（手册写了理由），但 `--help` 里**零指引** ⇒ 用户第二天还得重敲，且不知道这是设计取舍而非缺陷 | 同上，`--help` 未提 allowlist | 补一句「想长期免审批 shell 用 `config.allowlist`；本开关刻意不持久化」 |
-| **G1** | **P3 发布冒烟** | ⬜ 下轮补（**不阻塞发布**，2026-11-12 用户裁决） | **没跑过 `npm i -g` 全局安装态冒烟**：v5.1.0 发布时用的是「临时目录 `npm install` 再直接 `node dist/cli/index.js`」，它与全局安装拿到的是**同一份 tarball**，但**没验证 `bin` 链接**（`concertoai` / `ccai` 两个命令名是否真的可执行）——而发布时 npm 恰好打印过 `bin[concertoai] script name was cleaned` / `bin[ccai] … cleaned` 两条告警 | 此前的全局态只由 v5.0 发布记录覆盖（那次做过）；v5.1 换过 commander 参数接线（`auto-low-flag`），但**未动 bin**，故风险低 | 装到临时全局前缀（`npm i -g --prefix <tmp>`）后跑：`concertoai --version` 应输出 5.1.0、`ccai --version` 同、`concertoai chat --help` 含 `--auto-low`、`concertoai --bogus` 退出码 1 且给出建议 ⇒ 四条都过才算冒烟通过 |
+| **G1** | **P3 发布冒烟** | ✅ **完成**（2026-11-13） | ~~没跑过 `npm i -g` 全局安装态冒烟~~ ⇒ **已补并脚本化**：`scripts/smoke-install.mjs` 重写（原版有 3 个问题：要求 cwd 已有 `.tgz`、结束 `unlinkSync` 删仓库真实 tarball、零断言只 `console.log`），现支持 `--registry <ver>` / 默认本地 tarball / `--keep`，退出码 0-1 | v5.1.0 发布时只验证了「代码进没进包」，没验证 bin 垫片（发布日志里恰有 `bin[...] script name was cleaned` 两条告警） | **实测：本地 tarball 与 `--registry 5.1.0` 双模式各 6/6 全绿、退出码 0**；断言 = ⓪探针通电（两垫片存在非空 + 安装包 version）①`concertoai --version` ②`ccai --version`（第二入口，旧脚本从没测过）③`chat --help` 含 `--auto-low` 且不含 `--bogus` ④a`--auto-lo` exit 1 且有建议 ④b`--bogus` exit 1 且**不瞎猜**；变异探针 M1/M2/M3 各自红在指定判据；反向自证 `--registry 9.9.9-nope` ⇒ exit 1、坏参数 ⇒ exit 1 |
 
-> 优先级：**N2 > N1 > N3/N4**。N2 是审计缺口（事后说不清「谁放开的」），N1 是用户对自己环境的判断被误导，N3/N4 只是读起来别扭。**G1（全局安装冒烟）插在 N2 之前做**——它是一次性 10 分钟的验证，却能证明「用户装到的命令真的能跑」。
-> 另注：G1 未做之前，**「v5.1.0 已发布」的证据边界是**：registry 元数据 + 临时目录 install 实测（`--version` / `--help` / 产物含新文案三条都过了），**不含** `concertoai` / `ccai` 两个 bin 名的全局可执行性。发布记录就是这么写的，不要读成「全局冒烟也过了」。
+> 优先级：**N2 > N1 > N3/N4**。~~**G1（全局安装冒烟）插在 N2 之前做**——它是一次性 10 分钟的验证，却能证明「用户装到的命令真的能跑」。~~ **G1 已于 2026-11-13 完成**（脚本化 + 双模式 6/6），故「v5.1.0 已发布」的证据边界已补到 **⑤bin 装进 PATH 后可执行**：
+> - ④ 已进 registry 且线上可查可用（2026-11-12 四步复核）
+> - ⑤ bin 可执行（2026-11-13 G1：`--registry 5.1.0` 真装到临时全局前缀，`concertoai`/`ccai` 两垫片均可跑）
 > 另注：N2 修完之前，**v5.1 的「留痕」只保证「当时看得见」，不保证「事后查得到」**——这句话应写进 user-guide，别让用户以为会话里有记录。
 
 ---

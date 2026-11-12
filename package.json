@@ -43,6 +43,7 @@
     "lint:fix": "biome check --write src tests",
     "typecheck": "tsc --noEmit",
     "check:tests": "node scripts/check-skipped-tests.mjs",
+    "smoke:global": "node scripts/smoke-install.mjs",
     "lock": "node scripts/agent-lock.mjs",
     "notices": "node scripts/gen-third-party-notices.mjs",
     "bench:approval": "node scripts/bench-approval.mjs",

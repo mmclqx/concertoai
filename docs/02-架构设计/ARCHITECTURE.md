@@ -463,7 +463,7 @@ concertoai/
 ├── tsup.config.ts        entry：src/index.ts（库）+ src/cli/index.ts（CLI）+ src/ui/modals.tsx（v5.0 T9：仅供基准脚本 import 真实 Ink 组件，不进库 barrel，避免 import 库的人白加载 Ink）→ dist/（ESM + d.ts + sourcemap）
 ├── CHANGELOG.md          变更日志（npm version 发布流程）
 ├── scripts/
-│   ├── sync-version.mjs（npm version 钩子）/ smoke-install.mjs（安装冒烟）
+│   ├── sync-version.mjs（npm version 钩子）/ smoke-install.mjs（全局安装冒烟：`--registry <v>` 装线上包或默认本地 tarball，验 `concertoai`/`ccai` 两 bin 可执行，退出码 0/1；`npm run smoke:global`）
 │   ├── gen-third-party-notices.mjs  THIRD_PARTY_NOTICES 脚本化生成（v5.0 T4）
 │   ├── bench-approval.mjs           T8 发布门：analyzeDiff / 单规则 ReDoS / analyzeImpact 六项性能预算
 │   ├── verify-false-positive.mjs    T8 发布门：26 条人工标注 diff 的误报率/召回率
