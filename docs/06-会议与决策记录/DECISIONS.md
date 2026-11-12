@@ -862,4 +862,18 @@ interface AgentDef {
 
 ---
 
+## ADR-053：审批结论记在消息上，不写独立会话事件行
+
+| 项 | 内容 |
+|---|---|
+| **日期** | 2026-11-13 |
+| **背景** | ADR-052 落地了「低风险自动放行」，但它的问责口径只兑现了一半：`.git/` 里能查到「这次会话开没开 `--auto-low`」，却查不到「**哪几次真的被自动放行了**」。屏幕上的留痕走 `setNotice`（单行槽位），滚过去就没了 ⇒ 用户 `chat -r` 恢复会话后无法回答「昨天那次改动是我按的 y，还是被自动放的」。这是 v5.1 自审的 N2（P2 审计缺口）。 |
+| **上下文** | 需要在「会话记录」里留一个可事后查的标记，且必须满足三条：① 不能泄漏给模型（`approval` 是本地审计信息，不该进 API）；② 旧会话文件（无该字段）必须零迁移；③ 不能把默认路径（用户按 y）改出任何行为差异。 |
+| **选项** | ① 写独立会话事件行（`{type:'auto-approval', ...}`）② 只保留屏幕留痕 + 改查 `audit/` 日志 ③ 在 tool 消息上加可选字段 `approval?: 'auto-low'` ④ 记 `approval: 'user' \| 'auto-low'` 全覆盖（选 ③） |
+| **结论** | **（1）落点**：`ChatMessage.approval?: 'auto-low'`，只加在 `role === 'tool'` 的消息上，**只记 `'auto-low'`、不记 `'user'`**。**（2）传递链**：`autoLowApprove` 放行时写 `request.autoLow = true` → 工具把它放进 `ToolResult.approval` → `loop.ts` 的 `executeGroup` **条件展开**盖戳。**（3）查询**：新增 `/approvals` 斜杠命令（纯函数 `formatApprovalReport`），读内存 `messages` 而非重读磁盘。**（4）不泄漏**：`toApiMessages` 保持白名单投影，配行为 + 源码双护栏。**（5）兼容**：optional + 纯增量，不升 schemaVersion。 |
+| **被否方案与否决理由** | **① 独立会话事件行**（听起来最「干净」，实际最危险）：`SessionStore.read()` 把 JSONL **每一行原样**当作 `ChatMessage`，**不校验 `role`**。写一条 `{type:'auto-approval', tool:'edit_file'}` 会被读成一个 `{role: undefined, content: undefined}` 的消息，而 messages 正是 `toApiMessages` 的输入 ⇒ **直接污染 API 请求**。要走这条路得同时改读取端过滤 + 所有消费方（`chat.tsx`、`App.initialHistory`），换来「两条真相路径」的长期复杂度。**② 只查 `audit/` 日志**：`AuditLogger` 目前由 `/agent`、`/review` 等写入，属于另一条链路；把审批结论塞进去要新增 `AuditKind`，且 `audit export` 与消息记录会出现两份不一致的真相（用户 `chat -r` 看会话，又得另开一条命令看审计）。**④ 记 `'user'` 全覆盖**：会让**默认路径**（用户每次按 y）的每条 tool 消息都多一个字段，现有断言精确形状的用例大面积红——为了「更完整」去改一个 P2 特性的默认路径，风险与收益不匹配。 |
+| **红线（改动前必读）** | ① `approval` **只允许**出现在 `role === 'tool'` 的消息上；② **必须条件展开** `...(cond ? {k:v} : {})`——写成 `approval: result.approval` 会写入值为 `undefined` 的键，`JSON.stringify` 丢掉它（落盘看不出）但内存 `hasOwnProperty` 为 true，否定面用例会失真；③ `toApiMessages` **禁止**改成 `{ ...m }` 展开（有源码护栏）；④ 不给 `ApprovalRequest` 加 `toolCallId`（工具不该知道自己被哪个 call 调起，盖戳在 loop 层做）；⑤ `decideAutoLow` 一行不动——本 ADR 只「记录结论」，不改判定。 |
+| **已知局限（如实记录）** | ① 缺省有轻微歧义：它同时涵盖「不是自动放行」与「该工具根本不需要审批」，无法区分。**接受**，因为 N2 要回答的恰是「是不是自动放的」。② `/approvals` 只看**当前会话的 messages**：会话被压缩（摘要替换历史消息）后，早期记录可能已不在列表里。③ 记录是「本地审计信息」，不进 API、不上报——它回答的是「谁放开的」，不是「放行是否正确」。 |
+---
+
 *当重要决策做出后，请在此追加新条目。*
