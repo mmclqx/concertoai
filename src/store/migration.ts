@@ -180,6 +180,20 @@ export interface MigrationIntegrity {
    * → 屏幕全绿却 `exit 1`，CI 里恒失败且日志无线索。而「从未迁移过」的人本来就不该有备份。
    */
   everMigrated: boolean;
+  /**
+   * v5.2 N1：配置文件**是否存在**。
+   *
+   * 为什么必须与 `migrated` 分开（`doctor` 同屏自我打脸的真实成因）：
+   * 文件不存在时 `readFile` 抛错 ⇒ `catch` 把 `migrated` 置 false ⇒ 上层把
+   * 「不是 v4」读成「是 v3 待迁移」，于是新用户第一天就被告知「你的配置是旧的、
+   * 启动要迁移」，而下一行又说「config 一开始就是 v4 格式」——两句话互相打脸。
+   *
+   * 语义分层（三者互不替代）：
+   * - `configExists`：文件在不在；
+   * - `migrated`：在的话，是不是 v4 形状；
+   * - `everMigrated`：本机是否真跑过迁移（有 `_migrated` 标记）。
+   */
+  configExists: boolean;
   /** 备份是否存在（config.v3.bak）。 */
   backupExists: boolean;
   /** 会话格式是否兼容（v4 只新增字段不破坏 v3 会话）。 */
@@ -200,6 +214,14 @@ export async function checkMigrationIntegrity(
   const backupExists = await fileExists(`${configPath}.v3.bak`);
   let migrated = false;
   let everMigrated = false;
+  /**
+   * v5.2 N1：必须**单独**判定文件存在性。
+   *
+   * `readFile` 抛错的成因不止「文件不存在」（还有 JSON 坏、权限不足），
+   * 所以存在性用 `fileExists` 独立问一次，不靠 `catch` 推断——
+   * 靠 catch 推断就等于把「读失败的所有原因」压成一个 bool，上层必然误读。
+   */
+  const configExists = await fileExists(configPath);
   try {
     const raw = await readFile(configPath, 'utf8');
     const parsed = JSON.parse(raw) as Partial<V4Config> & { _migrated?: unknown };
@@ -224,7 +246,14 @@ export async function checkMigrationIntegrity(
     }
   }
   // 幂等：检测本身只读不写盘 → 恒为 true（重复调用无副作用）
-  return { migrated, everMigrated, backupExists, sessionCompatible, idempotent: true };
+  return {
+    migrated,
+    everMigrated,
+    configExists,
+    backupExists,
+    sessionCompatible,
+    idempotent: true,
+  };
 }
 
 async function fileExists(file: string): Promise<boolean> {

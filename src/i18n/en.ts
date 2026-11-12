@@ -26,8 +26,11 @@ export const en = {
       description: 'Start an interactive conversation',
       // v5.1: low-risk auto-approve (off by default)
       // Wording rule: never say "safe" -- "low" means "no known rule matched", nothing more.
+      //
+      // v5.2 N3/N4: drop the maintainer jargon ("no blast-radius scan" -> plain wording)
+      // and tell users the switch is intentionally not persisted, pointing at config.allowlist.
       autoLow:
-        'Auto-approve edits that match no known risk rule (off by default; high/medium and every command still ask)',
+        'Auto-approve edits that match no known risk rule (off by default; high/medium and every command still ask; fast check, no extra blast-radius scan). Intentionally not persisted — use config.allowlist for long-term shell pre-approval',
     },
     run: {
       description: 'Run a one-shot task',
@@ -779,6 +782,8 @@ export const en = {
     migrationOk: 'v4 migration complete (schema v2 + defaultProvider + providers)',
     migrationNotMigrated:
       'Config is still v3 format (schema v1); it will be auto-migrated at startup',
+    // v5.2 N1: "no config file" is a different fact from "v3 pending migration".
+    migrationNoConfig: 'No config file yet — the default v4 config will be used',
     migrationBackupOk: 'backup exists: {path}',
     migrationBackupMissing: 'backup missing (config.v3.bak not found)',
     // v5.0 K1 fix: distinguish "migrated but backup lost" from "never migrated, no backup needed"

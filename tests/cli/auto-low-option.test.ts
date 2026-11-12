@@ -83,6 +83,62 @@ describe('--auto-low：两个入口都注册（探针：删任一处注册 ⇒ �
     expect(line).not.toContain('安全');
   });
 
+  /**
+   * v5.2 N3/N4：帮助文案的两处用户侧缺陷。
+   *
+   * - **N3**「不扫影响面」是维护者术语（对应实现 `skipImpact: true`）。用户读不懂
+   *   「影响面」是什么，只会觉得这句像内部备注。
+   * - **N4** 开关刻意不持久化，但 `--help` 里**零指引** ⇒ 用户第二天还得重敲，
+   *   且不知道这是设计取舍而非缺陷；手册里写了理由，帮助里一个字都没有。
+   *
+   * 两个入口（根命令 / chat 子命令）都要钉住：文案是同一份 `addAutoLowOption`，
+   * 但「同一份」这件事只有断言了才算数。
+   *
+   * ⚠️ **不能只取单行**：commander 会按终端宽度把长选项说明**折成多行**，
+   * 续行是纯缩进（实测「config.allowlist」被折到第三行）。
+   * 首版我只取 `split('\n').find(l => l.includes('--auto-low'))`，
+   * 于是断言在「文案明明写了」的情况下红——那是测试写错，不是产品错。
+   * 这里按「以选项名开头的行 + 后续缩进续行」拼成完整说明再判。
+   */
+  function autoLowHelpText(args: string[]): string {
+    const lines = runCli(args).stdout.split('\n');
+    const start = lines.findIndex((l) => l.trimStart().startsWith('--auto-low'));
+    if (start < 0) {
+      return '';
+    }
+    const collected = [lines[start] ?? ''];
+    for (let i = start + 1; i < lines.length; i += 1) {
+      const line = lines[i] ?? '';
+      // 续行特征：非空、且以空白开头（commander 的折行缩进）；遇到下一个选项即停
+      if (line.trim() === '' || !/^\s/.test(line)) {
+        break;
+      }
+      collected.push(line);
+    }
+    return collected.join(' ').replace(/\s+/g, ' ');
+  }
+
+  it('★ N3：帮助里不再出现维护者术语「不扫影响面」，改成用户能懂的说法', () => {
+    for (const args of [['--help'], ['chat', '--help']]) {
+      const text = autoLowHelpText(args);
+      expect(text, `${args.join(' ')} 缺少 --auto-low 行`).toContain('--auto-low');
+      // 改坏方式：改回「不扫影响面」⇒ 这条红
+      expect(text, `${args.join(' ')} 仍在用维护者术语`).not.toContain('不扫影响面');
+      expect(text).toContain('不额外扫描影响范围');
+    }
+  });
+
+  it('★ N4：帮助里给出 `config.allowlist` 指引，并说明本开关刻意不持久化', () => {
+    for (const args of [['--help'], ['chat', '--help']]) {
+      const text = autoLowHelpText(args);
+      // 改坏方式：删掉指引句 ⇒ 这条红（用户又会以为「开关坏了/记不住」）
+      expect(text, `${args.join(' ')} 没提 allowlist`).toContain('config.allowlist');
+      expect(text).toContain('不持久化');
+      // 文案纪律不能因此破功
+      expect(text).not.toContain('安全');
+    }
+  });
+
   it('--auto-low 与既有 --auto-approve 不是同一个选项（防同名不同义混用）', () => {
     const chatHelp = runCli(['chat', '--help']).stdout;
     expect(chatHelp).toContain('--auto-low');

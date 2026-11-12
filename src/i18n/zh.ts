@@ -25,8 +25,13 @@ export const zh = {
       // v5.1：低风险自动放行（默认关）
       // ⚠️ 文案纪律：只说「未命中已知风险规则」，**不许说「安全」**——low 的定义就是零命中，
       // 说成安全等于给安全错觉（见 src/core/auto-approve.ts 文件头）。
+      //
+      // v5.2 N3/N4 修的两处：
+      // - N3：「不扫影响面」是维护者术语（对应实现 skipImpact: true），换成用户能懂的说法；
+      // - N4：刻意不持久化这件事此前零指引，用户第二天还得重敲，且以为是自己用错了。
+      //   补一句指向 config.allowlist（那条命令已存在且有用例，不是空头支票）。
       autoLow:
-        '自动放行未命中已知风险规则的编辑（默认关；high/medium 与所有命令仍逐个确认；不扫影响面）',
+        '自动放行未命中已知风险规则的编辑（默认关；high/medium 与所有命令仍逐个确认；判定很快，不额外扫描影响范围）。本开关刻意不持久化，想长期免审批 shell 用 config.allowlist',
     },
     run: {
       description: '一次性执行任务',
@@ -742,6 +747,9 @@ export const zh = {
     migrationLabel: '配置迁移完整性',
     migrationOk: 'v4 迁移完成（schema v2 + defaultProvider + providers）',
     migrationNotMigrated: '配置仍为 v3 格式（schema v1），启动时将自动迁移',
+    // v5.2 N1：区分「配置文件不存在」与「是 v3 待迁移」。此前两者共用一句，
+    // 导致新用户第一天被告知「你的配置是旧的」——而它根本不存在。
+    migrationNoConfig: '尚无配置文件，将使用默认 v4 配置',
     migrationBackupOk: '备份存在: {path}',
     migrationBackupMissing: '备份缺失（未找到 config.v3.bak）',
     // v5.0 K1 修复：把「迁过但备份丢了」与「从没迁过、本来不需要备份」分开说

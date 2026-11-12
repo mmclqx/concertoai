@@ -353,7 +353,19 @@ async function diagnoseMigration(options: DoctorCommandOptions): Promise<Diagnos
   const rollbackBroken = integrity.everMigrated && !integrity.backupExists;
   const ok = !rollbackBroken;
   const lines: string[] = [];
-  if (integrity.migrated) {
+  if (!integrity.configExists) {
+    /**
+     * v5.2 N1：**配置文件根本不存在** —— 这是最容易被误报的状态。
+     *
+     * 修复前它走的是下面的 `else` 分支，打印「配置仍为 v3 格式（schema v1），
+     * 启动时将自动迁移」，紧接着又打印「无需备份（…config 一开始就是 v4 格式）」
+     * ——两句话同屏互相打脸，而且第一句是**事实错误**（新用户第一天根本没有旧配置）。
+     *
+     * 这里只说实话：没有配置文件，启动时用默认 v4 配置。**不打印任何备份相关行**
+     * （没有配置就没有「迁移前的备份」这回事）。
+     */
+    lines.push(`${dict.ok} ${dict.migrationLabel}: ${dict.migrationNoConfig}`);
+  } else if (integrity.migrated) {
     // 失败时该行必须带 `❌`：退出码与屏幕**同时表态**，用户才能从输出看出哪项挂了
     lines.push(`${ok ? dict.ok : dict.fail} ${dict.migrationLabel}: ${dict.migrationOk}`);
     if (integrity.backupExists) {

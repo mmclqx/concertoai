@@ -233,6 +233,59 @@ describe('runDoctorCommand', () => {
     expect(out).toContain('✅ 配置迁移完整性');
     expect(out).toContain('配置仍为 v3 格式');
   });
+
+  /**
+   * v5.2 N1：**配置文件根本不存在**这条状态此前没有任何用例，
+   * 而它正是「doctor 同屏自我打脸」的现场：
+   *
+   * ```
+   * ✅ 配置迁移完整性: 配置仍为 v3 格式（schema v1），启动时将自动迁移
+   *   无需备份（本机未做过 v3→v4 迁移，config 一开始就是 v4 格式）
+   * ```
+   *
+   * 第一句说「你是旧格式」，第二句说「你一开始就是 v4」——用户该信哪句？
+   * 真相是**根本没有配置文件**，两句话都不该出现。
+   */
+  it('★ 无配置文件 → 说「尚无配置文件」，且**全文不含 v3**（否定面，v5.2 N1）', async () => {
+    // 刻意不创建 config.json
+    const cfg = path.join(tmp, 'no-such-config.json');
+    const code = await runDoctorCommand({
+      apiKey: 'k',
+      configPath: cfg,
+      sessionDir: path.join(tmp, 'sessions'),
+      fetchImpl: async () => jsonResponse(okBalance),
+    });
+    expect(code).toBe(0);
+    const out = output();
+    // 正例：如实说「没有配置文件」
+    expect(out).toContain('✅ 配置迁移完整性');
+    expect(out).toContain('尚无配置文件');
+    // **否定面（核心）**：不许说「配置仍为 v3 格式」——那是事实错误。
+    // 改坏方式：把 `configExists` 判断删掉（回退到只看 migrated）⇒ 这条红。
+    //
+    // ⚠️ 断言必须精确到**错误的那句话**，不能笼统到「不含 v3」：
+    // 首版我写的是 `not.toContain('v3')`，结果红在
+    // 「会话格式兼容（v4 只新增字段不破坏 v3 会话）」——这句**是对的**
+    // （v3 指会话格式，不是配置格式）。笼统断言会让护栏因为正确的话而红，
+    // 那不是护栏，是噪声；而且它还会掩盖真正的症状。
+    const migrationSection = out.slice(out.indexOf('配置迁移完整性'));
+    expect(migrationSection).not.toContain('配置仍为 v3 格式');
+    // 也不该提备份：没有配置就没有「迁移前的备份」这回事
+    expect(migrationSection).not.toContain('无需备份');
+  });
+
+  it('无配置文件时不误报故障（exit 0，迁移完整性不是阻塞项）', async () => {
+    const cfg = path.join(tmp, 'missing.json');
+    expect(
+      await runDoctorCommand({
+        apiKey: 'k',
+        configPath: cfg,
+        sessionDir: path.join(tmp, 'sessions'),
+        fetchImpl: async () => jsonResponse(okBalance),
+      }),
+    ).toBe(0);
+    expect(output()).not.toContain('❌ 配置迁移完整性');
+  });
 });
 
 // ── K1（v5.0 T23.3 手工测试实测缺陷）：退出码与屏幕必须同时表态 ──────────
