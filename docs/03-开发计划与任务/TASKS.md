@@ -1,6 +1,6 @@
 # ConcertoAI 开发任务看板
 
-> 最后更新：2026-11-12（**v5.1.0 已发布**：`npm publish` 成功、`latest` 已指向 5.1.0、tag `v5.1.0` 已在远端、线上包实测通过；发布门第 12 条「降级时必须说话」的修复 `fcc60c9` 已确认进了发布产物；N1–N4 留在 v5.2 段）
+> 最后更新：2026-11-12（**v5.1.0 已发布**：`npm publish` 成功、`latest` 已指向 5.1.0、tag `v5.1.0` 已在远端、线上包实测通过；发布门第 12 条「降级时必须说话」的修复 `fcc60c9` 已确认进了发布产物；**遗留 G1 全局安装冒烟（`npm i -g` 的 bin 可执行性）下轮补，不阻塞发布**；N1–N4 留在 v5.2 段）
 > 当前里程碑：**✅ v5.1 已发布完成（2026-11-12）**（T1 4/4 ✅ + T2 2/2 ✅ + T3 3/3 ✅ + 发布门 12/12 ✅ · 177 文件 / 2665 用例双环境同数 · 线上 `@concertoai/cli@5.1.0`）· 下一步 **v5.2**（N5 已随 v5.1 修完；剩 N2 审计缺口 → N1 doctor 文案 → N3/N4 文案）
 > 基于：[v5.0 开发计划](./v5.0-dev-plan.md) · [v5.0 开发任务](./v5.0-dev-tasks.md) · 历史：[v4.2 开发任务（已并入 v5.0 M1）](./v4.2-dev-tasks.md) · [v4.1 开发任务](./v4.1-dev-tasks.md) · [v4.0 开发任务](./v4.0-dev-tasks.md)
 
@@ -57,8 +57,10 @@
 | **N1** | **P2 文案错** | ⬜ v5.2 | `doctor` 在「根本没有配置文件」时打印「配置仍为 v3 格式（schema v1），启动时将自动迁移」，紧接着又打印「config 一开始就是 v4 格式」——**同屏自我打脸**，且第一句是事实错误 | `checkMigrationIntegrity`（`src/store/migration.ts`）的 `migrated` 只表示「**现在**是不是 v4 形状」；文件不存在时 `readFile` 抛错 → `catch` 置 `migrated=false` → `doctor.ts:369` 走 else 分支，把 `migrationNotMigrated` 当成「不是 v4」的通用说法；随后 `migrationBackupNotNeeded`（本为「迁过但没备份」写的）被误用。**与 2026-11-11 那条踩坑同源**：都把「不是 v4」直接等同于「是 v3」 | `migrated: boolean` 拆三态（`v4` / `v3待迁移` / `不存在`），文案对应「配置不存在，将使用默认 v4 配置」；`backupNotNeeded` 只用于「v4 且从未迁过」。**否定面用例：无 config 时输出不得包含「v3」** |
 | **N3** | **P3 文案** | ⬜ v5.2 | `--help` 里有维护者术语「不扫影响面」（对应实现 `skipImpact: true`），普通用户读不懂 | `src/cli/index.ts` 的 `addAutoLowOption` 文案 | 改成「判定很快、不额外扫描影响范围」，或直接删掉该短语 |
 | **N4** | **P3 文案** | ⬜ v5.2 | `--auto-low` 刻意不持久化（手册写了理由），但 `--help` 里**零指引** ⇒ 用户第二天还得重敲，且不知道这是设计取舍而非缺陷 | 同上，`--help` 未提 allowlist | 补一句「想长期免审批 shell 用 `config.allowlist`；本开关刻意不持久化」 |
+| **G1** | **P3 发布冒烟** | ⬜ 下轮补（**不阻塞发布**，2026-11-12 用户裁决） | **没跑过 `npm i -g` 全局安装态冒烟**：v5.1.0 发布时用的是「临时目录 `npm install` 再直接 `node dist/cli/index.js`」，它与全局安装拿到的是**同一份 tarball**，但**没验证 `bin` 链接**（`concertoai` / `ccai` 两个命令名是否真的可执行）——而发布时 npm 恰好打印过 `bin[concertoai] script name was cleaned` / `bin[ccai] … cleaned` 两条告警 | 此前的全局态只由 v5.0 发布记录覆盖（那次做过）；v5.1 换过 commander 参数接线（`auto-low-flag`），但**未动 bin**，故风险低 | 装到临时全局前缀（`npm i -g --prefix <tmp>`）后跑：`concertoai --version` 应输出 5.1.0、`ccai --version` 同、`concertoai chat --help` 含 `--auto-low`、`concertoai --bogus` 退出码 1 且给出建议 ⇒ 四条都过才算冒烟通过 |
 
-> 优先级：**N2 > N1 > N3/N4**。N2 是审计缺口（事后说不清「谁放开的」），N1 是用户对自己环境的判断被误导，N3/N4 只是读起来别扭。
+> 优先级：**N2 > N1 > N3/N4**。N2 是审计缺口（事后说不清「谁放开的」），N1 是用户对自己环境的判断被误导，N3/N4 只是读起来别扭。**G1（全局安装冒烟）插在 N2 之前做**——它是一次性 10 分钟的验证，却能证明「用户装到的命令真的能跑」。
+> 另注：G1 未做之前，**「v5.1.0 已发布」的证据边界是**：registry 元数据 + 临时目录 install 实测（`--version` / `--help` / 产物含新文案三条都过了），**不含** `concertoai` / `ccai` 两个 bin 名的全局可执行性。发布记录就是这么写的，不要读成「全局冒烟也过了」。
 > 另注：N2 修完之前，**v5.1 的「留痕」只保证「当时看得见」，不保证「事后查得到」**——这句话应写进 user-guide，别让用户以为会话里有记录。
 
 ---
