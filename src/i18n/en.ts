@@ -791,6 +791,12 @@ export const en = {
       'backup lost (this machine ran the v3→v4 migration but config.v3.bak is gone; cannot roll back)',
     migrationBackupNotNeeded:
       'backup not needed (no v3→v4 migration happened here; config was born as v4)',
+    // v5.2 N1 (completion): the "v3 pending migration" branch must NOT reuse
+    // migrationBackupNotNeeded — that sentence says "config was born as v4", which
+    // contradicts the line right above it ("your config is still v3").
+    // migrateV3ToV4 copies the original file to config.v3.bak before writing, so the
+    // honest thing to say here is "it will be backed up".
+    migrationBackupPlanned: 'the current config will be backed up to {path} before migration',
     migrationSessionOk:
       'session format compatible (v4 only adds fields; v3 sessions are not broken)',
     migrationIdempotentOk: 'idempotent (check is read-only; repeated runs have no side effects)',

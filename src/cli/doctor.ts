@@ -379,7 +379,17 @@ async function diagnoseMigration(options: DoctorCommandOptions): Promise<Diagnos
     }
   } else {
     lines.push(`${dict.ok} ${dict.migrationLabel}: ${dict.migrationNotMigrated}`);
-    lines.push(`  ${dict.migrationBackupNotNeeded}`);
+    /**
+     * v5.2 N1（补完，2026-11-13 手工实测发现）：这里**不能**复用 `migrationBackupNotNeeded`。
+     *
+     * 那句文案是「无需备份（本机未做过 v3→v4 迁移，**config 一开始就是 v4 格式**）」——
+     * 而本分支刚刚说过「配置仍为 v3 格式」。同屏两句互相打脸，只是把 N1 的脸换到另一边：
+     * 单测当时只断言了第一句（`toContain('配置仍为 v3 格式')`），第二句没人管。
+     *
+     * 事实：`migrateV3ToV4` 写盘前会把原文件复制成 `config.v3.bak`（备份失败即 fail-closed 不迁移），
+     * 所以对这个用户该说的是「会备份到哪」，而不是「不需要备份」。
+     */
+    lines.push(`  ${fmt(dict.migrationBackupPlanned, { path: `${cfgPath}.v3.bak` })}`);
   }
   lines.push(integrity.sessionCompatible ? `  ${dict.migrationSessionOk}` : '');
   lines.push(integrity.idempotent ? `  ${dict.migrationIdempotentOk}` : '');

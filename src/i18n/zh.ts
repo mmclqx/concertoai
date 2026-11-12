@@ -756,6 +756,11 @@ export const zh = {
     migrationBackupLost:
       '备份丢失（本机做过 v3→v4 迁移，但找不到 config.v3.bak，无法回滚；如需回滚请从备份恢复）',
     migrationBackupNotNeeded: '无需备份（本机未做过 v3→v4 迁移，config 一开始就是 v4 格式）',
+    // v5.2 N1（补完）：v3 待迁移分支**不能**复用 migrationBackupNotNeeded。
+    // 那句写的是「config 一开始就是 v4 格式」，而本分支刚说过「你的配置是 v3」——
+    // 同屏自我打脸换了半边脸而已（2026-11-13 手工实测发现，单测当时只断言了第一句）。
+    // 事实是：migrateV3ToV4 写盘前会把原文件复制成 config.v3.bak，所以这里应当说「会备份」。
+    migrationBackupPlanned: '迁移前会自动把原配置备份到 {path}',
     migrationSessionOk: '会话格式兼容（v4 只新增字段不破坏 v3 会话）',
     migrationIdempotentOk: '幂等（检测只读，重复执行无副作用）',
     // v5.0 K2 修复：Key 来源标注（config 回退让「引导写配置文件」这条真正可验证）

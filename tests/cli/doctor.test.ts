@@ -235,6 +235,43 @@ describe('runDoctorCommand', () => {
   });
 
   /**
+   * v5.2 N1（补完）：上面那条只断言了第一句，于是**第二句自我打脸漏检**。
+   *
+   * 实测现场（2026-11-13 手工验收，隔离 HOME 的真 `doctor`）：
+   *
+   * ```
+   * ✅ 配置迁移完整性: 配置仍为 v3 格式（schema v1），启动时将自动迁移
+   *   无需备份（本机未做过 v3→v4 迁移，config 一开始就是 v4 格式）
+   * ```
+   *
+   * 第一句说「你是 v3」，第二句说「你一开始就是 v4」——**同屏两份事实互相否认**，
+   * 与 N1 修掉的那个 bug 是同一个病，只是换了半边脸。
+   * 真相是：`migrateV3ToV4` 迁移前会把原文件复制成 `config.v3.bak`，所以该说「会备份到哪」。
+   *
+   * 判据：v3 分支必须 ① 给出备份路径 ② **不得**出现「无需备份」（否定面，精确到那句错话）。
+   * 改坏方式：把 `dict.migrationBackupPlanned` 换回 `dict.migrationBackupNotNeeded` ⇒ 这条红。
+   */
+  it('★ v3 待迁移 → 说「迁移前会备份」，不得说「无需备份」/「一开始就是 v4」（否定面，v5.2 N1 补完）', async () => {
+    const cfg = path.join(tmp, 'config.json');
+    writeFileSync(cfg, '{"schemaVersion":1,"defaultModel":"deepseek-v4-flash"}', 'utf8');
+    const code = await runDoctorCommand({
+      apiKey: 'k',
+      configPath: cfg,
+      sessionDir: path.join(tmp, 'sessions'),
+      fetchImpl: async () => jsonResponse(okBalance),
+    });
+    expect(code).toBe(0);
+    const out = output();
+    const migrationSection = out.slice(out.indexOf('配置迁移完整性'));
+    // 正例：说清会备份到哪（用户据此知道「迁坏了能回滚」）
+    expect(migrationSection).toContain('迁移前会自动把原配置备份到');
+    expect(migrationSection).toContain('config.json.v3.bak');
+    // 否定面：这两句都是与「配置仍为 v3 格式」直接矛盾的话
+    expect(migrationSection).not.toContain('无需备份');
+    expect(migrationSection).not.toContain('一开始就是 v4 格式');
+  });
+
+  /**
    * v5.2 N1：**配置文件根本不存在**这条状态此前没有任何用例，
    * 而它正是「doctor 同屏自我打脸」的现场：
    *
