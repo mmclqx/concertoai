@@ -571,6 +571,13 @@ export const en = {
     saved: 'Session saved: {id}',
     pickerHint: '↑/↓ to select, Enter to confirm, Esc to cancel',
     noUserMessage: '(no user message)',
+    // v5.2 edge path: `chat -r <id>` must speak plainly instead of dumping a Node stack trace.
+    resumeInvalid: 'Invalid session id: {id} (only letters, digits, underscore, dot and dash)',
+    resumeNotFound: 'No such session: {id}',
+    resumeReadFailed: 'Failed to read session {id} ({reason})',
+    resumeRecentTitle: 'Recent sessions (newest → oldest):',
+    resumeRecentCountSuffix: 'messages',
+    resumeListHint: 'List all sessions: concertoai chat -l',
   },
   plan: {
     title: 'Execution Plan',

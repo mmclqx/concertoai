@@ -20,6 +20,16 @@ export const DEFAULT_SESSION_DIR = sessionsDir();
 
 /** 会话 id 允许的字符集（防路径穿越）。 */
 const ID_RE = /^[\w.-]+$/;
+
+/**
+ * 会话 id 是否合法（唯一判定源，供 CLI 层在**读盘之前**先说人话）。
+ *
+ * 为什么导出一个函数而不是把正则复制一份到调用方：复制出来的第二份迟早与这份不同步，
+ * 而「哪条命令被放行」这种安全问题历史上已经踩过一次（见 AGENTS 编辑距离那条）。
+ */
+export function isValidSessionId(id: string): boolean {
+  return ID_RE.test(id);
+}
 /** 列表摘要中首条 user 消息的截断长度。 */
 const SUMMARY_MAX_CHARS = 40;
 
@@ -69,7 +79,7 @@ export class SessionStore {
     await mkdir(this.dir, { recursive: true });
   }
   private resolve(id: string): string {
-    if (!ID_RE.test(id)) {
+    if (!isValidSessionId(id)) {
       throw new Error(`非法的会话 id: ${id}`);
     }
     return path.join(this.dir, `${id}.jsonl`);

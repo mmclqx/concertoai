@@ -40,6 +40,7 @@ import {
   resolveProjectForCwd,
 } from './common';
 import { buildClientForProvider, resolveRuntimeProvider } from './provider-runtime';
+import { describeResumeFailure } from './resume-error';
 
 // 保持 ./chat 的公共 API 不变（run/plan 现从 ./common 导入，此处 re-export 兼容旧引用）
 export { buildOsHint, buildRegistry, DEFAULT_ALLOWLIST, resolveModel } from './common';
@@ -210,10 +211,9 @@ export async function runChat(options: RunChatOptions): Promise<void> {
   let sessionId: string;
   let history: ChatMessage[] = [];
   if (typeof options.resume === 'string') {
-    const { messages } = await store.read(options.resume);
-    history = messages;
+    history = await readSessionOrExit(store, options.resume);
     sessionId = options.resume;
-    console.log(fmt(t().session.resumed, { id: options.resume, count: messages.length }));
+    console.log(fmt(t().session.resumed, { id: options.resume, count: history.length }));
   } else if (options.resume === true) {
     sessionId = await pickSession(store);
     const { messages } = await store.read(sessionId);
@@ -315,6 +315,36 @@ export async function printSessionList(store: SessionStore): Promise<void> {
         s.firstUserMessage ?? t().session.noUserMessage
       }`,
     );
+  }
+}
+
+/**
+ * 读回指定会话；读不到时**说人话并退出**（v5.2 边缘路径修复）。
+ *
+ * 修复前这里是裸 `await store.read(id)`：id 敲错 ⇒ ENOENT ⇒ 冒到全局
+ * 「未处理的 Promise 拒绝」处理器 ⇒ 屏幕上是一段 Node 堆栈（实测见 `resume-error.ts` 头注释）。
+ * 而 `-r` 的 id 形如 `20261113-024243-266`，**手抄必错**，这条失败路径命中率不低；
+ * 何况它正是 `/approvals`（查昨日自动放行）的唯一入口。
+ *
+ * 文案与分支判定都在纯函数 `describeResumeFailure` 里（可单测），这里只负责
+ * 「读 → 打印 → 决定退出码」，不再自己拼句子。
+ */
+async function readSessionOrExit(store: SessionStore, id: string): Promise<ChatMessage[]> {
+  try {
+    const { messages } = await store.read(id);
+    return messages;
+  } catch (error) {
+    // 最近会话列表只用于「ENOENT 时帮用户认出正确 id」；取不到就当没有（不掩盖原始错误）
+    let recent: Awaited<ReturnType<SessionStore['list']>> = [];
+    try {
+      recent = await store.list();
+    } catch {
+      recent = [];
+    }
+    for (const line of describeResumeFailure({ id, error, recent })) {
+      console.error(line);
+    }
+    process.exit(1);
   }
 }
 

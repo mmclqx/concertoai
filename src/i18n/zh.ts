@@ -543,6 +543,14 @@ export const zh = {
     saved: '会话已保存: {id}',
     pickerHint: '↑/↓ 选择，Enter 确认，Esc 取消',
     noUserMessage: '（无用户消息）',
+    // v5.2 边缘路径：`chat -r <id>` 读不到会话时**说人话**（此前直接甩 Node 堆栈）。
+    // 三种失败分开说——把「读失败的所有原因」压成一句「没有这个会话」，就是 doctor N1 的同款错误。
+    resumeInvalid: '会话 id 不合法: {id}（只允许字母、数字、下划线、点和短横线）',
+    resumeNotFound: '没有这个会话: {id}',
+    resumeReadFailed: '读取会话失败: {id}（{reason}）',
+    resumeRecentTitle: '最近的会话（新 → 旧）:',
+    resumeRecentCountSuffix: '条',
+    resumeListHint: '查看全部会话: concertoai chat -l',
   },
   plan: {
     title: '执行计划',
