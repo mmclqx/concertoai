@@ -604,6 +604,16 @@ export const zh = {
     usage: '用法：/hints on | /hints off | /hints status',
     unknownAction: '未知 hints 子命令：{action}（支持 on / off / status）',
   },
+  // v5.2 N2：`/approvals` 斜杠命令（查看本会话被自动放行的工具调用）
+  approvalsCmd: {
+    header: '本会话自动放行 {count} 次（未命中已知风险规则，未弹审批框）：',
+    // 零记录必须有话可说——空回执会让用户以为命令没生效
+    none: '本会话没有自动放行记录（所有改动都经过你确认）',
+    more: '  …另有 {count} 次未列出',
+    footnote: '提示：这些改动没有弹框；其余改动均为手动批准。',
+    unknownTool: '未知工具',
+    usage: '用法：/approvals（只读，列出本会话被自动放行的工具调用）',
+  },
   // v5.0 T21：`/metrics` 斜杠命令（本地指标开关，默认 off、零上传）
   metricsCmd: {
     on: '📊 已开启本地指标（仅本次会话）。永久开启：concertoai config set metrics on　·　查看汇总：concertoai doctor --metrics',
@@ -1044,6 +1054,7 @@ export const zh = {
     slashReview: '代码审查（可指定文件）',
     slashWorkflow: '运行工作流',
     slashHints: '场景提示开关（on / off / status）',
+    slashApprovals: '查看本会话被自动放行的调用',
     advanced: '高级',
     advancedHint: '  以上命令均可用 concertoai <命令> --help 查看详细用法',
   },

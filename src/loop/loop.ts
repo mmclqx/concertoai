@@ -258,7 +258,18 @@ async function executeGroup(
     }
     // tool_result 的 stepIndex 与对应 tool_call **必须相同**（UI 靠它对上号）
     options.onEvent?.({ type: 'tool_result', toolCall: call, result, stepIndex: stepBase + i + 1 });
-    messages.push(toolResultMessage(call.id, formatToolResult(result, call.name)));
+    /**
+     * v5.2 N2：工具若报告「这次审批是被自动放行的」，就在 tool 消息上盖戳。
+     *
+     * **必须条件展开**，不能写成 `approval: result.approval`——后者会给每条 tool 消息
+     * 写入 `approval: undefined`，而 `JSON.stringify` 会**丢掉** undefined 键，
+     * 于是落盘看不出差异、内存里 `hasOwnProperty('approval')` 却是 true，
+     * 「关闭 --auto-low 时不得有该键」那条否定面就会失真。
+     */
+    messages.push({
+      ...toolResultMessage(call.id, formatToolResult(result, call.name)),
+      ...(result.approval !== undefined ? { approval: result.approval } : {}),
+    });
     // 修复管线：可修复失败累计超限即终止（审批拒绝/越界等 repairable: false 不计数）
     if (result.ok === false && result.repairable !== false) {
       repairState.count += 1;

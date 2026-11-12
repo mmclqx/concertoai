@@ -30,7 +30,7 @@ import { render } from 'ink-testing-library';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { setLocale } from '../../src/i18n';
-import type { ToolCall } from '../../src/loop/types';
+import type { ChatMessage, ToolCall } from '../../src/loop/types';
 import type { ChatCompletionChunk, ModelClient, StreamChatParams } from '../../src/model/client';
 import { editFileTool } from '../../src/tools/edit';
 import { readFileTool } from '../../src/tools/read';
@@ -348,5 +348,197 @@ describe('与既有 allowlist-only 策略互不覆盖', () => {
     await waitDone(app);
     expect(existsSync(path.join(tmp, 'clean.ts'))).toBe(false);
     app.unmount();
+  });
+});
+
+/**
+ * v5.2 N2：审批结论必须**真的落到会话消息**上（端到端）。
+ *
+ * ## 为什么这组必须跑真 App + 真 loop
+ *
+ * 纯函数层（`tests/loop/approval-stamp.test.ts`）测的是「if 给了 approval 就能带上」，
+ * 它**测不出**「`autoLowApprove` 到底有没有写 `request.autoLow = true`」——
+ * 那一步如果漏了，纯函数用例照样全绿，而真实会话里永远不会有盖戳。
+ * 这就是「正例测的是纯函数、真机链条断了」的典型盲区。
+ *
+ * ## 会话 id 怎么来
+ *
+ * `App` 需要 `store` + `sessionId` 才会持久化；这里给一个临时的 SessionStore，
+ * 跑完直接从磁盘读 JSONL —— 这条路径与用户真实跑 `chat` 时**完全一致**
+ * （`chat.tsx` 就是这么把 `store` / `sessionId` 传给 App 的）。
+ */
+describe('v5.2 N2：自动放行结论落进会话记录（端到端）', () => {
+  /**
+   * 从磁盘读回该会话的 tool 消息（断言的是**落盘后**的事实，不是内存对象）。
+   *
+   * ⚠️ **必须轮询等待，不能读一次就断言**：`App` 里 `setMessages(...)` 之后才
+   * `await store.appendAll(...)`，而「完成了」这行文案在 setMessages 那一刻就渲染了
+   * ⇒ `waitDone` 返回时**写盘可能还没完成**。实测证据：本组用例单独跑 15/15 绿，
+   * 混在全量里跑会偶发红（`expected [] to have a length of 1`）——
+   * 机器越忙时间窗越大。这是**测试的竞态**，不是产品的 bug（写盘最终一定会完成）。
+   */
+  async function readToolMessages(id: string, expectAtLeast = 1) {
+    const { SessionStore } = await import('../../src/store/session');
+    const store = new SessionStore(tmp);
+    /**
+     * 用**显式异步轮询**而不是复用 `waitFor`：`waitFor` 的断言函数是同步的，
+     * 而读盘是异步的——在同步 tick 里 `tools` 永远还是上一轮的旧值（会白等满超时）。
+     */
+    const deadline = Date.now() + 4_000;
+    let tools: ChatMessage[] = [];
+    while (Date.now() < deadline) {
+      const { messages } = await store.read(id);
+      tools = messages.filter((m) => m.role === 'tool');
+      if (tools.length >= expectAtLeast) {
+        return tools;
+      }
+      await sleep(20);
+    }
+    // 超时后仍返回当前快照，让调用方的 toHaveLength 断言给出可读的失败信息
+    return tools;
+  }
+
+  it('加 --auto-low + 零命中 ⇒ 该 tool 消息含 approval=auto-low（并落盘）', async () => {
+    const { SessionStore } = await import('../../src/store/session');
+    const store = new SessionStore(tmp);
+    const sessionId = await store.create([]);
+
+    const app = renderApp({
+      args: CLEAN_ARGS,
+      props: { ...TTY, autoLow: true, store, sessionId },
+    });
+    await sendTask(app);
+    await waitDone(app);
+    app.unmount();
+
+    const tools = await readToolMessages(sessionId);
+    expect(tools).toHaveLength(1);
+    expect(tools[0]?.approval).toBe('auto-low');
+    // 正例自证：文件真的落盘了（证明这次确实走完了工具执行，不是半路中断）
+    expect(readFileSync(path.join(tmp, 'clean.ts'), 'utf8')).toBe('const a = 1');
+  });
+
+  it('**否定面（核心）**：不加 --auto-low、用户按 y ⇒ 该 tool 消息**不得有** approval 键', async () => {
+    const { SessionStore } = await import('../../src/store/session');
+    const store = new SessionStore(tmp);
+    const sessionId = await store.create([]);
+
+    const app = renderApp({ args: CLEAN_ARGS, props: { ...TTY, store, sessionId } });
+    await sendTask(app);
+    await waitFor(() => {
+      expect(app.lastFrame()).toContain('批准');
+    });
+    app.stdin.write('y');
+    await waitDone(app);
+    app.unmount();
+
+    const tools = await readToolMessages(sessionId);
+    expect(tools).toHaveLength(1);
+    // 改坏方式：`autoLowApprove` 无条件写 request.autoLow / loop 无条件盖戳 ⇒ 这条红。
+    // 用 hasOwn 而不是 === undefined：后者抓不到「写了 undefined 键」的伪盖戳。
+    expect(Object.hasOwn(tools[0] as object, 'approval'), '手动批准不该有 approval 键').toBe(false);
+    expect(readFileSync(path.join(tmp, 'clean.ts'), 'utf8')).toBe('const a = 1');
+  });
+
+  it('**否定面**：加 --auto-low 但编辑命中 high ⇒ 仍弹框，且落盘消息无 approval', async () => {
+    const { SessionStore } = await import('../../src/store/session');
+    const store = new SessionStore(tmp);
+    const sessionId = await store.create([]);
+
+    const app = renderApp({ args: HIGH_ARGS, props: { ...TTY, autoLow: true, store, sessionId } });
+    await sendTask(app);
+    await waitFor(() => {
+      expect(app.lastFrame()).toContain('批准');
+    });
+    // 正例自证：这确实是 high（rich 卡标题里带「高风险」），不是别的原因弹框
+    expect(app.lastFrame()).toContain('高风险');
+    app.stdin.write('y');
+    await waitDone(app);
+    app.unmount();
+
+    const tools = await readToolMessages(sessionId);
+    expect(tools).toHaveLength(1);
+    expect(Object.hasOwn(tools[0] as object, 'approval')).toBe(false);
+  });
+
+  it('**否定面**：加 --auto-low 但 shell 命令 ⇒ 仍弹框，且落盘消息无 approval', async () => {
+    const { SessionStore } = await import('../../src/store/session');
+    const store = new SessionStore(tmp);
+    const sessionId = await store.create([]);
+
+    const model = new FakeModel([
+      { toolCalls: [{ id: 'c1', name: 'run_command', arguments: '{"command":"echo hi"}' }] },
+      { content: '完成了' },
+    ]);
+    const app = render(
+      <App
+        client={model}
+        registry={registry}
+        ctx={{ cwd: tmp }}
+        model="deepseek-v4-flash"
+        {...TTY}
+        autoLow
+        store={store}
+        sessionId={sessionId}
+      />,
+    );
+    await sendTask(app);
+    await waitFor(() => {
+      expect(app.lastFrame()).toContain('批准');
+    });
+    app.stdin.write('y');
+    await waitDone(app);
+    app.unmount();
+
+    const tools = await readToolMessages(sessionId);
+    expect(tools).toHaveLength(1);
+    // shell 永不被自动放行（v5.1 安全底线），所以永远不该出现这个键
+    expect(Object.hasOwn(tools[0] as object, 'approval')).toBe(false);
+  });
+
+  it('同轮两个工具：只有被自动放行的那个带 approval（另一个手动 y 的不带）', async () => {
+    const { SessionStore } = await import('../../src/store/session');
+    const store = new SessionStore(tmp);
+    const sessionId = await store.create([]);
+
+    // 第一个是零命中编辑（自动放行），第二个是 high（必须弹框 → 手动 y）
+    const model = new FakeModel([
+      {
+        toolCalls: [
+          { id: 'c1', name: 'edit_file', arguments: CLEAN_ARGS },
+          { id: 'c2', name: 'edit_file', arguments: HIGH_ARGS },
+        ],
+      },
+      { content: '完成了' },
+    ]);
+    const app = render(
+      <App
+        client={model}
+        registry={registry}
+        ctx={{ cwd: tmp }}
+        model="deepseek-v4-flash"
+        {...TTY}
+        autoLow
+        store={store}
+        sessionId={sessionId}
+      />,
+    );
+    await sendTask(app);
+    await waitFor(() => {
+      expect(app.lastFrame()).toContain('批准');
+    });
+    app.stdin.write('y');
+    await waitDone(app);
+    app.unmount();
+
+    // 等两条 tool 消息都落盘再断言（只等 1 条会读到半截，断言长度 2 时偶发红）
+    const tools = await readToolMessages(sessionId, 2);
+    expect(tools).toHaveLength(2);
+    // 按 toolCallId 对上号（顺序与调用顺序一致）
+    const byId = new Map(tools.map((m) => [m.toolCallId, m]));
+    expect(byId.get('c1')?.approval).toBe('auto-low');
+    expect(Object.hasOwn(byId.get('c2') as object, 'approval'), 'high 那条是手动批准的').toBe(
+      false,
+    );
   });
 });

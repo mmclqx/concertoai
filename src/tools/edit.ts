@@ -19,7 +19,7 @@ import { z } from 'zod';
 
 import { ToolErrorCode, toolError } from './error-codes';
 import { resolveSafe } from './read';
-import type { ToolResult, ToolSpec } from './registry';
+import type { ApprovalRequest, ToolResult, ToolSpec } from './registry';
 import { requestApproval } from './registry';
 
 const editFileSchema = z.object({
@@ -198,14 +198,16 @@ export const editFileTool: ToolSpec = {
       }
       throw error;
     }
-    const approved = await requestApproval(ctx, {
+    // v5.2 N2：提到具名变量，好在审批之后读回 `autoLow`（判断这次是不是被自动放行的）
+    const approvalRequest: ApprovalRequest = {
       kind: 'edit',
       summary: `编辑文件 ${args.path}`,
       detail: plan.diff,
       // v5.0 T9：把目标文件与编辑意图交给审批洞察层——影响面分析（谁 import 了我）
       // 与「新建 / 局部修改」判断都依赖这两个结构化信息，不靠猜 summary 文本
       insightHint: { file: args.path, intent: args.search === '' ? 'create' : 'modify' },
-    });
+    };
+    const approved = await requestApproval(ctx, approvalRequest);
     if (!approved) {
       return toolError(ToolErrorCode.EDIT_REJECTED, '编辑被拒绝，文件未修改', {
         repairable: false,
@@ -225,6 +227,11 @@ export const editFileTool: ToolSpec = {
         `写入失败: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
-    return { ok: true, data: { path: args.path, diff: plan.diff } };
+    return {
+      ok: true,
+      data: { path: args.path, diff: plan.diff },
+      // v5.2 N2：只在这一步成功时带；loop 据此给 tool 消息盖戳（会话可回溯）
+      ...(approvalRequest.autoLow === true ? { approval: 'auto-low' as const } : {}),
+    };
   },
 };

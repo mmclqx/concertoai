@@ -10,6 +10,7 @@ import {
   executeAgentMarketCommand,
   parseAgentCommand,
 } from '../cli/slash/agent';
+import { parseApprovalsCommand } from '../cli/slash/approvals';
 import { executeHintsCommand, parseHintsCommand } from '../cli/slash/hints';
 import { executeMcpCommand, parseMcpCommand } from '../cli/slash/mcp';
 import { executeMemoryCommand, parseMemoryCommand } from '../cli/slash/memory';
@@ -894,6 +895,14 @@ export function App({
       }
       const decision = decideAutoLow({ enabled: autoLow, kind: request.kind, insight });
       if (decision.action === 'allow') {
+        /**
+         * v5.2 N2：把「这次是自动放的」写回 request，让下游能把结论记进会话。
+         *
+         * 直接改对象（不复制）是刻意的：`request` 由 `edit.ts` / `shell.ts` 在每次
+         * `run()` 内部**现构造一个**，不存在跨调用共享；这两个工具又都是
+         * `parallelSafe: false`（各自单独成组、严格串行），所以没有并发写同一对象的可能。
+         */
+        request.autoLow = true;
         autoLowCountRef.current += 1;
         // 留痕：不问就必须让用户看见；带累计次数是因为 notice 是单行槽位
         setNotice(
@@ -1138,6 +1147,23 @@ export function App({
   const send = useCallback(
     async (text: string) => {
       const earlyTrimmed = text.trim();
+
+      // v5.2 N2：/approvals —— 只读查看本会话被自动放行的调用。
+      //
+      // 位置与 /hints 相同（`busy` 守卫**之前**）：用户最想核对「刚才那几次真的没问我吗」
+      // 的时刻，往往正是「刚发完任务、还在等回复」。被 busy 挡掉就是假按钮。
+      //
+      // 读 `messages`（state）而不是重新读磁盘：恢复会话时 initialHistory 已经灌进来了，
+      // 再从磁盘读一次会产生两条真相路径。
+      if (earlyTrimmed !== '') {
+        const approvalsCmd = parseApprovalsCommand(earlyTrimmed, messages);
+        if (approvalsCmd !== null) {
+          setInput('');
+          setTokens((t) => ({ ...t, input: t.input + estimateTokens(text) }));
+          setMessages((prev) => [...prev, { role: 'user', content: text }, approvalsCmd.message]);
+          return;
+        }
+      }
 
       // v5.0 T13：/hints —— 本会话静音 / 恢复 / 查看状态（约束⑤「忽略即静默」的用户入口）。
       //

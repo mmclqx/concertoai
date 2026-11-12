@@ -185,12 +185,14 @@ const COMMON_COMMAND_ORDER: readonly string[] = [
  */
 const SLASH_COMMAND_ENTRIES: ReadonlyArray<{
   name: string;
-  descKey: 'slashPlan' | 'slashReview' | 'slashWorkflow' | 'slashHints';
+  descKey: 'slashPlan' | 'slashReview' | 'slashWorkflow' | 'slashHints' | 'slashApprovals';
 }> = [
   { name: '/plan', descKey: 'slashPlan' },
   { name: '/review', descKey: 'slashReview' },
   { name: '/workflow', descKey: 'slashWorkflow' },
   { name: '/hints', descKey: 'slashHints' },
+  // v5.2 N2：只读查询「本会话被自动放行的调用」（恢复会话后也有效）
+  { name: '/approvals', descKey: 'slashApprovals' },
 ];
 
 /**

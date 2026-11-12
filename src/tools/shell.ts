@@ -12,7 +12,7 @@ import { type ChildProcess, spawn } from 'node:child_process';
 import { z } from 'zod';
 
 import { TOOL_ERROR_SUGGESTIONS, ToolErrorCode, toolError } from './error-codes';
-import type { ToolResult, ToolSpec } from './registry';
+import type { ApprovalRequest, ToolResult, ToolSpec } from './registry';
 import { requestApproval } from './registry';
 
 /** 默认命令超时（毫秒）。 */
@@ -311,7 +311,8 @@ export const shellTool: ToolSpec = {
     const timeoutMs = args.timeoutMs ?? DEFAULT_SHELL_TIMEOUT_MS;
 
     if (!isAllowlisted(args.command, ctx.allowlistedPrefixes)) {
-      const approved = await requestApproval(ctx, {
+      // v5.2 N2：提到具名变量，好在审批之后读回 `autoLow`
+      const approvalRequest: ApprovalRequest = {
         kind: 'shell',
         summary: `执行命令: ${args.command}`,
         detail: args.command,
@@ -319,12 +320,22 @@ export const shellTool: ToolSpec = {
         // 命令文本本身仍会过风险规则（`rm -rf` / `process.exit` 等照常命中），
         // 步骤是「UI 层把命令文本按单行源码喂给 analyzeApproval」（见 App.tsx 的 analyzableDetail）。
         // 传空对象 `{}` 只会是一层假参数，不如不传。
-      });
+      };
+      const approved = await requestApproval(ctx, approvalRequest);
       if (!approved) {
         return toolError(ToolErrorCode.SHELL_REJECTED, '命令执行被拒绝', {
           repairable: false,
         });
       }
+      /**
+       * v5.2 N2：shell **永远不会**被 `--auto-low` 自动放行
+       * （`autoLowApprove` 开头 `if (request.kind !== 'edit') return requestApproval(request)`），
+       * 所以下面这段透传当前恒不生效——写它是为了与 `edit.ts` 保持对称：
+       * 将来若放行范围调整，只改判定层，不用回来改两个工具。
+       */
+      const command = getPlatformAdapter().adaptCommand(args.command);
+      const result = await runShellCommand(command, ctx.cwd, timeoutMs);
+      return approvalRequest.autoLow === true ? { ...result, approval: 'auto-low' } : result;
     }
 
     const command = getPlatformAdapter().adaptCommand(args.command);

@@ -273,6 +273,7 @@ describe('--help 首屏精简（v5.0 T14，真跑 CLI）', () => {
       'slashReview',
       'slashWorkflow',
       'slashHints',
+      'slashApprovals',
       'advanced',
       'advancedHint',
     ] as const;
@@ -471,6 +472,7 @@ describe('help 段文案完整性（T14 补齐 fast*）', () => {
       'slashReview',
       'slashWorkflow',
       'slashHints',
+      'slashApprovals',
       'advanced',
       'advancedHint',
     ] as const;

@@ -51,6 +51,17 @@ export interface ApprovalRequest {
    * 缺省时审批框自动降级为「不做影响面分析」，不影响审批流程（G2）。
    */
   insightHint?: ApprovalInsightHint;
+  /**
+   * v5.2 N2：由**自动放行层**写入（仅在 `--auto-low` 判定为 allow 时置 `true`）。
+   *
+   * 工具读到它就把 `approval: 'auto-low'` 放进自己的 `ToolResult`，loop 据此给
+   * 那条 tool 消息盖戳 ⇒ 恢复会话后能回答「这次改动是我按的 y，还是被自动放的」。
+   *
+   * 为什么放在 request 上（而不是给 request 加 `toolCallId`）：工具在 `run()` 内部
+   * 申请审批，它**不知道也不该知道**自己由哪个 `call.id` 调起；而盖戳发生在
+   * `loop.ts` 的 `executeGroup`，那里手里正握着 `call`。加 id 要穿透三层，白增风险。
+   */
+  autoLow?: true;
 }
 
 /** 统一审批入口：未配置回调时默认拒绝（fail-closed），无 yolo 模式。 */
@@ -80,6 +91,13 @@ export interface ToolResult {
   code?: string;
   /** 中文修复建议（v3.1 M4 结构化错误增强；可选，向后兼容）。 */
   suggestion?: string;
+  /**
+   * v5.2 N2：透传 `ApprovalRequest.autoLow` —— 本工具这次执行前的审批是**被自动放行**的。
+   *
+   * 只在**成功**路径带（审批被拒时返回 `ok:false`，不需要标记：用户已经点过 n）。
+   * loop 读到它就给对应 tool 消息盖 `approval: 'auto-low'`。
+   */
+  approval?: 'auto-low';
 }
 
 export interface ToolSpec {

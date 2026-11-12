@@ -636,6 +636,17 @@ export const en = {
     usage: 'Usage: /hints on | /hints off | /hints status',
     unknownAction: 'Unknown hints subcommand: {action} (supported: on / off / status)',
   },
+  // v5.2 N2: `/approvals` slash command (list tool calls auto-approved in this session)
+  approvalsCmd: {
+    header:
+      'Auto-approved {count} time(s) in this session (no known risk rule matched, no prompt shown):',
+    // Zero records must still say something — an empty reply reads as "the command did nothing"
+    none: 'No auto-approvals in this session (every change went through your confirmation)',
+    more: '  …{count} more not listed',
+    footnote: 'Note: these changes were not prompted; all other changes were approved by you.',
+    unknownTool: 'unknown tool',
+    usage: 'Usage: /approvals (read-only: lists tool calls auto-approved in this session)',
+  },
   // v5.0 T21: `/metrics` slash command (local metrics switch; off by default, never uploaded)
   metricsCmd: {
     on: '📊 Local metrics enabled (this session only). Permanent: concertoai config set metrics on　·　Summary: concertoai doctor --metrics',
@@ -1099,6 +1110,7 @@ export const en = {
     slashReview: 'code review (optionally on given files)',
     slashWorkflow: 'run a workflow',
     slashHints: 'scene hints switch (on / off / status)',
+    slashApprovals: 'list tool calls auto-approved in this session',
     advanced: 'Advanced',
     advancedHint: '  Run concertoai <command> --help for full usage of any command above',
   },
