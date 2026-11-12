@@ -31,7 +31,7 @@
  * | ③ | 不吃掉 T8 的性能优势 | 默认 diff 折叠 ≤ 12 行（含 ⚠️ 行的 hunk + 上下文），完整 diff 由 `[v]` 显式切换并截断 500 行 |
  */
 
-import type { ApprovalInsight, ParsedDiffLine } from '../core/approval-insight';
+import type { ApprovalInsight, DegradeReason, ParsedDiffLine } from '../core/approval-insight';
 import { parseDiff } from '../core/approval-insight';
 import type { ImpactSummary } from '../core/impact-scan';
 import { IMPACT_LIMITS } from '../core/impact-scan';
@@ -121,8 +121,61 @@ export const DIFF_CONTEXT_LINES = 2;
 /** 风险点/关注行最多展示条数（一次说 8 条 = 没有重点）。 */
 export const MAX_HIT_LINES = 3;
 
-/** 这些降级原因下整卡走 plain（v4.1.1 原貌，见 T8 降级矩阵）。 */
-const PLAIN_DEGRADE_REASONS = new Set(['config-off', 'error', 'non-tty', 'ci']);
+/**
+ * 四种「整卡走 plain」的静默降级 → 各自的说明行文案键（**发布门 12**）。
+ *
+ * ## 为什么用一张表，而不是在渲染处写 `switch`
+ *
+ * 这张表同时充当两件事：**判定集合**（下面 `PLAIN_DEGRADE_REASONS` 由它的键派生）与
+ * **文案来源**。表只写一处，就不可能出现「新增了一种降级、也走了 plain、但没人给它写文案」
+ * ——那正是 v5.1 之前的真实形态：这四种降级安静地弹着 v4.1.1 原貌卡，用户看到审批框
+ * 照旧，却得不到一个字解释「为什么开了 `--auto-low` 还在问」。
+ *
+ * ## 为什么 `'timeout'` 不在这张表里（别顺手补上）
+ *
+ * `DegradeReason` 类型有 6 个成员，但生产路径只产出 5 个：`huge-diff`（已如实告知行数，
+ * 走 rich 卡）、`error`、以及 `resolveEnvironment` 给的 `config-off`/`ci`/`non-tty`。
+ * `'timeout'` **是死成员**——`degradedInsight()` 三个调用点没有一个传它（超时落在
+ * `impact.status` 上，见 `impact-scan.ts`）。给它写文案 = 写一句永远不会显示的话。
+ */
+const PLAIN_DEGRADE_NOTICE_KEYS = {
+  'config-off': 'degradeConfigOff',
+  error: 'degradeError',
+  'non-tty': 'degradeNonTty',
+  ci: 'degradeCi',
+} as const;
+
+/** 走 plain 的降级原因（闭集）。 */
+type PlainDegradeReason = keyof typeof PLAIN_DEGRADE_NOTICE_KEYS;
+
+/**
+ * 这些降级原因下整卡走 plain（v4.1.1 原貌，见 T8 降级矩阵）。
+ *
+ * **由 `PLAIN_DEGRADE_NOTICE_KEYS` 派生，不单独维护**：判定与文案必须同源，
+ * 否则「判为 plain 却没有文案」会再次变成静默降级。
+ */
+const PLAIN_DEGRADE_REASONS: ReadonlySet<string> = new Set(Object.keys(PLAIN_DEGRADE_NOTICE_KEYS));
+
+/**
+ * 降级说明行文案（发布门 12 的唯一出口）；非静默降级返回 `undefined`（不渲染该行）。
+ *
+ * - 四种原因**各有独立文案**：用户要能分辨「配置关了」和「这次分析失败了」，
+ *   笼统一句「分析不可用」等于没说（同一个词兜住四种成因，用户无法据此做任何决定）。
+ * - 四种文案**都以「仍按常规逐个确认」收尾**：这是对用户的结论承诺——降级只影响
+ *   「是否自动放行」，不影响「是否会问你」。缺这句，用户会以为降级 = 放行变宽。
+ * - 文案**不许出现「安全」**（未分析 ≠ 安全，延续 D93 的文案纪律）。
+ *
+ * 纯函数：只读入参 + 当前 locale 字典，无副作用。
+ */
+export function degradeNotice(reason: DegradeReason | undefined): string | undefined {
+  if (reason === undefined) {
+    return undefined;
+  }
+  if (!Object.hasOwn(PLAIN_DEGRADE_NOTICE_KEYS, reason)) {
+    return undefined;
+  }
+  return t().approval[PLAIN_DEGRADE_NOTICE_KEYS[reason as PlainDegradeReason]];
+}
 
 /** 是否走 plain 路径（无洞察 / 强制 plain / 环境降级）。 */
 export function isPlainApproval(options: ApprovalTextOptions): boolean {
@@ -168,14 +221,33 @@ function plainTitle(kind: ApprovalKind): string {
  *
  * 注意这里**不做宽度截断**——v4.1.1 就是原样渲染 diff，改它会破坏
  * 「plain = 原貌」的承诺（G1 安全不降级 / T11 的 plain 对照）。
+ *
+ * ## 唯一合法例外：降级说明行（发布门 12）
+ *
+ * 只有当 `insight.degradeReason` 属于那四种静默降级时，才在标题与详情之间插一行说明。
+ * 这不违背上面的承诺，理由是把「原貌」的边界说清楚：
+ *
+ * - **无洞察 / `rich: false`**：我们**没有关于降级的任何事实**，此时多写一个字都是猜
+ *   ⇒ 严格三行，逐字节原貌（T11-a 钉住）；
+ * - **有 `degradeReason`**：我们**知道**分析被降级了，却按原貌一个字不提，等于让用户
+ *   看着一张「什么都没有」的卡去猜「是没问题，还是根本没分析」——这不是「原貌」，
+ *   这是**隐瞒**。用户装了 v5.1 加 `--auto-low` 却仍被逐个询问时，缺的正是这一行。
+ *
+ * 位置：紧跟标题、先于详情。用户读 diff 之前就该知道「这一卡的分析没生效」，
+ * 否则他要读完几十行 diff 才轮到这句结论（与 `huge-diff` 的告知行同位置、同角色）。
  */
 function renderPlainLines(options: ApprovalTextOptions): ApprovalLine[] {
   const dict = t().approval;
-  return [
+  const notice = degradeNotice(options.insight?.degradeReason);
+  const lines: ApprovalLine[] = [
     { role: 'title', text: `${plainTitle(options.kind)}: ${options.summary}` },
-    { role: 'detail', text: options.detail },
-    { role: 'buttons', text: `${dict.confirm} / ${dict.reject}` },
   ];
+  if (notice !== undefined) {
+    lines.push({ role: 'notice', text: notice });
+  }
+  lines.push({ role: 'detail', text: options.detail });
+  lines.push({ role: 'buttons', text: `${dict.confirm} / ${dict.reject}` });
+  return lines;
 }
 
 /**

@@ -504,6 +504,14 @@ export const en = {
     impactNotNeeded: 'low-risk change — blast radius not scanned (only medium/high are scanned)',
     impactNotApplicable: 'not applicable (this action has no file references)',
     hugeDiff: '{count} changed lines — risk analysis skipped (huge diff)',
+    // Release gate 12 (v5.1): the four silent degradations must speak up.
+    // Same three rules as zh: distinguishable reason + always end with "confirming as usual" + never say "safe".
+    degradeConfigOff:
+      'Risk analysis is off (approvalInsight=plain in config) — still confirming each change as usual',
+    degradeError: 'Risk analysis failed this time — still confirming each change as usual',
+    degradeNonTty:
+      'Risk analysis unavailable (not an interactive terminal) — still confirming each change as usual',
+    degradeCi: 'Risk analysis unavailable (CI environment) — still confirming each change as usual',
     diffFold: '… {count} more lines hidden, press v for the full diff',
     diffTruncated: '… diff truncated ({total} lines total, first {limit} shown)',
     diffFocusMark: ' ⚠️',

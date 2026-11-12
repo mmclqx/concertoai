@@ -479,6 +479,14 @@ export const zh = {
     impactNotNeeded: '低风险改动，未做影响面扫描（仅中高风险才扫）',
     impactNotApplicable: '不适用（该操作不涉及文件引用）',
     hugeDiff: '共 {count} 行改动，风险分析已跳过（超大 diff）',
+    // 发布门 12（v5.1）：四种「静默降级」必须说话。
+    // 要求：① 四种各可区分（用户能知道是哪个原因）② 一律带上「仍按常规逐个确认」这句结论
+    // ③ 不含「安全」二字（未分析 ≠ 安全，延续 D93 的文案纪律）。
+    // 顺序与原因一一对应，由 approval-text.ts 的 PLAIN_DEGRADE_NOTICE_KEYS 单独映射（那张表是判定与文案的同源）。
+    degradeConfigOff: '风险分析已关闭（配置里 approvalInsight=plain）⇒ 本次仍按常规逐个确认',
+    degradeError: '风险分析失败（本次未能完成）⇒ 本次仍按常规逐个确认',
+    degradeNonTty: '风险分析不可用（当前不是交互式终端）⇒ 本次仍按常规逐个确认',
+    degradeCi: '风险分析不可用（CI 环境）⇒ 本次仍按常规逐个确认',
     diffFold: '… 还有 {count} 行未显示，按 v 查看完整 diff',
     diffTruncated: '… diff 已截断（共 {total} 行，仅显示前 {limit} 行）',
     diffFocusMark: ' ⚠️',

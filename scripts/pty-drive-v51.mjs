@@ -524,6 +524,17 @@ const S2 = {
       name: '③ 按 n 拒绝 ⇒ 磁盘一字未改',
       ok: ({ disk, before }) => disk === before,
     },
+    {
+      // 发布门 12（降级时必须说话）：S2 的降级原因就是 `config-off`
+      // （`approvalInsight: 'plain'` ⇒ `resolveEnvironment` 给 `config-off`）。
+      // 两句都要断言：**成因**（用户能分辨是哪出问题）+ **结论**（仍按常规确认）。
+      // 只断言其中一句的话，「四条降级共用一句笼统文案」这种半成品照样能过。
+      name: '④ 降级说明行出现（成因「配置里 approvalInsight=plain」+ 结论「仍按常规逐个确认」）',
+      ok: ({ frame }) =>
+        frame.includes('风险分析已关闭') &&
+        frame.includes('approvalInsight=plain') &&
+        frame.includes('仍按常规逐个确认'),
+    },
   ],
 };
 
@@ -556,6 +567,22 @@ const S3 = {
     {
       name: '③ 没有分母（不出现「第 N 步 · … /数字」）',
       ok: ({ frame }) => !/第 \d+ 步[^\n]{0,40}\/\s*\d+/.test(frame),
+    },
+    {
+      // 发布门 12 的**真机否定面**：S3 用的是 rich 卡（`approvalInsight: 'rich'`，
+      // `degraded === false`）且审批框确实出现过。此时帧里**不许**出现降级说明行——
+      // 否则等于对每一次弹框都说「分析坏了」，用户会学会无视这一行，护栏自己就废了。
+      //
+      // ⚠️ 两个坑都踩过，写在这里防复发：
+      // ① 版本标记必须用 **rich** 的按键行 `[y] 批准`，不能用 plain 的 `批准 (y / Enter)`
+      //    （第一版照抄 S2 的判据 ⇒ 该绿不绿，红的是探针不是产品）；
+      // ② 别用整段日志 grep 这句话——这条检查的**名字里**就含「仍按常规逐个确认」，
+      //    会把自己搜出来（探针自我污染）。只能在 `frame` 上判。
+      name: '④ 没降级就不许说降级（rich 卡帧里无降级说明行）',
+      ok: ({ frame }) =>
+        frame.includes('[y] 批准') &&
+        !frame.includes('仍按常规逐个确认') &&
+        !/风险分析(已关闭|失败|不可用)/.test(frame),
     },
   ],
 };
