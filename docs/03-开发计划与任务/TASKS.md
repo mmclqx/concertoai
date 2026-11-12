@@ -1,7 +1,7 @@
 # ConcertoAI 开发任务看板
 
-> 最后更新：2026-11-13（**v5.2 待办四项全部完成**：N2 会话可回溯的自动放行记录 + `/approvals`、N1 doctor 三态、N3/N4 帮助文案；D94/D95 + ADR-053 已落）
-> 当前里程碑：**🟢 v5.2 开发完成，待收尾验证**（G1 ✅ + N1 ✅ + N2 ✅ + N3 ✅ + N4 ✅ · 默认环境 179 文件 / 2696 用例全绿 · 待双环境 verify + smoke 复跑 + 真机 `/approvals`）
+> 最后更新：2026-11-13（**v5.2 待办四项全部完成 + 手工验收补完两项**：N2 会话可回溯的自动放行记录 + `/approvals`、N1 doctor 三态（含 v3 分支备份行补完）、N3/N4 帮助文案、**N6 `chat -r` 敲错 id 说人话**；D94/D95/**D96** + ADR-053 已落）
+> 当前里程碑：**🟢 v5.2 开发完成，待发布**（G1 ✅ + N1 ✅ + N2 ✅ + N3 ✅ + N4 ✅ + **N6 ✅** · 双环境 180 文件 / 2708 用例同数全绿 · PTY S5 5/5 · 本地 tarball 冒烟 6/6 · 手工报告 07.12 + 自审报告已落）
 > 基于：[v5.0 开发计划](./v5.0-dev-plan.md) · [v5.0 开发任务](./v5.0-dev-tasks.md) · 历史：[v4.2 开发任务（已并入 v5.0 M1）](./v4.2-dev-tasks.md) · [v4.1 开发任务](./v4.1-dev-tasks.md) · [v4.0 开发任务](./v4.0-dev-tasks.md)
 
 ---
@@ -54,7 +54,8 @@
 | 编号 | 级别 | 状态 | 问题 | 根因（已核到行） | 建议修法 |
 |---|---|---|---|---|---|
 | **N2** | **P2 审计缺口** | ✅ **完成**（2026-11-13） | ~~自动放行只活在屏幕上~~ ⇒ 已把结论记进会话记录（`ChatMessage.approval?: 'auto-low'`）+ 新增 `/approvals` 查询入口 | 原根因：留痕走 `setNotice` 单行槽位；会话 JSONL 无任何 approval 字段。**否决了「独立会话事件行」方案**：`read()` 不校验 role ⇒ 会污染 API 投影 | 已落地：传递链 `autoLowApprove → ApprovalRequest.autoLow → ToolResult.approval → loop 条件展开盖戳`；`/approvals` 纯函数汇总；`toApiMessages` 白名单投影不泄漏（行为+源码双护栏）。**证据**：35 条用例（7 盖戳 + 13 命令 + 5 端到端 + 10 既有）+ 3 根探针（M1 无条件盖戳红 4 条 / M2 投影展开红 2 条 / M3 删 `request.autoLow` 红 3 条） |
-| **N1** | **P2 文案错** | ✅ **完成**（2026-11-13） | ~~`doctor` 把「无配置」说成「配置仍为 v3 格式」并同屏自我打脸~~ ⇒ 三种状态分开说 | 原根因：`migrated` 只表示「现在是 v4 形状」，文件不存在时 `readFile` 抛错被当成「是 v3」 | 已落地：`MigrationIntegrity.configExists`（方案 A，`migrated` 语义不动）+ `doctor` 存在性优先三分支 + `migrationNoConfig` 文案。**证据**：+2 用例（含否定面「无 config 时不得出现『配置仍为 v3 格式』」），探针 M4 回退判断 ⇒ 红 |
+| **N1** | **P2 文案错** | ✅ **完成**（2026-11-13，含手工验收补完） | ~~`doctor` 把「无配置」说成「配置仍为 v3 格式」并同屏自我打脸~~ ⇒ 三种状态分开说 | 原根因：`migrated` 只表示「现在是 v4 形状」，文件不存在时 `readFile` 抛错被当成「是 v3」 | 已落地：`MigrationIntegrity.configExists`（方案 A，`migrated` 语义不动）+ `doctor` 存在性优先三分支 + `migrationNoConfig` 文案。**证据**：+3 用例（含否定面「无 config 时不得出现『配置仍为 v3 格式』」），探针 M4 回退判断 ⇒ 红。**手工验收补完（2026-11-13）**：真机发现 v3 待迁移分支第二行仍说「无需备份（…config 一开始就是 v4 格式）」，与第一行互相否认 ⇒ 新增 `migrationBackupPlanned` + 1 条双向用例，探针 M7 ⇒ 精确红（见 09-踩坑记录/2026-11-13-修同屏打脸只修了被截图的那一句.md） |
+| **N6** | **P2 边缘路径** | ✅ **完成**（2026-11-13，手工验收发现） | ~~`chat -r` 敲错 id 甩 Node 堆栈~~ ⇒ 三种失败分开说人话（id 不合法 / 没有这个会话+最近 5 个真实 id / 读取失败说原因），并给下一步 `chat -l` | 直接原因：`-r <id>` 是裸 `store.read()`，ENOENT 冒到全局 unhandledRejection ⇒ 打印堆栈；`pickSession()`（不带参）有 empty 分支，带参路径没有。深层：**退出码 1 + 自己退出被当成「边缘路径已覆盖」**——而这条路径是 `/approvals` 的唯一入口，id 手抄必错 | 新增 `src/cli/resume-error.ts` 纯函数层 + `readSessionOrExit` 接线 + `isValidSessionId` 提为唯一判定源。**证据**：+11 用例（含否定面 EACCES≠不存在、不含 `at async`）+ 探针 M8 精确红 2 条 + 真机三条路径实测；见 09-踩坑记录/2026-11-13-恢复会话敲错id把堆栈当提示.md |
 | **N3** | **P3 文案** | ✅ **完成**（2026-11-13） | ~~`--help` 里维护者术语「不扫影响面」~~ ⇒ 改为「判定很快，不额外扫描影响范围」 | `skipImpact: true` 是实现细节，不该出现在用户帮助里 | 两入口各一条用例；探针 M5 改回术语 ⇒ 红 |
 | **N4** | **P3 文案** | ✅ **完成**（2026-11-13） | ~~刻意不持久化但 `--help` 零指引~~ ⇒ 补「本开关刻意不持久化，想长期免审批 shell 用 config.allowlist」 | 手册写了理由，帮助里一个字没有 ⇒ 用户以为开关坏了 | 两入口各一条用例；探针 M6 删指引 ⇒ 红 |
 | **G1** | **P3 发布冒烟** | ✅ **完成**（2026-11-13） | ~~没跑过 `npm i -g` 全局安装态冒烟~~ ⇒ **已补并脚本化**：`scripts/smoke-install.mjs` 重写（原版有 3 个问题：要求 cwd 已有 `.tgz`、结束 `unlinkSync` 删仓库真实 tarball、零断言只 `console.log`），现支持 `--registry <ver>` / 默认本地 tarball / `--keep`，退出码 0-1 | v5.1.0 发布时只验证了「代码进没进包」，没验证 bin 垫片（发布日志里恰有 `bin[...] script name was cleaned` 两条告警） | **实测：本地 tarball 与 `--registry 5.1.0` 双模式各 6/6 全绿、退出码 0**；断言 = ⓪探针通电（两垫片存在非空 + 安装包 version）①`concertoai --version` ②`ccai --version`（第二入口，旧脚本从没测过）③`chat --help` 含 `--auto-low` 且不含 `--bogus` ④a`--auto-lo` exit 1 且有建议 ④b`--bogus` exit 1 且**不瞎猜**；变异探针 M1/M2/M3 各自红在指定判据；反向自证 `--registry 9.9.9-nope` ⇒ exit 1、坏参数 ⇒ exit 1 |
