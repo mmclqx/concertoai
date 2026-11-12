@@ -1244,9 +1244,20 @@ function cmdUpdateSetStatus(opts) {
   data.status = 'done';
   // 档位留痕：事后翻 doneProof 就能看出这次 done 到底覆盖到哪一档（不用猜、不用重读判据）
   const committedIds = (data.doneCriteria ?? []).filter((c) => (c.mustBeTracked ?? []).length > 0).map((c) => c.id);
+  /**
+   * `--reason` 在 done 分支**曾经被静默丢弃**（只给 blocked/abandoned 用）：
+   * 调用方认真写了一段「这次 done 覆盖到哪里、发布提交是哪个」，脚本收下后一个字都没存，
+   * 也不报错——事后只能看到 head 与 7 个 exitCode，看不出「为什么可以 done」。
+   * 这正是本仓定义的**危险失败**（不报错、安静地丢掉用户输入），故这里如实落进 doneProof。
+   *
+   * 仍然是**可选**：老调用方（含既有测试）不传也能 done，只是 doneProof 里没有这个键
+   * （不写 `reason: undefined`，避免 JSON 里出现空壳字段骗人）。
+   */
+  const doneReason = typeof opts.reason === 'string' ? opts.reason.trim() : '';
   data.doneProof = {
     at: nowIso(),
     head: currentHead(),
+    ...(doneReason === '' ? {} : { reason: doneReason }),
     tiers: {
       written: 'covered',
       committed: committedIds.length > 0 ? `covered-by:${committedIds.join(',')}` : 'not-covered',
@@ -1256,6 +1267,8 @@ function cmdUpdateSetStatus(opts) {
   };
   writeState(data, loaded);
   console.log(`instruction-state: 整条指令 → done（${runs.length} 条判据全部 exit 0，head=${data.doneProof.head ?? '(未知)'}）`);
+  // 回显 reason（收下就让人看得见；存了却不打印，等于要人去翻 JSON）
+  if (doneReason !== '') console.log(`instruction-state: 收尾说明已记入 doneProof.reason：${doneReason}`);
   // 终态更要防误读：done 只覆盖到 ①②，**不等于已推送**
   console.log(TIER_LINE);
   process.exit(EXIT.OK);

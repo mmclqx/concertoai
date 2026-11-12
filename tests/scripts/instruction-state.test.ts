@@ -669,6 +669,44 @@ describe('update --set-status：终态门槛', () => {
     expect(tiers.pushed).toBe('unjudged');
   });
 
+  /**
+   * 2026-11-12 收尾时踩到：`--set-status done --reason "..."` 的 reason 被**静默丢弃**
+   * （脚本只在 blocked/abandoned 分支用它）。调用方认真写了「这次 done 覆盖到哪、发布提交是谁」，
+   * 收下后一个字没存、也不报错 ⇒ 事后只能看到 head 与一堆 exitCode，看不出「凭什么 done」。
+   *
+   * 这是本仓定义的**危险失败**：不报错、安静地丢掉用户输入。故补三条（含否定面与变异探针口径）：
+   * ① 给了 reason ⇒ 落进 `doneProof.reason`，且 stdout 回显（存了不打印 = 要人翻 JSON）；
+   * ② **否定面**：不给 reason ⇒ `doneProof` 里**不许**出现 `reason` 键（空壳字段比没有更糟，
+   *    后人看到 `reason: ""` 会以为「当时确实没说明」，而实际是脚本没记）；
+   * ③ 与 blocked 的 `blockedReason` 不串（两条路径各记各的字段）。
+   */
+  it('done 收下 --reason ⇒ 记进 doneProof.reason 并回显（曾经被静默丢弃）', () => {
+    const payload = {
+      instruction: '测试：done 的 reason 留痕',
+      doneCriteria: [countingCriterion('C1')],
+      steps: [{ id: 1, goal: 'g', targets: [], criteria: ['C1'] }],
+    };
+    expect(runCli(['write', '--file', writePayload(payload), '--skip-baseline']).code).toBe(0);
+    const note = 'v5.1.0 已发布，发布提交 61a1fc1';
+    const r = runCli(['update', '--set-status', 'done', '--reason', note]);
+    expect(r.code).toBe(0);
+    // 落盘
+    expect(readState().doneProof.reason).toBe(note);
+    // 回显（存了却不打印，等于要人去翻 JSON）
+    expect(r.out).toContain(note);
+  });
+
+  it('否定面：不给 --reason ⇒ doneProof 里不出现 reason 空壳键（老调用方仍可 done）', () => {
+    expect(writeBase().code).toBe(0);
+    expect(runCli(['update', '--set-status', 'done']).code).toBe(0);
+    const proof = readState().doneProof;
+    // 改坏方式：写成 `reason: doneReason || ''` ⇒ 这条红（空字符串键会出现）
+    expect(Object.hasOwn(proof, 'reason'), '不传 reason 却出现了 reason 键').toBe(false);
+    // 反向自证：doneProof 本身是写了的（否则上面那条会因为「根本没有 doneProof」而假绿）
+    expect(proof.head).toBeTruthy();
+    expect(proof.criteria.length).toBeGreaterThan(0);
+  });
+
   it('blocked 缺 --reason ⇒ exit 2（否则下次「继续」只能猜）；给了 reason ⇒ 记 blockedReason', () => {
     expect(writeBase().code).toBe(0);
     expect(runCli(['update', '--set-status', 'blocked']).code).toBe(2);
