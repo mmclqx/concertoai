@@ -415,7 +415,47 @@ async function runScenario(sc) {
   // server 必须**每个场景结束就关**（哪怕 --dump 提前 return）：否则上一台的监听
   // 句柄会一直挂在事件循环上，脚本跑完全部断言也不退出（本轮实测踩到：240s 超时才被发现）
   try {
-    const { frame, exitCode } = await runTui(env, sc.args, sc.schedule, sc.totalMs);
+    /**
+     * v5.2 N2 S5：**两阶段**场景 —— 第一次真跑出「自动放行」，第二次 `chat -r` 恢复后敲 `/approvals`。
+     *
+     * 为什么必须两阶段：`/approvals` 的全部价值就在「会话恢复后还能查到」。
+     * 单进程里既放行又查询，证明不了「结论写进了会话记录」——那正是 N2 要修的东西。
+     * 所以这里起**两个独立的 PTY 进程**，中间只通过 `home/.concertoai/sessions/*.jsonl` 传递。
+     */
+    let frame;
+    let exitCode;
+    if (sc.twoPhase === true) {
+      const first = await runTui(env, sc.args, sc.schedule, sc.totalMs);
+      const sessDir = path.join(env.home, '.concertoai', 'sessions');
+      const files = fs.existsSync(sessDir)
+        ? fs.readdirSync(sessDir).filter((f) => f.endsWith('.jsonl'))
+        : [];
+      if (files.length === 0) {
+        throw new Error('两阶段场景：第一次运行没有产生会话文件，无法 resume');
+      }
+      // 会话 id 就是文件名去掉 .jsonl（时间戳命名，天然有序）
+      const sessionId = files.sort().at(-1).replace(/\.jsonl$/, '');
+      console.log(`阶段一完成（会话 ${sessionId}），阶段二：chat -r ${sessionId} + /approvals`);
+      const second = await runTui(
+        env,
+        ['chat', '-r', sessionId],
+        [
+          { atMs: 3000, write: '/approvals' },
+          { atMs: 3400, write: '\r' },
+          { atMs: 6000, write: '\x03' },
+        ],
+        8000,
+      );
+      // 断言对象是**第二次**的帧（用户的真实动作：恢复会话 → 敲命令 → 看回执）
+      frame = second.frame;
+      exitCode = second.exitCode;
+      // 把阶段一的帧挂在 env 上，供「阶段一确实自动放行过」的正例自证使用
+      env.firstFrame = first.frame;
+    } else {
+      const run = await runTui(env, sc.args, sc.schedule, sc.totalMs);
+      frame = run.frame;
+      exitCode = run.exitCode;
+    }
     const disk = fs.readFileSync(path.join(env.dir, LOW_FILE), 'utf8');
 
     if (DUMP_ONLY) {
@@ -444,7 +484,7 @@ async function runScenario(sc) {
             },
           ];
     const results = [...probes, ...sc.checks].map((c) => {
-      const ctx = { frame, disk, before: LOW_BEFORE, mockHits, exitCode, home: env.home };
+      const ctx = { frame, disk, before: LOW_BEFORE, mockHits, exitCode, home: env.home, firstFrame: env.firstFrame };
       return { name: c.name, ok: Boolean(c.ok(ctx)) };
     });
     console.log(`mock 命中次数：${mockHits}｜exitCode=${exitCode}`);
@@ -634,13 +674,69 @@ const S4 = {
   ],
 };
 
+/**
+ * 场景 S5（v5.2 N2）：`/approvals` 在**会话恢复后**仍能查到自动放行记录。
+ *
+ * ## 为什么这是 N2 唯一的真机判据
+ *
+ * N2 要回答的问题是「`chat -r` 恢复昨天的会话后，我能否知道那次改动是被自动放的」。
+ * 单元测试只能证明「给定了带 approval 的消息，报告能列出来」；**证明不了**
+ * 「自动放行的结论真的写进了会话文件、并且在另一个进程里读得回来」。
+ * 而 v5.1 的缺陷恰恰就在这一段：结论只调了 `setNotice`，一行都没落盘。
+ *
+ * ## 两阶段设计（`twoPhase: true`）
+ *
+ * - 阶段一：`chat --auto-low` 真跑一次零命中编辑 ⇒ 自动放行（进程 A）；
+ * - 阶段二：`chat -r <id>` 敲 `/approvals`（进程 B，全新进程）；
+ * 两进程之间**只通过磁盘上的 JSONL 传递** —— 这就是用户真实的使用方式。
+ */
+const S5 = {
+  id: 's5',
+  title: '/approvals：自动放行后，chat -r 恢复会话仍能查到那条记录（两阶段真机）',
+  args: ['chat', '--auto-low'],
+  approvalInsight: 'rich',
+  twoPhase: true,
+  turns: [EDIT_TURN, { toolCalls: [], text: EDIT_TURN.text }],
+  schedule: [
+    { atMs: 3000, write: '给 add 函数加一行注释' },
+    { atMs: 3400, write: '\r' },
+    { atMs: 11000, write: '\x03' },
+  ],
+  totalMs: 13000,
+  checks: [
+    {
+      // 【正例自证】先证阶段一**真的**自动放行过。没有这一条，阶段二里
+      // 「没有自动放行记录」也会让下面的断言以某种方式通过/失败，但不知道是哪一种。
+      name: '⓪ 阶段一确实自动放行过（留痕 + 磁盘已改）',
+      ok: ({ firstFrame, disk }) => /已自动放行/.test(firstFrame ?? '') && disk.includes(LOW_AFTER_MARK),
+    },
+    {
+      name: '① 恢复会话后 `/approvals` 能列出该记录（含次数与文件名）',
+      ok: ({ frame }) => /本会话自动放行 1 次/.test(frame) && /src\/math\.js/.test(frame),
+    },
+    {
+      // 否定面：如果读的是「当前屏幕」而不是「会话记录」，恢复会话后必然是零记录。
+      // 改坏方式：让 /approvals 只统计本进程内 setNotice 过的次数 ⇒ 这条红。
+      name: '② 不是误报「没有记录」（否定面）',
+      ok: ({ frame }) => !/没有自动放行记录/.test(frame),
+    },
+    {
+      name: '③ 文案纪律：回执里不许出现「安全」（未命中 ≠ 安全）',
+      ok: ({ frame }) => {
+        const i = frame.indexOf('本会话自动放行');
+        return i >= 0 && !frame.slice(i, i + 400).includes('安全');
+      },
+    },
+  ],
+};
+
 /** 单跑某几个场景（排查用）：`--only=s1,s3`；不传 = 全跑。 */
 const ONLY = (process.argv.find((a) => a.startsWith('--only=')) ?? '').slice('--only='.length);
-const activeScenarios = [S1, S2, S3, S4].filter(
+const activeScenarios = [S1, S2, S3, S4, S5].filter(
   (sc) => ONLY === '' || ONLY.split(',').includes(sc.id),
 );
 if (activeScenarios.length === 0) {
-  console.error(`--only=${ONLY} 没有匹配任何场景（可用：s1,s2,s3）`);
+  console.error(`--only=${ONLY} 没有匹配任何场景（可用：s1,s2,s3,s4,s5）`);
   process.exit(2);
 }
 

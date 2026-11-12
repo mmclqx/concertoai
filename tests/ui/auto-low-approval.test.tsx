@@ -450,8 +450,18 @@ describe('v5.2 N2：自动放行结论落进会话记录（端到端）', () => 
     await waitFor(() => {
       expect(app.lastFrame()).toContain('批准');
     });
-    // 正例自证：这确实是 high（rich 卡标题里带「高风险」），不是别的原因弹框
-    expect(app.lastFrame()).toContain('高风险');
+    /**
+     * 正例自证「这确实是 high，不是别的原因弹框」。
+     *
+     * ⚠️ 不能只等「批准」就断言「高风险」：审批框**先**用 plain 卡渲染出来
+     * （立即可见），rich 风险分析（`analyzeApproval`）是异步补上的。
+     * 只等「批准」时读到的是 plain 版（本用例实测红在
+     * `expected '...编辑文件: 编辑文件 danger.ts...' to contain '高风险'`）。
+     * 所以这里要等**增强后的帧**。
+     */
+    await waitFor(() => {
+      expect(app.lastFrame()).toContain('高风险');
+    });
     app.stdin.write('y');
     await waitDone(app);
     app.unmount();
