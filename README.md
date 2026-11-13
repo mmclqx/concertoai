@@ -32,7 +32,7 @@ concertoai commit    # 体检通过后生成 commit message 并本地提交
 
 > 首次运行会引导你配置 Key（三种方式任选），详见下方「环境要求 / 安装」。
 
-> 版本：**v5.0.0**（`npm i -g @concertoai/cli` 或 `npx @concertoai/cli`；`npm run verify` 全绿，2437 用例 / 166 测试文件）。依赖审计：`npm audit` **0 漏洞**（2026-11-05 实测：`zod` 4.6.7 / `vitest` 4.1.12，传递依赖经 `overrides` 收敛到 `vite` ≥8.2.4、`nanoid` ≥3.3.18、`source-map-js` ≥1.2.2）——此结果取决于 npm advisories 数据库快照，复核请自行运行 `npm audit`。运行时依赖不打进 tarball（实测 `dist/` 内为 `import "x"`，external），用户安装时按 `dependencies` 范围解析到已修复版本。v4.0 及更早的版本说明见文末「历史版本速览」。
+> 版本：**v5.2.0**（`npm i -g @concertoai/cli` 或 `npx @concertoai/cli`；`npm run verify` 全绿，**2708 用例 / 180 测试文件**，默认与 `LUMEN_LOCALE=en` 双环境同数）。依赖审计：`npm audit` **0 漏洞**（2026-11-13 复跑实测；`zod` 4.6.7 / `vitest` 4.1.12，传递依赖经 `overrides` 收敛到 `vite` ≥8.2.4、`nanoid` ≥3.3.18、`source-map-js` ≥1.2.2）——此结果取决于 npm advisories 数据库快照，复核请自行运行 `npm audit`。运行时依赖不打进 tarball（实测 `dist/` 内为 `import "x"`，external），用户安装时按 `dependencies` 范围解析到已修复版本。v4.0 及更早的版本说明见文末「历史版本速览」。
 
 ## 环境要求
 
