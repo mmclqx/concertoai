@@ -6,6 +6,23 @@
 
 ---
 
+## 🆕 候选队列（2026-11-14 用户裁决：**2 → 3 → 4 → 1**，每条开工前先 `instruction-state write` 登记）
+
+> 来源：2026-11-14 用户「先报 3 个候选」裁决（`docs/12` §六 状态机）+ 当晚实测新发现（候选 4）。
+> **顺序已定，不再重议**：先 2、3（纯文档、能防复发），再 4（新发现缺陷，**比今晚收尾重要**），最后 1（等 `handoff.md` 落点定下来）。
+> `instruction-state` 已登记前两步：`status=in_progress`、`currentStep=1`（候选 2）、`baselineHead=c78e7d5`。
+
+| # | 事项 | 用户裁决 | 口径（做什么 / 做到哪算完） |
+|---|---|---|---|
+| **2** | `search_content` 传**单个文件路径**时静默返回 0 命中 | ✅ **做（第 1 个）** | 把「单文件路径」写成 `AGENTS.md` 检索类条款的**硬判据**（单文件检索一律 `node` 直读 / `findstr /c:`，不依赖 `search_content`）+ 踩坑记录追加「第三次复发」一节。**为什么这次必须硬判据化**：该坑 2026-11-07 已立踩坑记录，当时自己写着「可在下次修订时补进该条」，**这个「下次」一直没做**，于是 11-14 第三次复发（`DECISIONS.md` 搜 `ADR-052` 得 0 命中，而文件第 850 行就是它），**差点让我写出第二个 ADR-052**。判据一句话：**「0 命中」在验过正例之前没有证据力**——正例必须与被测样本同域（同一个单文件、搜一个必然存在的词） |
+| **3** | `AGENTS.md` 第 19 / 20 条内容重叠（同一套内容写了两遍） | ✅ **做（第 2 个）** | **逐句对照**合并为一条（第 19 条 769 字 / 第 20 条 537 字，重叠部分逐句核，**不能凭印象删**），保留指向 `docs/09-踩坑记录/2026-10-28-useCallback新增maxTurns触发依赖闭包地狱.md` 的链接；合并后第 19 条标题标 **「已合并原第 20 条」**（供机械判据识别）。害处不在啰嗦：**改一处容易只改一条，另一条立刻变成过期说法**——与 v5.2 N1「同屏打脸」、K10「模型两处各解析一次」同族 |
+| **4** | **设 `CONCERTOAI_AGENT` 反而让 `npm run verify` 红 1 条** | ✅ **做（第 3 个，做完 2、3 后优先）** | **现象**：`set CONCERTOAI_AGENT=concertoai-loop&& npm run verify` ⇒ `status=1`，唯一失败 `tests/scripts/githooks.test.ts:572`「未声明 ⇒ `Agent: unmarked`」，回显是 `expected 'feat: probe\n\nAgent: concertoai-loop…' to contain 'Agent: unmarked'`；不设该变量时 `status=0`（180 文件 / 2708 用例全绿）。**根因（已定位到行，不是推断）**：`githooks.test.ts:78` 的 `BASE_ENV = { ...process.env, LUMEN_LOCALE: '', LANG: '' }` **在模块加载时就把 `CONCERTOAI_AGENT` 抄了进去**；用例 `:567-569` 的 `const env = { ...BASE_ENV }; delete env.CONCERTOAI_AGENT;` 只删了**副本**，而 `commit()` 内部 `:136` 又写成 `{ ...BASE_ENV, ...env }` ⇒ **`BASE_ENV` 把它重新注入回来**，删除完全无效。**为什么这条比今晚的收尾重要（用户原话口径）**：它是 AGENTS「进程级全局状态隔离」条款的同族缺陷（`LUMEN_LOCALE` 泄漏的翻版：spawn 用例没钉死 env、依赖开发机 shell 干净），而 **`AGENTS.md` 第 30 条恰恰要求我每次提交都设这个变量** ⇒ **按规范做事的人反而看到假红**，这比「不做事」更糟：**会让人怀疑规范本身**。**做到哪算完**：① 变形用例改坏 ⇒ 该条必红（先证有牙）② 修复后再跑 `CONCERTOAI_AGENT=<id> npm run verify` **必须全绿且用例数不变**（180 / 2708）③ 配一条否定面用例钉住「父进程 env 里有 `CONCERTOAI_AGENT` 时，本用例仍得到 `unmarked`」④ 按 AGENTS 换环境复跑（`LUMEN_LOCALE=en`）并记录两环境读数 |
+| **1** | v5.3 N1（`doctor` 永不写盘）+ N4（退出写 `handoff.md`） | ⏸ **等落点定** | 计划与任务书已在 `f9c24cc`（`v5.3-dev-plan.md` / `v5.3-dev-tasks.md`），**不重写**。**唯一卡点**：`handoff.md` 落**工作目录**（+`.git/info/exclude`）还是 `~/.concertoai/`——用户 2026-11-14 明确「等 2、3 做完再定」 |
+
+**候选 4 的定位一句话**：**「按规范做事反而假红」比「不做事」更糟**——它教人怀疑规范，而规范是这套流程唯一的地基。
+
+---
+
 ## 🆕 v5.3 待办裁决（2026-11-13 用户裁决，**明天开工，每条任务先 `instruction-state write` 登记**）
 
 > 来源：[`REVIEW-v5.2-self-review-2026-11-13.md`](../08-审查记录/REVIEW-v5.2-self-review-2026-11-13.md) §十遗留表 + 2026-11-13 用户新增第 4 条（源自 `logstat` 撞轮数上限的实战经历）。
