@@ -71,6 +71,22 @@ export function projectsPath(): string {
   return path.join(globalDir(), 'projects.json');
 }
 
+/**
+ * 交接单根目录：`~/.concertoai/handoffs/`（v5.3 N4）。
+ *
+ * ## 为什么落在这里，而不是项目工作目录
+ *
+ * 用户 2026-11-14 裁决：**能不碰用户工程目录就不碰**——与 `metrics` 默认 off、零上传
+ * 是同一条产品取向。落到 `~/.concertoai/` 的代价是「用户不容易发现」，
+ * 所以退出时必须**打印完整路径**（只写不报等于没写）。
+ *
+ * 也正因为不落工作目录，**不需要** `.git/info/exclude`（那是方案 A 的配套）：
+ * 本目录天然在仓库之外，不会出现在用户的 `git status` 里。
+ */
+export function handoffsDir(): string {
+  return path.join(globalDir(), 'handoffs');
+}
+
 /** 多账号目录：~/.concertoai/accounts/（v3.1 M3；每账号一个子目录）。 */
 export function accountsDir(): string {
   return path.join(globalDir(), 'accounts');

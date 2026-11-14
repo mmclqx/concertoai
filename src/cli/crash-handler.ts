@@ -22,6 +22,9 @@
 import { appendFileSync, existsSync, mkdirSync } from 'node:fs';
 
 import { crashLogPath, globalDir } from '../store/paths';
+// v5.3 N4：崩溃/中断前把交接单同步落盘（出口 ④ / ③ 的兜底）。只读「当前会话快照」，
+// 不调模型、不 await —— 崩溃路径上任何异步都可能来不及。
+import { finalizeActiveSession } from './handoff';
 
 /** 确保 ~/.concertoai/ 目录存在。 */
 function ensureDir(): void {
@@ -69,6 +72,9 @@ export function installCrashHandlers(): void {
       `堆栈:\n${err.stack ?? '(无堆栈)'}`,
     ].join('\n');
     appendCrashEntry(entry);
+    // v5.3 N4（出口 ④）：崩溃前**同步**写交接单——进程马上就走，没有 await 的时机。
+    // 写失败静默（`finalizeActiveSession` 自己吞异常）：崩溃路径上再抛一次错只会盖住原始错误。
+    finalizeActiveSession({ kind: 'error', message: err.message });
     // 同步写 stderr 以便终端也能看到
     process.stderr.write(`\n[ConcertoAI] 未捕获异常，详情见 ${crashLogPath()}\n`);
     process.stderr.write(`${err.stack ?? err.message}\n`);
@@ -82,6 +88,9 @@ export function installCrashHandlers(): void {
     // 用户主动中断（Ctrl+C 等 → AbortError）不是崩溃：不写 crash.log、退出码 130（SIGINT 惯例）。
     // 兜底：promptLine 等交互入口已捕获 AbortError，此处防其他位置漏捕获污染 crash.log。
     if (err.name === 'AbortError') {
+      // v5.3 N4：`AbortError` 归**出口 ③（用户中断）**，不归 ④ 异常——
+      // 这是任务书 T2.2 的明文要求，也是本条注释一直以来的口径（「不是崩溃」）。
+      finalizeActiveSession({ kind: 'interrupted' });
       process.stderr.write('[ConcertoAI] 已中断\n');
       process.exit(130);
       return;
@@ -92,6 +101,8 @@ export function installCrashHandlers(): void {
       `堆栈:\n${err.stack ?? '(无堆栈)'}`,
     ].join('\n');
     appendCrashEntry(entry);
+    // v5.3 N4（出口 ④）：同上，同步写交接单后在退出
+    finalizeActiveSession({ kind: 'error', message: err.message });
     process.stderr.write(`\n[ConcertoAI] 未处理的 Promise 拒绝，详情见 ${crashLogPath()}\n`);
     process.stderr.write(`${err.stack ?? err.message}\n`);
     process.exit(1);

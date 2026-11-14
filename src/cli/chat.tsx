@@ -39,6 +39,7 @@ import {
   mergeAllowlist,
   resolveProjectForCwd,
 } from './common';
+import { consumeHandoff } from './handoff';
 import { buildClientForProvider, resolveRuntimeProvider } from './provider-runtime';
 import { describeResumeFailure } from './resume-error';
 
@@ -225,6 +226,13 @@ export async function runChat(options: RunChatOptions): Promise<void> {
     maybePrintWelcome();
   }
 
+  // v5.3 N4 消费端：上次退出留下的交接单（读取规则全在 `consumeHandoff` 一处实现）。
+  // 打印在 `render` 之前：交给 Ink 打印会被后续重绘冲掉，用户就看不到了。
+  const handoff = consumeHandoff(options.cwd, new Date());
+  if (handoff.notice !== undefined) {
+    console.log(handoff.notice);
+  }
+
   render(
     <App
       client={client}
@@ -232,8 +240,9 @@ export async function runChat(options: RunChatOptions): Promise<void> {
       ctx={ctx}
       model={model}
       systemPrompt={
-        [buildOsHint(), rules.text !== '' ? rules.text : undefined].filter(Boolean).join('\n\n') ||
-        undefined
+        [buildOsHint(), rules.text !== '' ? rules.text : undefined, handoff.inject]
+          .filter(Boolean)
+          .join('\n\n') || undefined
       }
       store={store}
       sessionId={sessionId}

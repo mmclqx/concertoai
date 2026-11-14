@@ -6,6 +6,12 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { SubagentSpawner } from '../agent/spawner';
 import type { AgentRegistry } from '../agents';
 import {
+  type ExitReason,
+  finalizeSession,
+  sessionHasToolCalls,
+  setActiveSession,
+} from '../cli/handoff';
+import {
   executeAgentCommand,
   executeAgentMarketCommand,
   parseAgentCommand,
@@ -427,6 +433,106 @@ export function App({
    */
   const [model, setModel] = useState(initialModel);
   const [messages, setMessages] = useState<ChatMessage[]>(initialHistory ?? []);
+
+  /**
+   * v5.3 N4：把「当前会话快照」登记给崩溃出口。
+   *
+   * 为什么需要这一步：`crash-handler` 是**全局安装**的，拿不到 React 的 `messages`；
+   * 而崩溃时已经没有时机再做一次取数。故在消息变化时把快照推过去，
+   * 崩溃处理器只做「同步读快照 + 同步写盘」。
+   *
+   * 依赖 `messages` 而不是 `messagesRef`：这里要的是「最近一次真实状态」，
+   * 多执行几次只是把一个对象引用换个值，没有副作用。
+   */
+  useEffect(() => {
+    setActiveSession({
+      messages,
+      cwd: ctx.cwd,
+      ...(sessionId !== undefined ? { sessionId } : {}),
+    });
+  }, [messages, ctx.cwd, sessionId]);
+
+  /**
+   * v5.3 N4：把「这一轮的结果」写成交接单（出口 ① 正常收尾 / ② 撞上限）。
+   *
+   * ## 为什么这两条是「快照」而不是「终态」
+   *
+   * 用户跑完一轮通常不会退出，还会继续输入下一句。故这两处**每次都写、
+   * 不设终态锁**（`terminal: false`）：文件永远反映最近一次真实状态；
+   * 真正退出时由出口 ③ / ④ 覆盖成最终原因。
+   * 反之若在这里上了锁，最后 Ctrl+C 就再也改不动 ④ 栏 —— 那会留下一份过期记录。
+   *
+   * ## 纯闲聊不写
+   *
+   * 「正常收尾」要求**本会话有工具调用**（`sessionHasToolCalls`）：
+   * 否则用户每问一句「这是什么」就落一份交接单，纯属噪音。
+   * 但「撞上限」无论有没有工具都写 —— 那是个异常事件，用户需要知道。
+   */
+  const writeHandoffSnapshot = useCallback(
+    (all: readonly ChatMessage[], interrupted: boolean): void => {
+      if (!interrupted && !sessionHasToolCalls(all)) {
+        return;
+      }
+      // `runLoop` 只回 `interrupted: boolean`，没有中途轮数计数 ⇒ 撞上限时
+      // used 必然等于 cap，这不是估算；轮数上限可能是 -t 指定的，故不写死 50。
+      const reason: ExitReason = interrupted
+        ? { kind: 'max-turns', used: maxTurns, cap: maxTurns }
+        : { kind: 'completed' };
+      finalizeSession(all, reason, {
+        cwd: ctx.cwd,
+        ...(sessionId !== undefined ? { sessionId } : {}),
+        now: new Date(),
+      });
+    },
+    [ctx.cwd, sessionId, maxTurns],
+  );
+
+  /**
+   * v5.3 N4 出口 ③：真正退出（Ctrl+C / Esc）前写**最终**交接单。
+   *
+   * `terminal: true` ⇒ 本次退出只写一次：`exit()` 与下面的 SIGINT 兜底可能都会触发，
+   * 那是同一个事件，重复写只会互相覆盖。
+   *
+   * ## 空会话不写
+   *
+   * `messages.length === 0` 表示「打开就退、一句话没说」——那种情况写一份四栏全是
+   * 「无记录」的交接单，只会让下次进来看到一句没有信息量的「上次交接：用户中断」。
+   * 这里用「有没有任何消息」而不是「有没有工具调用」：纯聊天的会话，③ 栏
+   * 「继续上次任务：<最后助手回复>」同样有用，不该被跳过。
+   */
+  const writeHandoffOnExit = useCallback((): void => {
+    if (messages.length === 0) {
+      return;
+    }
+    finalizeSession(
+      messages,
+      { kind: 'interrupted' },
+      { cwd: ctx.cwd, ...(sessionId !== undefined ? { sessionId } : {}), now: new Date() },
+      { terminal: true },
+    );
+  }, [messages, ctx.cwd, sessionId]);
+
+  /**
+   * v5.3 N4 出口 ③ 的 **SIGINT 兜底**（任务书 T2.2 要求）。
+   *
+   * 为什么 `useInput` 收不到 Ctrl+C 时还需要它：Ink 的按键处理与真实信号**不是一条路**
+   * ——TUI 某些状态下 Ctrl+C 直接走信号，`useInput` 根本不触发。没有这个兜底，
+   * 那些状态下的退出就一份交接单都没有。
+   *
+   * 幂等由 `finalizeSession(terminal: true)` 保证：与 `exit()` 那条路撞车也只写一次。
+   * 退出码沿用 SIGINT 惯例 130（与 `crash-handler` 对 AbortError 的处理一致）。
+   */
+  useEffect(() => {
+    const onSigint = (): void => {
+      writeHandoffOnExit();
+      process.exit(130);
+    };
+    process.on('SIGINT', onSigint);
+    return () => {
+      process.off('SIGINT', onSigint);
+    };
+  }, [writeHandoffOnExit]);
+
   /** v3.0 M5：可观测性面板开关（'o' 键切换，默认收起不阻塞主对话流）。 */
   const [obsOpen, setObsOpen] = useState(false);
   const [input, setInput] = useState('');
@@ -1023,6 +1129,8 @@ export function App({
           history,
           `请为任务「${task}」输出分步执行计划：markdown 列表，每一步说明要执行的操作（读取/编辑/运行命令）。只输出计划本身，不要调用工具。`,
         );
+        // v5.3 N4 出口 ②：撞上限也要留痕（这条 `return` 之前必须写，否则什么都没有）
+        writeHandoffSnapshot(planResult.messages, planResult.interrupted);
         if (planResult.interrupted) {
           setError(fmt(t().errors.loopMaxTurnsTemplate, { turns: maxTurns }));
           return;
@@ -1067,6 +1175,7 @@ export function App({
       makeOnEvent,
       setStreamed,
       maxTurns,
+      writeHandoffSnapshot,
     ],
   );
 
@@ -1104,6 +1213,8 @@ export function App({
           execHistory,
           task,
         );
+        // v5.3 N4 出口 ①/②（`plan` 执行完这一轮）
+        writeHandoffSnapshot(execResult.messages, execResult.interrupted);
         if (execResult.interrupted) {
           setError(fmt(t().errors.loopMaxTurnsTemplate, { turns: maxTurns }));
         }
@@ -1141,6 +1252,7 @@ export function App({
       makeOnEvent,
       setStreamed,
       maxTurns,
+      writeHandoffSnapshot,
     ],
   );
 
@@ -1676,6 +1788,8 @@ export function App({
                 history,
                 skillUserMsg,
               );
+              // v5.3 N4 出口 ①/②（`/skill` 这一轮）
+              writeHandoffSnapshot(loopResult.messages, loopResult.interrupted);
               if (loopResult.interrupted) {
                 setError(fmt(t().errors.loopMaxTurnsTemplate, { turns: maxTurns }));
               }
@@ -1867,6 +1981,8 @@ export function App({
           history,
           text,
         );
+        // v5.3 N4 出口 ①/②（主对话这一轮）
+        writeHandoffSnapshot(result.messages, result.interrupted);
         if (result.interrupted) {
           setError(fmt(t().errors.loopMaxTurnsTemplate, { turns: maxTurns }));
         }
@@ -1934,6 +2050,7 @@ export function App({
       metricsOn,
       resolveHintMetric,
       maxTurns,
+      writeHandoffSnapshot,
     ],
   );
 
@@ -1976,6 +2093,8 @@ export function App({
       if (phase === 'streaming') {
         abortRef.current?.abort();
       } else {
+        // v5.3 N4 出口 ③：**先写交接单再退出**（同步写，见 handoff.ts 头注释）
+        writeHandoffOnExit();
         exit();
       }
       return;
@@ -1991,6 +2110,8 @@ export function App({
       if (phase === 'streaming') {
         abortRef.current?.abort();
       } else {
+        // v5.3 N4 出口 ③：Esc 退出同样先写交接单
+        writeHandoffOnExit();
         exit();
       }
     }
