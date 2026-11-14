@@ -25,7 +25,7 @@ import {
   SUMMARY_WINDOW,
 } from '../core/metrics-store';
 import { fmt, t } from '../i18n';
-import { loadConfig, resolveConfig } from '../store/config';
+import { loadConfig, loadConfigReadOnly, resolveConfig } from '../store/config';
 
 /** 记录动词事件的选项（全部可注入，便于单测不碰真实 home）。 */
 export interface RecordVerbOptions {
@@ -44,9 +44,13 @@ export interface RecordVerbOptions {
  *
  * 配置读不出来（文件损坏 / 无权限）→ 当作 off：**宁可少记，不可误记**。
  */
-export async function resolveMetricsEnabled(): Promise<boolean> {
+export async function resolveMetricsEnabled(
+  options: { readOnly?: boolean } = {},
+): Promise<boolean> {
   try {
-    const file = await loadConfig();
+    // v5.3 N1：`doctor --metrics` 是诊断路径，读配置不能顺带把 v3 迁移写盘。
+    // 本层只透传，不判断——「什么时候允许迁移」的唯一真相在 `store/config`。
+    const file = options.readOnly === true ? await loadConfigReadOnly() : await loadConfig();
     return resolveConfig(file).metrics === 'on';
   } catch {
     return false;

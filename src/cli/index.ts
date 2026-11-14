@@ -885,7 +885,10 @@ program
     // v3.2 M4 T4.5：走启动期缓存（同一进程内复用，消除二次读盘）
     // v5.0 K2：**补 config.json 回退** —— 缺 Key 引导的方式 ③ 写的是这个字段，
     // 若 doctor 不认它，「按引导配好 → 按引导去验证」必然得到「未设置」。
-    const resolved = await resolveApiKeyWithConfigFallback();
+    // v5.3 N1：**诊断命令永不写盘** —— readOnly 意味着 v3 配置不会被迁移（不会生成
+    // config.v3.bak、不会改写 config.json）。否则「跑一次 doctor 看环境」这件事本身
+    // 会改动用户配置，且改不改取决于「有没有配 Key」（同一个命令两种行为，用户无法预期）。
+    const resolved = await resolveApiKeyWithConfigFallback({ readOnly: true });
     const code = await runDoctorCommand({
       apiKey: resolved.key,
       keySource: resolved.source,

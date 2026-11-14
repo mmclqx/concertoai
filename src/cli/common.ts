@@ -12,7 +12,7 @@ import { isAutoModel, resolveAutoStartModel, upgradeTargetFor } from '../model/a
 import { getDefaultModel, getModel, listModels } from '../model/models';
 import { getActiveAccount, getApiKeyFor } from '../store/accounts';
 import type { MCPServerEntry } from '../store/config';
-import { loadConfig } from '../store/config';
+import { loadConfig, loadConfigReadOnly } from '../store/config';
 import { configPath } from '../store/paths';
 import { ProjectRegistry } from '../store/projects';
 import { editFileTool } from '../tools/edit';
@@ -132,10 +132,18 @@ export async function resolveApiKey(options: ResolveApiKeyOptions = {}): Promise
  * 「装好了但跑不通」（见 docs/09-踩坑记录/2026-08-16-preflight自动初始化装好但跑不通.md）。
  *
  * 容错：配置缺失 / 损坏 / 无该字段 → 一律返回 undefined（不抛错，由调用方决定是否报缺 Key）。
+ *
+ * v5.3 N1：`options.readOnly` 透传给配置层（诊断路径用，**只读不迁移**）。本层不做任何判断，
+ * 只做透传——否则「什么时候允许迁移」会变成两处各有说法（同一事实两处各解析一次）。
  */
-export async function readConfigDeepseekKey(configFile?: string): Promise<string | undefined> {
+export async function readConfigDeepseekKey(
+  configFile?: string,
+  options: { readOnly?: boolean } = {},
+): Promise<string | undefined> {
   try {
-    const config = await loadConfig(configFile ?? configPath());
+    const config = options.readOnly
+      ? await loadConfigReadOnly(configFile ?? configPath())
+      : await loadConfig(configFile ?? configPath());
     const providers = (config as { providers?: Record<string, { apiKey?: string }> }).providers;
     const key = providers?.deepseek?.apiKey;
     return typeof key === 'string' && key.trim() !== '' ? key : undefined;
@@ -159,13 +167,16 @@ export async function readConfigDeepseekKey(configFile?: string): Promise<string
  * @param options 解析选项（测试注入；`configFile` 可覆盖 config.json 路径）
  */
 export async function resolveApiKeyWithConfigFallback(
-  options: ResolveApiKeyOptions & { configFile?: string } = {},
+  options: ResolveApiKeyOptions & { configFile?: string; readOnly?: boolean } = {},
 ): Promise<ResolvedApiKey> {
   const resolved = await resolveApiKeyCached(options);
   if (resolved.key !== undefined) {
     return resolved;
   }
-  const configKey = await readConfigDeepseekKey(options.configFile);
+  // v5.3 N1：诊断路径（doctor）传 `readOnly: true` —— 读配置文件不能顺带把 v3 迁移写盘。
+  const configKey = await readConfigDeepseekKey(options.configFile, {
+    ...(options.readOnly !== undefined ? { readOnly: options.readOnly } : {}),
+  });
   return configKey !== undefined
     ? { key: configKey, source: 'config' }
     : { key: undefined, source: 'none' };

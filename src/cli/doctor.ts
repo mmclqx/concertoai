@@ -420,7 +420,11 @@ async function runVscodeDiagnostics(env: VscodeHealthEnv): Promise<Diagnostic[]>
  */
 async function diagnoseMetrics(options: DoctorCommandOptions): Promise<Diagnostic> {
   const file = options.metricsFile ?? defaultMetricsPath();
-  const enabled = options.metricsEnabled ?? (await resolveMetricsEnabled());
+  // v5.3 N1：`doctor --metrics` 同样是诊断路径 ⇒ 只读读配置（不迁移、不装载日历）。
+  // **这一处容易被漏**：它不在 `doctor` 的 action 里，而在诊断项内部（`resolveMetricsEnabled`
+  // → `loadConfig`）。变异探针 M2（去掉这个 readOnly）专抓「只修 Key 那条链」的形态：
+  // 去掉后「v3 配置 + --metrics」用例必须红，其余诊断用例仍绿。
+  const enabled = options.metricsEnabled ?? (await resolveMetricsEnabled({ readOnly: true }));
   const { entries, skipped } = await readMetrics({ file, limit: SUMMARY_WINDOW });
   return {
     ok: true,

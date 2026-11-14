@@ -339,16 +339,39 @@ export function emptyConfig(): ConcertoAIConfig {
 }
 
 /**
+ * 读取配置的选项（v5.3 N1）。
+ *
+ * 存在的唯一理由：让「读配置」这件事能**不写盘**地完成，供诊断路径使用。
+ * 默认值 = 今天的行为，一字不改（启动期迁移是必需行为，见 AGENTS 与 v5.3 任务书 0.1 硬禁则 2）。
+ */
+export interface ReadConfigOptions {
+  /**
+   * 是否允许在读取时**触发 v3→v4 迁移**（迁移会写盘：备份 `config.v3.bak` + 改写 config.json）。
+   *
+   * - `undefined` / `true`：今天的默认行为（启动期必需）；
+   * - `false`：只读——不备份、不改写、不调 `migrateV3ToV4`，直接把 v3 配置按兼容形态返回。
+   *
+   * **为什么用「新增分支 + 默认开启迁移」而不是「默认不迁移」**：启动期迁移是 v4.0 起就有的
+   * 必需行为（老用户配置必须被升级），把默认值翻过来等于让所有非诊断路径都不再迁移。
+   */
+  migrate?: boolean;
+}
+
+/**
  * 读取配置文件；不存在 / 损坏 / 版本不匹配时返回空配置（不抛错）。
  *
  * v5.0 T7 修订：读取成功/失败后统一装载 `pricingHolidays`（计价用节假日表）——
  * 日历是**配置的函数**（每次 load 都以当前配置为准，天然幂等），
  * 非法日期在此提示一次（用户改配置打错字必须看得见，不能静默忽略）。
+ *
+ * v5.3 N1：`opts.migrate === false` 时透传给 `readConfigFile`（不迁移）。注意本函数的
+ * **节假日装载副作用照旧**——诊断路径要用 `loadConfigReadOnly`，见其注释。
  */
 export async function loadConfig(
   configPath: string = DEFAULT_CONFIG_PATH,
+  opts: ReadConfigOptions = {},
 ): Promise<ConcertoAIConfig> {
-  const config = await readConfigFile(configPath);
+  const config = await readConfigFile(configPath, opts);
   const report = configureHolidayCalendar(config.pricingHolidays);
   if (report.invalid.length > 0) {
     console.error(
@@ -393,8 +416,35 @@ function flattenLegacy(parsed: Partial<ConcertoAIConfig>): ConcertoAIConfig {
   return merged as unknown as ConcertoAIConfig;
 }
 
+/**
+ * 只读加载配置（v5.3 N1）：**不迁移、不装载 `pricingHolidays`**。
+ *
+ * 供**诊断路径**（`doctor` 及其 `--metrics` / `--vscode` 变体）使用。
+ *
+ * ## 为什么必须单独一个函数，而不是让诊断路径传个 `migrate: false`
+ *
+ * 「不写盘」有两条途径，只堵一条等于没堵：
+ * 1. **迁移写盘**：v3 配置被 `migrateV3ToV4` 备份 + 改写 —— 由 `migrate: false` 挡住；
+ * 2. **模块级状态副作用**：`loadConfig` 会调 `configureHolidayCalendar`（改的是
+ *    `core/holidays.ts` 的模块级状态）。诊断命令不参与计价，顺手改全局状态是「副作用」的
+ *    另一种形态 —— 而 v5.3 的主题正是「只读命令别动东西」。
+ * 所以这里直接调 `readConfigFile`（纯读取实现），**不经过** `loadConfig` 的副作用段。
+ *
+ * 校验提示（非法枚举值 / 非法节假日日期）也一并省掉：那条 `console.error` 在诊断命令里
+ * 会与 `doctor` 自己的输出抢屏，且 `doctor` 的 `diagnoseConfig` 已有自己的报告口径。
+ * **默认版 `loadConfig` 的行为一字未改**（正例自证见 `tests/store/config-readonly.test.ts`）。
+ */
+export async function loadConfigReadOnly(
+  configPath: string = DEFAULT_CONFIG_PATH,
+): Promise<ConcertoAIConfig> {
+  return readConfigFile(configPath, { migrate: false });
+}
+
 /** 纯读取实现（不含节假日装载副作用，便于单测与迁移路径复用）。 */
-async function readConfigFile(configPath: string): Promise<ConcertoAIConfig> {
+async function readConfigFile(
+  configPath: string,
+  opts: ReadConfigOptions = {},
+): Promise<ConcertoAIConfig> {
   try {
     const raw = await readFile(configPath, 'utf8');
     const parsed = JSON.parse(raw) as Partial<ConcertoAIConfig> & {
@@ -404,6 +454,20 @@ async function readConfigFile(configPath: string): Promise<ConcertoAIConfig> {
     // isV3Config 判定：schemaVersion===1 或 无 schemaVersion 但含 defaultModel 且无 defaultProvider
     const { isV3Config, migrateV3ToV4 } = await import('./migration');
     if (isV3Config(parsed)) {
+      /**
+       * v5.3 N1 只读分支：**不备份、不改写、不调 `migrateV3ToV4`**。
+       *
+       * 返回形态与下面「迁移失败」分支同形（`{ schemaVersion: CONFIG_SCHEMA_VERSION, ...parsed }`）：
+       * 调用方读到的仍然是 v3 里那些字段（`defaultModel` / `pricingHolidays`…），
+       * 只是 `schemaVersion` 被标成当前版本 —— 与迁移失败时的兼容读取行为完全一致，
+       * 不新造第三种形态（否则又会出现「同一事实两处各判一次」）。
+       *
+       * 源码护栏（`tests/cli/doctor-readonly.test.ts`）钉住本分支内不得出现
+       * `migrateV3ToV4(` / `writeConfig(` / `copyFile(` —— 改坏了会红。
+       */
+      if (opts.migrate === false) {
+        return { schemaVersion: CONFIG_SCHEMA_VERSION, ...parsed };
+      }
       const result = await migrateV3ToV4(parsed as ConcertoAIConfig, configPath);
       if (result.migrated) {
         // 迁移成功 → 返回迁移后的配置（v4 形态：schemaVersion=2 + defaultProvider + providers）
