@@ -225,6 +225,8 @@ cli/index.ts（无子命令或 chat）
       DeepSeek/OpenAI/Ollama，启动 healthCheck + fallback ≤1 次；-m 映射 defaultProvider.model）
       + ToolRegistry(5 工具) + ToolContext{白名单}
   → loadProjectRules(cwd)：AGENTS.md 优先 / CARBON.md 兜底，注入系统提示
+  → consumeHandoff(cwd, now)（v5.3 N4）：<24h 且同项目 ⇒ 打印「上次交接：<短标签>（N 小时前）· <完整路径>」
+       + 把交接单正文拼进启动上下文（≤4000 字符）；异项目或 ≥24h ⇒ 只打印「已忽略」不注入；无文件 ⇒ 零输出
   → SessionStore：resume 则读历史，否则 create 新会话
   → render(<App …/>)（本地模型成本按 0 展示，避免 costFor 未知模型抛错）
 ```
@@ -345,6 +347,27 @@ MCP 服务故障
   → 内置工具不受影响（独立于 MCP 工具）
 ```
 
+### 3.6 退出与交接单（v5.3 N4）
+
+```
+四个出口 → 一个收尾函数（src/cli/handoff.ts: finalizeSession）
+  ① 正常收尾     App.writeHandoffSnapshot(messages, interrupted=false)
+                 仅当「本会话有工具调用」⇒ { kind:'completed' }（纯闲聊不落文件，否则每问一句多一份）
+  ② 撞轮数上限   interrupted=true ⇒ { kind:'max-turns', used:maxTurns, cap:maxTurns }
+                 轮数取自本次真实生效值（-t / config.maxTurns），不写死 50
+  ③ Ctrl+C/Esc   先 writeHandoffOnExit() 再 exit()：{ kind:'interrupted' } + terminal:true
+                 + process.on('SIGINT') 兜底（Ink 某些状态下 useInput 收不到按键）⇒ 退出码 130
+  ④ 崩溃         crash-handler 两分支同步调 finalizeActiveSession()：{ kind:'error', message }
+                 读 App 用 setActiveSession 登记的会话快照（崩溃时没有时机再取 React state）
+                 AbortError（Ctrl+C）归 ③「用户中断」，不写 crash.log
+  → buildHandoff：纯函数（无 IO、不读时钟），四栏 ①做到哪一步 ②验收 ✅/❌/⏳ ③下一步 ④为什么退出
+      ② 上限 20 条且「失败优先保留」（顺手取最近 20 条会截掉最早的失败 ⇒ 静默撒谎）
+  → writeHandoff：同步写 ~/.concertoai/handoffs/<项目名>-<sha256 前 12>/handoff.md，失败静默（不阻塞退出）
+  → 退出时打印完整路径（落点不在工程目录 ⇒ 只写不报等于没写）
+```
+
+---
+
 ## 4. 关键设计决策
 
 > **先读这里再动手**：本节记录关键决策的「原因」。当你想修改某个模块（工具分发、审批流、会话存储、SSE 解析……）时，请先查阅对应条目，理解其设计意图。很多约束（fail-closed、路径沙箱、分层截断）是安全基线的一部分，破坏它们等于破坏产品承诺。
@@ -453,6 +476,7 @@ MCP 服务故障
 | D95 | **「配置不存在」与「配置是 v3 待迁移」是两个事实，不许合并成一个 bool**（v5.2 N1）：`MigrationIntegrity` 增 `configExists`，`migrated` 语义**保持不变**（「现在是 v4 形状」）；`doctor` 的迁移完整性分支按**存在性优先**输出三种状态（无配置 / v3 待迁移 / v4），无配置时**不打印任何备份相关行** | (a) 旧实现的真实症状是**同屏自我打脸**：「配置仍为 v3 格式，启动时将自动迁移」+「config 一开始就是 v4 格式」——两句都出现在新用户第一天的屏幕上，而真相是**根本没有配置文件**；(b) 根因是把「`readFile` 抛错」压成一个 bool：抛错的成因不止「不存在」（还有 JSON 坏、权限不足），靠 `catch` 推断存在性必然误读；(c) 与 2026-11-11 假 HOME 那条踩坑同源：都是把「不是 v4」直接等同于「是 v3」。判据一句话：**一个 bool 只能回答一个问题，语义有三个就拆三个** | `src/store/migration.ts`（`configExists`）+ `src/cli/doctor.ts`（三分支）+ `src/i18n/zh.ts`/`en.ts`（`migrationNoConfig`）+ `tests/cli/doctor.test.ts`（+2 条，含「无 config 时不得出现『配置仍为 v3 格式』」否定面） |
 | D95 补 | **同一屏里的「备份行」必须与本状态的结论一致**（v5.2 N1 补完，2026-11-13 手工验收发现）：`v3 待迁移` 分支**不得**复用 `migrationBackupNotNeeded`（那句写的是「config 一开始就是 v4 格式」），改用新增的 `migrationBackupPlanned` 并带上真实路径 `<configPath>.v3.bak` | (a) 三种状态里只修了「无配置」一支，v3 分支的第二行仍与第一行互相否认——**修自相矛盾类缺陷，判据是整段自洽，不是被点名那句改了**；(b) 依据是代码事实而非措辞偏好：`migrateV3ToV4` 写盘前一定先 `copyFile` 到 `config.v3.bak`，备份失败即 fail-closed 不迁移 ⇒ 「会备份到哪」是真相，「不需要备份」是假话；(c) 该缺陷早于 N1 存在（v5.0 K1 写 `migrationBackupNotNeeded` 时是为 v4 分支，后来被顺手复制到 v3 分支）；单测当时是纯正例（`toContain('配置仍为 v3 格式')`）+ 零否定面，故双环境 verify 全绿也漏 | `src/cli/doctor.ts`（v3 分支换 key）+ `src/i18n/zh.ts`/`en.ts`（`migrationBackupPlanned`）+ `tests/cli/doctor.test.ts`（+1 条双向：正例给 `.v3.bak` 路径 / 否定面不得含「无需备份」「一开始就是 v4 格式」）；变异探针 M7 使之精确变红 |
 | D96 | **`chat -r` 读不到会话时，三种失败必须说三种人话；堆栈只进 `crash.log`**（v5.2 边缘路径修复）：新增纯函数层 `src/cli/resume-error.ts`（`classifyResumeError` → `invalid-id`/`not-found`/`unreadable`；`describeResumeFailure` → 要打印的行），`chat.tsx` 只负责「读 → 打印 → exit 1」 | (a) 实测症状是**退出码对、屏幕上是 Node 堆栈**（`ENOENT … at async SessionStore.read`）——所有既有用例都断言了退出码，所以全绿；(b) 这条路径是 `/approvals` 的**唯一入口**（先 `chat -r` 才能查昨天的自动放行），而 id 形如 `20261113-024243-266` **手抄必错**，命中率不低；新功能会改变老路径的权重，上线前必须按新权重重过它的失败形态；(c) 与 D95 同源：`ENOENT`（记错 id）/ `EACCES`（权限/磁盘）/ 非法输入是**三件不同的事**，一个 bool 或一句文案覆盖必然对其二撒谎；(d) `not-found` 必须附带**最近 5 个真实 id**（用户此刻要的是「正确的那个长什么样」），一条都没有时明说「暂无历史会话」而不是让用户以为记录丢了 | `src/cli/resume-error.ts`（新增）+ `src/cli/chat.tsx`（`readSessionOrExit`）+ `src/store/session.ts`（导出 `isValidSessionId` 作唯一判定源）+ `src/i18n/zh.ts`/`en.ts`（6 个 key）+ `tests/cli/resume-error.test.ts`（+11 条，含否定面「EACCES 不得说成不存在」「不含 `at async`」）；变异探针 M8 使之精确红 2 条 |
+| D97 | **诊断命令永不写盘——只读读取走独立分支，且不得把只读做成全局默认；退场四出口共用一个收尾函数**（v5.3 N1 + N4）：① **只读分支**——`ReadConfigOptions.migrate`（`undefined` / `true` = 今天的行为，**只给诊断路径**传 `false`）；`readConfigFile` 的 `migrate === false` 分支直接返回 `{ schemaVersion: CONFIG_SCHEMA_VERSION, ...parsed }`，与「迁移失败」分支**同形**（不新造第三种形态，否则同一事实会有两处判定）；诊断路径统一走 `loadConfigReadOnly()`，它**额外不装载 `pricingHolidays`**（`configureHolidayCalendar` 改的是**模块级状态**，只堵写盘不堵状态等于只修一半）；`common.ts` / `metrics.ts` 只做参数透传、不新增判断。**入口要数清**：`index.ts` 的 doctor action 与 `doctor.ts` 的 `diagnoseMetrics` **两处都要切**——`--metrics` 的配置读取藏在诊断项内部，只修 action 时「无 Key ⇒ 不写盘」会绿，而 `--metrics` 照样写。② **四出口共用收尾**——正常收尾 / 撞轮数上限 / Ctrl+C 与 Esc（含 TUI 收不到按键时的 `SIGINT` 兜底）/ 崩溃，全部只经 `finalizeSession()`；`App.tsx` / `run.ts` / `crash-handler.ts` 只调它，`writeHandoff(` 在 `src/` 里**只允许**出现在 `handoff.ts`（源码护栏）。③ **落点与消费**——`handoffPath()` = `~/.concertoai/handoffs/<项目名安全化>-<路径 sha256 前 12 位>/handoff.md`，**不写用户工程目录**（因此天然不进 `git status`，无需 `.git/info/exclude`）；消费端 `readHandoff` / `consumeHandoff` 三段判定：无文件 ⇒ **一句话都不打印**（「未找到交接单」是噪音）；同项目且 < 24h ⇒ 打印一行「上次交接：<短标签>」并把内容注入上下文（上限 4000 字符）；异项目 / ≥ 24h ⇒ 明说「已忽略」且**不注入**（否定面）。 | (a) 旧行为的真实症状是**同一条命令、同一台机器，配置改不改取决于有没有配 Key**：缺 Key 时 `doctor` 经 `loadConfig` 顺带把 v3 迁移成 v4（改写 `config.json` + 多出 `config.v3.bak`），配了 Key 时文件一动不动 ⇒ 用户视角无法预期。判据一句话：**跑一次只读命令，用户机器上的文件不该变——变没变不能取决于环境里有没有某个变量**。(b) **为什么不许「全局关掉迁移」**：启动期 v3→v4 迁移是 v4.0 起的必需行为，翻转默认值等于让所有非诊断路径都不再迁移；只读能力必须是「新增分支 + 默认行为一字不改」。(c) **判据只认磁盘**（`config.json` 的 sha256 + 是否出现 `config.v3.bak`），**不认退出码、不认屏幕文案**——没配 Key 时 `doctor` 本来就 `exit 1`（余额项缺 Key），拿退出码当判据必然误判；且必须配**正例自证**（默认路径确实会迁移，否则「不写盘」恒真）+ **探针通电**（子进程自己打印 `configPath()` 并断言落在隔离 home 内：`DEFAULT_CONFIG_PATH` 是**模块加载期**常量，进程内改 `USERPROFILE` 得到的是假绿）+ **按入口分条的变异探针**（去掉 `--metrics` 那处开关，只该红 `--metrics` 一条）。(d) **交接单为什么不调模型、为什么不共用一句话**：「总得写点什么」就是编内容的起点，取不到数据就写「无记录」；四种退场回答的是**四个不同问题**（做完了 / 被闸门截断 / 你按了键 / 程序崩了），共用模板会让用户分不清「我自己退的」还是「它出事了」。(e) **幂等按「退出事件」而非「会话」**：按会话去重会让第一轮 `completed` 把记录锁死，之后 Ctrl+C 退出仍显示「上次正常收尾」——**过期记录比没有记录更糟**。(f) 只读分支与写盘分支各配一条**源码护栏**（只读分支内不得出现 `migrateV3ToV4(` / `writeConfig(` / `copyFile(`），把「有意为之」和「以后有人顺手加回来」分开 | `src/store/config.ts`（`ReadConfigOptions` / `loadConfigReadOnly` / `readConfigFile` 只读分支）+ `src/cli/{common,metrics}.ts`（透传）+ `src/cli/index.ts`（doctor action）+ `src/cli/doctor.ts`（`diagnoseMetrics`）+ `src/cli/handoff.ts`（新增：`buildHandoff` / `finalizeSession` / `readHandoff` / `consumeHandoff`）+ `src/loop/messages.ts`（`isToolErrorContent` 与 `formatToolResult` 同源常量）+ `src/ui/App.tsx` + `src/cli/{run,crash-handler}.ts` + `src/cli/{chat,run}.ts`（消费端）+ `src/store/paths.ts`（`handoffsDir`）+ `tests/cli/{doctor-readonly,handoff,handoff-wiring}.test.ts` / `tests/store/config-readonly.test.ts` |
 
 > **D88 注（v5.0 K18 用户裁决）**：`src/model/auto.ts` 是 model 层**唯一的呈现型模块例外**——它本来就在给用户拼中文句子（`buildAutoPolicyGuide` / `buildUpgradeHint`），所以允许它 `import '../i18n'`（档位词随 locale），其**整段中文入字典另挂账**（`TASKS.md`）。即 D88 的「模型层只带事实、人话在 CLI 层按 locale 渲染」对它是**待收敛目标**，不是已达成状态。
 
@@ -524,7 +548,8 @@ concertoai/
 │   │   ├── account.ts    多账号命令 login/logout/whoami/account（v3.1 M3；whoami 修复提示 + active 高亮，v3.2 M4）+ account-types.ts
 │   │   ├── workflow.ts   concertoai workflow list/init/run/export/import/create（v4.0 M2：模板生成 / DAG 执行 + 进度推送 + 失败恢复 R/S/F/A / YAML 导出导入 / NL 生成 + 依赖推断提示确认）
 │   │   ├── plugin.ts     concertoai plugin install/search/list/remove/browse/recommend/popular（v4.0 M4：注册表匹配→下载/builtin 直装→sha256→权限清单确认→落盘；browse 分类含下载量+评分；recommend 项目特征启发式；popular Top 10；makePermissionConfirm TTY 交互 + --yes 自动通过，非 TTY 拒绝 fail-closed）
-│   │   ├── crash-handler.ts 进程级崩溃日志（uncaughtException/unhandledRejection → ~/.concertoai/crash.log，v3.1 M3；v4.0.1 AbortError（用户 Ctrl+C）不写 crash.log、退出码 130 兜底）
+│   │   ├── crash-handler.ts 进程级崩溃日志（uncaughtException/unhandledRejection → ~/.concertoai/crash.log，v3.1 M3；v4.0.1 AbortError（用户 Ctrl+C）不写 crash.log、退出码 130 兜底）；v5.3 N4 起**崩溃/中断前先同步写交接单**（`finalizeActiveSession`，读 App 登记的会话快照，不 await、失败静默）
+│   │   ├── handoff.ts    退出交接单（v5.3 N4，D97）：`buildHandoff`（**纯函数**，四栏 ①做到哪一步 ②验收 ✅/❌/⏳ ③下一步 ④为什么退出；`now` 由调用方注入）+ `writeHandoff` / `finalizeSession`（四出口唯一收尾入口，`terminal: true` 时**按退出事件**幂等）+ `readHandoff` / `consumeHandoff`（消费端三段判定：无文件 / <24h 同项目 ⇒ 注入 / 异项目或 ≥24h ⇒ 「已忽略」不注入）；落点 `~/.concertoai/handoffs/<项目>-<sha256前12>/handoff.md`，**不写用户工程目录**
 │   │   ├── prompt.ts    共享行输入（v4.0.1 + v4.1 T1.2）：promptLine 捕获 AbortError → undefined（Ctrl+C 视为正常取消），非 TTY → undefined，其他错误原样上抛；可选 timeoutMs（AbortController 竞速，缺省不超时）供 F 等待态 60s 超时；workflow/plugin/provider 三处统一
 │   │   ├── usage-line.ts 成本回执行（v5.0 K15）：`formatUsageLine` 是 review / commit / fix 三个花钱动词**唯一**的渲染入口——「量到了给金额（6 位小数）/ 量不到说未统计」，绝不用 ¥0 冒充「没花钱」
 │   │   ├── fatal-report.ts 顶层致命错误渲染（v5.0 K17）：`describeFatalError()` 把异常分成「可归因的外部失败（端点不可达 / 连接超时）→ 一句话 + 下一步、不打堆栈」与「未知异常 → 消息 + 堆栈 + crash.log 路径」两类，是 `safeAction` 唯一的措辞来源（前缀 `errors.commandFailed` 也走 i18n）
@@ -696,12 +721,12 @@ concertoai/
 │   │   ├── audit.ts      AuditLogger JSONL 审计日志（异步追加，T5.2；exportJson 返回 { entries, skipped } 损坏行计数，v3.2 M3）
 │   │   └── index.ts      barrel
 │   ├── store/
-│   │   ├── paths.ts      全局路径单一来源（~/.concertoai/）+ migrateLegacyHome 旧目录迁移 + projectSessionsDir/projectKeyFor/accountsDir（v3.1）+ hintStatePath 提示冷却状态文件（v5.0 T12）
+│   │   ├── paths.ts      全局路径单一来源（~/.concertoai/）+ migrateLegacyHome 旧目录迁移 + projectSessionsDir/projectKeyFor/accountsDir（v3.1）+ hintStatePath 提示冷却状态文件（v5.0 T12）+ handoffsDir 交接单根目录（v5.3 N4）
 │   │   ├── session.ts    SessionStore：create/append/appendAll/read/list；锁 + 原子写 + 冲突检测
 │   │   ├── projects.ts   项目注册表（v3.1 M2）：~/.concertoai/projects.json CRUD + 重名/嵌套拒绝 + 路径规范化 + updateConfig（详见 §4 D43）
 │   │   ├── accounts.ts   多账号存储（v3.1 M3）：accounts/<name>/config.json 0600 + active-account 指针（详见 §4 D44）
 │   │   ├── project-rules.ts  loadProjectRules：AGENTS→CARBON 优先级、8k 截断
-│   │   ├── config.ts      loadConfig/writeConfig/resolveConfig（CLI > env > 配置 > 默认；含 mcpServers）+ `maxTurns` 三层合并在此一处（`-t` > `config.maxTurns` > 默认 50，详见 §4 D79）
+│   │   ├── config.ts      loadConfig/writeConfig/resolveConfig（CLI > env > 配置 > 默认；含 mcpServers）+ `maxTurns` 三层合并在此一处（`-t` > `config.maxTurns` > 默认 50，详见 §4 D79）+ `loadConfigReadOnly` 只读加载（`ReadConfigOptions.migrate:false`，诊断路径专用，**不迁移、不装载节假日**，详见 §4 D97）
 │   │   ├── migration.ts   config v3→v4 自动迁移器（M0 T0.2 骨架：isV3Config/V4Config/migrateV3ToV4；M3 T3.5 实现，见 10-技术评估/v3-v4-migration-design.md）
 │   │   └── memory-store.ts   MemoryStore：JSONL CRUD + 标签/关键词检索 + 项目隔离（v1.1）
 │   └── i18n/
