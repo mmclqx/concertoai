@@ -363,19 +363,33 @@ describe('check：判据执行（只认 exitCode === 0 + expectContains 命中�
      * 改成 `pass = true` ⇒ 本用例红；改成 `pass = false` ⇒ 第一条断言红。
      * 单测若只断言「有 fail 时 exit 20」，一个「恒 20」的实现照样能骗过。
      */
+    /**
+     * 每条用例各自带预算，**不再共用一个 300ms**（2026-11-14 T4.1 实测修正）。
+     *
+     * 坏尺子实录：这条阶梯原先给三条都设 `timeoutMs: 300`，本意是「让它快点跑完」。
+     * 但 300ms 同时是**「这台机器起一个 node 进程要多久」**的预算——空载实测 p50=68ms
+     * 看着有 4.4 倍余量，一旦并发（全量 verify 15 个 worker / 或 16 核满载）实测
+     * p50=636ms、p90=1272ms、max=5298ms，**30/30 次都超 300ms** ⇒ `spawnSync` 记
+     * `status === null` ⇒ 记 124 ⇒ 判据 fail ⇒ 这条用例红在「expected 20 to be 0」。
+     * 也就是说：**机器一忙，它就指控「判据语义坏了」**，而语义压根没动。
+     *
+     * 分开口径：前两条的论点是「成败判定」（exit 0 ⇒ pass、exit 1 ⇒ fail），与快慢无关，
+     * 给足预算；只有第三条「超时」必须保留小预算——它测的正是「超时要记 fail」，
+     * 4s 睡眠 vs 300ms 有 13 倍余量，机器再忙也仍然是超时。
+     */
     const cases = [
-      [`node -e "process.exit(0)"`, 0],
-      [`node -e "process.exit(1)"`, 20],
-      [`node -e "setTimeout(()=>{},4000)"`, 20],
+      [`node -e "process.exit(0)"`, 0, 300_000],
+      [`node -e "process.exit(1)"`, 20, 300_000],
+      [`node -e "setTimeout(()=>{},4000)"`, 20, 300],
     ] as const;
-    for (const [check, expected] of cases) {
+    for (const [check, expected, timeoutMs] of cases) {
       fs.rmSync(statePath(), { force: true });
       const criterion = {
         id: 'C1',
         desc: check,
         check,
         expectContains: [],
-        timeoutMs: 300,
+        timeoutMs,
         covers: [],
       };
       const file = writePayload(
@@ -385,7 +399,10 @@ describe('check：判据执行（只认 exitCode === 0 + expectContains 命中�
       expect(runCli(['write', '--file', file, '--skip-baseline']).code).toBe(0);
       expect(runCli(['check']).code).toBe(expected);
     }
-  });
+    // 同上：本用例三轮 × 每轮 2 次进程启动，默认 5s 是「机器快不快」的预算。
+    // 改成 300ms 预算后负载下不再红在断言上，而是红在 vitest 的 5s 上（实测）——
+    // 换了个地方却还是同一把坏尺子，所以这里也要显式给足。
+  }, 60_000);
 
   it('无记录 ⇒ exit 3 且明说「无记录」（不许把「没判据」当成「全部通过」）', () => {
     const r = runCli(['check']);

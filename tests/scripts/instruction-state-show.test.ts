@@ -178,7 +178,10 @@ describe('show：人读摘要（只读，且必须明说自己不是证据）', 
     const full = runCli(['show', '--full']);
     expect(full.out).not.toContain('另有 2 条证据');
     expect(full.out).toContain('exit=0');
-  });
+    // 显式给 30s：本用例要起 5 次脚本进程（3 次 check 各再起 1 个子进程），
+    // 默认 5s 是**「机器快不快的预算」**，不是本用例的论点（论点全在断言里）。
+    // 2026-11-14 T4.1：负载下实测同一个用例红在「Test timed out in 5000ms」。
+  }, 30_000);
 
   it('--json ⇒ 原记录（可 JSON.parse，instruction 逐字不改，含全部字段）', () => {
     const original = '原话里有「限定词」和 123 数字，不许被摘要化';
