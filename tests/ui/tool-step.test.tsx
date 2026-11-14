@@ -16,13 +16,15 @@
  * 顺序断言用「第一次出现该步号的帧索引」递增来表达，比「某帧里同时含三个」更贴近
  * 用户实际看到的时间顺序。
  */
-import { readFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 import { render } from 'ink-testing-library';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
+import { resetHandoffState } from '../../src/cli/handoff';
 import { setLocale } from '../../src/i18n';
 import type { ToolCall } from '../../src/loop/types';
 import type { ChatCompletionChunk, ModelClient, StreamChatParams } from '../../src/model/client';
@@ -107,13 +109,68 @@ async function waitFor(assert: () => void, timeoutMs = 6_000): Promise<void> {
   assert();
 }
 
+/**
+ * ## 为什么这个文件的 `cwd` 与「家目录」都必须钉到临时目录（v5.3 A，2026-11-14 实测缺陷）
+ *
+ * 本文件的用例渲染的是**真 `App`**，而 App 在每轮收尾时会写交接单（v5.3 N4），
+ * 落点是 `handoffsDir()` = `os.homedir()/.concertoai/handoffs/`（**调用期**读 homedir）。
+ *
+ * 原来的写法是 `ctx={{ cwd: process.cwd() }}`（= 仓库根），家目录没钉 ⇒ 每跑一次 `npm test`
+ * 就把**开发者本机真实的那份 `handoff.md`** 覆盖成「正常收尾 / 会话: 无 / 结论：完成了」。
+ * 实测：本文件跑一遍，`~/.concertoai/handoffs/concertoai-71cf2f096b11/handoff.md`
+ * 的 sha 从 `2bba7537…` 变成 `213aa447…`。危害不是脏文件，而是**证据被擦掉**——
+ * 当晚真会话（撞 50 轮上限）留下的那份交接单被测试覆盖，用户问「刚才为何退出了」时
+ * 唯一线索是假的。
+ *
+ * 两处一起钉才叫隔离：`cwd` 决定**落在哪个项目子目录**，家目录决定**根本落不落在真实盘上**。
+ * 只钉 `cwd` 仍会在真实 `~/.concertoai/handoffs/` 里留一个一次性目录。
+ *
+ * 守这条不变式的护栏用例在 `tests/ui/handoff-isolation.test.tsx`（含探针通电与变异探针）。
+ */
+const REAL_HOME_ENV = {
+  USERPROFILE: process.env.USERPROFILE,
+  HOME: process.env.HOME,
+};
+
+let tmpHome: string;
+let tmpCwd: string;
+
+function pinHome(dir: string): void {
+  // Windows 用 USERPROFILE、POSIX 用 HOME：两边都设，不能只设当前平台（换平台跑会静默失效）
+  process.env.USERPROFILE = dir;
+  process.env.HOME = dir;
+}
+
+function restoreHome(): void {
+  if (REAL_HOME_ENV.USERPROFILE === undefined) {
+    delete process.env.USERPROFILE;
+  } else {
+    process.env.USERPROFILE = REAL_HOME_ENV.USERPROFILE;
+  }
+  if (REAL_HOME_ENV.HOME === undefined) {
+    delete process.env.HOME;
+  } else {
+    process.env.HOME = REAL_HOME_ENV.HOME;
+  }
+}
+
 beforeEach(() => {
   setLocale('zh');
+  // 交接单与提示冷却等都读「真实 home」⇒ 每个用例给一个一次性 home
+  tmpHome = mkdtempSync(path.join(os.tmpdir(), 'concertoai-tool-step-'));
+  tmpCwd = path.join(tmpHome, 'proj');
+  mkdirSync(tmpCwd, { recursive: true });
+  pinHome(tmpHome);
+  // 模块级幂等标志（App 退出路径用 terminal:true）若不复位，后面的用例根本不会再写盘
+  resetHandoffState();
 });
 
 afterEach(() => {
   // 本项目其它用例可能切语言（进程级状态），复位成本轮口径（AGENTS 进程级状态隔离条）
   setLocale('zh');
+  restoreHome();
+  rmSync(tmpHome, { recursive: true, force: true });
+  resetHandoffState();
 });
 
 function makeApp(script: { content?: string; toolCalls?: ToolCall[] }[], registry: ToolRegistry) {
@@ -121,7 +178,7 @@ function makeApp(script: { content?: string; toolCalls?: ToolCall[] }[], registr
     <App
       client={new FakeModel(script)}
       registry={registry}
-      ctx={{ cwd: process.cwd() }}
+      ctx={{ cwd: tmpCwd }}
       model="deepseek-v4-flash"
     />,
   );
