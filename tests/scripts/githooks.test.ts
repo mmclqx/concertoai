@@ -75,7 +75,67 @@ const EN_ANCHORS = {
  * `process.env`，于是在英文环境里拿到了英文输出。「我的环境没踩到」≠「没人会踩到」，
  * 所以这里把它写成**默认值**：用例要英文就显式传 `{ LUMEN_LOCALE: 'en' }` 覆盖。
  */
-const BASE_ENV: NodeJS.ProcessEnv = { ...process.env, LUMEN_LOCALE: '', LANG: '' };
+/**
+ * **会漂的变量：显式排除**（2026-11-14，候选 4 —— 与上面「钉死 locale」同一个思路，只是把范围补全）。
+ *
+ * ## 为什么是「抄 + 排除」，而不是「不抄 `process.env`，逐项写」
+ *
+ * 先取证再定法（候选 4 ⑤）。三条证据都指向「`BASE_ENV` 的本意是**继承必要 + 钉死会漂的**」：
+ *
+ * 1. **来历**：本常量是 `6e35b0e`（2026-11-10）引入的，提交说明写的是「测试继承开发机
+ *    `LUMEN_LOCALE=en` 导致 en 环境 5 红，改为 `BASE_ENV` 钉死 locale」——它是**为钉死而加**的，
+ *    不是图省事把父环境倒进来。
+ * 2. **用法上它是「底座」**：`commit()` / `commitEmpty()` 里是 `{ ...BASE_ENV, ...env }`，
+ *    而 `env` 参数在全部调用点上都是**增量**（`{ CONCERTOAI_AGENT: 'x' }`、`{ PATH: stripped }`）。
+ *    底座若不含 `PATH`，每个调用点都得自己重建一份完整环境——这正是 (b) 套在 (a) 场合的形态。
+ * 3. **必要性实测**：hook 里 `command -v node` 决定要不要打印提醒、`git rev-parse` 决定状态文件路径，
+ *    两者都靠 `PATH`；用例 242「PATH 里没有 node」还专门 `{ ...BASE_ENV, PATH: stripped }` 覆盖它。
+ *
+ * ## 为什么不改成「白名单只列 PATH/HOME」（本轮实测的坑，必须记下来）
+ *
+ * Windows 上 `spawnSync(..., { env: {} })` **仍有 11 个变量**：libuv 会补一组必需变量
+ * （`PATH` / `SYSTEMROOT` / `WINDIR` / `TEMP` / `USERPROFILE` / `HOMEDRIVE` / `HOMEPATH` /
+ * `SYSTEMDRIVE` / `USERNAME` / `USERDOMAIN` / `LOGONSERVER`）。也就是说
+ * **「削成空 env 也绿」在 Windows 上是假绿**：本机永远看得见 `PATH`，而 POSIX 的 `spawn` 是按给的
+ * 那份 env 原样传（本仓库 CI 是 ubuntu / windows / macos 三平台）⇒ (b) 的做法会在本地全绿、
+ * 在 Linux/macOS 上让 hook 的 `command -v node` 失败、提醒段静默、断言「期望中文提醒」的用例整片红。
+ * 判据一句话：**「我这台机器上削掉还能跑」不构成证据，能削的是 libuv 补的那一组，不是我抄的这组**。
+ *
+ * ## 名单为什么包含 `GIT_DIR` 一类（审计「其它泄漏变量」，不是只排一个）
+ *
+ * 实测：在临时仓库 B 里提交、但 env 带仓库 A 的 `GIT_DIR` ⇒ **提交落到 A**（B 仍是 1 个提交）。
+ * 所以这类「定位类」变量泄漏会让用例**在别人仓库里写提交**，而且 exitCode 仍是 0。
+ * 名单按「两类会漂」组织：**身份类**（`CONCERTOAI_AGENT`：照 AGENTS 第 30 条办事的人会把它设在
+ * 父进程里）+ **定位类**（`GIT_*`：把子进程指到别的仓库/索引）。
+ * locale 类（`LUMEN_LOCALE` / `LANG`）不用排——它们在下面被**显式钉空**，比排除更严。
+ */
+const LEAKY_ENV_KEYS = [
+  // 身份类：AGENTS 第 30 条要求提交时声明；泄漏 ⇒ 本该 unmarked 的用例拿到父进程的 id
+  'CONCERTOAI_AGENT',
+  // 定位类：泄漏 ⇒ git 在别的仓库里操作（实测可见，见上）
+  'GIT_DIR',
+  'GIT_WORK_TREE',
+  'GIT_INDEX_FILE',
+  'GIT_COMMON_DIR',
+  'GIT_OBJECT_DIRECTORY',
+  'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+  'GIT_NAMESPACE',
+] as const;
+
+/**
+ * 从一个「父环境」造基线 env：**抄 + 钉死 locale + 排除会漂的**。
+ *
+ * 抽成函数（而不是写成模块级的字面量）是为了让用例能拿一个**构造出来的父环境**验证这件事：
+ * 「父进程带 `CONCERTOAI_AGENT` 时基线 env 里不该有它」要能在任何开发机上跑，而不是
+ * 「只有那台设了变量的机器上才红」——后者正是候选 4 最初的形态（本机全绿，设了变量才红）。
+ */
+function baseEnvFrom(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...source, LUMEN_LOCALE: '', LANG: '' };
+  for (const key of LEAKY_ENV_KEYS) delete env[key];
+  return env;
+}
+
+const BASE_ENV: NodeJS.ProcessEnv = baseEnvFrom(process.env);
 
 type Repo = {
   dir: string;
@@ -563,10 +623,14 @@ describe('trailer 回归（hook 原有职责，用户裁决 Q2 明确要求）',
   });
 
   it('未声明 ⇒ `Agent: unmarked` + 两行 ASCII 告警（stderr）', () => {
+    /**
+     * 这里**不再**写 `const env = { ...BASE_ENV }; delete env.CONCERTOAI_AGENT;`——
+     * 那种写法在候选 4 之前是**无效的**：`commit()` 内部是 `{ ...BASE_ENV, ...env }`，
+     * 从副本里删掉的键会被 `BASE_ENV` 原样注回来。现在「没有身份」由 `baseEnvFrom` 保证
+     * （见 `LEAKY_ENV_KEYS`），「父进程设了变量也不影响本用例」由下面那条专门的用例钉住。
+     */
     const r = makeRepo();
-    const env = { ...BASE_ENV };
-    delete (env as Record<string, string | undefined>).CONCERTOAI_AGENT;
-    const c = r.commit('feat: probe', [], env);
+    const c = r.commit('feat: probe', [], {});
     expect(c.status).toBe(0);
     const body = String(r.git(['log', '-1', '--format=%B']).stdout ?? '');
     expect(body).toContain('Agent: unmarked');
@@ -587,6 +651,63 @@ describe('trailer 回归（hook 原有职责，用户裁决 Q2 明确要求）',
     expect(amend.status).toBe(0);
     const body = String(r.git(['log', '-1', '--format=%B']).stdout ?? '');
     expect(body.split('\n').filter((l) => l.startsWith('Agent: ')).length).toBe(1);
+  });
+});
+
+// ── 基线 env 的隔离性（候选 4：设了 CONCERTOAI_AGENT 的开发者不该看到假红） ──
+
+describe('基线 env：继承必要 + 排除会漂的（候选 4）', () => {
+  it('父进程 env 带 `CONCERTOAI_AGENT` ⇒ **本用例仍得到 `Agent: unmarked`**', () => {
+    /**
+     * 这条用例守的是 AGENTS「进程级全局状态隔离」条款 ④ 的判据句：
+     * **按规范做事反而假红，比不做事更糟**——第 30 条要求每次提交都设 `CONCERTOAI_AGENT`，
+     * 那么「设了它之后这条验证仍须通过」就是硬要求。
+     *
+     * 为什么必须用 `baseEnvFrom({...})` 构造父环境，而不是直接跑：本机开发者的 shell 里
+     * 通常**没有**这个变量，直接跑永远绿——那正是这个缺陷活了 4 天没被发现的原因
+     * （`set CONCERTOAI_AGENT=… && npm run verify` 才红 1 条）。
+     *
+     * 配变异探针验证有牙（2026-11-14 实测）：把 `baseEnvFrom` 里的
+     * `for (const key of LEAKY_ENV_KEYS) delete env[key];` 删掉（回到 `{ ...process.env, … }`）
+     * ⇒ 本用例红（拿到 `Agent: leaked-from-parent`）；还原 ⇒ 绿。
+     */
+    const r = makeRepo();
+    const pollutedParent = { ...process.env, CONCERTOAI_AGENT: 'leaked-from-parent' };
+    const env = baseEnvFrom(pollutedParent);
+    expect(
+      env.CONCERTOAI_AGENT,
+      '基线 env 不该继承身份变量（继承 ⇒ 本例与所有「未声明」用例都失效）',
+    ).toBeUndefined();
+
+    const c = r.commit('feat: probe', [], env);
+    expect(c.status).toBe(0);
+    const body = String(r.git(['log', '-1', '--format=%B']).stdout ?? '');
+    expect(body).toContain('Agent: unmarked');
+    expect(body).not.toContain('leaked-from-parent');
+    expect(stderrOf(c)).toContain('agent identity NOT declared');
+  });
+
+  it('基线 env 仍继承必要变量（`PATH` / 家目录）——防有人把它改成「不抄 process.env」', () => {
+    /**
+     * 这一半守的是候选 4 ⑤ 的「两法不可混用」：若有人把基线 env 改成
+     * `{ LUMEN_LOCALE: '', LANG: '' }`（「不抄 `process.env`，逐项写」）——
+     * **在 Windows 上它照样全绿**（libuv 会给子进程补 `PATH` 等 11 个必需变量，实测见常量注释），
+     * 所以端到端用例抓不住；必须**显式断言**它继承了什么，否则这个错误只在 Linux/macOS CI 上炸。
+     * 判据：把 libuv 补的那一组当成自己的继承结果，就是「探针空转」。
+     */
+    expect(
+      BASE_ENV.PATH,
+      'PATH 必须继承：hook 里 `command -v node` 与 `git rev-parse` 都靠它',
+    ).toBeTruthy();
+    expect(BASE_ENV.PATH, 'PATH 不得被钉空').toBe(process.env.PATH);
+    // 家目录：`HOME`（POSIX）/ `USERPROFILE`（Windows），任一存在即可（CI 三平台都要过）
+    expect(
+      BASE_ENV.HOME ?? BASE_ENV.USERPROFILE,
+      '家目录必须继承：git 找不到 HOME 时行为会变',
+    ).toBeTruthy();
+    // locale 仍然钉死（welcome 回归：v5.0 T22 的原始诉求不能被这次改动挤掉）
+    expect(BASE_ENV.LUMEN_LOCALE).toBe('');
+    expect(BASE_ENV.LANG).toBe('');
   });
 });
 
