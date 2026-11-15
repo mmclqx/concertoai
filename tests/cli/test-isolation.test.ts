@@ -15,7 +15,7 @@
  * （等价于「setup 跑在测试模块之后」），本文件立刻红——这是**唯一**能钉住顺序的判据。
  * 变异探针 M5 就是这么验的（见执行日志）。
  */
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -54,6 +54,44 @@ describe('默认隔离：env 在测试模块 import 之前就已生效（顺序�
     expect(configPath().startsWith(home)).toBe(true);
     expect(globalDir()).toBe(path.join(home, '.concertoai'));
     expect(handoffsDir()).toBe(path.join(home, '.concertoai', 'handoffs'));
+  });
+
+  it('**文档事实**：`AGENTS.md` 的已知边界 B4 必须记「已关闭」且指向 `tests/setup.ts`（B4-DOC-FACT-GUARD）', () => {
+    /**
+     * ## 为什么这条用例必须存在（它不是「给文档写测试」的形式主义）
+     *
+     * `AGENTS.md` 的 B4 曾经写着「目录增长**不受守卫约束**」，还推荐了修法
+     * `__setHomeForTest()`（函数签名级开关）。2026-11-15 实测**两半都错了**：
+     * ① 本文件的隔离已经把它治住（增量 0）；② 那个修法会打断 4 个文件的绝对值断言。
+     *
+     * 「文档更新成了错的」比「文档过期」严重得多 —— 过期只是信息旧，**错的是把人指向废弃路**，
+     * 而照做的人不会去查证，因为文档看起来就是权威。这类不一致**只有机械判据能长期防住**
+     * （靠自觉的话，下一个人改代码时不会想起来同步文档）。
+     *
+     * ## 刻意的边界：只钉两个**事实**，不钉措辞
+     *
+     * 钉的是「已关闭」+「指向 tests/setup.ts」—— 前者是结论，后者是可核查的入口。
+     * **不**断言三格全文、**不**断言字数或句式：措辞会随着下一轮的解释而改，
+     * 钉太死会让这条用例在「改得更好」时反而红（护栏咬解释者，本项目已踩过）。
+     *
+     * 配变异探针验证有牙：把 B4 行改回「不受守卫约束」⇒ 本条必须红；改回 ⇒ 绿。
+     */
+    const agentsPath = path.join(process.cwd(), 'AGENTS.md');
+    const text = readFileSync(agentsPath, 'utf8');
+    // 只取 B4 那一行：正文别处提到 B4 不算（顶部「最后更新」段就引用了它）
+    const b4Line = text.split(/\r?\n/).find((line) => line.includes('**B4**')) ?? '';
+
+    expect(b4Line, 'AGENTS.md 里找不到 `**B4**` 那一行——表格被改动 / 编号被删？').not.toBe('');
+    // 事实一：这条边界已关闭（不是「还在观察」「已降级」）
+    expect(b4Line, 'B4 必须写明已关闭（v5.3 B4 已把它治好，实测增量 0）').toContain('已关闭');
+    // 事实二：指向真实入口，让照文档的人能点到活证据（会随代码改的那份，不是第二份文档）
+    expect(b4Line, 'B4 必须指向 tests/setup.ts（唯一会随代码更新的否决/生效证据）').toContain(
+      'tests/setup.ts',
+    );
+    // 反向：旧说法不许回来。这条是「照错文档施工」的机械判据本体。
+    expect(b4Line, 'B4 不许再声称目录增长不受约束——那与实测（增量 0）相反').not.toContain(
+      '不受守卫约束',
+    );
   });
 
   it('否定面：隔离目录位于系统临时目录之下（不是用户主目录里的真实路径）', () => {
