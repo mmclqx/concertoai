@@ -138,11 +138,18 @@ const TOP_LEVEL_DIR_BASELINE: readonly string[] = [
 ];
 
 /**
- * 注册命令基线（26 条，2026-11-07 实测，两路互证）。
+ * 注册命令基线（**27 条**，2026-11-15 人工确认后 +1）。
  *
  * 取证方式：① 真跑 `concertoai --help --all` 的 `Commands:` 段 ② `src/cli/index.ts`
- * 里 `.command(` 出现 26 处（`src/core/suggestion.ts` 另 2 处是 JSDoc 注释，不算注册）。
+ * 里 `.command(` 逐条数（`src/core/suggestion.ts` 另 2 处是 JSDoc 注释，不算注册）。
  * 断言采用 ①（真实进程）：源码里写了个没注册的名字（或注册了源码里查不到）都能被抓到。
+ *
+ * ## 2026-11-15 为何从 26 变 27（人工确认记录，不是「顺手改基线」）
+ *
+ * 新增 `handoff`（`concertoai handoff list / prune`）——v5.3 B4 的**存量清理入口**，
+ * 用户 2026-11-15 明确裁决要它（「不自动删，加 `--prune` 显式开关，默认 dry-run」）。
+ * 本条基线涨 1 正是这个用例存在的意义：**命令面变化必须有人工确认**，所以在提交说明里
+ * 同步写明，而不是让基线悄悄跟着实现走。
  */
 const COMMAND_BASELINE: readonly string[] = [
   'account',
@@ -154,6 +161,7 @@ const COMMAND_BASELINE: readonly string[] = [
   'config',
   'doctor',
   'fix',
+  'handoff',
   'init',
   'login',
   'logout',
@@ -551,9 +559,9 @@ describe('注册命令集合精确相等（R3 / §五 判据 1，真跑 CLI）',
     commands = parseCommandNames(runHelpAll(home));
   }, 300_000);
 
-  it('`--help --all` 解析出 26 条命令（正例探针：解析不许空转）', () => {
+  it('`--help --all` 解析出 27 条命令（正例探针：解析不许空转）', () => {
     // 没有这条，下面「集合相等」在解析恒返回 [] 时会假绿（变异探针 M3 的靶子）
-    expect(commands.length, 'Commands: 段解析出的命令数不对（解析空转 / 输出格式变了？）').toBe(26);
+    expect(commands.length, 'Commands: 段解析出的命令数不对（解析空转 / 输出格式变了？）').toBe(27);
     expect(commands).toContain('chat');
     expect(commands).toContain('self-heal'); // 带连字符的名字也在：证明解析没截断
   });

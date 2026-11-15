@@ -647,6 +647,23 @@ program
     }
   });
 
+// v5.3 B4：交接单存量清理（list 只看 / prune 默认 dry-run，--yes 才真删）
+// ⚠️ 为什么**不放** `doctor`：诊断命令永不写盘的承诺（v5.3 N1 / D97）不能被「顺手加个清理」破坏——
+// 「看一眼环境」和「删我磁盘上的东西」是两件事，必须用**不同命令**表达（AGENTS 只读/诊断条款 ①）。
+program
+  .command('handoff <action>')
+  .description(t().cli.handoff.description)
+  .option('-y, --yes', t().cli.handoff.yes)
+  .action(async (action: string, options: { yes?: boolean }) => {
+    // 与 reflect 不同，这里不需要确认对话：「默认 dry-run」本身就是确认环节，
+    // 加 --yes 才是第二次明确表达（fail-closed：少写 --yes 只会少删，不会多删）。
+    const { runHandoffCommand } = await import('./handoff-prune');
+    const code = runHandoffCommand({ action, yes: options.yes === true });
+    if (code !== 0) {
+      process.exitCode = code;
+    }
+  });
+
 program
   .command('balance')
   .description(t().cli.balance.description)

@@ -30,6 +30,21 @@ const ID_RE = /^[\w.-]+$/;
 export function isValidSessionId(id: string): boolean {
   return ID_RE.test(id);
 }
+
+/**
+ * 会话 id 是否是**本程序真实生成**的形状：`YYYYMMDD-HHMMSS-mmm`（定长 8-6-3）。
+ *
+ * ## 为什么不复用 `isValidSessionId`
+ *
+ * 那个只做**安全校验**（`^[\w.-]+$`，防路径穿越），几乎任何字符串都通过。
+ * 而这里的用途相反：判定「这条记录是不是一次真实会话留下的**证据**」——
+ * 判据一旦放宽，测试自己造出来的 id 就会被当成真实会话（v5.3 B4 实测：
+ * 测试能造出形状合法的 id，见 `handoffHomeGuard` 的交叉核验）。
+ * 故这里是**定长**匹配，与 `newSessionId()` 逐段对应（`padStart(2)` / `padStart(3)`）。
+ */
+export function isRealSessionIdShape(id: string): boolean {
+  return /^\d{8}-\d{6}-\d{3}$/.test(id);
+}
 /** 列表摘要中首条 user 消息的截断长度。 */
 const SUMMARY_MAX_CHARS = 40;
 
