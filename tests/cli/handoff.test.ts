@@ -25,12 +25,14 @@ import {
   finalizeActiveSession,
   finalizeSession,
   handoffPath,
+  installHandoffExitHook,
   MAX_ACCEPTANCE_LINES,
   MAX_INJECT_CHARS,
   readHandoff,
   resetHandoffState,
   sessionHasToolCalls,
   setActiveSession,
+  writeHandoffAtProcessExit,
 } from '../../src/cli/handoff';
 import { formatToolFailure, formatToolResult, isToolErrorContent } from '../../src/loop/messages';
 import type { ChatMessage, ToolCall } from '../../src/loop/types';
@@ -398,6 +400,66 @@ describe('落点与幂等（方案 B：~/.concertoai/handoffs/<项目 key>/）',
     const file = finalizeActiveSession({ kind: 'error', message: 'boom' });
     expect(file).toBeDefined();
     expect(readFileSync(file ?? '', 'utf8')).toContain('异常退出：boom');
+  });
+});
+
+/**
+ * 出口 ③ 的**进程级兜底**（v5.3 C 轮真 TTY 实测补上）。
+ *
+ * 为什么单独立一组：这一组守的不是「函数写得对不对」，而是「真机上 Ctrl+C
+ * 退出到底会不会走到它」。Ink 把 Ctrl+C 截在 `useInput` 之前（`App.js:151`
+ * `handleExit(); return;`），raw mode 下又不产生 SIGINT ⇒ 此前两条接线在
+ * 真机上都是死代码，而当时的源码护栏只钉「`exit()` 前调了收尾函数」，
+ * 看上去全绿。**配变异探针**：把 `writeHandoffAtProcessExit` 改成恒
+ * `return undefined` ⇒ 第 1 条红；去掉空会话判断 ⇒ 第 3 条红；去掉
+ * terminal 幂等 ⇒ 第 4 条红（在真机上则表现为 PTY 探针 ④ 栏判红）。
+ */
+describe('出口 ③ 的进程级兜底（`process.exit` 时写「用户中断」）', () => {
+  it('有快照 ⇒ 写「用户中断」（这是真机 Ctrl+C 退出唯一能走到的路径）', () => {
+    setActiveSession({ messages: [...okCommand('c1', 'echo hi')], cwd, sessionId: 's1' });
+    const file = writeHandoffAtProcessExit();
+    expect(file).toBeDefined();
+    const text = readFileSync(file ?? '', 'utf8');
+    expect(text).toContain('> 退出原因: interrupted');
+    expect(text).toContain('用户中断');
+    // 否定面：用户中断不得被说成异常，也不得留堆栈
+    expect(text).not.toContain('异常退出');
+    expect(text).not.toMatch(/\n\s+at .*:\d+:\d+/);
+  });
+
+  it('无快照（UI 没挂载过，如 `doctor`）⇒ 不写，连目录都不建', () => {
+    expect(writeHandoffAtProcessExit()).toBeUndefined();
+    expect(existsSync(path.join(home, '.concertoai', 'handoffs'))).toBe(false);
+  });
+
+  it('**空会话**（打开就退）⇒ 不写（AGENTS §已知边界 B1 的降噪裁决）', () => {
+    setActiveSession({ messages: [], cwd, sessionId: 's1' });
+    expect(writeHandoffAtProcessExit()).toBeUndefined();
+    expect(existsSync(handoffPath(cwd))).toBe(false);
+  });
+
+  it('已由 terminal 出口写过（崩溃 `error`）⇒ **不覆盖**（异常原因不得被盖成「用户中断」）', () => {
+    setActiveSession({ messages: [...okCommand('c1', 'echo hi')], cwd, sessionId: 's1' });
+    expect(finalizeActiveSession({ kind: 'error', message: 'boom' })).toBeDefined();
+    expect(writeHandoffAtProcessExit()).toBeUndefined();
+    const text = readFileSync(handoffPath(cwd), 'utf8');
+    expect(text).toContain('异常退出：boom');
+    expect(text).not.toContain('> 退出原因: interrupted');
+  });
+
+  it('`installHandoffExitHook` 装的是真监听，幂等且卸载后无残留', () => {
+    const before = process.listenerCount('exit');
+    const off = installHandoffExitHook();
+    try {
+      expect(process.listenerCount('exit'), '正例自证：确实加了 1 个 exit 监听').toBe(before + 1);
+      const off2 = installHandoffExitHook();
+      expect(process.listenerCount('exit'), '装两次只有一个监听').toBe(before + 1);
+      off2();
+      expect(process.listenerCount('exit'), '副卸载函数不动别人的监听').toBe(before + 1);
+    } finally {
+      off();
+    }
+    expect(process.listenerCount('exit'), '卸载后不留残留').toBe(before);
   });
 });
 

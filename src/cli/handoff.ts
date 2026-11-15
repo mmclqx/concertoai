@@ -478,6 +478,70 @@ export function finalizeActiveSession(reason: ExitReason): string | undefined {
   );
 }
 
+/**
+ * 出口 ③ 的**进程级兜底**（2026-11-15 真 TTY 实测补上的第三条接线）。
+ *
+ * ## 为什么 `useInput` 与 `SIGINT` 两条都收不到 Ctrl+C
+ *
+ * Ink 7 的按键分发（`node_modules/ink/build/components/App.js:148-159`）是：
+ *
+ * ```js
+ * if (input === '\x03' && exitOnCtrlC) {
+ *   handleExit();   // → 只 unmount，不 process.exit()
+ *   return;         // ← 在 emit 'input' 事件之前就返回了
+ * }
+ * ```
+ *
+ * 两个后果：① `useInput` 的处理器**永远看不到** Ctrl+C（`App.tsx` 里那段
+ * `input === 'c' && key.ctrl` 是真机上的死代码）；② 终端处于 raw mode，
+ * 那个 `\x03` 是一个**字节而不是信号**，`process.on('SIGINT')` 同样不触发。
+ * 于是进程自然结束（退出码 0），交接单停在上一次快照——真机实测
+ * `> 退出原因: completed`，而用户是 Ctrl+C 退的（门 6「四退场格式统一」判红）。
+ *
+ * ## 为什么选 `process.on('exit')`
+ *
+ * 它是上述所有路径下**唯一必然发生**的事件（Ink 自然卸载、`process.exit(130)`、
+ * 崩溃处理器的 `exit(1)`），且允许**同步**写盘——与崩溃出口同步写是同一个理由。
+ *
+ * ## 三条「不写」（缺任一条就会造出假记录）
+ *
+ * 1. 没有快照（UI 从未挂载，例如 `doctor` 之类的非交互命令）⇒ 不写；
+ * 2. 快照里一条消息都没有（「打开就退」）⇒ 不写（AGENTS §已知边界 B1 的降噪裁决）；
+ * 3. 本次退出**已经**由 terminal 出口写过（`exit()` / 崩溃）⇒ 不覆盖，
+ *    `finalizeSession(terminal: true)` 的幂等标志正是为这一步设的。
+ */
+export function writeHandoffAtProcessExit(): string | undefined {
+  if (activeSession === undefined || activeSession.messages.length === 0) {
+    return undefined;
+  }
+  return finalizeActiveSession({ kind: 'interrupted' });
+}
+
+let exitHookInstalled = false;
+
+/**
+ * 装一次「进程退出」兜底（幂等）。返回卸载函数供测试使用。
+ *
+ * 只在 CLI 入口（`chat.tsx`）调用一次：放在模块级会污染 vitest 进程
+ * （UI 用例挂载真 App ⇒ 进程结束时往用例的临时 cwd 写盘）。
+ */
+export function installHandoffExitHook(): () => void {
+  if (exitHookInstalled) {
+    return () => {
+      /* 已装过：不重复注册，交给第一个装的人卸载 */
+    };
+  }
+  exitHookInstalled = true;
+  const handler = (): void => {
+    writeHandoffAtProcessExit();
+  };
+  process.on('exit', handler);
+  return () => {
+    process.off('exit', handler);
+    exitHookInstalled = false;
+  };
+}
+
 /** 读到的交接单（消费端判定的三种结论）。 */
 export type HandoffReading =
   | { kind: 'none' }

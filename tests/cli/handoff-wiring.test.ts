@@ -281,4 +281,23 @@ describe('源码护栏：四个出口都接了收尾函数（TUI 按键路径无
     expect(src).toContain('consumeHandoff(options.cwd');
     expect(src).toContain('handoff.inject');
   });
+
+  /**
+   * v5.3 C 轮：真机上 Ctrl+C 只有这一条路能走通。
+   *
+   * 为什么源码护栏必须钉这里：`App.tsx` 里那两处 `writeHandoffOnExit()` 看着
+   * 很对，但 Ink 把 Ctrl+C 截在 `useInput` 之前（`App.js:151`）⇒ 它们是死代码。
+   * 「函数被调用了没有」这类断言在真机上是绿的，唯一能钉住的是「入口装没装兜底」。
+   *
+   * 配变异探针：删掉 `chat.tsx` 里这一行 ⇒ 本条红 + PTY 探针 ④ 栏判红。
+   */
+  it('`chat.tsx`：入口调用 `installHandoffExitHook()`（真机 Ctrl+C 唯一收得到的事件）', () => {
+    const src = readFileSync(CHAT_SRC, 'utf8');
+    // 正例自证：import 与调用都要在（只 import 不调 = 兜底没装）
+    expect(src).toContain('installHandoffExitHook');
+    expect(src, '必须在 `render(` 之前装').toMatch(
+      /installHandoffExitHook\(\);\s*\n\s*\n?\s*render\(/,
+    );
+    expect(readFileSync(HANDOFF_SRC, 'utf8')).toContain("process.on('exit', handler)");
+  });
 });

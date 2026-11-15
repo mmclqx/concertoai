@@ -39,7 +39,7 @@ import {
   mergeAllowlist,
   resolveProjectForCwd,
 } from './common';
-import { consumeHandoff } from './handoff';
+import { consumeHandoff, installHandoffExitHook } from './handoff';
 import { buildClientForProvider, resolveRuntimeProvider } from './provider-runtime';
 import { describeResumeFailure } from './resume-error';
 
@@ -232,6 +232,13 @@ export async function runChat(options: RunChatOptions): Promise<void> {
   if (handoff.notice !== undefined) {
     console.log(handoff.notice);
   }
+
+  // v5.3 C 轮缺陷修复（真 TTY 实测，门 6 判红的那条）：Ink 的 Ctrl+C 在 App 内部
+  // 直接被 `handleInput` 截走并 unmount，**不经 `useInput`**，raw mode 下也不产生真实
+  // SIGINT ⇒ `App.tsx` 里出口 ③ 的两条接线在真机上都是死代码。进程级 `exit` 是唯一
+  // 必然发生的事件（含 `exit()` / 崩溃 `exit(1)` / Ink 自然卸载三条路径），
+  // 三条「不写」条件见 `writeHandoffAtProcessExit` 头注释。
+  installHandoffExitHook();
 
   render(
     <App
