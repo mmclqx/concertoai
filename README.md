@@ -32,7 +32,7 @@ concertoai commit    # 体检通过后生成 commit message 并本地提交
 
 > 首次运行会引导你配置 Key（三种方式任选），详见下方「环境要求 / 安装」。
 
-> 版本：**v5.2.0**（`npm i -g @concertoai/cli` 或 `npx @concertoai/cli`；`npm run verify` 全绿，**2708 用例 / 180 测试文件**，默认与 `LUMEN_LOCALE=en` 双环境同数）。依赖审计：`npm audit` **0 漏洞**（2026-11-13 复跑实测；`zod` 4.6.7 / `vitest` 4.1.12，传递依赖经 `overrides` 收敛到 `vite` ≥8.2.4、`nanoid` ≥3.3.18、`source-map-js` ≥1.2.2）——此结果取决于 npm advisories 数据库快照，复核请自行运行 `npm audit`。运行时依赖不打进 tarball（实测 `dist/` 内为 `import "x"`，external），用户安装时按 `dependencies` 范围解析到已修复版本。v4.0 及更早的版本说明见文末「历史版本速览」。
+> 版本：**v5.3.0**（`npm i -g @concertoai/cli` 或 `npx @concertoai/cli`；`npm run verify` 全绿，**2816 用例 / 189 测试文件**，默认与 `LUMEN_LOCALE=en` 双环境同数）。依赖审计：`npm audit` **0 漏洞**（2026-11-15 复跑实测；`zod` 4.6.7 / `vitest` 4.1.12，传递依赖经 `overrides` 收敛到 `vite` ≥8.2.4、`nanoid` ≥3.3.18、`source-map-js` ≥1.2.2）——此结果取决于 npm advisories 数据库快照，复核请自行运行 `npm audit`。运行时依赖不打进 tarball（实测 `dist/` 内为 `import "x"`，external），用户安装时按 `dependencies` 范围解析到已修复版本。v4.0 及更早的版本说明见文末「历史版本速览」。
 
 ## 环境要求
 
@@ -107,6 +107,7 @@ concertoai plan "重构这个模块"
 | `concertoai doctor` | 环境诊断：Node/平台/API Key/配置/会话目录/模型表 + 账户余额 |
 | `concertoai reflect list [--limit N]` | 回看拒绝复盘（本地 JSONL，零上传）：时间 / 级别 / 文件 / 风险类别（v5.0 T10） |
 | `concertoai reflect clear [--yes]` | 清空复盘记录（交互需 `y` 确认，**回车 = 取消**；非 TTY 无 `--yes` 直接拒绝） |
+| `concertoai handoff list` / `handoff prune [--yes]` | 查看 / 清理历史交接单目录（v5.3 B4）：`prune` **默认 dry-run** 只列清单与判据，`--yes` 才真删；带真实会话 id 的交接单永不删 |
 | `concertoai check` | **提交前体检**（v5.0 T15）：只读零写入，四段结果 + 退出码权威（`0` 通过 / `1` 失败或判不了）；`--json` 机器可读 |
 | `concertoai fix` | **报错自动修**（v5.0 T16）：`self-heal` 的推荐入口；`--dry-run` 零写入诊断（不花钱、不需要 Key）、`--auto-approve` |
 | `concertoai commit` | **一条命令本地提交**（v5.0 T17）：体检 → 生成 message（先报 token 量）→ 审批 → 提交；**绝不 push**，`--yes` 只跳 message 审批 |
