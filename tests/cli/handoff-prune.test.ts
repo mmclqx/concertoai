@@ -28,6 +28,7 @@ import {
   runHandoffCommand,
   scanHandoffDirs,
 } from '../../src/cli/handoff-prune';
+import { fmt, t } from '../../src/i18n';
 import type { SessionFileState } from '../../src/store/session';
 
 let root: string;
@@ -56,6 +57,18 @@ function makeDir(
   writeFileSync(path.join(dir, 'handoff.md'), text, 'utf8');
 }
 
+/**
+ * 某行是否以「字典模板里第一个 `{...}` 之前的固定开头」起头（A 类否定面用）。
+ *
+ * 为什么不直接断言「屏幕里没有『将删』两个字」：那是中文字面量，换成 en 就失明。
+ * 从模板切出固定前缀，等于问「屏幕上有没有出现这句话的任何一种填充形态」——
+ * 只要产品换了文案，这里跟着换，不需要用例知道具体措辞。
+ */
+function hasLineWithPrefix(lines: string[], template: string): boolean {
+  const prefix = template.split('{')[0]?.trimEnd() ?? '';
+  return prefix !== '' && lines.some((l) => l.startsWith(prefix));
+}
+
 beforeEach(() => {
   root = mkdtempSync(path.join(os.tmpdir(), 'ccai-handoff-prune-'));
 });
@@ -73,7 +86,9 @@ describe('headerValue：头部字段按结构取，不按行形态', () => {
     '> 退出原因: completed',
     '',
     '## ① 做到哪一步',
-    '> 项目: 这是正文里的同形文本，不该被当成头部',
+    // 正文里的同形文本：用**ASCII 哨兵**而不是中文句子——本文件的断言一律不绑中文字面量
+    // （v5.4 候选 3），用一个一眼能 grep 的哨兵同样能证明「正文不被误吃」。
+    '> 项目: BODY_ONLY_SENTINEL_NOT_HEADER',
     '',
   ].join('\n');
 
@@ -83,7 +98,7 @@ describe('headerValue：头部字段按结构取，不按行形态', () => {
   });
 
   it('**否定面**：正文里的同形文本不被误吃（边界是「第一个 `## ` 之前」）', () => {
-    expect(headerValue(text, '项目')).not.toContain('正文里的同形文本');
+    expect(headerValue(text, '项目')).not.toContain('BODY_ONLY_SENTINEL_NOT_HEADER');
   });
 
   it('`无` / 缺字段 ⇒ undefined', () => {
@@ -132,7 +147,13 @@ describe('classifyHandoffDir：两条判据（路径已不存在 + 无真实会�
       sessionAbsent,
     );
     expect(r.verdict).toBe('prune');
-    // 判据要在文案里写出来：用户得能看懂「为什么这份明明有 id 也能删」
+    // 判据要在文案里写出来：用户得能看懂「为什么这份明明有 id 也能删」。
+    //
+    // ⚠️ B 类（v5.4 候选 3，用户裁决「登记边界，本轮不改」）：`detail` 是
+    // `classifyHandoffDir()` 里**硬编码的中文**，不走 i18n。所以这条断言是**唯一**
+    // 允许绑中文字面量的地方——它守的是「判据写出来了」，不是「文案跟随语言」。
+    // 改它要连 src 的 detail 生成逻辑一起搬到 `t().handoff.*`（含参数化），
+    // 那属于另一件事；在那之前 en 用户看逐条清单会见到中英混排，这是**已知边界**。
     expect(r.detail).toContain('已不存在');
   });
 
@@ -143,6 +164,7 @@ describe('classifyHandoffDir：两条判据（路径已不存在 + 无真实会�
       sessionUnknown,
     );
     expect(r.verdict).toBe('keep-unverified');
+    // B 类边界（同上）：detail 硬编码中文，不走 i18n —— 本轮登记不改。
     expect(r.detail).toContain('无法核验');
   });
 
@@ -314,9 +336,25 @@ describe('runHandoffCommand：文案与退出码', () => {
     });
     expect(code).toBe(0);
     expect(existsSync(path.join(root, 'gone-aaaaaaaaaaaa'))).toBe(true);
-    const text = lines.join('\n');
-    expect(text).toContain('可清理');
-    expect(text).toContain('保留·证据'); // 证据类必须显式标出来
+    /**
+     * 文案断言一律**与产品同源**（v5.4 候选 3 A 类）：拿 `t().handoff.*` 的模板 + `fmt`
+     * 拼出期望整行，再断言屏幕上**有这一行**。判据从「屏幕上出现某几个中文字」升级为
+     * 「整行等于字典模板」——文案改了、占位符漏了、参数没填，都会红。
+     */
+    const dict = t().handoff;
+    expect(lines).toContain(fmt(dict.title, { path: root, total: 2 }));
+    expect(lines).toContain(
+      fmt(dict.summary, {
+        keepRealSession: 1,
+        keepUnverified: 0,
+        keepProjectExists: 0,
+        prune: 1,
+      }),
+    );
+    expect(lines).toContain(dict.listHint);
+    // 证据类必须显式标出来：逐条清单那一行（detail 是 B 类硬编码中文，故只断标签部分）
+    const evidenceLine = lines.find((l) => l.includes('evidence-cccccccccccc')) ?? '';
+    expect(evidenceLine).toContain(dict.keepRealSession);
   });
 
   it('`prune` 不带 --yes ⇒ 打印「本次未删除任何东西」，盘上原样', () => {
@@ -329,7 +367,13 @@ describe('runHandoffCommand：文案与退出码', () => {
     });
     expect(code).toBe(0);
     expect(existsSync(path.join(root, 'gone-aaaaaaaaaaaa'))).toBe(true);
-    expect(lines.join('\n')).toContain('未删除');
+    const dict = t().handoff;
+    // 整行等于字典模板：{count} 被填成真实候选数（1 个），不是「屏幕上出现了这几个字」
+    expect(lines).toContain(fmt(dict.dryRun, { count: 1 }));
+    expect(lines).toContain(dict.dryRunHint);
+    // 否定面：dry-run **不许**念真删的两句话（那是 --yes 的活）
+    expect(lines).not.toContain(fmt(dict.pruned, { count: 1 }));
+    expect(hasLineWithPrefix(lines, dict.confirmYes)).toBe(false);
   });
 
   it('会话读不到（unknown）⇒ 屏幕上出现「保留·未核验」，且**不许**进可清理', () => {
@@ -341,12 +385,24 @@ describe('runHandoffCommand：文案与退出码', () => {
       log: (m) => lines.push(m),
     });
     expect(code).toBe(0);
-    const text = lines.join('\n');
-    expect(text).toContain('保留·未核验');
-    // 否定面：unknown 的目录绝不能被念进「可清理」
+    const dict = t().handoff;
+    /**
+     * 整行与字典模板比较（A 类）：unknown ⇒ 摘要里「会话未核验 1」、可清理 0。
+     * 注意 `keepRealSession` 这里应为 0——`sessionsExist` 注入器在本用例被替换成 `unknown`，
+     * 所以这一行能同时钉住「未核验被算进未核验、**没被**算进已核验」。
+     */
+    expect(lines).toContain(
+      fmt(dict.summary, {
+        keepRealSession: 0,
+        keepUnverified: 1,
+        keepProjectExists: 0,
+        prune: 1,
+      }),
+    );
+    // 否定面：unknown 的目录绝不能被念成「可清理」
     const unverifiedLine = lines.find((l) => l.includes('evidence-cccccccccccc')) ?? '';
-    expect(unverifiedLine).toContain('保留·未核验');
-    expect(unverifiedLine).not.toContain('可清理');
+    expect(unverifiedLine).toContain(dict.keepUnverified);
+    expect(unverifiedLine).not.toContain(dict.prune);
   });
 
   it('`prune --yes` ⇒ 真删，并报删除数量（且**先**念一遍摘要再删）', () => {
@@ -360,10 +416,29 @@ describe('runHandoffCommand：文案与退出码', () => {
     });
     expect(code).toBe(0);
     expect(existsSync(path.join(root, 'gone-aaaaaaaaaaaa'))).toBe(false);
-    expect(lines.join('\n')).toContain('已删除');
+    const dict = t().handoff;
+    // 整行比较：删除数量、以及「其中几个是会话文件查无」这个关键括号都在同一行里
+    expect(lines).toContain(fmt(dict.pruned, { count: 1 }));
+    expect(lines).toContain(
+      fmt(dict.confirmYes, {
+        count: 1,
+        absentCount: 0,
+        keepRealSession: 1,
+        keepUnverified: 0,
+        keepProjectExists: 0,
+      }),
+    );
     // --yes 是跳过审批，不是跳过摘要：摘要行必须出现在「已删除」之前
-    const confirmIdx = lines.findIndex((l) => l.includes('将删'));
-    const prunedIdx = lines.findIndex((l) => l.includes('已删除'));
+    const confirmIdx = lines.indexOf(
+      fmt(dict.confirmYes, {
+        count: 1,
+        absentCount: 0,
+        keepRealSession: 1,
+        keepUnverified: 0,
+        keepProjectExists: 0,
+      }),
+    );
+    const prunedIdx = lines.indexOf(fmt(dict.pruned, { count: 1 }));
     expect(confirmIdx).toBeGreaterThanOrEqual(0);
     expect(confirmIdx).toBeLessThan(prunedIdx);
   });
@@ -372,7 +447,8 @@ describe('runHandoffCommand：文案与退出码', () => {
     const lines: string[] = [];
     const code = runHandoffCommand({ action: 'nuke', root, log: (m) => lines.push(m) });
     expect(code).toBe(1);
-    expect(lines.join('\n')).toContain('list / prune');
+    // 整行等于模板（A 类）：既钉「说了是哪个子命令」，也钉「给了 list / prune 两个支持项」
+    expect(lines).toContain(fmt(t().handoff.unknownAction, { action: 'nuke' }));
   });
 
   it('空目录 ⇒ 一句话说明路径，退出码 0', () => {
@@ -380,7 +456,8 @@ describe('runHandoffCommand：文案与退出码', () => {
     try {
       const lines: string[] = [];
       expect(runHandoffCommand({ action: 'list', root: empty, log: (m) => lines.push(m) })).toBe(0);
-      expect(lines.join('\n')).toContain(empty);
+      // 整行等于模板：路径必须是**被填进模板**的（不是屏幕上随便出现了这个路径）
+      expect(lines).toContain(fmt(t().handoff.empty, { path: empty }));
     } finally {
       rmSync(empty, { recursive: true, force: true });
     }
