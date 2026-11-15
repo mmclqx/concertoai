@@ -30,6 +30,15 @@
  * （`YYYYMMDD-HHMMSS-xxx`，由 `SessionStore.create` 生成）⇒ 外部会话写的 ⇒ 只告警不判红；
  * 否则（`无` / 假 id / 压根没有这一行）⇒ 只能是测试写的 ⇒ 判红。
  * 归因函数是**纯函数并配了双向用例**（`tests/cli/handoff-home-guard.test.ts`），不是靠注释自证。
+ *
+ * ## v5.3 B4（2026-11-15）：从「守一个文件」扩到「守根目录」
+ *
+ * 本文件现在还守**根目录本身**：`~/.concertoai/handoffs/` 下本轮**新增**的每个目录都必须能归因，
+ * 归因不过 ⇒ 判红。两个判据（文件内容 / 目录新增）互相独立，各自 throw。
+ *
+ * 「能归因」= 会话 id 形状合法 **且** 该 id 在真实 `~/.concertoai/sessions/` 下真有 `.jsonl`。
+ * **只查形状不够**：实测测试自己就能造出形状合法的 id（`auto-low-approval.test.tsx`
+ * 用真 `SessionStore` 建会话），只查形状会把它们免罪 —— 那正好是本轮要堵的假阴性。
  */
 import { createHash } from 'node:crypto';
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -37,6 +46,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { handoffPath } from '../src/cli/handoff';
+import { isRealSessionIdShape } from '../src/store/session';
 
 /** 「当前进程 cwd 对应的项目」在**真实** home 下的交接单落点（globalSetup 里 env 还没被任何用例改过）。 */
 function projectHandoffPath(): string {
@@ -58,7 +68,8 @@ function shaOf(file: string): string {
  * 写成定长而不是 `\d{3,}`：放宽容错就等于放宽「什么样算真实会话」——
  * 而这条判据的用途是**免罪**（不判红），宽一寸就是把测试写的假 id 也放过去。
  */
-const REAL_SESSION_ID = /^\d{8}-\d{6}-\d{3}$/;
+// v5.3 B4：正则搬进 `src/store/session.ts`（`isRealSessionIdShape`），与 `newSessionId()`
+// 同文件维护——复制一份到测试里，迟早与生成逻辑不同步（本仓库对「同一事实多处解析」有硬规定）。
 
 /** 从交接单正文里取 `> 会话:` 的值（取不到给 `undefined`）。 */
 export function sessionIdOf(text: string): string | undefined {
@@ -100,26 +111,113 @@ export function classifyChange(
     return 'test-written';
   }
   const sessionId = sessionIdOf(afterText);
-  return sessionId !== undefined && REAL_SESSION_ID.test(sessionId)
+  return sessionId !== undefined && isRealSessionIdShape(sessionId)
     ? 'external-session'
     : 'test-written';
+}
+
+/**
+ * 归因「这一轮**新建**的交接单目录」是谁造的（v5.3 B4，2026-11-15）。
+ *
+ * ## 为什么「会话 id 形状对」不够（实测打脸过）
+ *
+ * 旧规则是「`> 会话:` 匹配真实 id 形状 ⇒ 外部会话 ⇒ 不判红」。
+ * 2026-11-15 实测发现 **测试自己就能造出形状合法的 id**：
+ * `tests/ui/auto-low-approval.test.tsx` 用真实 `SessionStore` 建会话，写出的交接单
+ * `> 会话: 20261115-120449-301` 形状完全合法，而真实 `~/.concertoai/sessions/` 下
+ * **没有对应 `.jsonl`**。若只按形状归因，这 5 个目录会被**免罪**（假阴性）。
+ *
+ * ⇒ 判据必须**交叉核验**：形状对 **且** 该 id 在真实会话目录里真的存在文件，
+ * 才算「开发者自己开着 chat 写的」。
+ */
+export function classifyNewDir(
+  sample: { name: string; sessionId?: string },
+  sessionExists: (id: string) => boolean,
+): 'external-session' | 'test-written' {
+  if (sample.sessionId !== undefined && isRealSessionIdShape(sample.sessionId)) {
+    if (sessionExists(sample.sessionId)) {
+      return 'external-session';
+    }
+  }
+  return 'test-written';
+}
+
+/**
+ * 把「新增目录名单」判成「可放行 / 必须判红」（**纯函数**，两个依赖都注入 ⇒ 可阶梯自证）。
+ *
+ * ## 为什么要单独抽出来（而不是留在 teardown 里）
+ *
+ * `teardown` 是套件级钩子，直接调它的测试成本高且互相污染；而这段逻辑恰恰是 B4 的
+ * **主判据**——「新增目录不许来自测试」。留在钩子里时它只有一条端到端探针（M1）覆盖，
+ * 而端到端探针报红时看不出**是哪条规则失效**。抽成纯函数后每个分支都能单独断言。
+ *
+ * @param added 本轮新增的目录名
+ * @param sessionIdOfDir 目录名 ⇒ `> 会话:` 值（读不到给 undefined）
+ * @param sessionExists 会话 id ⇒ 真实会话目录里有没有 `.jsonl`
+ */
+export function classifyAddedDirs(
+  added: readonly string[],
+  sessionIdOfDir: (name: string) => string | undefined,
+  sessionExists: (id: string) => boolean,
+): { offenders: string[]; allowed: string[] } {
+  const offenders: string[] = [];
+  const allowed: string[] = [];
+  for (const name of added) {
+    const verdict = classifyNewDir({ name, sessionId: sessionIdOfDir(name) }, sessionExists);
+    if (verdict === 'test-written') {
+      offenders.push(name);
+    } else {
+      allowed.push(name);
+    }
+  }
+  return { offenders, allowed };
+}
+
+/** 真实会话目录里有没有这个 id 的 `.jsonl`（递归两层：兼容按项目分子目录的布局）。 */
+function realSessionFileExists(id: string): boolean {
+  const root = path.join(os.homedir(), '.concertoai', 'sessions');
+  const direct = path.join(root, `${id}.jsonl`);
+  if (existsSync(direct)) {
+    return true;
+  }
+  try {
+    for (const entry of readdirSync(root, { withFileTypes: true })) {
+      if (entry.isDirectory() && existsSync(path.join(root, entry.name, `${id}.jsonl`))) {
+        return true;
+      }
+    }
+  } catch {
+    return false;
+  }
+  return false;
+}
+
+/** 读某个交接单目录的会话 id（目录不存在 / 没有 handoff.md ⇒ `undefined`）。 */
+function sessionIdOfDir(name: string): string | undefined {
+  const file = path.join(path.dirname(path.dirname(target)), name, 'handoff.md');
+  try {
+    return sessionIdOf(readFileSync(file, 'utf8'));
+  } catch {
+    return undefined;
+  }
 }
 
 let target = '';
 let before = '';
 let dirsBefore = -1;
+/** 起始时的目录**名单**（B4：光有数量判不出「新增的是哪一个」，也就无法归因）。 */
+let namesBefore: string[] = [];
 
 /**
  * 交接单根目录下的子目录数（`~/.concertoai/handoffs/` 下一项目一目录）。
  *
- * ## 这个读数为什么只打印、不判红（边界要说清，别假装覆盖了）
+ * ## 读数沿革（别把这段当历史噪音，它写着判据为什么变过）
  *
- * 本守卫守的是「**本项目那份文件的内容**不许被测试改掉」——那是 v5.3 N4 的命门
- * （记录一旦是假的，下次进来读到的就是假交接）。而「根目录下多了几个一次性目录」是**另一类**
- * 污染：噪音、不擦证据。实测本机已有 517 个，绝大多数是用例拿 `mkdtempSync` 当 cwd 时
- * 按项目名分出来的目录。把它纳入判红会让一大批既有 UI 用例立刻红，而那需要「给
- * `paths` 加测试专用 home 覆盖」这类改动，超出 A 的范围 ⇒ **登记为候选，不在此处顺手改**。
- * 但读数必须留下：否则「目录从 517 涨到 900」这件事永远没人看见。
+ * v5.3 A 时这里**只打印、不判红**：当时还没有测试侧隔离，把它纳入判红会让一大批
+ * 既有 UI 用例立刻红（它们各自 `mkdtemp` 当 cwd，合法地写进真实 home 根目录）。
+ * v5.3 B4（2026-11-15）落地「套件级默认隔离」后，前提变了：**真实 home 不该再有新增**。
+ * 于是本文件 teardown 里改为「新增目录必须能归因，否则判红」——判据升级的依据是
+ * 隔离到位，而不是「我想更严」。
  */
 function handoffSubdirCount(): number {
   try {
@@ -128,6 +226,15 @@ function handoffSubdirCount(): number {
     return readdirSync(path.dirname(path.dirname(target))).length;
   } catch {
     return -1;
+  }
+}
+
+/** 同上，但返回**名单**（B4 归因需要知道「新增的是哪一个」）。 */
+function handoffSubdirNames(): string[] {
+  try {
+    return readdirSync(path.dirname(path.dirname(target))).sort();
+  } catch {
+    return [];
   }
 }
 
@@ -153,6 +260,7 @@ export function setup(): void {
   target = projectHandoffPath();
   before = shaOf(target);
   dirsBefore = handoffSubdirCount();
+  namesBefore = handoffSubdirNames();
   // 读数落一行：没有这行，事后无法判断「当时到底在守哪个文件」
   console.log(
     `[handoff-home-guard] 守卫 ${target} ｜ 起始 ${before.slice(0, 16)} ｜ 同级目录 ${dirsBefore} 个 ｜ 探测器自证通过`,
@@ -163,19 +271,61 @@ export function teardown(): void {
   if (target === '') {
     return;
   }
-  const dirsAfter = handoffSubdirCount();
-  if (dirsBefore >= 0 && dirsAfter > dirsBefore) {
-    // 噪音类污染：不判红（见 `handoffSubdirCount` 的边界说明），但必须把增量摆出来
+  /**
+   * ═══ B4 判据（2026-11-15 起生效）：新增目录**必须能归因** ═══
+   *
+   * A 轮这里只是 `console.log`（「噪音类污染，只打印不判红」）。B4 落地后规则改了：
+   * 测试侧已有「套件级默认隔离」（`tests/setup.ts`），所以**本轮真实 home 一个新目录都不该有**；
+   * 若还有新增，只可能是「某个用例绕过了隔离」——那是必须红的事（它会把 1162 这个数字继续推高）。
+   *
+   * 归因沿用「不驱逐正常用法」原则：开发者一边开着 chat 一边跑 verify 是**正常用法**，
+   * 那种新增带真实会话 id 且该 id 在真实会话目录里有文件 ⇒ 只打印读数、不判红。
+   * 判据一旦放宽（只看 id 形状）就会被测试自己造的合法 id 蒙混过关，故必须交叉核验。
+   */
+  const namesAfter = handoffSubdirNames();
+  const added = namesAfter.filter((n) => !namesBefore.includes(n));
+  // ⚠️ 判据本体在 `classifyAddedDirs`（纯函数、可单测）；这里只做「取名单 + 传依赖 + 打印 + 判红」。
+  // 接线由 `handoff-home-guard.test.ts` 的源码护栏钉住（否则纯函数全绿而调用点没用它 = A 轮 M-C 形态）。
+  const { offenders, allowed } = classifyAddedDirs(added, sessionIdOfDir, realSessionFileExists);
+  if (added.length > 0) {
     console.log(
-      `[handoff-home-guard] 注意：本轮在 ~/.concertoai/handoffs 下新增 ${dirsAfter - dirsBefore} 个目录（${dirsBefore} → ${dirsAfter}），属噪音类污染（不擦证据）`,
+      `[handoff-home-guard] 注意：本轮在 ~/.concertoai/handoffs 下新增 ${added.length} 个目录（${dirsBefore} → ${handoffSubdirCount()}）`,
     );
+    for (const name of allowed) {
+      console.log(`  （外部会话，不判红）${name} ｜ 会话: ${sessionIdOfDir(name) ?? '(无)'}`);
+    }
+    for (const name of offenders) {
+      console.log(`  （测试写的，判红）${name} ｜ 会话: ${sessionIdOfDir(name) ?? '(无)'}`);
+    }
   }
   const after = shaOf(target);
   const afterText = existsSync(target) ? readFileSync(target, 'utf8') : undefined;
   const verdict = classifyChange(before, after, afterText);
-  if (verdict === 'unchanged') {
-    return;
+
+  /**
+   * ## 两个判据合并报错，而不是谁先谁后 `throw`
+   *
+   * B4 加进「目录新增」判据后，一次污染往往**同时**触发两条（真 App 用例既新建了目录、
+   * 又把内容写成了 `> 会话: 无`）。若按代码顺序先 `throw` 目录那条，内容那条的读数就永远不出现——
+   * 而修的人需要的是「两条都给我看」。故先收集，再一次性抛出。
+   */
+  const problems: string[] = [];
+
+  if (offenders.length > 0) {
+    problems.push(
+      [
+        '测试套件往开发者真实 home 的 handoffs 目录里**新建了目录**（v5.3 B4）。',
+        `  新增 ${offenders.length} 个：${offenders.slice(0, 10).join(', ')}${offenders.length > 10 ? ' …' : ''}`,
+        `  根目录: ${path.dirname(path.dirname(target))}`,
+        '  为什么这必须红：测试侧已有「套件级默认隔离」（tests/setup.ts 把 HOME/USERPROFILE',
+        '  指到临时目录），所以真实 home **一个新目录都不该有**。有新增说明某个用例绕过了它',
+        '  （例如用例自己在 beforeAll 里把 HOME 改回来了、或直接 `os.homedir()` 拼路径）。',
+        '  正常用法（开发者一边开着 chat 一边跑 verify）不会红：那种新增带真实会话 id，',
+        '  且该 id 在 ~/.concertoai/sessions 下真有 .jsonl —— 归因会放行。',
+      ].join('\n'),
+    );
   }
+
   if (verdict === 'external-session') {
     /**
      * 归因结论：那次写来自**真实 CLI 会话**（开发者自己开着 chat）。
@@ -185,6 +335,22 @@ export function teardown(): void {
     console.log(
       `[handoff-home-guard] 本轮交接单被外部会话刷新（> 会话: ${sessionIdOf(afterText ?? '') ?? '(未知)'}）⇒ 不判红。若想拿到「测试有没有写真实 home」的干净读数，请关掉 chat 后重跑。`,
     );
+    // 内容判据放行，但目录判据可能仍未通过 ⇒ 不能在这里 return
+  } else if (verdict === 'test-written') {
+    problems.push(
+      [
+        '测试套件改动了开发者真实 home 的交接单（v5.3 A 的命门：交接单的可信度）。',
+        `  文件: ${target}`,
+        `  之前: ${before}`,
+        `  之后: ${after}`,
+        '  最常见成因：某个用例渲染了真 `App` 却把 `cwd` 指向仓库根、且没有钉住家目录',
+        '  （`handoffsDir()` = `os.homedir()/.concertoai/handoffs`，调用期读 homedir）。',
+        '  修法见 tests/ui/tool-step.test.tsx 头注释：`cwd` 与 USERPROFILE/HOME 都要钉到临时目录。',
+      ].join('\n'),
+    );
+  }
+
+  if (problems.length === 0) {
     return;
   }
   /**
@@ -197,15 +363,5 @@ export function teardown(): void {
    * 所以先显式把退出码钉成 1，再 throw（throw 保留报错文本，exitCode 负责让它真的红）。
    */
   process.exitCode = 1;
-  throw new Error(
-    [
-      '测试套件改动了开发者真实 home 的交接单（v5.3 A 的命门：交接单的可信度）。',
-      `  文件: ${target}`,
-      `  之前: ${before}`,
-      `  之后: ${after}`,
-      '  最常见成因：某个用例渲染了真 `App` 却把 `cwd` 指向仓库根、且没有钉住家目录',
-      '  （`handoffsDir()` = `os.homedir()/.concertoai/handoffs`，调用期读 homedir）。',
-      '  修法见 tests/ui/tool-step.test.tsx 头注释：`cwd` 与 USERPROFILE/HOME 都要钉到临时目录。',
-    ].join('\n'),
-  );
+  throw new Error(problems.join('\n\n'));
 }

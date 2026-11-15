@@ -98,7 +98,12 @@ describe('teardown 接线：接线真的用了归因结论', () => {
   });
 
   it('外部会话写的（真实会话 id）⇒ 不抛、不动退出码（边开 chat 边跑 verify 不该假红）', async () => {
-    const realId = await new SessionStore(path.join(tmpHome, 'sessions')).create([]);
+    // ⚠️ 会话文件必须落在**真实布局** `<home>/.concertoai/sessions/`：
+    // B4 的目录判据要交叉核验「这个 id 在会话目录里真有文件」，随便找个目录建会话
+    // 等于造了一份不合格的证据，判红是正确的（第一次就是这么红的）。
+    // 注意 `new SessionStore()` 用 `DEFAULT_SESSION_DIR`（**模块加载期**常量，指向测试隔离 home），
+    // 与这里 `beforeEach` 改过的 `HOME` 不是一回事 ⇒ 必须显式传当前 HOME 下的真实布局路径。
+    const realId = await new SessionStore(path.join(tmpHome, '.concertoai', 'sessions')).create([]);
     setup();
     const file = handoffPath(tmpProj);
     mkdirSync(path.dirname(file), { recursive: true });
@@ -106,5 +111,33 @@ describe('teardown 接线：接线真的用了归因结论', () => {
 
     expect(() => teardown()).not.toThrow();
     expect(process.exitCode).toBeUndefined();
+  });
+
+  it('新增目录 + 内容无会话 ⇒ 两个判据**都**出现在报错里（不只报先命中的那条）', () => {
+    setup();
+    const file = handoffPath(tmpProj);
+    mkdirSync(path.dirname(file), { recursive: true });
+    writeFileSync(file, handoffText('无'), 'utf8');
+
+    let message = '';
+    try {
+      teardown();
+    } catch (err) {
+      message = err instanceof Error ? err.message : String(err);
+    }
+    expect(message, '目录判据').toContain('新建了目录');
+    expect(message, '内容判据').toContain('改动了开发者真实 home 的交接单');
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('形状合法但**查无会话文件**的 id ⇒ 判红（B4 实测的假阴性，不许被形状免罪）', () => {
+    setup();
+    const file = handoffPath(tmpProj);
+    mkdirSync(path.dirname(file), { recursive: true });
+    // 形状与 newSessionId() 完全一致，但真实会话目录里没有它 ⇒ 只可能是测试造的
+    writeFileSync(file, handoffText('20261115-120449-301'), 'utf8');
+
+    expect(() => teardown()).toThrow(/新建了目录|改动了开发者真实 home 的交接单/);
+    expect(process.exitCode).toBe(1);
   });
 });
