@@ -125,6 +125,11 @@ export const en = {
       limit: 'Number of entries to show (default 20)',
       yes: 'Skip the confirmation prompt (required in non-interactive environments)',
     },
+    handoff: {
+      description:
+        'Exit handoffs (list to inspect / prune to clean up; prune is a **dry run** unless --yes is given)',
+      yes: 'Actually delete (without it, only the list and reasons are printed — nothing is removed)',
+    },
     // ═══ v5.0 T22: these used to be **hardcoded Chinese inside cli/index.ts** ═══
     // Consequence: once locale worked, the English help was half English (section headings)
     // and half Chinese (command/option descriptions) — worse than all-Chinese.
@@ -621,6 +626,24 @@ export const en = {
     recorded:
       '📝 Recorded to local retrospectives (see concertoai reflect list; disable with concertoai config set reflections off)',
     recordFailed: '📝 Failed to record the retrospective (ignored; approval result unaffected)',
+  },
+  // v5.3 B4: handoff cleanup (`handoff list / prune`). Each verdict prints its **reason**,
+  // not just a count — users must be able to check why something is removable.
+  handoff: {
+    title: 'Handoff directory: {path} ({total} total)',
+    summary:
+      '  real sessions {keepRealSession} ｜ project still present {keepProjectExists} ｜ removable {prune}',
+    keepRealSession: 'keep(evidence)',
+    keepProjectExists: 'keep(project)',
+    prune: 'removable',
+    empty: 'No handoff directories found ({path})',
+    listHint:
+      'To remove the ones marked "removable": concertoai handoff prune (preview), then add --yes',
+    nothingToPrune: 'Nothing to remove (all have a real session id or their project still exists)',
+    dryRun: '{count} directories are removable. Nothing was deleted (dry run by default).',
+    dryRunHint: 'When you are sure: concertoai handoff prune --yes',
+    pruned: 'Deleted {count} directories.',
+    unknownAction: 'Unknown handoff subcommand: {action} (supported: list / prune)',
   },
   // v5.0 T12: scenario hints (M3). Rendered as one dim line above the prompt:
   // never a modal, never in the message stream, never interrupting streaming.

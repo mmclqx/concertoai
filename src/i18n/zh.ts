@@ -119,6 +119,10 @@ export const zh = {
       limit: '展示条数（默认 20）',
       yes: '清空时跳过确认（非交互环境必需）',
     },
+    handoff: {
+      description: '退出交接单（list 查看 / prune 清理；清理**默认只看不动**，加 --yes 才真删）',
+      yes: '真删（不加则只列清单与判据，一个目录都不动）',
+    },
     // ═══ v5.0 T22：以下文案此前**硬编码中文写在 cli/index.ts 里** ═══
     // 后果：修好 locale 之后，英文 help 只剩分段标题是英文、命令与选项描述仍中文，
     // 呈现「英中混排」——比全中文更难看。全部搬进字典后 zh/en 才有机会一致。
@@ -593,6 +597,23 @@ export const zh = {
     recorded:
       '📝 已记录到本地复盘（concertoai reflect list 查看，concertoai config set reflections off 可关闭）',
     recordFailed: '📝 复盘记录写入失败（已忽略，不影响审批结果）',
+  },
+  // v5.3 B4：交接单存量清理（`handoff list / prune`）。判断类文案必须**写出依据**，
+  // 不只给数字——用户要能自己核对「为什么这个能删」。
+  handoff: {
+    title: '交接单目录：{path}（共 {total} 个）',
+    summary:
+      '  真实会话 {keepRealSession} 个 ｜ 项目仍在 {keepProjectExists} 个 ｜ 可清理 {prune} 个',
+    keepRealSession: '保留·证据',
+    keepProjectExists: '保留·项目在',
+    prune: '可清理',
+    empty: '没有交接单目录（{path}）',
+    listHint: '要清理上面标「可清理」的目录：concertoai handoff prune（先看），确认后加 --yes',
+    nothingToPrune: '没有可清理的目录（全部带真实会话 id 或项目仍在）',
+    dryRun: '以上 {count} 个可清理。本次未删除任何东西（默认 dry-run）。',
+    dryRunHint: '确认无误后执行：concertoai handoff prune --yes',
+    pruned: '已删除 {count} 个目录。',
+    unknownAction: '未知 handoff 子命令: {action}（支持 list / prune）',
   },
   // v5.0 T12：场景提示（M3 场景可发现）。渲染在输入框上方单行灰字：
   // 不弹框、不进消息流、不打断流式；命令必须完整可直接复制执行（禁占位符）。
