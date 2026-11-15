@@ -631,11 +631,16 @@ export const en = {
   // not just a count — users must be able to check why something is removable.
   handoff: {
     title: 'Handoff directory: {path} ({total} total)',
+    // v5.4 candidate 1: counts split by category. A single "removable N" cannot tell whether
+    // those are "session file not found" or "project path gone" — very different decisions.
     summary:
-      '  real sessions {keepRealSession} ｜ project still present {keepProjectExists} ｜ removable {prune}',
+      '  sessions verified {keepRealSession} ｜ sessions unverified {keepUnverified} ｜ project still present {keepProjectExists} ｜ removable {prune}',
     keepRealSession: 'keep(evidence)',
+    keepUnverified: 'keep(unverified)',
     keepProjectExists: 'keep(project)',
     prune: 'removable',
+    confirmYes:
+      'Deleting {count} (of which {absentCount} have no session file); keeping {keepRealSession} (sessions verified), {keepUnverified} unverified (session directory unreadable), {keepProjectExists} (project still present). Delete {count}?',
     empty: 'No handoff directories found ({path})',
     listHint:
       'To remove the ones marked "removable": concertoai handoff prune (preview), then add --yes',

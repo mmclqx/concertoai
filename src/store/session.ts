@@ -9,6 +9,7 @@
  * - 跨进程冲突检测（尽力而为）：写后校验文件大小，被外部并发修改时抛 SessionConflictError。
  */
 
+import { type Dirent, readdirSync, statSync } from 'node:fs';
 import { appendFile, mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
@@ -47,6 +48,90 @@ export function isRealSessionIdShape(id: string): boolean {
 }
 /** 列表摘要中首条 user 消息的截断长度。 */
 const SUMMARY_MAX_CHARS = 40;
+
+/**
+ * 「某个会话 id 的 `.jsonl` 在不在」的**三态**答案（v5.4 候选 1）。
+ *
+ * ## 为什么不能是 boolean
+ *
+ * 这个问题的答案直接决定**要不要删用户磁盘上的交接单**（`handoff prune`）。
+ * 而 boolean 把两件事压成了一个 `false`：
+ * - `absent`：查得到、确实没有；
+ * - `unknown`：**根本读不到**（权限 / 路径被占 / IO 错）。
+ *
+ * 两者对「删」的含义正相反：查无 ⇒ 这份交接单不构成证据，可以清；
+ * 读不到 ⇒ 什么都不知道，**必须保留**。压成 boolean 就等于把 IO 错当成「已确认不存在」，
+ * 那正是历史上最贵的一句话（`docs/09-踩坑记录/2026-10-31-成本熔断闸门恒不响.md`：
+ * 「读不到」必须与「值 = 0」分开）。
+ *
+ * ## 为什么判定里不许用 `existsSync`
+ *
+ * 实测（Windows Node 22）：当父路径是个普通文件时，`existsSync(p)` 返回 **false**、
+ * 而 `statSync(p)` 抛 **ENOENT**、`readdirSync(p)` 抛 **ENOTDIR** —— `existsSync`
+ * **把错误吞成 false**，用它就不可能分出 `absent` 与 `unknown`。
+ * 故本函数每一步都看错误码。
+ */
+export type SessionFileState = 'exists' | 'absent' | 'unknown';
+
+/** 取 Node 的错误码（非 Error 对象给 `undefined`）。 */
+function errorCode(error: unknown): string | undefined {
+  if (error instanceof Error && 'code' in error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    return typeof code === 'string' ? code : undefined;
+  }
+  return undefined;
+}
+
+/**
+ * 查某个会话 id 的 `.jsonl` 是否存在（三态）。
+ *
+ * 布局兼容两种：`<root>/<id>.jsonl`（当前）与 `<root>/<projectKey>/<id>.jsonl`
+ * （T2.4 项目隔离矩阵）。任一命中即 `exists`。
+ *
+ * @param id 会话 id（调用方应已用 `isRealSessionIdShape` 判过形状）
+ * @param root 会话根目录，默认 `~/.concertoai/sessions/`（**调用期**取 homedir，便于测试注入）
+ */
+export function sessionFileState(id: string, root: string = sessionsDir()): SessionFileState {
+  // ① 根目录本身：不存在 ⇒ 一定 absent；存在但不是目录 / 其它错 ⇒ unknown（不是「没有」）
+  try {
+    if (!statSync(root).isDirectory()) {
+      return 'unknown';
+    }
+  } catch (error) {
+    return errorCode(error) === 'ENOENT' ? 'absent' : 'unknown';
+  }
+  // ② 当前布局：<root>/<id>.jsonl
+  try {
+    statSync(path.join(root, `${id}.jsonl`));
+    return 'exists';
+  } catch (error) {
+    if (errorCode(error) !== 'ENOENT') {
+      return 'unknown';
+    }
+  }
+  // ③ 项目隔离布局：<root>/<projectKey>/<id>.jsonl
+  let entries: Dirent[];
+  try {
+    entries = readdirSync(root, { withFileTypes: true });
+  } catch {
+    // 根 stat 成功却列不出来 ⇒ 读不到，**不是**「没有」
+    return 'unknown';
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory()) {
+      continue;
+    }
+    try {
+      statSync(path.join(root, entry.name, `${id}.jsonl`));
+      return 'exists';
+    } catch (error) {
+      if (errorCode(error) !== 'ENOENT') {
+        return 'unknown';
+      }
+    }
+  }
+  return 'absent';
+}
 
 function isEexist(error: unknown): boolean {
   return error instanceof Error && 'code' in error && error.code === 'EEXIST';

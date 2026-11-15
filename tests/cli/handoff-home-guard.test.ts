@@ -23,7 +23,7 @@ import path from 'node:path';
 
 import { afterAll, describe, expect, it } from 'vitest';
 
-import { SessionStore } from '../../src/store/session';
+import { type SessionFileState, SessionStore } from '../../src/store/session';
 import {
   classifyAddedDirs,
   classifyChange,
@@ -114,7 +114,9 @@ describe('classifyChange：谁改了真实 home 的交接单', () => {
  * 故这里额外读 `handoff-home-guard.global.ts` 的源码断言调用关系（源码护栏）。
  */
 describe('classifyAddedDirs：新增名单 ⇒ 放行 / 判红', () => {
-  const existsReal = (id: string): boolean => id === '20261115-120000-001';
+  /** v5.4 候选 1：事实源改为三态。`existsReal` 表达「只有这一个 id 核验得到」。 */
+  const existsReal = (id: string): SessionFileState =>
+    id === '20261115-120000-001' ? 'exists' : 'absent';
 
   it('混合名单：真实会话放行、其余判红（两条通道各自完整，不互相吞）', () => {
     const byName = new Map<string, string | undefined>([
@@ -181,7 +183,7 @@ describe('接线护栏：teardown 真的用了归因（不是只有纯函数好�
  */
 describe('classifyNewDir：新增的交接单目录是谁造的', () => {
   it('形状对 **且** 真实会话文件存在 ⇒ `external-session`（边开 chat 边跑 verify，不判红）', () => {
-    expect(classifyNewDir({ name: 'proj-abc123', sessionId: REAL_ID }, () => true)).toBe(
+    expect(classifyNewDir({ name: 'proj-abc123', sessionId: REAL_ID }, () => 'exists')).toBe(
       'external-session',
     );
   });
@@ -191,30 +193,30 @@ describe('classifyNewDir：新增的交接单目录是谁造的', () => {
     expect(
       classifyNewDir(
         { name: 'concertoai-v51-0ND57Z-493f0c46a2fa', sessionId: '20261115-120449-301' },
-        () => false,
+        () => 'absent',
       ),
     ).toBe('test-written');
   });
 
   it('没有会话 id（测试用真 App 且没传 sessionId）⇒ `test-written`', () => {
-    expect(classifyNewDir({ name: 'proj-abc123', sessionId: undefined }, () => true)).toBe(
+    expect(classifyNewDir({ name: 'proj-abc123', sessionId: undefined }, () => 'exists')).toBe(
       'test-written',
     );
   });
 
-  it('假 id（`s-1`）⇒ `test-written`，即使把 exists 恒设为 true 也不放行', () => {
-    // 「恒 true 的 exists」是最容易被凑出的假绿：形状不合法时 exists 根本不该被问
+  it('假 id（`s-1`）⇒ `test-written`，即使会话状态恒为 exists 也不放行', () => {
+    // 「恒 exists 的状态」是最容易被凑出的假绿：形状不合法时状态根本不该被问
     let asked = 0;
-    const exists = (): boolean => {
+    const exists = (): SessionFileState => {
       asked += 1;
-      return true;
+      return 'exists';
     };
     expect(classifyNewDir({ name: 'proj-abc123', sessionId: 's-1' }, exists)).toBe('test-written');
     expect(asked, '形状不合法时不该去查会话文件（省 IO，也避免把结论建立在无关证据上）').toBe(0);
   });
 
   it('阶梯自证：四种输入 ⇒ 恰好 1 个 external（恒 external / 恒 test-written 两种废实现都过不去）', () => {
-    const realExists = (id: string): boolean => id === REAL_ID;
+    const realExists = (id: string): SessionFileState => (id === REAL_ID ? 'exists' : 'absent');
     const verdicts = [
       classifyNewDir({ name: 'a', sessionId: REAL_ID }, realExists),
       classifyNewDir({ name: 'b', sessionId: '20261115-120449-301' }, realExists),
@@ -223,5 +225,27 @@ describe('classifyNewDir：新增的交接单目录是谁造的', () => {
     ];
     expect(verdicts.filter((v) => v === 'external-session')).toHaveLength(1);
     expect(verdicts.filter((v) => v === 'test-written')).toHaveLength(3);
+  });
+
+  /**
+   * ## v5.4 候选 1：`unknown` 在护栏侧判红（与 prune 侧相反，这是刻意的）
+   *
+   * 同一个事实源，两种取向：护栏宁可误报（多一条假红只是麻烦），
+   * prune 宁可少删（删错不可逆）。这条用例钉住「护栏这侧的取向不许被顺手改成放行」。
+   */
+  it('会话目录**读不到**（unknown）⇒ `test-written`（护栏侧保守：读不到不算证据）', () => {
+    expect(classifyNewDir({ name: 'proj-abc123', sessionId: REAL_ID }, () => 'unknown')).toBe(
+      'test-written',
+    );
+  });
+
+  it('三态各自有落点（阶梯自证：恒 exists / 恒 absent 两种废实现都过不去）', () => {
+    const of = (state: SessionFileState): string =>
+      classifyNewDir({ name: 'a', sessionId: REAL_ID }, () => state);
+    expect([of('exists'), of('absent'), of('unknown')]).toEqual([
+      'external-session',
+      'test-written',
+      'test-written',
+    ]);
   });
 });

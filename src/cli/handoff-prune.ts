@@ -26,6 +26,24 @@
  * 不该因为「路径不在了」就被清掉——**真话不会因为不方便而变成垃圾**。
  * 故 `keep-real-session` 优先于 `prune`。
  *
+ * ## v5.4 候选 1（2026-11-15 用户裁决）：从「只看形状」升级为「交叉核验」
+ *
+ * 原来只认 id 的**形状**，于是「形状合法但会话文件早已不在」的目录全被当证据保留
+ * （本机实测 146 个里 145 个属于这种：`项目 = Temp\concertoai-v51-*` 且项目目录已回收，
+ * 两条判据本都满足，却因为形状合法而永不清理）。
+ *
+ * 现在改为问 `sessionFileState()`（三态），并按 **prune 的保守方向**解读：
+ *
+ * | 形状 | 会话文件 | 结论 |
+ * |---|---|---|
+ * | 不合法 / 无 id | — | 不构成证据（落到路径判据） |
+ * | 合法 | `exists` | `keep-real-session` 保留·证据 |
+ * | 合法 | `unknown`（读不到） | `keep-unverified` 保留·未核验（**不能当没有**） |
+ * | 合法 | `absent`（查得到、确实没有） | 不构成证据（落到路径判据） |
+ *
+ * 这就是「统一事实来源、取向各自保守」：`handoff-home-guard` 问的是同一个函数，
+ * 但那边把 `unknown` 判红（护栏宁可误报），这边把 `unknown` 保留（删除不可逆）。
+ *
  * ## 零网络
  *
  * 只读本地目录并（在 `--yes` 时）`rm` 之；不 import `http`/`net`/`fetch`。
@@ -36,10 +54,21 @@ import path from 'node:path';
 
 import { fmt, t } from '../i18n';
 import { handoffsDir } from '../store/paths';
-import { isRealSessionIdShape } from '../store/session';
+import { isRealSessionIdShape, type SessionFileState, sessionFileState } from '../store/session';
 
-/** 单个目录的处置结论。 */
-export type PruneVerdict = 'keep-project-exists' | 'keep-real-session' | 'prune';
+/**
+ * 单个目录的处置结论（四类，v5.4 候选 1 起多出第三类）。
+ *
+ * - `keep-real-session`：形状合法 **且** 会话文件核验存在 ⇒ 证据，保留；
+ * - `keep-unverified`：形状合法但**读不到**会话目录 ⇒ 保留但如实标「未核验」；
+ * - `keep-project-exists`：项目目录还在 ⇒ 保留（用户下次还要进这个项目）；
+ * - `prune`：不构成证据 **且** 项目不在了 ⇒ 可清理（dry-run 才报，`--yes` 才删）。
+ */
+export type PruneVerdict =
+  | 'keep-project-exists'
+  | 'keep-real-session'
+  | 'keep-unverified'
+  | 'prune';
 
 /** 扫描出来的单条记录（纯数据，便于单测直接断言）。 */
 export interface HandoffDirInfo {
@@ -85,17 +114,33 @@ export function headerValue(text: string, key: string): string | undefined {
 }
 
 /**
- * 判定单个目录该怎么处置（**纯函数**，`projectExists` 注入 ⇒ 可阶梯自证）。
+ * 判定单个目录该怎么处置（**纯函数**，两个依赖都注入 ⇒ 可阶梯自证）。
  *
- * 判据来源见文件头「两条判据」。
+ * 判据来源见文件头「两条判据」与「v5.4 候选 1：交叉核验」。
+ *
+ * @param stateOf 会话 id ⇒ 三态（`exists` / `absent` / `unknown`）。
+ *   **默认用真实实现；测试注入假实现来单独验每个分支**。
+ * @param projectExists 项目路径 ⇒ 是否还在
  */
 export function classifyHandoffDir(
   info: Pick<HandoffDirInfo, 'handoffExists' | 'project' | 'sessionId'>,
   projectExists: (project: string) => boolean,
+  stateOf: (id: string) => SessionFileState = sessionFileState,
 ): { verdict: PruneVerdict; detail: string } {
-  // ① 真实会话 id ⇒ 证据优先，任何情况下都不删
+  // ① 形状合法 ⇒ 才谈得上「证据」，但**形状不等于证据**（v5.4 候选 1 修的就是这个）
   if (info.sessionId !== undefined && isRealSessionIdShape(info.sessionId)) {
-    return { verdict: 'keep-real-session', detail: `真实会话 ${info.sessionId}` };
+    const state = stateOf(info.sessionId);
+    if (state === 'exists') {
+      return { verdict: 'keep-real-session', detail: `真实会话 ${info.sessionId}（已核验）` };
+    }
+    if (state === 'unknown') {
+      // 读不到 ≠ 没有：删除不可逆，这一档必须保留，且如实告诉用户「没核验到」
+      return {
+        verdict: 'keep-unverified',
+        detail: `会话 ${info.sessionId} 无法核验（读不到会话目录，按保守保留）`,
+      };
+    }
+    // 走到这里 = `absent`：形状对但会话文件确实查无 ⇒ 不构成证据，继续看项目路径
   }
   if (!info.handoffExists) {
     // 没有交接单 ⇒ 无法归属，也没有任何证据可留 ⇒ 孤儿目录
@@ -105,16 +150,19 @@ export function classifyHandoffDir(
   if (info.project !== undefined && projectExists(info.project)) {
     return { verdict: 'keep-project-exists', detail: `项目仍在 ${info.project}` };
   }
-  return {
-    verdict: 'prune',
-    detail: info.project === undefined ? '交接单里没有项目路径' : `项目已不存在 ${info.project}`,
-  };
+  const why =
+    info.sessionId !== undefined && isRealSessionIdShape(info.sessionId)
+      ? `会话 ${info.sessionId} 的文件已不存在`
+      : undefined;
+  const base = info.project === undefined ? '交接单里没有项目路径' : `项目已不存在 ${info.project}`;
+  return { verdict: 'prune', detail: why === undefined ? base : `${base}；${why}` };
 }
 
 /** 扫描根目录下的所有交接单目录（只读）。 */
 export function scanHandoffDirs(
   root: string = handoffsDir(),
   projectExists: (project: string) => boolean = (project) => existsSync(project),
+  stateOf: (id: string) => SessionFileState = sessionFileState,
 ): HandoffDirInfo[] {
   if (!existsSync(root)) {
     return [];
@@ -145,6 +193,7 @@ export function scanHandoffDirs(
     const { verdict, detail } = classifyHandoffDir(
       { handoffExists, project, sessionId },
       projectExists,
+      stateOf,
     );
     out.push({ name, handoffExists, project, sessionId, verdict, detail });
   }
@@ -165,10 +214,15 @@ export interface PruneResult {
  * @param apply `false`（默认）= 只看不动；`true` = 真删（CLI 层的 `--yes` 才传 true）
  */
 export function pruneHandoffs(
-  options: { root?: string; apply?: boolean; projectExists?: (project: string) => boolean } = {},
+  options: {
+    root?: string;
+    apply?: boolean;
+    projectExists?: (project: string) => boolean;
+    sessionStateOf?: (id: string) => SessionFileState;
+  } = {},
 ): PruneResult {
   const root = options.root ?? handoffsDir();
-  const infos = scanHandoffDirs(root, options.projectExists);
+  const infos = scanHandoffDirs(root, options.projectExists, options.sessionStateOf);
   const candidates = infos.filter((i) => i.verdict === 'prune').map((i) => i.name);
   const result: PruneResult = { candidates, removed: [], failed: [] };
   if (options.apply !== true) {
@@ -192,6 +246,8 @@ export interface RunHandoffCommandOptions {
   yes?: boolean;
   /** 根目录注入（测试用）。 */
   root?: string;
+  /** 会话文件三态注入（测试用；默认问真实 `~/.concertoai/sessions/`）。 */
+  sessionStateOf?: (id: string) => SessionFileState;
   /** 输出注入（测试用）。 */
   log?: (message: string) => void;
 }
@@ -202,6 +258,8 @@ function verdictLabel(verdict: PruneVerdict): string {
   switch (verdict) {
     case 'keep-real-session':
       return dict.keepRealSession;
+    case 'keep-unverified':
+      return dict.keepUnverified;
     case 'keep-project-exists':
       return dict.keepProjectExists;
     default:
@@ -223,7 +281,7 @@ export function runHandoffCommand(options: RunHandoffCommandOptions): number {
     return 1;
   }
 
-  const infos = scanHandoffDirs(root);
+  const infos = scanHandoffDirs(root, undefined, options.sessionStateOf);
   if (infos.length === 0) {
     log(fmt(dict.empty, { path: root }));
     return 0;
@@ -231,14 +289,29 @@ export function runHandoffCommand(options: RunHandoffCommandOptions): number {
 
   const counts = {
     keepRealSession: infos.filter((i) => i.verdict === 'keep-real-session').length,
+    keepUnverified: infos.filter((i) => i.verdict === 'keep-unverified').length,
     keepProjectExists: infos.filter((i) => i.verdict === 'keep-project-exists').length,
     prune: infos.filter((i) => i.verdict === 'prune').length,
   };
+  /**
+   * 可清理里「因为**会话文件查无**而进清单」的那部分（v5.4 候选 1，用户要求分开计数）：
+   * 只给一个「可清理 145 个」，用户没法分辨到底是「会话文件查无」还是「项目路径不存在」——
+   * 而这两者该不该删的判断完全不同。判据：形状合法（本该是证据）但走到了 prune ⇒ 只能是
+   * `absent` 这条路（`unknown` 会留在 keep-unverified）。
+   */
+  const pruneAbsent = infos.filter(
+    (i) =>
+      i.verdict === 'prune' &&
+      i.handoffExists &&
+      i.sessionId !== undefined &&
+      isRealSessionIdShape(i.sessionId),
+  ).length;
 
   log(fmt(dict.title, { path: root, total: infos.length }));
   log(
     fmt(dict.summary, {
       keepRealSession: counts.keepRealSession,
+      keepUnverified: counts.keepUnverified,
       keepProjectExists: counts.keepProjectExists,
       prune: counts.prune,
     }),
@@ -254,7 +327,11 @@ export function runHandoffCommand(options: RunHandoffCommandOptions): number {
     return 0;
   }
 
-  const result = pruneHandoffs({ root, apply: options.yes === true });
+  const result = pruneHandoffs({
+    root,
+    apply: options.yes === true,
+    sessionStateOf: options.sessionStateOf,
+  });
   if (options.yes !== true) {
     if (result.candidates.length === 0) {
       log(dict.nothingToPrune);
@@ -264,6 +341,23 @@ export function runHandoffCommand(options: RunHandoffCommandOptions): number {
     log(dict.dryRunHint);
     return 0;
   }
+
+  /**
+   * ## 真删之前必须先把账念一遍（v5.4 候选 1，用户明确要求）
+   *
+   * `--yes` 的意思是「**跳过审批**」，不是「跳过摘要」。删除不可逆，所以真删那一刻
+   * 屏幕上必须先出现一行「将删几个、每个理由是什类、留了几个、其中几个是没核验过的」。
+   * 少了这行，用户点完 --yes 就只剩「删了 145 个」一个数字，**事后无法复盘删了什么**。
+   */
+  log(
+    fmt(dict.confirmYes, {
+      count: result.candidates.length,
+      absentCount: pruneAbsent,
+      keepRealSession: counts.keepRealSession,
+      keepUnverified: counts.keepUnverified,
+      keepProjectExists: counts.keepProjectExists,
+    }),
+  );
 
   log(fmt(dict.pruned, { count: result.removed.length }));
   if (result.failed.length > 0) {

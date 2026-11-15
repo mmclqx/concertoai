@@ -602,11 +602,16 @@ export const zh = {
   // 不只给数字——用户要能自己核对「为什么这个能删」。
   handoff: {
     title: '交接单目录：{path}（共 {total} 个）',
+    // v5.4 候选 1：四类分开计数。「可清理 N 个」一个数说不清它是「会话文件查无」还是
+    // 「项目路径不存在」——两者该不该删的判断完全不同，用户必须能分辨。
     summary:
-      '  真实会话 {keepRealSession} 个 ｜ 项目仍在 {keepProjectExists} 个 ｜ 可清理 {prune} 个',
+      '  会话已核验 {keepRealSession} 个 ｜ 会话未核验 {keepUnverified} 个 ｜ 项目仍在 {keepProjectExists} 个 ｜ 可清理 {prune} 个',
     keepRealSession: '保留·证据',
+    keepUnverified: '保留·未核验',
     keepProjectExists: '保留·项目在',
     prune: '可清理',
+    confirmYes:
+      '将删 {count} 个（其中 {absentCount} 个是会话文件查无）；保留 {keepRealSession} 个（会话已核验）、保留未核验 {keepUnverified} 个（读不到会话目录）、保留 {keepProjectExists} 个（项目仍在）。确认删 {count} 个？',
     empty: '没有交接单目录（{path}）',
     listHint: '要清理上面标「可清理」的目录：concertoai handoff prune（先看），确认后加 --yes',
     nothingToPrune: '没有可清理的目录（全部带真实会话 id 或项目仍在）',

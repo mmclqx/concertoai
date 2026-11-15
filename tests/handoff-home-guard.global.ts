@@ -46,7 +46,11 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { handoffPath } from '../src/cli/handoff';
-import { isRealSessionIdShape } from '../src/store/session';
+import {
+  isRealSessionIdShape,
+  type SessionFileState,
+  sessionFileState,
+} from '../src/store/session';
 
 /** 「当前进程 cwd 对应的项目」在**真实** home 下的交接单落点（globalSetup 里 env 还没被任何用例改过）。 */
 function projectHandoffPath(): string {
@@ -132,10 +136,21 @@ export function classifyChange(
  */
 export function classifyNewDir(
   sample: { name: string; sessionId?: string },
-  sessionExists: (id: string) => boolean,
+  sessionState: (id: string) => SessionFileState,
 ): 'external-session' | 'test-written' {
   if (sample.sessionId !== undefined && isRealSessionIdShape(sample.sessionId)) {
-    if (sessionExists(sample.sessionId)) {
+    /**
+     * ## 为什么只认 `exists`（v5.4 候选 1）
+     *
+     * 这里问的是同一个事实源（`sessionFileState`），但**取向与 prune 相反**：
+     * - 护栏的代价是「多一条假红」⇒ 读不到就判红（宁可误报，让人来看一眼）；
+     * - prune 的代价是「删掉唯一证据」⇒ 读不到必须保留。
+     *
+     * 这正是「统一事实来源、取向各自保守」。原来这里用 `catch { return false }`
+     * 把读不到吞成「不存在」，结论恰好也对，但**靠的是意外而不是判断**——
+     * 三态化之后 `unknown` 走的是显式分支，将来谁改 prune 也不会顺手把这里改坏。
+     */
+    if (sessionState(sample.sessionId) === 'exists') {
       return 'external-session';
     }
   }
@@ -158,12 +173,12 @@ export function classifyNewDir(
 export function classifyAddedDirs(
   added: readonly string[],
   sessionIdOfDir: (name: string) => string | undefined,
-  sessionExists: (id: string) => boolean,
+  sessionState: (id: string) => SessionFileState,
 ): { offenders: string[]; allowed: string[] } {
   const offenders: string[] = [];
   const allowed: string[] = [];
   for (const name of added) {
-    const verdict = classifyNewDir({ name, sessionId: sessionIdOfDir(name) }, sessionExists);
+    const verdict = classifyNewDir({ name, sessionId: sessionIdOfDir(name) }, sessionState);
     if (verdict === 'test-written') {
       offenders.push(name);
     } else {
@@ -173,23 +188,16 @@ export function classifyAddedDirs(
   return { offenders, allowed };
 }
 
-/** 真实会话目录里有没有这个 id 的 `.jsonl`（递归两层：兼容按项目分子目录的布局）。 */
-function realSessionFileExists(id: string): boolean {
-  const root = path.join(os.homedir(), '.concertoai', 'sessions');
-  const direct = path.join(root, `${id}.jsonl`);
-  if (existsSync(direct)) {
-    return true;
-  }
-  try {
-    for (const entry of readdirSync(root, { withFileTypes: true })) {
-      if (entry.isDirectory() && existsSync(path.join(root, entry.name, `${id}.jsonl`))) {
-        return true;
-      }
-    }
-  } catch {
-    return false;
-  }
-  return false;
+/**
+ * 真实会话目录里这个 id 的状态（v5.4 候选 1：改为**共用事实源**）。
+ *
+ * 原来这里有一份自己的 `realSessionFileExists`（`existsSync` + `catch { return false }`），
+ * 与 `handoff prune` 各判各的——同一个事实两处解析，迟早不同步。
+ * 现在统一问 `sessionFileState()`；本文件只负责**按护栏的保守方向**解读：
+ * 不是 `exists` 就判红（含 `unknown`：读不到时宁可误报，让人来看一眼）。
+ */
+function realSessionState(id: string): SessionFileState {
+  return sessionFileState(id, path.join(os.homedir(), '.concertoai', 'sessions'));
 }
 
 /** 读某个交接单目录的会话 id（目录不存在 / 没有 handoff.md ⇒ `undefined`）。 */
@@ -286,7 +294,7 @@ export function teardown(): void {
   const added = namesAfter.filter((n) => !namesBefore.includes(n));
   // ⚠️ 判据本体在 `classifyAddedDirs`（纯函数、可单测）；这里只做「取名单 + 传依赖 + 打印 + 判红」。
   // 接线由 `handoff-home-guard.test.ts` 的源码护栏钉住（否则纯函数全绿而调用点没用它 = A 轮 M-C 形态）。
-  const { offenders, allowed } = classifyAddedDirs(added, sessionIdOfDir, realSessionFileExists);
+  const { offenders, allowed } = classifyAddedDirs(added, sessionIdOfDir, realSessionState);
   if (added.length > 0) {
     console.log(
       `[handoff-home-guard] 注意：本轮在 ~/.concertoai/handoffs 下新增 ${added.length} 个目录（${dirsBefore} → ${handoffSubdirCount()}）`,
