@@ -127,35 +127,61 @@ export function classifyHandoffDir(
   projectExists: (project: string) => boolean,
   stateOf: (id: string) => SessionFileState = sessionFileState,
 ): { verdict: PruneVerdict; detail: string } {
+  /**
+   * ## 为什么这里读全局 locale（`t()`），而不是把文案当参数注入
+   *
+   * `detail` 是**呈现层**文本（唯一去处是屏幕上那一行「← 理由」），它跟随 UI 语言是
+   * **正确行为**；把它做成注入参数只会让每个调用方都得多传一份字典。
+   * 代价：本函数不再严格「纯」（读模块级 `currentLocale`）。判定本身的依赖
+   * （`projectExists` / `stateOf`）仍是注入的，测试注入点不受影响——
+   * 而 locale 是全局状态，测试侧靠 `afterEach setLocale('zh')` 复位（见 handoff-i18n.test.ts）。
+   *
+   * 判定逻辑与文案**分离**：下面每个分支只「选一个键 + 给参数」，字面量全在字典里。
+   * 这样 en 用户不再看到「removable ← 项目已不存在 C:\x」这种中英混排（v5.4 候选 B）。
+   */
+  const dict = t().handoff;
+  const hasRealSession = info.sessionId !== undefined && isRealSessionIdShape(info.sessionId);
   // ① 形状合法 ⇒ 才谈得上「证据」，但**形状不等于证据**（v5.4 候选 1 修的就是这个）
-  if (info.sessionId !== undefined && isRealSessionIdShape(info.sessionId)) {
+  if (hasRealSession && info.sessionId !== undefined) {
     const state = stateOf(info.sessionId);
     if (state === 'exists') {
-      return { verdict: 'keep-real-session', detail: `真实会话 ${info.sessionId}（已核验）` };
+      return {
+        verdict: 'keep-real-session',
+        detail: fmt(dict.detailRealSession, { session: info.sessionId }),
+      };
     }
     if (state === 'unknown') {
       // 读不到 ≠ 没有：删除不可逆，这一档必须保留，且如实告诉用户「没核验到」
       return {
         verdict: 'keep-unverified',
-        detail: `会话 ${info.sessionId} 无法核验（读不到会话目录，按保守保留）`,
+        detail: fmt(dict.detailUnverified, { session: info.sessionId }),
       };
     }
     // 走到这里 = `absent`：形状对但会话文件确实查无 ⇒ 不构成证据，继续看项目路径
   }
   if (!info.handoffExists) {
     // 没有交接单 ⇒ 无法归属，也没有任何证据可留 ⇒ 孤儿目录
-    return { verdict: 'prune', detail: '目录里没有 handoff.md' };
+    return { verdict: 'prune', detail: dict.detailNoHandoff };
   }
   // ② 项目路径还在 ⇒ 用户可能还要用它
   if (info.project !== undefined && projectExists(info.project)) {
-    return { verdict: 'keep-project-exists', detail: `项目仍在 ${info.project}` };
+    return {
+      verdict: 'keep-project-exists',
+      detail: fmt(dict.detailProjectExists, { project: info.project }),
+    };
   }
+  const base =
+    info.project === undefined
+      ? dict.detailNoProject
+      : fmt(dict.detailProjectGone, { project: info.project });
   const why =
-    info.sessionId !== undefined && isRealSessionIdShape(info.sessionId)
-      ? `会话 ${info.sessionId} 的文件已不存在`
+    hasRealSession && info.sessionId !== undefined
+      ? fmt(dict.detailSessionFileGone, { session: info.sessionId })
       : undefined;
-  const base = info.project === undefined ? '交接单里没有项目路径' : `项目已不存在 ${info.project}`;
-  return { verdict: 'prune', detail: why === undefined ? base : `${base}；${why}` };
+  return {
+    verdict: 'prune',
+    detail: why === undefined ? base : fmt(dict.detailJoin, { base, why }),
+  };
 }
 
 /** 扫描根目录下的所有交接单目录（只读）。 */

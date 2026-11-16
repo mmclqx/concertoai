@@ -147,14 +147,22 @@ describe('classifyHandoffDir：两条判据（路径已不存在 + 无真实会�
       sessionAbsent,
     );
     expect(r.verdict).toBe('prune');
-    // 判据要在文案里写出来：用户得能看懂「为什么这份明明有 id 也能删」。
-    //
-    // ⚠️ B 类（v5.4 候选 3，用户裁决「登记边界，本轮不改」）：`detail` 是
-    // `classifyHandoffDir()` 里**硬编码的中文**，不走 i18n。所以这条断言是**唯一**
-    // 允许绑中文字面量的地方——它守的是「判据写出来了」，不是「文案跟随语言」。
-    // 改它要连 src 的 detail 生成逻辑一起搬到 `t().handoff.*`（含参数化），
-    // 那属于另一件事；在那之前 en 用户看逐条清单会见到中英混排，这是**已知边界**。
-    expect(r.detail).toContain('已不存在');
+    /**
+     * 判据要在文案里写出来：用户得能看懂「为什么这份明明有 id 也能删」。
+     *
+     * v5.4 候选 B 起 `detail` 也走 `t().handoff.*`，故这里**不再绑中文字面量**，
+     * 而是与产品同源拼出整行比较（候选 3 对 `title`/`summary` 用的是同一手法）。
+     * 顺带把判据从「只查某几个字」升级为**整行相等**：它同时钉住了
+     * 「项目不在」+「会话文件查无」两条理由**都在**、且**顺序与分隔符**正确
+     * （只 `toContain` 的话，两句拼反了照样绿）。
+     */
+    const dict = t().handoff;
+    expect(r.detail).toBe(
+      fmt(dict.detailJoin, {
+        base: fmt(dict.detailProjectGone, { project: 'C:\\tmp\\gone' }),
+        why: fmt(dict.detailSessionFileGone, { session: '20261115-120000-001' }),
+      }),
+    );
   });
 
   it('形状合法但会话文件**读不到**（unknown）⇒ `keep-unverified`，项目不在也照样保留', () => {
@@ -164,8 +172,9 @@ describe('classifyHandoffDir：两条判据（路径已不存在 + 无真实会�
       sessionUnknown,
     );
     expect(r.verdict).toBe('keep-unverified');
-    // B 类边界（同上）：detail 硬编码中文，不走 i18n —— 本轮登记不改。
-    expect(r.detail).toContain('无法核验');
+    // 同源整行比较（候选 B）：这一档最要紧的是「如实说没核验到」，所以整行钉死，
+    // 而不是只查「出现了『无法核验』四个字」——后者在文案被改成「已确认不存在」时仍会绿。
+    expect(r.detail).toBe(fmt(t().handoff.detailUnverified, { session: '20261115-120000-001' }));
   });
 
   it('形状合法 + absent + 项目**仍在** ⇒ 保留·项目在（路径判据仍然生效，不被会话判据吞掉）', () => {
@@ -352,9 +361,19 @@ describe('runHandoffCommand：文案与退出码', () => {
       }),
     );
     expect(lines).toContain(dict.listHint);
-    // 证据类必须显式标出来：逐条清单那一行（detail 是 B 类硬编码中文，故只断标签部分）
+    /**
+     * 证据类必须显式标出来：逐条清单那一行。
+     *
+     * v5.4 候选 B 起 `detail` 也走字典，所以这一行可以**整行钉死**了
+     * （格式是 `${label.padEnd(12)} ${name}  ← ${detail}`）——
+     * 原来只断标签，是因为 detail 硬编码中文没法跨语言比较。
+     */
     const evidenceLine = lines.find((l) => l.includes('evidence-cccccccccccc')) ?? '';
-    expect(evidenceLine).toContain(dict.keepRealSession);
+    expect(evidenceLine).toBe(
+      `  ${dict.keepRealSession.padEnd(12)} evidence-cccccccccccc  ← ${fmt(dict.detailRealSession, {
+        session: '20261115-120000-001',
+      })}`,
+    );
   });
 
   it('`prune` 不带 --yes ⇒ 打印「本次未删除任何东西」，盘上原样', () => {

@@ -610,6 +610,18 @@ export const zh = {
     keepUnverified: '保留·未核验',
     keepProjectExists: '保留·项目在',
     prune: '可清理',
+    // v5.4 候选 B：逐条清单的**判定理由**（`classifyHandoffDir` 的 `detail`）也走字典。
+    // 为什么不与上面的标签合并：标签是短分类名（要按宽度对齐打印），`detail` 是自由理由句，
+    // 两者用途不同；合并会让「标签」被迫容纳占位符。
+    detailRealSession: '真实会话 {session}（已核验）',
+    detailUnverified: '会话 {session} 无法核验（读不到会话目录，按保守保留）',
+    detailNoHandoff: '目录里没有 handoff.md',
+    detailProjectExists: '项目仍在 {project}',
+    detailNoProject: '交接单里没有项目路径',
+    detailProjectGone: '项目已不存在 {project}',
+    detailSessionFileGone: '会话 {session} 的文件已不存在',
+    // 两条理由拼一句时，**分隔符本身也是语言事实**（中文全角分号 / 英文分号+空格）
+    detailJoin: '{base}；{why}',
     confirmYes:
       '将删 {count} 个（其中 {absentCount} 个是会话文件查无）；保留 {keepRealSession} 个（会话已核验）、保留未核验 {keepUnverified} 个（读不到会话目录）、保留 {keepProjectExists} 个（项目仍在）。确认删 {count} 个？',
     empty: '没有交接单目录（{path}）',

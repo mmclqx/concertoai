@@ -639,6 +639,19 @@ export const en = {
     keepUnverified: 'keep(unverified)',
     keepProjectExists: 'keep(project)',
     prune: 'removable',
+    // v5.4 candidate B: the per-directory **reason** (`detail` from `classifyHandoffDir`)
+    // goes through the dictionary too — previously it was hardcoded Chinese in src,
+    // so English users saw a Chinese reason next to an English label.
+    detailRealSession: 'real session {session} (verified)',
+    detailUnverified:
+      'session {session} cannot be verified (session directory unreadable; kept conservatively)',
+    detailNoHandoff: 'no handoff.md in the directory',
+    detailProjectExists: 'project still present: {project}',
+    detailNoProject: 'the handoff records no project path',
+    detailProjectGone: 'project no longer exists: {project}',
+    detailSessionFileGone: 'the file for session {session} no longer exists',
+    // When two reasons are joined, the **separator is itself a language fact**
+    detailJoin: '{base}; {why}',
     confirmYes:
       'Deleting {count} (of which {absentCount} have no session file); keeping {keepRealSession} (sessions verified), {keepUnverified} unverified (session directory unreadable), {keepProjectExists} (project still present). Delete {count}?',
     empty: 'No handoff directories found ({path})',

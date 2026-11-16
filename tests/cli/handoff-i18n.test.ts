@@ -114,6 +114,51 @@ describe('handoff 文案的 i18n 护栏', () => {
     // 变异探针：把上面那句 `setLocale('en')` 删掉 ⇒ 本用例必须红（② 全落空、③ 反而命中）。
   });
 
+  it("setLocale('en') 下逐条清单的**理由**（detail）也是英文（候选 B 的判据落点）", () => {
+    /**
+     * 为什么要单独一条：候选 3 只治了 `title` / `summary` / `listHint` 这些「行级」文案，
+     * 而每条目录后面的 `← 理由`（`classifyHandoffDir` 的 `detail`）当时仍是 src 里
+     * 硬编码中文 —— en 用户看到的就是「removable ← 项目已不存在 C:\x」这种中英混排。
+     *
+     * 这条判据是**端到端**的（跑命令、读屏幕），不是查字典：
+     * `tests/i18n/en.test.ts` 已静态守住「en 字典不含 CJK」，但那只证明**字典**干净，
+     * 不证明**屏幕**干净（代码可能压根没用字典，仍硬编码中文）。
+     */
+    makeDir('gone-aaaaaaaaaaaa', { project: 'C:\\tmp\\gone-proj' });
+    const sessionsAbsent = (): SessionFileState => 'absent';
+
+    const render = (): string[] => {
+      const lines: string[] = [];
+      runHandoffCommand({
+        action: 'list',
+        root,
+        sessionStateOf: sessionsAbsent,
+        log: (m) => lines.push(m),
+      });
+      return lines;
+    };
+
+    setLocale('en');
+    const enLines = render();
+    const linesWithDetail = enLines.filter((l) => l.includes('←'));
+    // 正例自证：真的渲染出了逐条清单（否则下面「没有中文」恒真）
+    expect(linesWithDetail.length).toBe(1);
+
+    // ① 理由与产品同源：整行等于 en 模板拼出来的那一行
+    const en = DICTS.en.handoff;
+    expect(linesWithDetail[0]).toBe(
+      `  ${en.prune.padEnd(12)} gone-aaaaaaaaaaaa  ← ${fmt(en.detailProjectGone, {
+        project: 'C:\\tmp\\gone-proj',
+      })}`,
+    );
+
+    // ② 否定面（这条才是候选 B 的病根）：整块输出不许再出现任何 CJK 字符
+    const cjk = enLines.filter((l) => /[\u3000-\u9fff]/.test(l));
+    expect(cjk).toEqual([]);
+
+    // 变异探针：把 en 的 detailProjectGone 抄成中文 ⇒ ①② 都必须红。
+  });
+
   it('键非空：handoff 字典在 zh / en 下都不许有空串（空串 = 屏幕上少一行，且不报错）', () => {
     for (const locale of ['zh', 'en'] as const) {
       const dict: Record<string, string> = DICTS[locale].handoff;
