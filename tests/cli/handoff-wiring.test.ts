@@ -149,6 +149,7 @@ describe('出口 ③：SIGINT（用户中断）⇒ 留下中断交接单', () =>
     const target = String(runNode(probe).stdout).trim();
     expect(existsSync(target), `SIGINT 之后应写出 ${target}`).toBe(true);
     const text = readFileSync(target, 'utf8');
+    // ⚠️ 格式契约，别改成 t()（v5.4 候选 A，理由见 docs/14-测试断言分类盘点.md §四）
     expect(text).toContain('> 退出原因: interrupted');
     expect(text).toContain('用户中断');
   });
@@ -187,6 +188,7 @@ describe('出口 ④：真未捕获异常 ⇒ crash-handler 写异常交接单',
     expect(existsSync(target), 'crash-handler 应在退出前同步写交接单').toBe(true);
     const text = readFileSync(target, 'utf8');
     expect(text).toContain('异常退出：boom-from-crash');
+    // ⚠️ 格式契约，别改成 t()（v5.4 候选 A，理由见 docs/14-测试断言分类盘点.md §四）
     expect(text).toContain('> 退出原因: error');
     expect(text, '交接单里不许出现堆栈行').not.toMatch(/\n\s+at .*:\d+:\d+/);
   });
@@ -215,6 +217,7 @@ describe('消费端：下一次进入能读到上一次的交接单', () => {
     };
     expect(parsed.notice).toContain('上次交接：撞轮数上限（50/50）');
     expect(parsed.notice).toContain('.concertoai');
+    // ⚠️ 格式契约，别改成 t()（v5.4 候选 A，理由见 docs/14-测试断言分类盘点.md §四）
     expect(parsed.inject).toContain('## ④ 为什么退出');
   });
 });

@@ -21,6 +21,7 @@ describe('loadProjectRules', () => {
     writeFileSync(path.join(tmp, 'AGENTS.md'), '# 项目规则\n\n- 规则一');
     const rules = await loadProjectRules(tmp);
     expect(rules.loadedFrom).toBe('AGENTS.md');
+    // ⚠️ 格式契约，别改成 t()（v5.4 候选 A，理由见 docs/14-测试断言分类盘点.md §四）
     expect(rules.text).toContain('# 项目规则（来自 AGENTS.md）');
     expect(rules.text).toContain('- 规则一');
     expect(rules.truncated).toBe(false);

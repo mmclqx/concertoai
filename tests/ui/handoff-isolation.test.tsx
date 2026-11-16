@@ -206,6 +206,7 @@ describe('① 探针通电：App 真的会写交接单，且钉家目录真的�
     expect(existsSync(pinnedPath), `应写出 ${pinnedPath}`).toBe(true);
     expect(pinnedPath.startsWith(tmpHome), '必须落在临时 home 内').toBe(true);
     const text = readFileSync(pinnedPath, 'utf8');
+    // ⚠️ 格式契约，别改成 t()（v5.4 候选 A，理由见 docs/14-测试断言分类盘点.md §四）
     expect(text).toContain('## ① 做到哪一步');
     expect(text).toContain('## ④ 为什么退出');
   });

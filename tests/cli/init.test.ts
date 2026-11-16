@@ -140,6 +140,7 @@ describe('runInitCommand：双文件输出（v5.0 T5）', () => {
     const agents = readFileSync(path.join(tmp, AGENTS_FILE), 'utf8');
 
     expect(agents).toContain('# AGENTS.md');
+    // ⚠️ 格式契约，别改成 t()（v5.4 候选 A，理由见 docs/14-测试断言分类盘点.md §四）
     expect(agents).toContain('## 项目定位');
     expect(agents).toContain('## 技术栈');
     expect(agents).toContain('## 常用命令');

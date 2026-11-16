@@ -111,6 +111,7 @@ describe('executeSkillCommand', () => {
       tmp,
     );
     expect(result.handled).toBe(false);
+    // ⚠️ 格式契约，别改成 t()（v5.4 候选 A，理由见 docs/14-测试断言分类盘点.md §四）
     expect(result.skillBody).toContain('## 技能描述');
     expect(result.skillName).toBe('code-review');
   });

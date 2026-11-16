@@ -148,6 +148,7 @@ describe('四栏结构：标题固定、顺序固定、每一栏都非空', () =
       { cwd, sessionId: 'sess-9', now: FIXED_NOW },
     );
     expect(text).toContain(`> 项目: ${path.resolve(cwd)}`);
+    // ⚠️ 格式契约，别改成 t()（v5.4 候选 A，理由见 docs/14-测试断言分类盘点.md §四）
     expect(text).toContain('> 会话: sess-9');
     expect(text).toContain('> 写入时间: 2026-11-14T12:00:00.000Z');
     expect(text).toContain('> 退出原因: interrupted');
@@ -380,6 +381,7 @@ describe('落点与幂等（方案 B：~/.concertoai/handoffs/<项目 key>/）',
   it('**非 terminal 每次都写**（否则后来的 Ctrl+C 改不动 ④ 栏 = 留下过期记录）', () => {
     finalizeSession([], { kind: 'completed' }, { cwd, sessionId: 's1', now: FIXED_NOW });
     const file = handoffPath(cwd);
+    // ⚠️ 格式契约，别改成 t()（v5.4 候选 A，理由见 docs/14-测试断言分类盘点.md §四）
     expect(readFileSync(file, 'utf8')).toContain('> 退出原因: completed');
     // 同一会话后来的退出必须能覆盖
     const again = finalizeSession(
@@ -391,6 +393,7 @@ describe('落点与幂等（方案 B：~/.concertoai/handoffs/<项目 key>/）',
       },
     );
     expect(again).toBeDefined();
+    // ⚠️ 格式契约，别改成 t()（v5.4 候选 A，理由见 docs/14-测试断言分类盘点.md §四）
     expect(readFileSync(file, 'utf8')).toContain('> 退出原因: interrupted');
   });
 
@@ -420,6 +423,7 @@ describe('出口 ③ 的进程级兜底（`process.exit` 时写「用户中断�
     const file = writeHandoffAtProcessExit();
     expect(file).toBeDefined();
     const text = readFileSync(file ?? '', 'utf8');
+    // ⚠️ 格式契约，别改成 t()（v5.4 候选 A，理由见 docs/14-测试断言分类盘点.md §四）
     expect(text).toContain('> 退出原因: interrupted');
     expect(text).toContain('用户中断');
     // 否定面：用户中断不得被说成异常，也不得留堆栈
@@ -444,6 +448,7 @@ describe('出口 ③ 的进程级兜底（`process.exit` 时写「用户中断�
     expect(writeHandoffAtProcessExit()).toBeUndefined();
     const text = readFileSync(handoffPath(cwd), 'utf8');
     expect(text).toContain('异常退出：boom');
+    // ⚠️ 格式契约，别改成 t()（v5.4 候选 A，理由见 docs/14-测试断言分类盘点.md §四）
     expect(text).not.toContain('> 退出原因: interrupted');
   });
 
@@ -488,6 +493,7 @@ describe('消费端：读取 + 新鲜度三段', () => {
     const { notice, inject } = consumeHandoff(cwd, FIXED_NOW);
     expect(notice).toContain('上次交接：撞轮数上限（50/50）');
     expect(notice, '落点 B 用户不易发现 ⇒ 必须打完整路径').toContain(handoffPath(cwd));
+    // ⚠️ 格式契约，别改成 t()（v5.4 候选 A，理由见 docs/14-测试断言分类盘点.md §四）
     expect(inject).toContain('## ① 做到哪一步');
   });
 

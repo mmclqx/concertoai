@@ -75,6 +75,7 @@ tools: read_file, search_content
       version: '1.0.0',
       tools: ['read_file', 'search_content'],
     });
+    // ⚠️ 格式契约，别改成 t()（v5.4 候选 A，理由见 docs/14-测试断言分类盘点.md §四）
     expect(custom?.body).toContain('## 技能描述');
   });
 
