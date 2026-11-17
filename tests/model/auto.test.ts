@@ -13,6 +13,7 @@ import path from 'node:path';
 
 import { describe, expect, it, vi } from 'vitest';
 import { resolveModel } from '../../src/cli/common';
+import { fmt, t, tierLabel } from '../../src/i18n';
 import {
   AUTO_MODEL,
   buildAutoPolicyGuide,
@@ -134,22 +135,47 @@ describe('quoteSwitch：成本对比（同时刻同档位）', () => {
   });
 });
 
+/**
+ * 期望值**与产品同源**（v5.6）：文案取自 `t().modelCmd.*`，不再抄中文字面量。
+ * 数字（¥1、3.9）是价格表事实，单位（`/百万` ↔ `M`、`倍` ↔ `x`）是文案 ⇒ 从模板里取。
+ */
+const c = () => t().modelCmd;
+
+/** 取模板中 `{key}` 之后、到停顿字符之前的字面文字（单位按 locale 断言用）。 */
+function litAfter(template: string, key: string, stop: RegExp): string {
+  const parts = template.split(`{${key}}`);
+  if (parts.length < 2) return '';
+  const rest = parts[1] as string;
+  const m = stop.exec(rest);
+  return m ? rest.slice(0, m.index) : rest;
+}
+
+/** 取模板里第一个占位符之前的字面部分。 */
+function head(template: string): string {
+  const i = template.indexOf('{');
+  return i < 0 ? template : template.slice(0, i);
+}
+
 describe('buildAutoPolicyGuide：策略说明必须讲清「不会自动升级」', () => {
   it('包含当前时段单价与档位标注', () => {
     const text = buildAutoPolicyGuide(OFFPEAK_AT).join('\n');
-    expect(text).toContain('空闲价');
-    expect(text).toContain('¥1/百万');
+    // 档位词走 i18n（K18 的单一来源）。字面量必须是 `PriceTier` 真值 `'offpeak'`：
+    // 写成 `'offPeak'` 会走 `tierLabel()` 的 else 分支而**碰巧仍绿**，只有 tsc 抓得住。
+    expect(text).toContain(tierLabel('offpeak'));
+    // 单位按 locale：zh `¥1/百万`、en `¥1M`
+    expect(text).toContain(`¥1${litAfter(c().autoPriceLine, 'input', /[ ·]/)}`);
   });
 
   it('【红线】明确写出「不会自动升级」', () => {
     const text = buildAutoPolicyGuide(PEAK_AT).join('\n');
-    expect(text).toContain('不会自动升级');
+    expect(text).toContain(head(c().autoNoAutoUpgrade));
   });
 
   it('给出可复制的升级命令与成本倍数', () => {
     const text = buildAutoPolicyGuide(OFFPEAK_AT).join('\n');
     expect(text).toContain('/model deepseek-v4-pro');
-    expect(text).toContain('3.9 倍');
+    // 倍数单位按 locale：zh `3.9 倍`、en `3.9x`
+    expect(text).toContain(`3.9${litAfter(c().autoUpgradeHow, 'ratio', /[)）]/)}`);
   });
 
   it('说明不超过 6 行（防止新手被淹没）', () => {
@@ -170,7 +196,8 @@ describe('buildUpgradeHint：只提示不切换', () => {
   it('flash 上有提示，含手动命令', () => {
     const hint = buildUpgradeHint('deepseek-v4-flash', OFFPEAK_AT);
     expect(hint).toContain('/model deepseek-v4-pro');
-    expect(hint).toContain('需确认');
+    // 「需确认」这件事：zh 是「倍成本，需确认后生效」，en 是「x, applies after you confirm」
+    expect(hint).toContain(litAfter(c().upgradeHint, 'ratio', /[)）]/));
   });
 
   it('最高档无提示', () => {
@@ -179,7 +206,10 @@ describe('buildUpgradeHint：只提示不切换', () => {
 
   it('提示文本不包含任何自动切换语义（无「已切换」字样）', () => {
     const hint = buildUpgradeHint('deepseek-v4-flash', OFFPEAK_AT) ?? '';
-    expect(hint).not.toContain('已切换');
+    // 用当前语言的「已切换」句首，两种语言都有牙（zh `✅ 已切换到 `、en `✅ Switched to `）
+    expect(hint).not.toContain(head(c().switchedUpgrade));
+    // 如实标注：这条是 zh 专用否定面 —— en 文案本就不含中文，
+    // 故它在 en 下恒真（无害，但**不提供保护**）。留着是因为 zh 是默认语言。
     expect(hint).not.toContain('自动切换');
   });
 });
@@ -234,8 +264,16 @@ describe('config 接受 "auto"（T6 验收①：round-trip 正确）', () => {
     try {
       expect(resolveModel(AUTO_MODEL)).toBe('deepseek-v4-flash');
       const told = stderr.mock.calls.map((c) => String(c[0])).join('\n');
-      expect(told).toContain('auto 预设');
-      expect(told).toContain('不会自动升级');
+      /**
+       * **整行同源**（不是关键词）：期望值由同一个模板 + 同一批参数拼出来。
+       *
+       * 这里**不能**用 `modelCmd.autoEnabled`：那是 `/model auto` **命令**的输出，
+       * 而本条测的是 `resolveModel` 的**启动期提示**，产品里故意是两句话
+       * （实测踩过：第一版就是拿错了键，断言红而产品是对的）。
+       */
+      expect(told).toContain(
+        fmt(c().resolveAutoNotice, { label: 'DeepSeek V4 Flash', target: 'deepseek-v4-pro' }),
+      );
     } finally {
       stderr.mockRestore();
     }

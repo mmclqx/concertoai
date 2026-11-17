@@ -93,22 +93,34 @@ describe('balance 整行跟随 locale（用户报的那条泄漏点）', () => {
 });
 
 describe('同一实现、四处受益（/model · auto 引导 · balance · 状态条）', () => {
-  it('/model status 的档位词跟随 locale', async () => {
+  it('/model status 的档位词跟随 locale（v5.6：整段也已本地化，不再只是档位词）', async () => {
+    const statusCtx = {
+      currentModel: 'deepseek-v4-flash',
+      providerName: 'deepseek',
+      confirm: async () => false,
+      at: OFFPEAK_AT,
+    };
+    const render = async () => {
+      const result = await executeModelCommand({ type: 'status' }, statusCtx);
+      return result.message?.content ?? '';
+    };
+
+    // 探针通电：zh 侧同一入口真的产出了「当前时段：空闲价」这段中文，
+    // 否则下面的「en 零 CJK」在空串/没渲染时也成立（AGENTS 归因类自证）。
+    setLocale('zh');
+    const zhText = await render();
+    expect(zhText).toContain(`当前时段：${tierLabel('offpeak')}`);
+    expect(zhText).toMatch(CJK);
+
+    // v5.6（K18 收尾）：`/model` 全部出口文案进 i18n ⇒ en 下整段零 CJK。
+    // **本条原来是「挂账钩子」**：断言 `'当前时段：off-peak hours'` 这个**半英半中**的
+    // 现状并注明「改了要回来更新」。现在改了，钩子按约定翻面——断言新事实：
+    // 不只是档位词跟随，包着它的那半句也跟着走了。反过来若不翻，
+    // 这条会红在「产品变好了」，正是 AGENTS 说的「把改好判成回归」。
     setLocale('en');
-    const result = await executeModelCommand(
-      { type: 'status' },
-      {
-        currentModel: 'deepseek-v4-flash',
-        providerName: 'deepseek',
-        confirm: async () => false,
-        at: OFFPEAK_AT,
-      },
-    );
-    const text = result.message?.content ?? '';
-    // 只验证档位词跟随 locale：`/model` 整段文案仍是中文（已挂账，不在本轮范围），
-    // 因此这里**不能**断言整段零 CJK —— 那会让用例替另一个缺口背锅（或反向假绿）。
-    expect(text).toContain('当前时段：off-peak hours');
-    expect(text).toMatch(CJK); // 反向自证：整段其余部分确实还是中文（挂账事实，改了要回来更新）
+    const enText = await render();
+    expect(enText).toContain('off-peak hours');
+    expect(enText).not.toMatch(CJK);
   });
 
   it('auto 引导的档位词跟随 locale（模块内不再有第二份文案）', () => {
