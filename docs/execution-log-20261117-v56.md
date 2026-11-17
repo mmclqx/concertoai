@@ -207,3 +207,53 @@ M3 值得单说：它专治「按行扫裸中文」的检查——把漏掉的�
 2. **状态条 `¥0.0000¥` 重复符号 + en 下全角括号**（§8.2 ①）：先定位拼接点，
    确认是「符号拼了两遍」还是「模板里本来就带一个」。
 
+---
+
+## 十一、复验轮（同日 23:2x 起）：判据漂移三条 + 尺子修三处
+
+提交之后跑了 `scripts/instruction-state.mjs check`（9 条 doneCriteria），
+第一轮 **6 条 FAIL**。逐条归因后**没有一条是产品缺陷**——全部是「尺子」问题。
+按 AGENTS「探针无牙的读数，先怀疑尺子」，逐条修，结果是：
+
+| 判据 | 首轮 | 归因 | 修法 | 复验 |
+|---|---|---|---|---|
+| V1 | FAIL（缺 `zh 键数=26`，实测 28） | 期望值漂移，且**与本契约里的 V2b 互相矛盾**：V2b 要 `common.ts` 的 CJK=0，而 `resolveAutoNotice`/`resolveUnknownModel` 两句必须进词典才清得干净，26 键装不下 | 登记 **V1b**（期望 28，键集合一致） | ✅ PASS |
+| V3 | FAIL（`'node_modules' 不是内部或外部命令`） | **命令写法**：`node_modules/.bin/tsx.cmd` 正斜杠路径在 Windows cmd 下不可执行 | 登记 **V3b**（`node node_modules/tsx/dist/cli.mjs`，可移植写法 + 计数器自证） | ✅ PASS |
+| V4 | FAIL（缺 `files=1 tests=4`，实测 5） | 期望值漂移：多的是 **G4b**（`fmt` 真能替换占位符的正例自证），G4 只比「模板不同」，`fmt` 坏掉时 G4 仍绿 ⇒ AGENTS 要求必须补 | 登记 **V4b**（期望 5 条 + 逐个用例名点名） | ✅ PASS |
+| V5 | FAIL（`M5a 变异没生效`） | **尺子**：`core.autocrlf=true` 下 `git checkout` 把用例文件写成 CRLF，而变异串按 LF 写 ⇒ `replace` 不命中 | 探针改为**先归一行尾**再匹配（src 侧四个目标同步） | ✅ PASS（M1–M5b 全按预期） |
+| V6 | FAIL（脚本不存在） | 判据脚本未落地 | 新建 `.tmp-v56-assert-audit.mjs`（去注释 + 字面量状态机 + 正例自证） | ✅ PASS |
+| V7 | FAIL（脚本不存在） | 同上 | 新建 `.tmp-v56-pty-en.mjs`（复用已调通的 PTY 跑法，不另造第二把尺子） | ✅ PASS |
+| V8 | FAIL（biome 报 `tests/cli/model-i18n.test.ts` 格式错） | **真问题**：我 `git checkout` 该文件后它是 CRLF，而仓库常态全是 LF（实测 `auto.test.ts`/`model.ts`/`README.md` 均 0 CRLF），`biome.json` 未设 `lineEnding`（默认 lf） | 转回 LF（`.tmp-v56b-lf.mjs`，复核「仍含 CRLF 的文件数 = 0」） | ✅ PASS（三环境全绿） |
+
+**修尺子时又出错两次，如实记**：
+
+- V6 的扫描器第一版**按行**找 `expect(...)`，跨行形态
+  （`expect(x).toContain(\n  '中文',\n)`）扫不到 ⇒ 自带的正例自证里
+  「跨行=0（应 1）」当场判 FAIL。与 V2 的「按行扫必漏跨行」是同一个坑，
+  改成**字面量前 160 字符窗口**后自证 PASS。
+- 同一扫描器把 `toContain('📊 当前 …空闲价')` 误判成**否定面**——
+  窗口过宽，吃进了上一行用例里的 `.not.`。改成「只看当前这条 `expect(` 之后的链」。
+  **误分类比漏检更坏**：漏检会红，误分类会让一份错读数看着合理。
+- V4b 第一版从 vitest 输出里找用例名 `G1`，但 `--silent=true` **不打印逐条用例名**，
+  于是 5 条全绿却报「缺 G1」。改成从**源码**取用例名；而正则 `G\d\w?：`
+  又把 `G4b（正例自证）：` 判成缺失（冒号前还有括注）⇒ 放宽到 `[：（）]`。
+  同一个「按形状写死」的毛病，一轮里犯两次。
+
+**状态机口径**：三条修正判据以 `--followup --kind criteria` 登记（F2/F3/F4），
+原 V1/V3/V4 **保持 FAIL**——它们是当时的期望值记录，**不许悄悄改**。
+要把它们标成 superseded 属改契约，按 `docs/12` §七需**用户确认**，故本轮只登记差异、不动原文。
+
+登记这三个 followUp 时还栽在引号上三次（`--check "node -e \"…\""` 在 cmd 下嵌套引号被吃，
+报「系统找不到指定的文件」；PowerShell `-File` 按 GBK 读脚本把中文与引号配对一起搅坏），
+最终用 **Node + `spawnSync` args 数组**（不经 shell）才写进去。
+
+**复验轮的三环境 verify 读数**（修完尺子后重跑，行尾归一也在这之后）：
+
+| 环境 | 文件 | 用例 | failed |
+|---|---|---|---|
+| 默认 | 194 | 2852 | 0 |
+| `CONCERTOAI_AGENT=concertoai-loop` | 194 | 2852 | 0 |
+| `LUMEN_LOCALE=en` | 194 | 2852 | 0 |
+
+日志：`.tmp-v56b-v2-default.log` / `.tmp-v56b-v2-agent.log` / `.tmp-v56b-v2-en.log`。
+
