@@ -1090,6 +1090,62 @@ export const zh = {
    * 数字来自响应 `usage` 的**本地累加**（`model/usage-tally.ts`），不是调用前估算；
    * 拿不到 usage 时必须说「未统计」——绝不用 ¥0 冒充「这次没花钱」。
    */
+  /**
+   * `/model` 与 auto 引导的全部用户可见文案（v5.6，K18 收尾）。
+   *
+   * 为什么单开一组而不是塞进 `cli.model`：那是**参数帮助**（`--model` 的 description），
+   * 与「运行期输出」是两种东西 —— 混在一起以后改帮助会误伤运行期文案。
+   *
+   * **单位口径（用户裁决 ③）**：`¥` 与 `tokens` 在 en 下**保持原样**（价格是人民币，
+   * 不能改美元）；但「/百万」这半句是文字，en 必须是 `M`。所以它进模板而不是拼在代码里。
+   * 这正是 `¥1/百万`（zh）与 `¥1M`（en）必须按 locale 分别断言的由来。
+   */
+  modelCmd: {
+    unknownModel: '未知模型：{model}（可用：{available}）',
+    statusCurrentUnknown:
+      '🤖 当前模型：{model}（不在 DeepSeek 价格表内，按本地/第三方模型处理，成本显示 0）',
+    statusUnknownHint: '提示：/model list 查看 DeepSeek 可用模型。',
+    statusCurrent: '🤖 当前模型：{label}（{id}）',
+    statusPrice:
+      '   当前时段：{tier}（输入 ¥{input}/百万 · 输出 ¥{output}/百万 · 缓存命中 ¥{cacheHit}/百万）',
+    statusWindow: '   上下文窗口：{window} tokens · 并发限制：{rateLimit}',
+    statusUsage: '用法：/model auto（自动预设）· /model list（模型列表）· /model <id>（手动切换）',
+    listTitle: '📋 可用模型（当前时段：{tier}）',
+    listCurrentMark: ' ← 当前',
+    listItem:
+      '- {label}（{id}）{mark}\n    输入 ¥{input}/百万 · 输出 ¥{output}/百万 · 缓存命中 ¥{cacheHit}/百万',
+    listAutoNote: '另：/model {auto}（自动预设，默认 {start}，不会自动升级）',
+    providerNotDeepseek:
+      '⚠️ 当前 Provider 是 {provider}，/model 仅支持 DeepSeek 模型切换。\n如需切换 Provider，请用 `concertoai provider switch <name>`。',
+    alreadyCurrent: 'ℹ️ 当前已是 {label}，无需切换。',
+    costCompare: '成本对比（同一示例用量，{tier}）：现在 ¥{from} → {label} ¥{to}（约 {ratio} 倍）',
+    switchedDowngrade:
+      '✅ 已切换到 {label}（省钱方向，直接生效）\n{cost}\n提示：能力下降时可随时 /model {prev} 切回。',
+    confirmUpgrade: '即将切换到更贵的模型 {label}。\n{cost}\n是否继续？',
+    upgradeCancelled: '已取消切换，继续使用 {label}。\n{cost}',
+    switchedUpgrade: '✅ 已切换到 {label}\n{cost}\n提示：能力富余时可 /model {prev} 切回省钱。',
+    autoEnabled: '🤖 已启用 auto 预设：默认使用 {label}',
+    autoPriceLine:
+      '   当前时段（{tier}）单价：输入 ¥{input}/百万 · 输出 ¥{output}/百万 · 缓存命中 ¥{cacheHit}/百万',
+    autoStrategy:
+      '   策略：日常对话与简单任务用默认档（便宜）；遇到明显更难的任务时会提示你可以升级。',
+    autoNoAutoUpgrade:
+      '   ⚠️ 不会自动升级模型——是否花更多钱跑更强的模型，永远由你决定（成本透明 + fail-closed）。',
+    autoUpgradeHow:
+      '   升级方式（手动 + 确认）：/model {target} —— 同一示例用量约 ¥{toCost} vs 现在 ¥{fromCost}（约 {ratio} 倍）',
+    autoSampleUsage:
+      '   示例用量：输入 {input} / 输出 {output}（含缓存命中 {cacheHit}）tokens，与 doctor 月成本预估同口径。',
+    autoOnlyTier: '   当前已是唯一档位，无更强模型可升级。',
+    upgradeHint:
+      '💡 任务较复杂？可手动升级到 {label}：/model {target}（同一示例用量约 {ratio} 倍成本，需确认后生效）',
+    // ── 以下两条来自 src/cli/common.ts 的 resolveModel（入口层，CLI 启动/`run` 也会走）──
+    // **措辞与上面两条刻意不同**：实际产品里它们是两句不同的话
+    // （`modelCmd.autoEnabled` 是 `/model auto` 命令输出，本条是启动期提示），
+    // 统一文案属**改文案**，不在 i18n 范围内 ⇒ 保持原样，只做本地化。
+    resolveAutoNotice:
+      '🤖 auto 预设：使用 {label}（不会自动升级；如需更强模型请 /model {target} 手动切换）',
+    resolveUnknownModel: '未知模型: {model}（可用: {available} / auto）',
+  },
   usage: {
     line: '💰 本次消耗：{calls} 次调用 ｜ 输入 {input} / 输出 {output} tokens（缓存命中 {cacheHit}）≈ ¥{cost}',
     unpriced:

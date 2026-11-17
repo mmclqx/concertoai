@@ -13,7 +13,7 @@
  * - 只对 deepseek 生效：本地/其他 Provider 的模型不在价格表内，切换无意义 → 明确拒绝并说明。
  */
 
-import { tierLabel } from '../../i18n';
+import { fmt, t, tierLabel } from '../../i18n';
 import type { ChatMessage } from '../../loop/types';
 import {
   AUTO_MODEL,
@@ -55,9 +55,14 @@ export function parseModelCommand(input: string): SlashModelCommand | null {
   if (modelId === undefined) {
     return {
       type: 'unknown',
-      message: `未知模型：${rest}（可用：${listModels()
-        .map((m) => m.id)
-        .join(' / ')} / ${AUTO_MODEL}）`,
+      // 跨行模板串也必须走 i18n：这里原本是 `未知模型：${…}` 分三行的模板，
+      // 「按行扫裸中文」的检查会整条漏掉（v5.6 实测踩过，故注释留痕）。
+      message: fmt(t().modelCmd.unknownModel, {
+        model: rest,
+        available: `${listModels()
+          .map((m) => m.id)
+          .join(' / ')} / ${AUTO_MODEL}`,
+      }),
     };
   }
   return { type: 'switch', modelId };
@@ -96,42 +101,55 @@ function assistant(content: string): ChatMessage {
 function statusText(currentModel: string, at: Date): string {
   const tier = priceTierFor(at);
   const profile = getModel(currentModel);
+  const c = t().modelCmd;
   if (profile === undefined) {
-    return [
-      `🤖 当前模型：${currentModel}（不在 DeepSeek 价格表内，按本地/第三方模型处理，成本显示 0）`,
-      '提示：/model list 查看 DeepSeek 可用模型。',
-    ].join('\n');
+    return [fmt(c.statusCurrentUnknown, { model: currentModel }), c.statusUnknownHint].join('\n');
   }
   const price = priceFor(currentModel, tier);
   const lines = [
-    `🤖 当前模型：${profile.label}（${profile.id}）`,
-    `   当前时段：${tierLabel(tier)}（输入 ¥${price.input}/百万 · 输出 ¥${price.output}/百万 · 缓存命中 ¥${price.cacheHit}/百万）`,
-    `   上下文窗口：${profile.contextWindow.toLocaleString('en-US')} tokens · 并发限制：${profile.rateLimit}`,
+    fmt(c.statusCurrent, { label: profile.label, id: profile.id }),
+    // 单位口径：`¥` 与 `tokens` 两种语言都保留原样；`/百万` ↔ `M` 才是需要本地化的「文字」，
+    // 故它写在模板里而不是拼在这里（否则 en 下会出现 `¥1/百万`）。
+    fmt(c.statusPrice, {
+      tier: tierLabel(tier),
+      input: price.input,
+      output: price.output,
+      cacheHit: price.cacheHit,
+    }),
+    fmt(c.statusWindow, {
+      window: profile.contextWindow.toLocaleString('en-US'),
+      rateLimit: profile.rateLimit,
+    }),
   ];
   // 有更强档时给「提示」（不是切换）：只说清成本倍数，动作始终由用户发起
   const hint = buildUpgradeHint(currentModel, at);
   if (hint !== undefined) {
     lines.push(`   ${hint}`);
   }
-  lines.push('用法：/model auto（自动预设）· /model list（模型列表）· /model <id>（手动切换）');
+  lines.push(c.statusUsage);
   return lines.join('\n');
 }
 
 /** 模型列表文本。 */
 function listText(currentModel: string, at: Date): string {
   const tier = priceTierFor(at);
-  const lines = [`📋 可用模型（当前时段：${tierLabel(tier)}）`, ''];
+  const c = t().modelCmd;
+  const lines = [fmt(c.listTitle, { tier: tierLabel(tier) }), ''];
   for (const model of listModels()) {
     const price = priceFor(model.id, tier);
-    const mark = model.id === currentModel ? ' ← 当前' : '';
+    const mark = model.id === currentModel ? c.listCurrentMark : '';
     lines.push(
-      `- ${model.label}（${model.id}）${mark}\n    输入 ¥${price.input}/百万 · 输出 ¥${price.output}/百万 · 缓存命中 ¥${price.cacheHit}/百万`,
+      fmt(c.listItem, {
+        label: model.label,
+        id: model.id,
+        mark,
+        input: price.input,
+        output: price.output,
+        cacheHit: price.cacheHit,
+      }),
     );
   }
-  lines.push(
-    '',
-    `另：/model ${AUTO_MODEL}（自动预设，默认 ${resolveAutoStartModel()}，不会自动升级）`,
-  );
+  lines.push('', fmt(c.listAutoNote, { auto: AUTO_MODEL, start: resolveAutoStartModel() }));
   return lines.join('\n');
 }
 
@@ -169,12 +187,11 @@ export async function executeModelCommand(
 
   // switch
   const target = cmd.modelId;
+  const c = t().modelCmd;
   if (ctx.providerName !== 'deepseek') {
     return {
       handled: true,
-      message: assistant(
-        `⚠️ 当前 Provider 是 ${ctx.providerName}，/model 仅支持 DeepSeek 模型切换。\n如需切换 Provider，请用 \`concertoai provider switch <name>\`。`,
-      ),
+      message: assistant(fmt(c.providerNotDeepseek, { provider: ctx.providerName })),
     };
   }
   const direction = switchDirection(ctx.currentModel, target);
@@ -184,19 +201,25 @@ export async function executeModelCommand(
   if (direction === 'same') {
     return {
       handled: true,
-      message: assistant(`ℹ️ 当前已是 ${label}，无需切换。`),
+      message: assistant(fmt(c.alreadyCurrent, { label })),
     };
   }
 
   const quote = quoteSwitch(ctx.currentModel, target, at);
-  const costLine = `成本对比（同一示例用量，${tierLabel(quote.tier)}）：现在 ¥${quote.fromCost.toFixed(4)} → ${label} ¥${quote.toCost.toFixed(4)}（约 ${quote.ratio.toFixed(1)} 倍）`;
+  const costLine = fmt(c.costCompare, {
+    tier: tierLabel(quote.tier),
+    from: quote.fromCost.toFixed(4),
+    label,
+    to: quote.toCost.toFixed(4),
+    ratio: quote.ratio.toFixed(1),
+  });
 
   if (direction === 'downgrade') {
     return {
       handled: true,
       nextModel: target,
       message: assistant(
-        `✅ 已切换到 ${label}（省钱方向，直接生效）\n${costLine}\n提示：能力下降时可随时 /model ${ctx.currentModel} 切回。`,
+        fmt(c.switchedDowngrade, { label, cost: costLine, prev: ctx.currentModel }),
       ),
     };
   }
@@ -204,7 +227,7 @@ export async function executeModelCommand(
   // upgrade：先给成本对比，再确认
   let confirmed = false;
   try {
-    confirmed = await ctx.confirm(`即将切换到更贵的模型 ${label}。\n${costLine}\n是否继续？`);
+    confirmed = await ctx.confirm(fmt(c.confirmUpgrade, { label, cost: costLine }));
   } catch {
     confirmed = false; // 确认过程异常 → fail-closed
   }
@@ -212,15 +235,16 @@ export async function executeModelCommand(
     return {
       handled: true,
       message: assistant(
-        `已取消切换，继续使用 ${getModel(ctx.currentModel)?.label ?? ctx.currentModel}。\n${costLine}`,
+        fmt(c.upgradeCancelled, {
+          label: getModel(ctx.currentModel)?.label ?? ctx.currentModel,
+          cost: costLine,
+        }),
       ),
     };
   }
   return {
     handled: true,
     nextModel: target,
-    message: assistant(
-      `✅ 已切换到 ${label}\n${costLine}\n提示：能力富余时可 /model ${ctx.currentModel} 切回省钱。`,
-    ),
+    message: assistant(fmt(c.switchedUpgrade, { label, cost: costLine, prev: ctx.currentModel })),
   };
 }

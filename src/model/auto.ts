@@ -17,7 +17,7 @@
  * 所有函数纯函数、时间注入（`at`），可单测。
  */
 
-import { tierLabel } from '../i18n';
+import { fmt, t, tierLabel } from '../i18n';
 import type { SessionTokenAssumption } from './cost';
 import { DEFAULT_SESSION_TOKENS } from './cost';
 import type { ModelProfile, PriceTier } from './models';
@@ -166,27 +166,41 @@ export function buildAutoPolicyGuide(at: Date = new Date()): string[] {
   const target = upgradeTargetFor(start);
   const lines: string[] = [];
 
-  lines.push(`🤖 已启用 auto 预设：默认使用 ${startProfile?.label ?? start}`);
+  const c = t().modelCmd;
+  lines.push(fmt(c.autoEnabled, { label: startProfile?.label ?? start }));
   if (startPrice !== undefined) {
+    // 单位口径同 slash/model.ts：`¥` / `tokens` 两语言保留，`/百万` ↔ `M` 进模板。
     lines.push(
-      `   当前时段（${tierLabel(tier)}）单价：输入 ¥${startPrice.input}/百万 · 输出 ¥${startPrice.output}/百万 · 缓存命中 ¥${startPrice.cacheHit}/百万`,
+      fmt(c.autoPriceLine, {
+        tier: tierLabel(tier),
+        input: startPrice.input,
+        output: startPrice.output,
+        cacheHit: startPrice.cacheHit,
+      }),
     );
   }
-  lines.push('   策略：日常对话与简单任务用默认档（便宜）；遇到明显更难的任务时会提示你可以升级。');
-  lines.push(
-    '   ⚠️ 不会自动升级模型——是否花更多钱跑更强的模型，永远由你决定（成本透明 + fail-closed）。',
-  );
+  lines.push(c.autoStrategy);
+  lines.push(c.autoNoAutoUpgrade);
 
   if (target !== undefined) {
     const quote = quoteSwitch(start, target.id, at);
     lines.push(
-      `   升级方式（手动 + 确认）：/model ${target.id} —— 同一示例用量约 ¥${quote.toCost.toFixed(4)} vs 现在 ¥${quote.fromCost.toFixed(4)}（约 ${quote.ratio.toFixed(1)} 倍）`,
+      fmt(c.autoUpgradeHow, {
+        target: target.id,
+        toCost: quote.toCost.toFixed(4),
+        fromCost: quote.fromCost.toFixed(4),
+        ratio: quote.ratio.toFixed(1),
+      }),
     );
     lines.push(
-      `   示例用量：输入 ${quote.sample.input} / 输出 ${quote.sample.output}（含缓存命中 ${quote.sample.cacheHit}）tokens，与 doctor 月成本预估同口径。`,
+      fmt(c.autoSampleUsage, {
+        input: quote.sample.input,
+        output: quote.sample.output,
+        cacheHit: quote.sample.cacheHit,
+      }),
     );
   } else {
-    lines.push('   当前已是唯一档位，无更强模型可升级。');
+    lines.push(c.autoOnlyTier);
   }
   return lines;
 }
@@ -201,5 +215,9 @@ export function buildUpgradeHint(
     return undefined;
   }
   const quote = quoteSwitch(currentModelId, target.id, at);
-  return `💡 任务较复杂？可手动升级到 ${target.label}：/model ${target.id}（同一示例用量约 ${quote.ratio.toFixed(1)} 倍成本，需确认后生效）`;
+  return fmt(t().modelCmd.upgradeHint, {
+    label: target.label,
+    target: target.id,
+    ratio: quote.ratio.toFixed(1),
+  });
 }

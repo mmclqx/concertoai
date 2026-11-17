@@ -7,6 +7,7 @@
  */
 
 import os from 'node:os';
+import { fmt, t } from '../i18n';
 import { MAX_TURNS_CAP } from '../loop/loop';
 import { isAutoModel, resolveAutoStartModel, upgradeTargetFor } from '../model/auto';
 import { getDefaultModel, getModel, listModels } from '../model/models';
@@ -50,17 +51,25 @@ export function resolveModel(modelId: string | undefined): string {
   if (isAutoModel(modelId)) {
     const start = resolveAutoStartModel();
     const label = getModel(start)?.label ?? start;
+    // v5.6：入口层提示也要本地化 —— 它和 `/model auto` 的输出是**同一用户路径上的两句话**
+    // （这条在启动期打印），只修 slash 层等于让 en 用户先看到一行英文、再看到一行中文。
     console.error(
-      `🤖 auto 预设：使用 ${label}（不会自动升级；如需更强模型请 /model ${upgradeTargetFor(start)?.id ?? start} 手动切换）`,
+      fmt(t().modelCmd.resolveAutoNotice, {
+        label,
+        target: upgradeTargetFor(start)?.id ?? start,
+      }),
     );
     return start;
   }
   const profile = getModel(modelId);
   if (profile === undefined) {
     console.error(
-      `未知模型: ${modelId}（可用: ${listModels()
-        .map((m) => m.id)
-        .join(', ')} / auto）`,
+      fmt(t().modelCmd.resolveUnknownModel, {
+        model: modelId,
+        available: listModels()
+          .map((m) => m.id)
+          .join(', '),
+      }),
     );
     process.exit(1);
   }

@@ -1140,6 +1140,67 @@ export const en = {
     line3: '  Health check: concertoai doctor · Quit: Ctrl+C (session saved)',
   },
   /**
+   * All user-visible output of `/model` and the auto guide (v5.6, finishing K18).
+   *
+   * Kept out of `cli.model` on purpose: that one is **argument help** (the `--model`
+   * description), while these are runtime output — mixing them means editing help
+   * can silently damage runtime text.
+   *
+   * **Units (user ruling ③)**: `¥` and `tokens` stay as-is in English (prices are in
+   * CNY — never pretend they are dollars); but "/百万" is *wording*, so English says
+   * `M`. Hence `¥1/百万` (zh) vs `¥1M` (en) must be asserted per locale.
+   */
+  modelCmd: {
+    unknownModel: 'Unknown model: {model} (available: {available})',
+    statusCurrentUnknown:
+      '🤖 Current model: {model} (not in the DeepSeek price table — treated as a local/third-party model, cost shown as 0)',
+    statusUnknownHint: 'Tip: /model list shows the available DeepSeek models.',
+    statusCurrent: '🤖 Current model: {label} ({id})',
+    statusPrice: '   Tier: {tier} (input ¥{input}M · output ¥{output}M · cache hit ¥{cacheHit}M)',
+    statusWindow: '   Context window: {window} tokens · concurrency limit: {rateLimit}',
+    statusUsage:
+      'Usage: /model auto (auto preset) · /model list (list models) · /model <id> (switch manually)',
+    listTitle: '📋 Available models (tier: {tier})',
+    listCurrentMark: ' ← current',
+    listItem:
+      '- {label} ({id}){mark}\n    input ¥{input}M · output ¥{output}M · cache hit ¥{cacheHit}M',
+    listAutoNote:
+      'Also: /model {auto} (auto preset, defaults to {start}, never upgrades by itself)',
+    providerNotDeepseek:
+      '⚠️ Current provider is {provider}; /model only switches DeepSeek models.\nTo switch providers use `concertoai provider switch <name>`.',
+    alreadyCurrent: 'ℹ️ Already using {label} — nothing to switch.',
+    costCompare:
+      'Cost comparison (same sample usage, {tier}): now ¥{from} → {label} ¥{to} (about {ratio}x)',
+    switchedDowngrade:
+      '✅ Switched to {label} (cheaper, applied immediately)\n{cost}\nTip: if capability drops you can switch back any time with /model {prev}.',
+    confirmUpgrade: 'About to switch to a more expensive model, {label}.\n{cost}\nContinue?',
+    upgradeCancelled: 'Switch cancelled — staying on {label}.\n{cost}',
+    switchedUpgrade:
+      '✅ Switched to {label}\n{cost}\nTip: when you have cost headroom, /model {prev} switches back and saves money.',
+    autoEnabled: '🤖 Auto preset enabled: defaulting to {label}',
+    autoPriceLine:
+      '   Tier ({tier}) unit price: input ¥{input}M · output ¥{output}M · cache hit ¥{cacheHit}M',
+    autoStrategy:
+      '   Policy: everyday chat and simple tasks use the default tier (cheapest); you will be prompted when a task looks clearly harder and an upgrade may help.',
+    autoNoAutoUpgrade:
+      '   ⚠️ The model is never upgraded automatically — whether to spend more on a stronger model is always your call (transparent cost + fail-closed).',
+    autoUpgradeHow:
+      '   How to upgrade (manual + confirmation): /model {target} — same sample usage about ¥{toCost} vs now ¥{fromCost} (about {ratio}x)',
+    autoSampleUsage:
+      '   Sample usage: input {input} / output {output} (incl. {cacheHit} cache hits) tokens — same basis as the doctor monthly cost estimate.',
+    autoOnlyTier: '   Already on the only tier — there is no stronger model to upgrade to.',
+    upgradeHint:
+      '💡 Harder task? You can upgrade manually to {label}: /model {target} (same sample usage costs about {ratio}x, applies after you confirm)',
+    // ── These two come from `resolveModel` in src/cli/common.ts (entry layer; CLI
+    // start-up and `run` go through it too). Wording intentionally differs from the
+    // keys above: in the product they are two different sentences (one is `/model auto`
+    // output, the other a start-up notice). Unifying the copy is a **copy change**,
+    // out of scope for i18n ⇒ keep each as-is, only localize.
+    resolveAutoNotice:
+      '🤖 Auto preset: using {label} (never upgrades by itself; run /model {target} manually to use a stronger model)',
+    resolveUnknownModel: 'Unknown model: {model} (available: {available} / auto)',
+  },
+  /**
    * Cost receipt (K15): printed once by each spending verb (review / commit / fix).
    * Numbers come from locally accumulated response usage (model/usage-tally.ts),
    * not from a pre-call estimate. When usage is unavailable we say "unknown" —
