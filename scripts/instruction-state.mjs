@@ -23,6 +23,8 @@
 //   node scripts/instruction-state.mjs update --followup "<原话>" --kind step [--targets a,b] [--goal "<目标>"]
 //   node scripts/instruction-state.mjs update --followup "<原话>" --kind note --why "<为何无需验证>"
 //   node scripts/instruction-state.mjs update --adjust-steps <steps.json> --approved-by user
+//   node scripts/instruction-state.mjs update --supersede-criterion <id> --by <取代者id[,..]> --reason "<原因>" --approved-by user
+//   node scripts/instruction-state.mjs update --set-flag <键>=<on|off> [--by <id>]
 //   node scripts/instruction-state.mjs update --set-status done|blocked|abandoned [--reason "<原因>"]
 //
 // 【退出码】
@@ -643,7 +645,10 @@ function cmdWrite(opts) {
 function cmdCheck(opts) {
   const loaded = requireRecord();
   const data = loaded.data;
-  const all = data.doneCriteria ?? [];
+  // 只跑**有效**判据：已标 superseded 的不再执行（它们保留在 doneCriteria 里作历史，
+  // 由 `--supersede-criterion` 追加 supersededBy/原因/批准人 —— 见该函数头注释）。
+  const skipped = (data.doneCriteria ?? []).filter((c) => c.status === 'superseded');
+  const all = activeCriteria(data);
   let targets = all;
   let stepId = null;
   if (opts.step !== undefined) {
@@ -651,8 +656,13 @@ function cmdCheck(opts) {
     if (!step) fail(`没有这个步骤：${opts.step}`);
     stepId = step.id;
     const map = criteriaById(data);
-    targets = (step.criteria ?? []).map((cid) => map.get(cid)).filter(Boolean);
+    targets = (step.criteria ?? [])
+      .map((cid) => map.get(cid))
+      .filter((c) => Boolean(c) && c.status !== 'superseded');
     if (targets.length === 0) fail(`步骤 ${step.id} 没有关联判据，check 无事可做（这不等于通过）`);
+  }
+  if (targets.length === 0) {
+    fail('没有任何有效判据（全被 superseded 了）—— 这不等于通过（恒绿防护）', EXIT.THRESHOLD);
   }
 
   const runs = targets.map((c) => runCriterion(c));
@@ -662,6 +672,12 @@ function cmdCheck(opts) {
 
   for (const run of runs) {
     console.log(`${run.pass ? 'PASS' : 'FAIL'} ${run.checkId} ｜ exit=${run.exitCode} ｜ ${digestOf(run)}`);
+  }
+  // 跳过的必须**写在脸上**：否则「12 条判据全 PASS」这个读数会被读成「契约里每一条都过了」
+  for (const c of skipped) {
+    console.log(
+      `SKIP ${c.id} ｜ superseded，被 ${(c.supersededBy ?? []).join(', ') || '(未记)'} 取代（原判据保留作历史，不执行）`,
+    );
   }
   // 固定尾行：防止把「判据全绿」误读成「已查重」（查重是 dedup 子命令，它看 git 产物）
   console.log('instruction-state: 本命令只判定判据，不等于查重（查重请用 dedup 子命令）');
@@ -747,6 +763,17 @@ function cmdShow(opts) {
   for (const c of data.doneCriteria ?? []) {
     const latest = latestEvidence(data, c.id);
     const idle = stepCriteria.has(c.id) ? '' : '（未挂任何步骤）';
+    // 被取代的判据必须**显式标出来**并说明被谁取代：否则 show 里它仍是一行
+    // 「PASS/FAIL/未验证」，读的人会以为它还在判。原判据保留是**有意的历史**，
+    // 但历史不能长得像现状。
+    if (c.status === 'superseded') {
+      const by = (c.supersededBy ?? []).join(', ') || '(未记取代者)';
+      o.push(
+        `  ${c.id} 🔁 SUPERSEDED（被 ${by} 取代，不参与判定）｜ ${String(c.desc ?? '').slice(0, 60)}`,
+      );
+      if (c.supersedeReason) o.push(`      · 理由：${String(c.supersedeReason).slice(0, 160)}`);
+      continue;
+    }
     o.push(`  ${c.id} ${latest ? (latest.exitCode === 0 ? 'PASS' : `FAIL(exit=${latest.exitCode})`) : '未验证'} ${fmtTime(latest?.at)} ｜ ${String(c.desc ?? '').slice(0, 80)}${idle}`);
   }
 
@@ -1208,6 +1235,98 @@ function cmdUpdateAdjustSteps(opts) {
   process.exit(EXIT.OK);
 }
 
+// ── update：形态 6（把一条判据标 superseded，须用户批准） ────
+//
+// 【为什么需要这个入口】
+//   docs/12 §3.2 写着「若 followUp 与 instruction 语义冲突……**报给用户确认**后再调整
+//   doneCriteria」，但此前**没有任何机械入口**：`check` 与 `--set-status done` 都会跑
+//   `doneCriteria` 全量，判据一旦写错，整条指令永远 done 不了。文档承诺了一个动作却没给
+//   工具，人就只能手改 JSON —— 那等于绕开「update 是唯一推进入口」。
+//
+// 【为什么不是删掉重写】
+//   被取代的判据是**历史**：「当时为什么这么定期望值」比「现在的期望值」更容易被下一个人
+//   再犯。所以：**不删、不改 desc/check**，只追加 supersededBy / 原因 / 批准人 / 时间。
+//   这与 step 的 `superseded` 同构（§4.4：撤销已完成步也是「标 superseded 并说明」）。
+//
+// 【为什么不许 self 批准】
+//   改判据 = 改「什么算做完」。自己批准自己，等于把门槛调到自己已经跨过去的高度。
+//   与 `--adjust-steps` 同一取向（§4.4 明写 self 不算已批准）。
+function cmdUpdateSupersedeCriterion(opts) {
+  const approvedBy = String(opts['approved-by'] ?? '');
+  if (approvedBy !== 'user') {
+    // 用 NOT_APPROVED(22) 而不是 USAGE(2)：与 `--adjust-steps` 同码，
+    // 这样「没批准」在调用方是**可判别的一类**，不必读文案去猜。
+    fail(
+      `判据标 superseded 必须 --approved-by user（收到的是 ${approvedBy || '(空)'}）——self 不算已批准（docs/12 §3.2 / §4.4 同一取向：改判据就是改「什么算做完」）`,
+      EXIT.NOT_APPROVED,
+    );
+  }
+  const loaded = requireRecord();
+  const data = loaded.data;
+  const targetId = String(opts['supersede-criterion'] ?? '').trim();
+  if (!targetId) fail('--supersede-criterion 需要判据 id（如 V1）', EXIT.USAGE);
+
+  const byRaw = String(opts.by ?? '').trim();
+  const by = byRaw.split(',').map((s) => s.trim()).filter(Boolean);
+  if (by.length === 0) {
+    fail('--by 需要至少一条取代它的判据 id（如 V1b）—— 否则「标 superseded」等于「把它删了」', EXIT.USAGE);
+  }
+
+  const reason = String(opts.reason ?? '').trim();
+  if (!reason) {
+    // 理由不是排版要求：没有理由的 supersede 与「删掉这条判据」在事后看没有区别
+    fail('--reason 必须写明为什么原期望值不成立（否则下一个人只会看到「红过，然后消失了」）', EXIT.USAGE);
+  }
+
+  const map = criteriaById(data);
+  const target = map.get(targetId);
+  if (!target) fail(`没有这条判据：${targetId}`, EXIT.USAGE);
+  if (target.status === 'superseded') {
+    fail(`判据 ${targetId} 已经是 superseded（被 ${(target.supersededBy ?? []).join(', ')} 取代），不重复标记`, EXIT.USAGE);
+  }
+  const missingBy = by.filter((id) => !map.has(id));
+  if (missingBy.length > 0) {
+    fail(`--by 里的判据不存在：${missingBy.join(', ')}（取代者必须是真的判据，不能只写个编号）`, EXIT.USAGE);
+  }
+  if (by.includes(targetId)) fail('--by 不能包含被取代的那条自己', EXIT.USAGE);
+
+  // 防塌陷：全部判据都被 superseded ⇒ 「没有任何判据」也能 done，那是恒绿空转
+  const remaining = (data.doneCriteria ?? []).filter(
+    (c) => c.id !== targetId && c.status !== 'superseded',
+  );
+  if (remaining.length === 0) {
+    fail(
+      `拒绝：标完之后没有任何有效判据了（${targetId} 之后无剩余）——「没有判据」不许等于「通过」（恒绿防护）`,
+      EXIT.THRESHOLD,
+    );
+  }
+
+  target.status = 'superseded';
+  target.supersededBy = by;
+  target.supersedeReason = reason;
+  target.supersedeApprovedBy = approvedBy;
+  target.supersededAt = nowIso();
+  data.revisions = data.revisions ?? [];
+  data.revisions.push({
+    at: nowIso(),
+    kind: 'criteria-supersede',
+    reason,
+    before: { id: targetId, check: target.check, expectContains: target.expectContains ?? [] },
+    after: { id: targetId, status: 'superseded', supersededBy: by },
+    approvedBy,
+    approvedAt: nowIso(),
+  });
+  writeState(data, loaded);
+  appendHistory({ kind: 'criteria-supersede', targetId, supersededBy: by, reason, approvedBy });
+  console.log(
+    `instruction-state: 判据 ${targetId} → superseded（被 ${by.join(', ')} 取代；原判据保留作历史，check 时跳过）`,
+  );
+  process.exit(EXIT.OK);
+}
+
+/** 有效判据 = 没被 superseded 的那些（check / done 都只看这些）。 */
+const activeCriteria = (data) => (data.doneCriteria ?? []).filter((c) => c.status !== 'superseded');
+
 // ── update：形态 4（终态） ───────────────────────────────────
 
 function cmdUpdateSetStatus(opts) {
@@ -1229,8 +1348,10 @@ function cmdUpdateSetStatus(opts) {
     process.exit(EXIT.OK);
   }
 
-  // ── done：**重跑全部判据，不复用**（最后一道门，宁可多跑一次） ──
-  const criteria = data.doneCriteria ?? [];
+  // ── done：**重跑全部有效判据，不复用**（最后一道门，宁可多跑一次） ──
+  // 「有效」= 没被 superseded：被取代的判据是历史记录，不该拦住整条指令（否则写错一条判据
+  // 就永远 done 不了）；但**全被取代**时下面会拒绝 —— 没有判据 ≠ 通过。
+  const criteria = activeCriteria(data);
   if (criteria.length === 0) fail('没有 doneCriteria，不能标记 done（恒绿防护）', EXIT.THRESHOLD);
   const runs = criteria.map((c) => runCriterion(c));
   data.evidence = data.evidence ?? [];
@@ -1345,6 +1466,7 @@ function main() {
         '  update --followup "<原话>" --kind step [--targets a,b] [--goal "<目标>"]',
         '  update --followup "<原话>" --kind note --why "<为何无需验证>"',
         '  update --adjust-steps <steps.json> --approved-by user',
+        '  update --supersede-criterion <id> --by <取代者id[,..]> --reason "<原因>" --approved-by user',
         '  update --set-status done|blocked|abandoned [--reason "<原因>"]',
         '  update --set-flag <键>=<on|off> [--by <id>]   （会话级记录，只写不读：不改任何行为、不进 config）',
       ].join('\n'),
@@ -1364,6 +1486,7 @@ function main() {
     ['adjust-steps', opts['adjust-steps'] !== undefined],
     ['set-status', opts['set-status'] !== undefined],
     ['set-flag', opts['set-flag'] !== undefined],
+    ['supersede-criterion', opts['supersede-criterion'] !== undefined],
   ].filter(([, on]) => on);
   if (forms.length !== 1) {
     fail(`update 必须且只能用一种形态（收到 ${forms.length} 个：${forms.map(([n]) => n).join(', ') || '无'}）`);
@@ -1373,6 +1496,7 @@ function main() {
   if (which === 'followup') return cmdUpdateFollowup(opts);
   if (which === 'adjust-steps') return cmdUpdateAdjustSteps(opts);
   if (which === 'set-flag') return cmdUpdateSetFlag(opts);
+  if (which === 'supersede-criterion') return cmdUpdateSupersedeCriterion(opts);
   return cmdUpdateSetStatus(opts);
 }
 

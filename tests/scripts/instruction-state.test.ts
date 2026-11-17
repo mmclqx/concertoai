@@ -934,6 +934,196 @@ describe('update --adjust-steps：自己不许改顺序（docs/12 §4.4）', () 
   });
 });
 
+// ── update --supersede-criterion（判据作废，须用户批准） ──────
+//
+// 这组用例防的「废实现」各有不同，缺一条就漏一种：
+//   | 废实现 | 会被哪条抓住 |
+//   |---|---|
+//   | 标 superseded 后 `check` **仍跑**它 | 「被取代的判据不再执行（计数器不变）」 |
+//   | 标 superseded 时**删掉**原判据 | 「原判据仍在 doneCriteria 里，desc/check 逐字未改」 |
+//   | 全部判据都能被标掉 ⇒ 零判据也能 done | 「最后一条不许被取代（恒绿防护）」 |
+//   | `--approved-by self` 也认 | 「self ⇒ exit 22 且文件一字未改」 |
+//   | `--by` 随便写个不存在的 id 也认 | 「取代者必须是真判据」 |
+//   | 不给理由也能标 | 「缺 --reason ⇒ exit 22」 |
+//   | 重复标记不报错 | 「已 superseded 再标 ⇒ exit 22」 |
+describe('update --supersede-criterion：判据作废要用户批准，且原判据保留作历史', () => {
+  /**
+   * 两条判据：C1 计数、C2 计数；各自挂在一个步骤上。
+   *
+   * ⚠️ 必须配 `--skip-baseline` 写入：`write` 默认会**实测跑一遍**判据（写 baseline），
+   * 那会让计数型判据的计数先 +2，从而把「check 只跑了 1 条」这条断言污染成 4。
+   * 第一版就是这么红的（`expected 4 to be 2`）——**红在用例自己的前置动作**，
+   * 不是产品。凡是「计数」当判据的用例，写入路径必须能证明**谁在计数**。
+   */
+  function writeTwoCriteria() {
+    const file = writePayload({
+      ...basePayload(),
+      doneCriteria: [countingCriterion('C1'), countingCriterion('C2')],
+      steps: [
+        { id: 1, goal: '一', criteria: ['C1'], status: 'pending' },
+        { id: 2, goal: '二', criteria: ['C2'], status: 'pending' },
+      ],
+    });
+    return runCli(['write', '--file', file, '--skip-baseline']);
+  }
+
+  const supersede = (args: string[]) => runCli(['update', '--supersede-criterion', ...args]);
+
+  it('--approved-by user ⇒ 标成 superseded，**原判据仍在且 desc/check 逐字未改**（历史不删）', () => {
+    expect(writeTwoCriteria().code).toBe(0);
+    const before = readState().doneCriteria.find((c: { id: string }) => c.id === 'C1');
+    const r = supersede([
+      'C1',
+      '--by',
+      'C2',
+      '--reason',
+      '原期望值 26 是估算',
+      '--approved-by',
+      'user',
+    ]);
+    expect(r.code).toBe(0);
+
+    const after = readState().doneCriteria.find((c: { id: string }) => c.id === 'C1');
+    // 关键：不是删、不是改，而是**追加标记**
+    expect(after).toBeDefined();
+    expect(after.desc).toBe(before.desc);
+    expect(after.check).toBe(before.check);
+    expect(after.status).toBe('superseded');
+    expect(after.supersededBy).toEqual(['C2']);
+    expect(after.supersedeReason).toContain('26');
+    expect(after.supersedeApprovedBy).toBe('user');
+    // 取代者本身不受影响
+    expect(
+      readState().doneCriteria.find((c: { id: string }) => c.id === 'C2').status,
+    ).toBeUndefined();
+  });
+
+  it('**被取代的判据 check 时不再执行**（计数判据的计数不变 ⇒ 不是「跑了也算 PASS」）', () => {
+    expect(writeTwoCriteria().code).toBe(0);
+    // 先确认两条都会跑：跑一次 check，计数应 +2
+    expect(runCli(['check']).code).toBe(0);
+    const afterFirst = countRuns();
+    expect(afterFirst).toBe(2);
+
+    expect(
+      supersede(['C1', '--by', 'C2', '--reason', '测试用', '--approved-by', 'user']).code,
+    ).toBe(0);
+    const r = runCli(['check']);
+    expect(r.code).toBe(0);
+    // 只跑了 C2 一条 ⇒ 计数只 +1。若实现「标了但照跑」，这里会是 4
+    expect(countRuns()).toBe(afterFirst + 1);
+    // 而且屏幕上要**明说**跳过了谁（否则「全 PASS」会被读成「每条都过」）
+    expect(r.out).toContain('SKIP C1');
+    expect(r.out).toContain('被 C2 取代');
+  });
+
+  it('**最后一条判据不许被取代**（零判据 ≠ 通过，恒绿防护）⇒ exit 20 且文件未改', () => {
+    // 只有一条判据
+    const file = writePayload({
+      ...basePayload(),
+      doneCriteria: [countingCriterion('C1')],
+      steps: [{ id: 1, goal: '一', criteria: ['C1'], status: 'pending' }],
+    });
+    expect(runCli(['write', '--file', file]).code).toBe(0);
+    const before = fs.readFileSync(statePath(), 'utf8');
+    // 想用自己取代自己也不行；换一个也不存在的也不行 —— 这里测「无剩余」
+    const r = supersede(['C1', '--by', 'C404', '--reason', '想全作废', '--approved-by', 'user']);
+    expect(r.code).not.toBe(0);
+    expect(fs.readFileSync(statePath(), 'utf8')).toBe(before);
+  });
+
+  it('**--approved-by self ⇒ exit 22，且文件一字未改**（改判据 = 改「什么算做完」）', () => {
+    expect(writeTwoCriteria().code).toBe(0);
+    const before = fs.readFileSync(statePath(), 'utf8');
+    const r = supersede(['C1', '--by', 'C2', '--reason', '自己批准', '--approved-by', 'self']);
+    expect(r.code).toBe(22);
+    expect(r.out).toContain('self 不算已批准');
+    expect(fs.readFileSync(statePath(), 'utf8')).toBe(before);
+  });
+
+  it('不给 --approved-by ⇒ exit 22（缺省不是「默认批准」）', () => {
+    expect(writeTwoCriteria().code).toBe(0);
+    expect(supersede(['C1', '--by', 'C2', '--reason', 'x']).code).toBe(22);
+  });
+
+  it('缺 --reason ⇒ exit 2（参数缺失；没理由的作废与「删掉」事后无法区分）', () => {
+    expect(writeTwoCriteria().code).toBe(0);
+    const r = supersede(['C1', '--by', 'C2', '--approved-by', 'user']);
+    // 退出码刻意**不是** 22：22 在本脚本专指「没批准」（NOT_APPROVED），
+    // 参数缺失是 USAGE(2)。两类原因在调用方要能分开判，不许都塞一个码。
+    expect(r.code).toBe(2);
+    expect(r.out).toContain('--reason');
+  });
+
+  it('--by 指向不存在的判据 ⇒ exit 2（取代者必须是真判据，不能只写个编号）', () => {
+    expect(writeTwoCriteria().code).toBe(0);
+    const r = supersede(['C1', '--by', 'C404', '--reason', 'x', '--approved-by', 'user']);
+    expect(r.code).toBe(2);
+    expect(r.out).toContain('不存在');
+  });
+
+  it('--by 为空 ⇒ exit 2（否则等于「悄悄删掉这条判据」）', () => {
+    expect(writeTwoCriteria().code).toBe(0);
+    expect(supersede(['C1', '--reason', 'x', '--approved-by', 'user']).code).toBe(2);
+  });
+
+  it('重复标记 ⇒ exit 2（并说明已被谁取代）', () => {
+    expect(writeTwoCriteria().code).toBe(0);
+    expect(supersede(['C1', '--by', 'C2', '--reason', 'x', '--approved-by', 'user']).code).toBe(0);
+    const r = supersede(['C1', '--by', 'C2', '--reason', 'y', '--approved-by', 'user']);
+    expect(r.code).toBe(2);
+    expect(r.out).toContain('已经是 superseded');
+  });
+
+  it('留下审计痕迹：revisions 与 history 各一条 criteria-supersede（含原因与批准人）', () => {
+    expect(writeTwoCriteria().code).toBe(0);
+    expect(
+      supersede(['C1', '--by', 'C2', '--reason', '期望值漂移', '--approved-by', 'user']).code,
+    ).toBe(0);
+    const rev = readState().revisions.filter(
+      (x: { kind?: string }) => x.kind === 'criteria-supersede',
+    );
+    expect(rev).toHaveLength(1);
+    expect(rev[0].reason).toBe('期望值漂移');
+    expect(rev[0].approvedBy).toBe('user');
+    expect(rev[0].before.id).toBe('C1');
+    const hist = readHistory().filter((h) => h.kind === 'criteria-supersede');
+    expect(hist).toHaveLength(1);
+    expect(hist[0].supersededBy).toEqual(['C2']);
+  });
+
+  it('与其它 update 形态互斥（同时给 --supersede-criterion 与 --set-status ⇒ exit 2）', () => {
+    expect(writeTwoCriteria().code).toBe(0);
+    const r = runCli([
+      'update',
+      '--supersede-criterion',
+      'C1',
+      '--by',
+      'C2',
+      '--reason',
+      'x',
+      '--approved-by',
+      'user',
+      '--set-status',
+      'done',
+    ]);
+    expect(r.code).toBe(2);
+    expect(r.out).toContain('必须且只能用一种形态');
+  });
+
+  it('show 里被取代的判据显式标 SUPERSEDED（历史不能长得像现状）', () => {
+    expect(writeTwoCriteria().code).toBe(0);
+    expect(
+      supersede(['C1', '--by', 'C2', '--reason', '期望值漂移', '--approved-by', 'user']).code,
+    ).toBe(0);
+    const r = runCli(['show']);
+    expect(r.code).toBe(0);
+    expect(r.out).toContain('C1 🔁 SUPERSEDED');
+    expect(r.out).toContain('被 C2 取代');
+    expect(r.out).toContain('期望值漂移');
+  });
+});
+
 // ── 并发与形态校验 ───────────────────────────────────────────
 
 describe('并发与形态校验', () => {
