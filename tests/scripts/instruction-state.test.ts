@@ -1124,6 +1124,78 @@ describe('update --supersede-criterion：判据作废要用户批准，且原判
   });
 });
 
+// ── superseded 判据不许拦住**其它**入口（步进 / 查重） ─────────
+//
+// 上面那组只钉住了 `check` / `show` / `--set-status done` 三个入口。**这正是缺陷的形状**：
+// 过滤器一度只接在 `check` 与 `--set-status done` 上，`update --step … --status done` 与
+// `dedup` 漏接，于是功能**半失效**——
+//
+//   · 作废掉一条期望值写错的判据后，`check` 读出 9 PASS / 3 SKIP（看起来修好了）；
+//   · 推步进照样去跑那条已作废的判据 ⇒ `FAIL V1 ｜ expectContains 缺 "zh 键数=26"`
+//     ⇒ 整条指令「写对了却永远推不动」；
+//   · `dedup` 也一样：拿一条永远红的旧判据判出 not-done，把**已完成**报成「没做完」。
+//
+// 半失效比全失效更难发现：屏幕上有一半入口说 PASS、另一半说 FAIL，看的人只会怀疑产品。
+// 「要过滤的地方有几处」只能有一个答案来源（`activeCriteria` / `activeCriteriaById`），
+// 下面两条用例正是证明「另外两个入口也从那里取」——**把过滤去掉任一处，它们必红**。
+describe('superseded 判据不许拦住步进（--step --status done）', () => {
+  const supersedeC2ByC1 = () =>
+    runCli([
+      'update',
+      '--supersede-criterion',
+      'C2',
+      '--by',
+      'C1',
+      '--reason',
+      '原期望值写错',
+      '--approved-by',
+      'user',
+    ]);
+
+  it('步骤里有已 superseded 的判据 ⇒ 不跑它、照常 done，且屏上打 SKIP（计数器为证）', () => {
+    const file = writePayload({
+      ...basePayload(),
+      // C2 是 **exit=1** 的判据：只要它被跑一次，这条步进必然 exit 20 ⇒ 这条用例就红
+      doneCriteria: [countingCriterion('C1'), countingCriterion('C2', 1)],
+      steps: [{ id: 1, goal: '一', criteria: ['C1', 'C2'], status: 'pending' }],
+    });
+    expect(runCli(['write', '--file', file, '--skip-baseline']).code).toBe(0);
+    expect(supersedeC2ByC1().code).toBe(0);
+
+    const before = countRuns();
+    const r = runCli(['update', '--step', '1', '--status', 'done']);
+    expect(r.code).toBe(0);
+    // 「没跑」必须用计数证明，不能靠屏幕文案：exit 0 也可能来自「一条都没跑」
+    expect(countRuns()).toBe(before + 1);
+    expect(r.out).toContain('SKIP C2');
+    expect(readState().steps[0].status).toBe('done');
+  });
+
+  it('步骤的判据**全被** superseded ⇒ exit 21，且一条都不跑（没有有效判据 ≠ 通过）', () => {
+    const file = writePayload({
+      ...basePayload(),
+      doneCriteria: [countingCriterion('C1'), countingCriterion('C2')],
+      steps: [
+        { id: 1, goal: '一', criteria: ['C2'], status: 'pending' },
+        { id: 2, goal: '二', criteria: ['C1'], status: 'pending' },
+      ],
+    });
+    expect(runCli(['write', '--file', file, '--skip-baseline']).code).toBe(0);
+    // 步骤 1 只挂 C2；把 C2 作废后，这一步就没有有效判据了
+    expect(supersedeC2ByC1().code).toBe(0);
+
+    const before = countRuns();
+    const r = runCli(['update', '--step', '1', '--status', 'done']);
+    // 21（门槛不满足）而不是 20（判据有 fail）：这里**一条判据都没跑**，
+    // 说「判据失败」是假话；真实结论是「没有有效判据 ⇒ 无法证明」。
+    // 与 `check` 的「全被 superseded ⇒ exit 21」同码，调用方不必读文案去猜是哪一类。
+    expect(r.code).toBe(21);
+    expect(r.out).toContain('全被 superseded');
+    expect(countRuns()).toBe(before);
+    expect(readState().steps[0].status).toBe('pending');
+  });
+});
+
 // ── 并发与形态校验 ───────────────────────────────────────────
 
 describe('并发与形态校验', () => {
@@ -1389,6 +1461,55 @@ describe('dedup：查重（唯一「硬」的防线：产物 + 判据，不依�
       // 档位说明是「护栏的护栏」：dedup 结论同样只覆盖到 ①②
       expect(r.out).toContain('③已推送');
       expect(r.out).toContain('未判');
+    } finally {
+      fs.rmSync(g.repo, { recursive: true, force: true });
+    }
+  });
+
+  it('已 superseded 的判据不参与查重 ⇒ 仍 verdict=done（否则把「已完成」报成 not-done）', () => {
+    const g = tempGitRepo();
+    try {
+      commitFiles(g, { 'out.txt': 'done\n' }, 'base: 产物已在');
+      // C2 是「期望值写错、永远红」的旧判据 —— 作废它之后，它不该再影响查重结论
+      const stale = {
+        id: 'C2',
+        desc: '旧期望值（永远红）',
+        check: 'node -e "process.exit(1)"',
+        expectContains: [],
+        covers: [],
+      };
+      const file = writePayload(
+        payloadFor(
+          [artifactCriterion('C1', 'out.txt'), stale],
+          [
+            { id: 1, goal: '写 out.txt', targets: ['out.txt'], criteria: ['C1'] },
+            { id: 2, goal: '旧范围', criteria: ['C2'] },
+          ],
+        ),
+      );
+      expect(runCli(['write', '--file', file, '--skip-baseline'], { cwd: g.repo }).code).toBe(0);
+      expect(
+        runCli(
+          [
+            'update',
+            '--supersede-criterion',
+            'C2',
+            '--by',
+            'C1',
+            '--reason',
+            '期望值写错',
+            '--approved-by',
+            'user',
+          ],
+          { cwd: g.repo },
+        ).code,
+      ).toBe(0);
+
+      const r = runCli(['dedup'], { cwd: g.repo });
+      // 漏接过滤器的实现：C2 一跑就红 + 产物没变 ⇒ mismatch / exit 11
+      expect(r.code).toBe(10);
+      expect(r.out).toContain('verdict=done');
+      expect(r.out).not.toContain('FAIL');
     } finally {
       fs.rmSync(g.repo, { recursive: true, force: true });
     }

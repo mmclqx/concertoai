@@ -380,6 +380,25 @@ function requireRecord() {
 
 const criteriaById = (data) => new Map((data.doneCriteria ?? []).map((c) => [c.id, c]));
 
+/**
+ * 有效判据 = 没被 superseded 的那些（判据作废后仍留在 doneCriteria 里作历史，但不参与判定）。
+ *
+ * 【为什么必须是**唯一**来源，而不是每个入口各写一遍】
+ *   这条过滤器一度只接在 `check` 与 `--set-status done` 两个入口上，`--step … --status done`
+ *   与 `dedup` 漏了，于是功能**半失效**：作废掉一条期望值写错的判据后 `check` 是 9 PASS，
+ *   但推步进照样跑那条已作废的判据 ⇒ 整条指令「写对了却永远推不动」。实测撞见：
+ *   `update --step 1 --status done` ⇒ `FAIL V1 ｜ expectContains 缺 "zh 键数=26"`。
+ *   「要过滤的地方有几处」只能有一个答案来源，故收敛成下面两个函数；
+ *   新增任何「跑判据」的入口都必须从这里取。
+ */
+const activeCriteria = (data) => (data.doneCriteria ?? []).filter((c) => c.status !== 'superseded');
+
+/** 按 id 列表取判据并剔除已 superseded 的（未知 id 静默丢弃，与原先 `filter(Boolean)` 同口径）。 */
+function activeCriteriaById(data, ids) {
+  const map = criteriaById(data);
+  return (ids ?? []).map((cid) => map.get(cid)).filter((c) => Boolean(c) && c.status !== 'superseded');
+}
+
 function latestEvidence(data, checkId) {
   const pool = [
     ...(data.evidence ?? []),
@@ -655,10 +674,8 @@ function cmdCheck(opts) {
     const step = (data.steps ?? []).find((s) => String(s.id) === String(opts.step));
     if (!step) fail(`没有这个步骤：${opts.step}`);
     stepId = step.id;
-    const map = criteriaById(data);
-    targets = (step.criteria ?? [])
-      .map((cid) => map.get(cid))
-      .filter((c) => Boolean(c) && c.status !== 'superseded');
+    // 有效判据只从 `activeCriteriaById` 取（唯一来源，见该函数注释）
+    targets = activeCriteriaById(data, step.criteria);
     if (targets.length === 0) fail(`步骤 ${step.id} 没有关联判据，check 无事可做（这不等于通过）`);
   }
   if (targets.length === 0) {
@@ -944,11 +961,14 @@ function cmdDedup(opts) {
   const { changedFiles, commits, worktree } = dedupChangeSet(baseline.ref, targets);
   const head = currentHead();
 
-  const map = data ? criteriaById(data) : new Map();
-  const spec =
-    criteriaIds === null
-      ? (data?.doneCriteria ?? [])
-      : criteriaIds.map((cid) => map.get(cid)).filter(Boolean);
+  // 判据范围与 check / `--step --status done` / `--set-status done` **同源**：已作废的判据
+  // 不参与判定。漏了这一处，dedup 会拿一条「期望值写错、永远红」的旧判据判出 not-done，
+  // 把「已完成」报成「没做完」—— 与「把没做报成做完」同一种错，只是方向相反。
+  const spec = data
+    ? criteriaIds === null
+      ? activeCriteria(data)
+      : activeCriteriaById(data, criteriaIds)
+    : [];
 
   // ── 轻量查重（§5.2）：HEAD 没变 + 无新增提交 + 距上次查重不超阈值 ⇒ 沿用上次结论，不跑判据 ──
   const prev = step ? (step.dedup ?? null) : (data?.dedup ?? null);
@@ -1061,24 +1081,47 @@ function cmdUpdateStep(opts) {
   }
 
   // ── status === done：按 §4.5「新鲜则复用，否则重跑」 ──
-  const map = criteriaById(data);
+  //
+  // 【只跑**有效**判据 —— 且必须与 check / `--set-status done` / dedup 同源】
+  //   已标 superseded 的判据不再执行（它们保留在 doneCriteria 里作历史，由
+  //   `--supersede-criterion` 追加 supersededBy / 原因 / 批准人）。
+  //
+  //   这一处曾漏接过滤器，实测形态是**功能半失效**：作废掉一条期望值写错的判据后
+  //   `check` 读出 9 PASS / 3 SKIP，而 `update --step 1 --status done` 照样去跑那条
+  //   已作废的判据 ⇒ `FAIL V1 ｜ expectContains 缺 "zh 键数=26"` ⇒ 整条指令
+  //   「写对了却永远推不动」。半失效比全失效更难发现：屏幕上有一半入口说 PASS、
+  //   另一半说 FAIL，看的人只会怀疑产品，而真相是「有一处忘了接」。
   const specIds = step.criteria ?? [];
   if (specIds.length === 0) {
     fail(`步骤 ${step.id} 没有关联判据，不能标记 done（没有判据 = 无法证明，拒绝恒绿）`, EXIT.THRESHOLD);
+  }
+  const byId = criteriaById(data);
+  const active = activeCriteriaById(data, specIds);
+  const activeIds = new Set(active.map((c) => c.id));
+  // 只用于「跳过」回显：按 specIds 原顺序保留，未知 id 静默丢弃（与 activeCriteriaById 同口径）
+  const superseded = specIds
+    .filter((cid) => !activeIds.has(cid))
+    .map((cid) => byId.get(cid))
+    .filter((c) => Boolean(c));
+  if (active.length === 0) {
+    fail(
+      `步骤 ${step.id} 的判据全被 superseded（${superseded.map((c) => c.id).join(', ')}）—— 没有有效判据 ≠ 通过（恒绿防护，先补一条真判据）`,
+      EXIT.THRESHOLD,
+    );
   }
   const head = currentHead();
   const allowCrossHead = Boolean(opts['reuse-evidence']);
   const fresh = [];
   const rerun = [];
-  for (const cid of specIds) {
-    const prev = latestEvidence(data, cid);
+  for (const criterion of active) {
+    const prev = latestEvidence(data, criterion.id);
     const reusable =
       prev &&
       prev.exitCode === 0 &&
       ageMs(prev.at) <= REUSE_TTL_MS &&
       (allowCrossHead || prev.head === head);
-    if (reusable) fresh.push({ cid, prev });
-    else rerun.push(cid);
+    if (reusable) fresh.push({ cid: criterion.id, prev });
+    else rerun.push(criterion);
   }
 
   const newEntries = [];
@@ -1099,8 +1142,8 @@ function cmdUpdateStep(opts) {
     });
   }
   const rerunResults = [];
-  for (const cid of rerun) {
-    const run = runCriterion(map.get(cid));
+  for (const criterion of rerun) {
+    const run = runCriterion(criterion);
     rerunResults.push(run);
     newEntries.push(evidenceEntry(run, step.id, { reused: false }));
   }
@@ -1120,6 +1163,12 @@ function cmdUpdateStep(opts) {
   console.log(
     `instruction-state: 步骤 ${step.id} → done（复用 ${reusedCount} 条 / 实跑 ${rerunResults.length} 条；currentStep=${data.currentStep ?? 'null'}）`,
   );
+  // 跳过的必须**写在脸上**：否则「本步判据全部通过」这个读数会被读成「挂在这一步的每一条都过了」
+  for (const c of superseded) {
+    console.log(
+      `SKIP ${c.id} ｜ superseded，被 ${(c.supersededBy ?? []).join(', ') || '(未记)'} 取代（原判据保留作历史，不执行）`,
+    );
+  }
   process.exit(EXIT.OK);
 }
 
@@ -1324,8 +1373,9 @@ function cmdUpdateSupersedeCriterion(opts) {
   process.exit(EXIT.OK);
 }
 
-/** 有效判据 = 没被 superseded 的那些（check / done 都只看这些）。 */
-const activeCriteria = (data) => (data.doneCriteria ?? []).filter((c) => c.status !== 'superseded');
+// 有效判据的取法**只在**上方「记录操作小工具」段有一处定义（`activeCriteria` /
+// `activeCriteriaById`）。这里不要再写第二份：曾经两处各写一遍，`--step … --status done`
+// 与 `dedup` 漏接，于是作废的判据照样拦住步进（详见那段注释的实测读数）。
 
 // ── update：形态 4（终态） ───────────────────────────────────
 
